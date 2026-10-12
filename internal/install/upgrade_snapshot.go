@@ -134,6 +134,9 @@ func (inst *installer) writeUpgradeSnapshot(snapshot upgradeSnapshot, pruneBefor
 	if err := validateUpgradeSnapshot(snapshot); err != nil {
 		return fmt.Errorf("validate upgrade snapshot: %w", err)
 	}
+	if err := validateUpgradeStateDirs(inst.root, inst.sys); err != nil {
+		return err
+	}
 	if pruneBeforeCreate {
 		if err := inst.pruneUpgradeSnapshots(upgradeSnapshotMaxRetained - 1); err != nil {
 			return err
@@ -266,12 +269,6 @@ func (inst *installer) pruneUpgradeSnapshots(retain int) error {
 		return fmt.Errorf("retain must be non-negative, got %d", retain)
 	}
 	dir := inst.upgradeSnapshotDirPath()
-	if _, err := inst.sys.Stat(dir); err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return nil
-		}
-		return fmt.Errorf(messages.InstallFailedStatFmt, dir, err)
-	}
 	files, err := inst.listUpgradeSnapshotFiles()
 	if err != nil {
 		return fmt.Errorf("list upgrade snapshots under %s: %w", dir, err)
@@ -288,6 +285,9 @@ func (inst *installer) pruneUpgradeSnapshots(retain int) error {
 }
 
 func (inst *installer) listUpgradeSnapshotFiles() ([]upgradeSnapshotFile, error) {
+	if err := validateUpgradeStateDirs(inst.root, inst.sys); err != nil {
+		return nil, err
+	}
 	dir := inst.upgradeSnapshotDirPath()
 	if _, err := inst.sys.Stat(dir); err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -356,6 +356,9 @@ func (inst *installer) rollbackUpgradeSnapshot(snapshot *upgradeSnapshot, target
 }
 
 func (inst *installer) captureUpgradeSnapshotEntries() ([]upgradeSnapshotEntry, error) {
+	if err := validateUpgradeStateDirs(inst.root, inst.sys); err != nil {
+		return nil, err
+	}
 	catalogDirs, err := inst.templates().installedCatalogSkillTemplateDirs()
 	if err != nil {
 		return nil, err

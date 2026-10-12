@@ -96,6 +96,10 @@ func BuildUpgradePlan(root string, opts UpgradePlanOptions) (UpgradePlan, error)
 		return UpgradePlan{}, fmt.Errorf(messages.InstallSystemRequired)
 	}
 
+	if err := validateUpgradeStateDirs(root, opts.System); err != nil {
+		return UpgradePlan{}, err
+	}
+
 	targetPinVersion := strings.TrimSpace(opts.TargetPinVersion)
 	if targetPinVersion != "" {
 		normalized, err := version.Normalize(targetPinVersion)

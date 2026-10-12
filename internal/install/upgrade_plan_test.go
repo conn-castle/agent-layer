@@ -401,10 +401,19 @@ func TestUpgradeEvidence_ManagedDiffBaselineValidation(t *testing.T) {
 	for _, tc := range []struct {
 		name     string
 		baseline string
+		stateDir string
+		node     string
 	}{
 		{name: "valid"},
 		{name: "corrupt", baseline: "{bad-json"},
 		{name: "invalid", baseline: `{"schema_version":99}`},
+		{name: "linked state", stateDir: ".agent-layer/state", node: "link"},
+		{name: "dangling state", stateDir: ".agent-layer/state", node: "dangling"},
+		{name: "file state", stateDir: ".agent-layer/state", node: "file"},
+		{name: "linked snapshots", stateDir: upgradeSnapshotDirRelPath, node: "link"},
+		{name: "dangling snapshots", stateDir: upgradeSnapshotDirRelPath, node: "dangling"},
+		{name: "file snapshots", stateDir: upgradeSnapshotDirRelPath, node: "file"},
+		{name: "state inspection failure", stateDir: ".agent-layer/state", node: "error"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			root := t.TempDir()
@@ -413,10 +422,29 @@ func TestUpgradeEvidence_ManagedDiffBaselineValidation(t *testing.T) {
 			if tc.baseline != "" {
 				require.NoError(t, os.WriteFile(filepath.Join(root, filepath.FromSlash(baselineStateRelPath)), []byte(tc.baseline), 0o600))
 			}
-			_, baselineErr := readManagedBaselineState(root, RealSystem{})
+			sys := newFaultSystem(RealSystem{})
+			state, stateErr := readManagedBaselineState(root, sys)
+			if tc.stateDir != "" {
+				path := filepath.Join(root, filepath.FromSlash(tc.stateDir))
+				require.NoError(t, os.MkdirAll(path, 0o700))
+				outside := filepath.Join(t.TempDir(), "storage")
+				require.NoError(t, os.Rename(path, outside))
+				switch tc.node {
+				case "file":
+					require.NoError(t, os.WriteFile(path, []byte("obstruction"), 0o600))
+				case "dangling":
+					require.NoError(t, os.Symlink(outside+"-missing", path))
+				case "error":
+					require.NoError(t, os.Rename(outside, path))
+					sys.lstatErrs[path] = errors.New("state inspection failed")
+				default:
+					require.NoError(t, os.Symlink(outside, path))
+				}
+			}
+			_, baselineErr := readManagedBaselineState(root, sys)
 			promptCalled := false
 			inst := &installer{
-				root: root, sys: RealSystem{},
+				root: root, sys: sys,
 				prompter: &PromptFuncs{
 					OverwriteAllUnifiedPreviewFunc: func(managed, memory []DiffPreview) (bool, bool, error) {
 						promptCalled = true
@@ -427,12 +455,28 @@ func TestUpgradeEvidence_ManagedDiffBaselineValidation(t *testing.T) {
 					},
 				},
 			}
-			plan, planErr := BuildUpgradePlan(root, UpgradePlanOptions{System: RealSystem{}})
+			plan, planErr := BuildUpgradePlan(root, UpgradePlanOptions{System: sys})
 			_, listErr := inst.templates().listManagedDiffs()
 			_, lookupErr := inst.lookupDiffPreview(commandsAllowRelPath)
 			reviewErr := inst.resolveOverwriteAllDecisions()
 			writeErr := inst.writeManagedBaselineIfConsistent(BaselineStateSourceWrittenByOverwrite)
-			if tc.baseline != "" {
+			if tc.stateDir != "" {
+				require.NoError(t, stateErr)
+				require.Error(t, baselineErr)
+				snapshot := upgradeSnapshot{SchemaVersion: 1, SnapshotID: "guard", CreatedAtUTC: "2026-01-01T00:00:00Z", Status: upgradeSnapshotStatusCreated}
+				_, listSnapshotsErr := ListUpgradeSnapshots(root, sys)
+				_, captureErr := inst.captureUpgradeSnapshotEntries()
+				for _, err := range []error{
+					listSnapshotsErr, captureErr, inst.pruneUpgradeSnapshots(0), inst.writeUpgradeSnapshot(snapshot, false),
+					RollbackUpgradeSnapshot(root, "guard", RollbackUpgradeSnapshotOptions{System: sys}),
+					rollbackUpgradeSnapshotState(root, sys, snapshot, nil),
+					Run(root, Options{System: sys, Overwrite: true, Prompter: autoApprovePrompter()}),
+					writeManagedBaselineState(root, sys, state),
+				} {
+					require.ErrorContains(t, err, baselineErr.Error())
+				}
+			}
+			if tc.baseline != "" || tc.stateDir != "" {
 				require.Error(t, baselineErr)
 				if tc.name == "corrupt" {
 					require.Contains(t, baselineErr.Error(), "decode managed baseline state")

@@ -106,6 +106,12 @@ func Run(root string, opts Options) error {
 	if err := opts.Context.Err(); err != nil {
 		return err
 	}
+	if root != "" && opts.System != nil {
+		if err := validateUpgradeStateDirs(root, opts.System); err != nil {
+			return err
+		}
+	}
+
 	if opts.Overwrite && root != "" && opts.System != nil {
 		return skillmigration.WithRecoveredContext(opts.Context, root, func() error {
 			if err := skillmigration.CheckVersionLocked(root, opts.PinVersion); err != nil {
