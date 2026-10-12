@@ -43,9 +43,9 @@ func newSyncCmd() *cobra.Command {
 				stderr = io.Discard
 			}
 			if cfg.Warnings.VersionUpdateOnSync != nil && *cfg.Warnings.VersionUpdateOnSync {
-				updatewarn.WarnIfOutdated(cmd.Context(), Version, stderr)
+				updatewarn.WarnIfOutdated(commandContext(cmd), Version, stderr)
 			}
-			result, err := sync.RunContext(cmd.Context(), root)
+			result, err := sync.RunContext(commandContext(cmd), root)
 			if err != nil {
 				return err
 			}

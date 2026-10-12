@@ -65,7 +65,7 @@ func newUpgradeCmd() *cobra.Command {
 				return err
 			}
 
-			targetPin, err := resolvePinVersionForInit(cmd.Context(), pinVersion, Version)
+			targetPin, err := resolvePinVersionForInit(commandContext(cmd), pinVersion, Version)
 			if err != nil {
 				return err
 			}
@@ -73,7 +73,7 @@ func newUpgradeCmd() *cobra.Command {
 				return err
 			}
 			if strings.TrimSpace(pinVersion) != "" && !strings.EqualFold(strings.TrimSpace(pinVersion), "latest") {
-				if err := validatePinnedReleaseVersionFunc(cmd.Context(), targetPin); err != nil {
+				if err := validatePinnedReleaseVersionFunc(commandContext(cmd), targetPin); err != nil {
 					return err
 				}
 			}
@@ -82,7 +82,7 @@ func newUpgradeCmd() *cobra.Command {
 			}
 			opts := install.Options{
 				Overwrite:    true,
-				Context:      cmd.Context(),
+				Context:      commandContext(cmd),
 				PinVersion:   targetPin,
 				DiffMaxLines: diffLines,
 				System:       install.RealSystem{},
@@ -91,10 +91,10 @@ func newUpgradeCmd() *cobra.Command {
 			if err := installRun(root, opts); err != nil {
 				return err
 			}
-			if err := runPostUpgradeSync(cmd.Context(), cmd.OutOrStdout(), cmd.ErrOrStderr(), root); err != nil {
+			if err := runPostUpgradeSync(commandContext(cmd), cmd.OutOrStdout(), cmd.ErrOrStderr(), root); err != nil {
 				return err
 			}
-			if err := cmd.Context().Err(); err != nil {
+			if err := commandContext(cmd).Err(); err != nil {
 				return err
 			}
 			if err := wizard.MigrateBackups(root); err != nil {
@@ -179,7 +179,7 @@ func newUpgradePrefetchCmd() *cobra.Command {
 		Short: messages.UpgradePrefetchShort,
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			targetVersion, err := resolvePinVersionForInit(cmd.Context(), versionFlag, Version)
+			targetVersion, err := resolvePinVersionForInit(commandContext(cmd), versionFlag, Version)
 			if err != nil {
 				return err
 			}
@@ -187,7 +187,7 @@ func newUpgradePrefetchCmd() *cobra.Command {
 			if targetVersion == "" {
 				return fmt.Errorf(messages.UpgradePrefetchVersionRequired)
 			}
-			if err := dispatchPrefetchVersion(cmd.Context(), targetVersion, cmd.ErrOrStderr()); err != nil {
+			if err := dispatchPrefetchVersion(commandContext(cmd), targetVersion, cmd.ErrOrStderr()); err != nil {
 				return err
 			}
 			_, err = fmt.Fprintf(cmd.OutOrStdout(), messages.UpgradePrefetchDoneFmt, targetVersion)
@@ -577,7 +577,7 @@ func newUpgradePlanCmd(diffLines *int) *cobra.Command {
 				return err
 			}
 
-			targetPin, err := resolvePinVersionForInit(cmd.Context(), pinVersion, Version)
+			targetPin, err := resolvePinVersionForInit(commandContext(cmd), pinVersion, Version)
 			if err != nil {
 				return err
 			}
@@ -585,7 +585,7 @@ func newUpgradePlanCmd(diffLines *int) *cobra.Command {
 				return err
 			}
 			if strings.TrimSpace(pinVersion) != "" && !strings.EqualFold(strings.TrimSpace(pinVersion), "latest") {
-				if err := validatePinnedReleaseVersionFunc(cmd.Context(), targetPin); err != nil {
+				if err := validatePinnedReleaseVersionFunc(commandContext(cmd), targetPin); err != nil {
 					return err
 				}
 			}
