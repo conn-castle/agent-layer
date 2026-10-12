@@ -20,7 +20,10 @@ run_scenario_install_smoke() {
 
   # --- Installer install ---
   local install_prefix="$E2E_TMP_ROOT/installer-prefix-install"
-  local installer=(bash "$ROOT_DIR/al-install.sh" --prefix "$install_prefix" --version "$AL_E2E_VERSION" --asset-root "$E2E_DIST_DIR")
+  local asset_root="$E2E_TMP_ROOT/installer assets λ % # ?"
+  mkdir -p "$asset_root"
+  cp "$E2E_BIN" "$E2E_DIST_DIR/checksums.txt" "$asset_root/"
+  local installer=(bash "$ROOT_DIR/al-install.sh" --prefix "$install_prefix" --version "$AL_E2E_VERSION" --asset-root "$asset_root")
   mkdir -p "$install_prefix/bin"
   ln -s "$safe_cwd" "$install_prefix/bin/al"
   assert_exit_nonzero "installer refuses a symlinked directory" "${installer[@]}" --no-completions
