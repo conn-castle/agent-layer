@@ -1,6 +1,7 @@
 package projectlock
 
 import (
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
@@ -87,11 +88,11 @@ func TestAcquireProjectSyncLockHoldsOSFileLock(t *testing.T) {
 	// release() returns it after releasing the operating-system lock.
 	held := &processLock{token: make(chan struct{}, 1)}
 	held.token <- struct{}{}
-	if err := held.acquire(realSystem{}, time.Now().Add(waitTimeout)); err != nil {
+	if err := held.acquire(context.Background(), realSystem{}, time.Now().Add(waitTimeout)); err != nil {
 		t.Fatalf("acquire process lock: %v", err)
 	}
 
-	lock, err := acquire(realSystem{}, lockPath, held, time.Now().Add(waitTimeout))
+	lock, err := acquire(context.Background(), realSystem{}, lockPath, held, time.Now().Add(waitTimeout))
 	if err != nil {
 		held.release()
 		t.Fatalf("acquireProjectSyncLock: %v", err)
@@ -135,15 +136,15 @@ func TestProcessLockDeadlineAndRecovery(t *testing.T) {
 	lock := &processLock{token: make(chan struct{}, 1)}
 	lock.token <- struct{}{}
 
-	if err := lock.acquire(sys, now.Add(time.Second)); err != nil {
+	if err := lock.acquire(context.Background(), sys, now.Add(time.Second)); err != nil {
 		t.Fatalf("acquire initial process lock: %v", err)
 	}
-	if err := lock.acquire(sys, now.Add(250*time.Millisecond)); !errors.Is(err, errDeadline) {
+	if err := lock.acquire(context.Background(), sys, now.Add(250*time.Millisecond)); !errors.Is(err, errDeadline) {
 		t.Fatalf("contended process lock error = %v, want deadline error", err)
 	}
 
 	lock.release()
-	if err := lock.acquire(sys, now.Add(time.Second)); err != nil {
+	if err := lock.acquire(context.Background(), sys, now.Add(time.Second)); err != nil {
 		t.Fatalf("process lock did not recover after timeout: %v", err)
 	}
 	lock.release()
@@ -161,7 +162,7 @@ func TestProcessLockRejectsTokenReleasedAtDeadline(t *testing.T) {
 		},
 	}
 
-	if err := lock.acquire(sys, deadline); !errors.Is(err, errDeadline) {
+	if err := lock.acquire(context.Background(), sys, deadline); !errors.Is(err, errDeadline) {
 		t.Fatalf("acquire error = %v, want deadline error", err)
 	}
 	if len(lock.token) != 1 {
@@ -185,12 +186,12 @@ func TestAcquireProjectSyncLockReportsAcquisitionCleanupFailure(t *testing.T) {
 	}
 	held := &processLock{token: make(chan struct{}, 1)}
 	held.token <- struct{}{}
-	if err := held.acquire(sys, time.Now().Add(time.Second)); err != nil {
+	if err := held.acquire(context.Background(), sys, time.Now().Add(time.Second)); err != nil {
 		t.Fatalf("acquire process lock: %v", err)
 	}
 	defer held.release()
 
-	lock, err := acquire(sys, path, held, time.Now().Add(time.Second))
+	lock, err := acquire(context.Background(), sys, path, held, time.Now().Add(time.Second))
 	if lock != nil {
 		t.Fatalf("lock = %#v, want nil", lock)
 	}
@@ -252,7 +253,7 @@ func TestWithReturnsATimeoutWhenTheProcessTokenIsHeld(t *testing.T) {
 	lockPath := Path(root)
 
 	held := processLockForPath(lockPath)
-	if err := held.acquire(realSystem{}, time.Now().Add(waitTimeout)); err != nil {
+	if err := held.acquire(context.Background(), realSystem{}, time.Now().Add(waitTimeout)); err != nil {
 		t.Fatalf("acquire process lock: %v", err)
 	}
 	defer held.release()
@@ -379,5 +380,41 @@ func TestLockReportsAnUnopenableLockPath(t *testing.T) {
 		return nil
 	}); err == nil {
 		t.Fatal("expected opening the lock file to fail")
+	}
+}
+
+func TestWithContextCancellationDoesNotRunOrLeakLock(t *testing.T) {
+	for _, boundary := range []string{"process wait", "flock wait", "flock acquired"} {
+		t.Run(boundary, func(t *testing.T) {
+			root := newLockTestRoot(t)
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			sys := &mockSystem{Fallback: realSystem{}, SleepFunc: func(time.Duration) { cancel() }}
+			process := processLockForPath(Path(root))
+			if boundary == "process wait" {
+				<-process.token
+			} else {
+				sys.FlockFunc = func(_ int, how int) error {
+					if how == unix.LOCK_UN {
+						return nil
+					}
+					if boundary == "flock acquired" {
+						cancel()
+						return nil
+					}
+					return unix.EWOULDBLOCK
+				}
+			}
+			err := WithContext(ctx, sys, root, func() error { t.Fatal("canceled callback ran"); return nil })
+			if boundary == "process wait" {
+				process.release()
+			}
+			if !errors.Is(err, context.Canceled) {
+				t.Fatalf("error = %v", err)
+			}
+			if err := With(realSystem{}, root, func() error { return nil }); err != nil {
+				t.Fatalf("lock not released: %v", err)
+			}
+		})
 	}
 }

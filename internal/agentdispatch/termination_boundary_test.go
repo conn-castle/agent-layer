@@ -146,6 +146,12 @@ func TestMCPCancellationFailureIsNotATerminalSuccess(t *testing.T) {
 }
 
 func TestCancelRetryConfirmsAlreadyStoppedGroup(t *testing.T) {
+	for _, state := range []string{dispatchStateCancelled, dispatchStateRunning} {
+		t.Run(state, func(t *testing.T) { testCancelStoppedGroup(t, state) })
+	}
+}
+
+func testCancelStoppedGroup(t *testing.T, state string) {
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	run, session := newWaitTestRun(t, root)
 	cmd := exec.Command("sleep", "60")
@@ -158,9 +164,15 @@ func TestCancelRetryConfirmsAlreadyStoppedGroup(t *testing.T) {
 	run.Record.ProcessGroupID = cmd.Process.Pid
 	run.Record.ProcessStartIdentity = processStartIdentity(cmd.Process.Pid)
 	run.Record.ProviderLaunchIntent = true
-	run.Record.State = dispatchStateCancelled
-	now := time.Now().UTC()
-	run.Record.CompletedAt = &now
+	run.Record.State = state
+	run.Record.SupervisorPID = cmd.Process.Pid
+	run.Record.SupervisorStartIdentity = run.Record.ProcessStartIdentity
+	run.Record.LauncherPID = cmd.Process.Pid
+	run.Record.LauncherStartIdentity = run.Record.ProcessStartIdentity
+	if state == dispatchStateCancelled {
+		now := time.Now().UTC()
+		run.Record.CompletedAt = &now
+	}
 	if err := writeRunRecord(run.Dir, &run.Record); err != nil {
 		t.Fatal(err)
 	}
@@ -176,11 +188,37 @@ func TestCancelRetryConfirmsAlreadyStoppedGroup(t *testing.T) {
 	if err := json.Unmarshal(out.Bytes(), &result); err != nil {
 		t.Fatal(err)
 	}
-	if !result.TerminationConfirmed {
-		t.Fatal("retry did not confirm stopped provider")
+	if !result.TerminationConfirmed || result.State != dispatchStateCancelled {
+		t.Fatal("cancellation did not confirm stopped provider")
 	}
 	released, err := loadSession(root, session.Name)
 	if err != nil || released.ActiveRunID != "" {
 		t.Fatalf("retry did not release the confirmed claim: %+v, %v", released, err)
+	}
+}
+
+func TestRefusedCancellationPreservesRunningWorkerRevision(t *testing.T) {
+	root := writeDispatchRepo(t, dispatchRepoConfig{})
+	run, session := newWaitTestRun(t, root)
+	run.Record.State = dispatchStateRunning
+	run.Record.PID = 99999999 // No provider remains, but its worker can still publish.
+	run.Record.ProcessGroupID = run.Record.PID
+	run.Record.ProcessStartIdentity = "exited-provider"
+	run.Record.SupervisorPID = os.Getpid()
+	run.Record.SupervisorStartIdentity = processStartIdentity(os.Getpid())
+	run.Record.ProviderLaunchIntent = true
+	if err := writeRunRecord(run.Dir, &run.Record); err != nil {
+		t.Fatal(err)
+	}
+	requireDispatchExitCode(t, Cancel(CancelRequest{Root: root, InvocationID: run.Record.ID}), ExitUnavailable)
+	current, err := loadRunRecord(root, run.Record.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if current.Revision != run.Record.Revision || current.State != dispatchStateRunning || current.TerminationConfirmed {
+		t.Fatalf("refusal changed active worker state: %+v", current)
+	}
+	if err := completeDispatchSuccess(dispatchExecution{Root: root, Run: run, Stdout: io.Discard, Stderr: io.Discard}, executionResult{Answer: "validated"}, session); err != nil {
+		t.Fatalf("worker publication after refusal: %v", err)
 	}
 }

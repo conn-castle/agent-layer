@@ -12,6 +12,7 @@ import (
 	"github.com/conn-castle/agent-layer/internal/envfile"
 	"github.com/conn-castle/agent-layer/internal/fsutil"
 	"github.com/conn-castle/agent-layer/internal/messages"
+	"github.com/conn-castle/agent-layer/internal/skillmigration"
 	"github.com/conn-castle/agent-layer/internal/sync"
 )
 
@@ -32,6 +33,61 @@ func applyChanges(root, configPath, envPath string, c *Choices, runSync syncer, 
 		out = os.Stdout
 	}
 
+	if err := skillmigration.WithRecovered(root, func() error {
+		return writeConfigEnv(root, configPath, envPath, c)
+	}); err != nil {
+		return err
+	}
+
+	// Skills, instruction imports, and memory file seeds.
+	// Run before sync so sync sees the final on-disk layout.
+	skillsChangeSet, err := computeSkillsChangeSet(root, c)
+	if err != nil {
+		return fmt.Errorf(messages.WizardApplySkillsFailedFmt+"; config/env writes were applied; gitignore block updates, statusline source updates, and sync were not run", err)
+	}
+	if c.previewedSkills != nil {
+		skillsChangeSet.adoptLegacy = c.previewedSkills.adoptLegacy
+	}
+	if err := applySkillsChanges(root, skillsChangeSet); err != nil {
+		return fmt.Errorf(messages.WizardApplySkillsFailedFmt+"; config/env writes were applied; gitignore block updates, statusline source updates, and sync were not run", err)
+	}
+	sourcesApplied = len(skillsChangeSet.importSelectors)+len(skillsChangeSet.removeSelectors)+len(skillsChangeSet.instructionImports) > 0
+
+	gitignoreChangeSet, err := computeGitignoreBlockChangeSet(root, c)
+	if err != nil {
+		return err
+	}
+	if err := applyGitignoreBlockChanges(root, gitignoreChangeSet); err != nil {
+		return err
+	}
+
+	statuslineSourceChangeSet, err := computeStatuslineSourceChangeSet(root, c)
+	if err != nil {
+		return err
+	}
+	if err := applyStatuslineSourceChanges(root, statuslineSourceChangeSet); err != nil {
+		return err
+	}
+
+	// Sync
+	_, _ = fmt.Fprintln(out, messages.WizardRunningSync)
+	result, err := runSync(root)
+	if err != nil {
+		return err
+	}
+	// Print any warnings from sync
+	if len(result.Warnings) > 0 {
+		_, _ = fmt.Fprintln(out)
+		warnColor := color.New(color.FgYellow)
+		for _, w := range result.Warnings {
+			_, _ = warnColor.Fprintf(out, messages.WizardWarningFmt, w.Message)
+		}
+		_, _ = fmt.Fprintln(out)
+	}
+	return nil
+}
+
+func writeConfigEnv(root, configPath, envPath string, c *Choices) error {
 	// Config
 	rawConfig, err := os.ReadFile(configPath) // #nosec G304 -- configPath is the caller-resolved .agent-layer/config.toml path used by wizard apply.
 	if err != nil {
@@ -92,51 +148,6 @@ func applyChanges(root, configPath, envPath string, c *Choices, runSync syncer, 
 		return fmt.Errorf(messages.WizardWriteEnvFailedFmt, err)
 	}
 
-	// Skills, instruction imports, and memory file seeds.
-	// Run before sync so sync sees the final on-disk layout.
-	skillsChangeSet, err := computeSkillsChangeSet(root, c)
-	if err != nil {
-		return fmt.Errorf(messages.WizardApplySkillsFailedFmt+"; config/env writes were applied; gitignore block updates, statusline source updates, and sync were not run", err)
-	}
-	if c.previewedSkills != nil {
-		skillsChangeSet.adoptLegacy = c.previewedSkills.adoptLegacy
-	}
-	if err := applySkillsChanges(root, skillsChangeSet); err != nil {
-		return fmt.Errorf(messages.WizardApplySkillsFailedFmt+"; config/env writes were applied; gitignore block updates, statusline source updates, and sync were not run", err)
-	}
-	sourcesApplied = len(skillsChangeSet.importSelectors)+len(skillsChangeSet.removeSelectors)+len(skillsChangeSet.instructionImports) > 0
-
-	gitignoreChangeSet, err := computeGitignoreBlockChangeSet(root, c)
-	if err != nil {
-		return err
-	}
-	if err := applyGitignoreBlockChanges(root, gitignoreChangeSet); err != nil {
-		return err
-	}
-
-	statuslineSourceChangeSet, err := computeStatuslineSourceChangeSet(root, c)
-	if err != nil {
-		return err
-	}
-	if err := applyStatuslineSourceChanges(root, statuslineSourceChangeSet); err != nil {
-		return err
-	}
-
-	// Sync
-	_, _ = fmt.Fprintln(out, messages.WizardRunningSync)
-	result, err := runSync(root)
-	if err != nil {
-		return err
-	}
-	// Print any warnings from sync
-	if len(result.Warnings) > 0 {
-		_, _ = fmt.Fprintln(out)
-		warnColor := color.New(color.FgYellow)
-		for _, w := range result.Warnings {
-			_, _ = warnColor.Fprintf(out, messages.WizardWarningFmt, w.Message)
-		}
-		_, _ = fmt.Fprintln(out)
-	}
 	return nil
 }
 

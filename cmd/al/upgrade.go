@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -25,7 +26,7 @@ type upgradeKeepListUI interface {
 	MultiSelect(title string, options []string, selected *[]string) error
 }
 
-var newUpgradeKeepListUI = func() upgradeKeepListUI { return wizard.NewHuhUI() }
+var newUpgradeKeepListUI = func(ctx context.Context) upgradeKeepListUI { return wizard.NewHuhUIWithContext(ctx) }
 
 func newUpgradeCmd() *cobra.Command {
 	var yes bool
@@ -64,7 +65,7 @@ func newUpgradeCmd() *cobra.Command {
 				return err
 			}
 
-			targetPin, err := resolvePinVersionForInit(cmd.Context(), pinVersion, Version)
+			targetPin, err := resolvePinVersionForInit(commandContext(cmd), pinVersion, Version)
 			if err != nil {
 				return err
 			}
@@ -72,7 +73,7 @@ func newUpgradeCmd() *cobra.Command {
 				return err
 			}
 			if strings.TrimSpace(pinVersion) != "" && !strings.EqualFold(strings.TrimSpace(pinVersion), "latest") {
-				if err := validatePinnedReleaseVersionFunc(cmd.Context(), targetPin); err != nil {
+				if err := validatePinnedReleaseVersionFunc(commandContext(cmd), targetPin); err != nil {
 					return err
 				}
 			}
@@ -81,6 +82,7 @@ func newUpgradeCmd() *cobra.Command {
 			}
 			opts := install.Options{
 				Overwrite:    true,
+				Context:      commandContext(cmd),
 				PinVersion:   targetPin,
 				DiffMaxLines: diffLines,
 				System:       install.RealSystem{},
@@ -89,7 +91,7 @@ func newUpgradeCmd() *cobra.Command {
 			if err := installRun(root, opts); err != nil {
 				return err
 			}
-			if err := runPostUpgradeSync(cmd.OutOrStdout(), cmd.ErrOrStderr(), root); err != nil {
+			if err := runPostUpgradeSync(commandContext(cmd), cmd.OutOrStdout(), cmd.ErrOrStderr(), root); err != nil {
 				return err
 			}
 			if err := wizard.MigrateBackups(root); err != nil {
@@ -174,7 +176,7 @@ func newUpgradePrefetchCmd() *cobra.Command {
 		Short: messages.UpgradePrefetchShort,
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			targetVersion, err := resolvePinVersionForInit(cmd.Context(), versionFlag, Version)
+			targetVersion, err := resolvePinVersionForInit(commandContext(cmd), versionFlag, Version)
 			if err != nil {
 				return err
 			}
@@ -182,7 +184,7 @@ func newUpgradePrefetchCmd() *cobra.Command {
 			if targetVersion == "" {
 				return fmt.Errorf(messages.UpgradePrefetchVersionRequired)
 			}
-			if err := dispatchPrefetchVersion(cmd.Context(), targetVersion, cmd.ErrOrStderr()); err != nil {
+			if err := dispatchPrefetchVersion(commandContext(cmd), targetVersion, cmd.ErrOrStderr()); err != nil {
 				return err
 			}
 			_, err = fmt.Fprintf(cmd.OutOrStdout(), messages.UpgradePrefetchDoneFmt, targetVersion)
@@ -219,9 +221,9 @@ func newUpgradeRepairGitignoreBlockCmd() *cobra.Command {
 // without requiring the user to invoke `al sync` manually. Sync warnings are
 // surfaced on stderr; sync errors are wrapped to make clear that the upgrade
 // itself succeeded.
-func runPostUpgradeSync(stdout, stderr io.Writer, root string) error {
+func runPostUpgradeSync(ctx context.Context, stdout, stderr io.Writer, root string) error {
 	_, _ = fmt.Fprintln(stdout, messages.UpgradeRunningSync)
-	result, err := syncRun(root)
+	result, err := syncRun(ctx, root)
 	if err != nil {
 		return fmt.Errorf(messages.UpgradeSyncFailedFmt, err)
 	}
@@ -286,7 +288,8 @@ func buildUpgradePrompter(cmd *cobra.Command, policy upgradeApplyPolicy) *instal
 	// a single reader prevents buffered stdin bytes from being lost when
 	// multiple prompts are issued sequentially (e.g., chained config_set_default
 	// migration operations).
-	stdinReader := bufio.NewReader(cmd.InOrStdin())
+	ctx := commandContext(cmd)
+	stdinReader := &contextPromptReader{Reader: bufio.NewReader(contextInput{ctx: ctx, in: cmd.InOrStdin()}), ctx: ctx}
 
 	statuslineSourceSkipAnnounced := false
 
@@ -308,7 +311,7 @@ func buildUpgradePrompter(cmd *cobra.Command, policy upgradeApplyPolicy) *instal
 				return nil, err
 			}
 			selected := []string{}
-			if err := newUpgradeKeepListUI().MultiSelect(messages.UpgradeKeepListSelectTitle, paths, &selected); err != nil {
+			if err := newUpgradeKeepListUI(ctx).MultiSelect(messages.UpgradeKeepListSelectTitle, paths, &selected); err != nil {
 				if errors.Is(err, wizard.ErrBack) {
 					return nil, nil
 				}
@@ -483,11 +486,15 @@ func promptUnifiedOverwriteSections(in io.Reader, out io.Writer, managedPreviews
 	return applyManaged, applyMemory, nil
 }
 
-// bufferedReader returns a *bufio.Reader for in, reusing it if in is already
-// buffered. Sharing one reader across consecutive prompts prevents bytes
-// buffered after the first newline from being silently dropped between calls.
-func bufferedReader(in io.Reader) *bufio.Reader {
-	if br, ok := in.(*bufio.Reader); ok {
+type promptLineReader interface {
+	io.Reader
+	ReadString(byte) (string, error)
+}
+
+// bufferedReader reuses a line reader, including its cancellation checks, so
+// consecutive prompts retain all buffered answers.
+func bufferedReader(in io.Reader) promptLineReader {
+	if br, ok := in.(promptLineReader); ok {
 		return br
 	}
 	return bufio.NewReader(in)
@@ -567,7 +574,7 @@ func newUpgradePlanCmd(diffLines *int) *cobra.Command {
 				return err
 			}
 
-			targetPin, err := resolvePinVersionForInit(cmd.Context(), pinVersion, Version)
+			targetPin, err := resolvePinVersionForInit(commandContext(cmd), pinVersion, Version)
 			if err != nil {
 				return err
 			}
@@ -575,7 +582,7 @@ func newUpgradePlanCmd(diffLines *int) *cobra.Command {
 				return err
 			}
 			if strings.TrimSpace(pinVersion) != "" && !strings.EqualFold(strings.TrimSpace(pinVersion), "latest") {
-				if err := validatePinnedReleaseVersionFunc(cmd.Context(), targetPin); err != nil {
+				if err := validatePinnedReleaseVersionFunc(commandContext(cmd), targetPin); err != nil {
 					return err
 				}
 			}
@@ -932,7 +939,7 @@ func writeHighlightedSummaryLine(ew *errWriter, highlight bool, format string, a
 // promptConfigChoice presents a type-aware numbered choice prompt for a config field.
 // Returns the selected value converted to the appropriate Go type (bool for FieldBool,
 // string for FieldEnum).
-func promptConfigChoice(in *bufio.Reader, out io.Writer, key string, manifestValue any, field config.FieldDef) (any, error) {
+func promptConfigChoice(in io.Reader, out io.Writer, key string, manifestValue any, field config.FieldDef) (any, error) {
 	switch field.Type {
 	case config.FieldBool:
 		return promptBoolChoice(in, out, manifestValue)
@@ -956,7 +963,7 @@ func promptConfigChoice(in *bufio.Reader, out io.Writer, key string, manifestVal
 
 // promptBoolChoice presents a true/false numbered choice and returns the selected bool.
 // Returns an error if manifestValue is not a bool (manifest/schema error).
-func promptBoolChoice(in *bufio.Reader, out io.Writer, manifestValue any) (any, error) {
+func promptBoolChoice(in io.Reader, out io.Writer, manifestValue any) (any, error) {
 	manBool, ok := manifestValue.(bool)
 	if !ok {
 		return nil, fmt.Errorf(messages.UpgradeManifestBoolValueErrFmt, manifestValue, manifestValue)
@@ -975,7 +982,7 @@ func promptBoolChoice(in *bufio.Reader, out io.Writer, manifestValue any) (any, 
 
 // promptEnumChoice presents a numbered list of enum options and returns the selected string.
 // Returns an error if the manifest value is not in the option list for strict (non-AllowCustom) enums.
-func promptEnumChoice(in *bufio.Reader, out io.Writer, manifestValue any, field config.FieldDef) (any, error) {
+func promptEnumChoice(in io.Reader, out io.Writer, manifestValue any, field config.FieldDef) (any, error) {
 	manStr := fmt.Sprintf("%v", manifestValue)
 	options := make([]string, len(field.Options))
 	defaultIdx := -1
@@ -1006,7 +1013,8 @@ func promptEnumChoice(in *bufio.Reader, out io.Writer, manifestValue any, field 
 // promptNumberedChoice displays a numbered list and reads the user's selection.
 // options are display labels; defaultIdx is the 0-based pre-selected option (accepted on Enter).
 // Returns the 0-based index of the chosen option.
-func promptNumberedChoice(in *bufio.Reader, out io.Writer, options []string, defaultIdx int) (int, error) {
+func promptNumberedChoice(in io.Reader, out io.Writer, options []string, defaultIdx int) (int, error) {
+	reader := bufferedReader(in)
 	if _, err := fmt.Fprintln(out, messages.UpgradeNumberedChoiceHeader); err != nil {
 		return 0, err
 	}
@@ -1019,7 +1027,7 @@ func promptNumberedChoice(in *bufio.Reader, out io.Writer, options []string, def
 		if _, err := fmt.Fprintf(out, messages.UpgradeNumberedChoiceEnterFmt, defaultIdx+1); err != nil {
 			return 0, err
 		}
-		line, err := in.ReadString('\n')
+		line, err := reader.ReadString('\n')
 		if err != nil && !errors.Is(err, io.EOF) {
 			return 0, err
 		}

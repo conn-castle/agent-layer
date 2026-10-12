@@ -1,6 +1,7 @@
 package wizard
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -25,6 +26,7 @@ type UI interface {
 
 // HuhUI implements UI using charmbracelet/huh.
 type HuhUI struct {
+	ctx        context.Context
 	isTerminal func() bool
 	ctrlCAbort bool // set by key filter during form.Run(); reset before each form
 }
@@ -35,6 +37,13 @@ var runFormFunc = func(form *huh.Form) error { return form.Run() }
 // The default implementation uses terminal.IsInteractive().
 func NewHuhUI() *HuhUI {
 	return &HuhUI{isTerminal: terminal.IsInteractive}
+}
+
+// NewHuhUIWithContext creates a terminal UI that stops when ctx is canceled.
+func NewHuhUIWithContext(ctx context.Context) *HuhUI {
+	ui := NewHuhUI()
+	ui.ctx = ctx
+	return ui
 }
 
 // ensureInteractive returns an error when the UI is invoked without a terminal.
@@ -157,7 +166,20 @@ func (ui *HuhUI) runForm(form *huh.Form) error {
 		tea.WithFilter(ui.formFilter()),
 	)
 
-	err := runFormFunc(form)
+	if ui.ctx != nil {
+		if err := ui.ctx.Err(); err != nil {
+			return err
+		}
+	}
+	var err error
+	if ui.ctx == nil {
+		err = runFormFunc(form)
+	} else {
+		err = form.RunWithContext(ui.ctx)
+	}
+	if ui.ctx != nil && ui.ctx.Err() != nil {
+		return ui.ctx.Err()
+	}
 	if errors.Is(err, huh.ErrUserAborted) {
 		if ui.ctrlCAbort {
 			return errWizardCancelled

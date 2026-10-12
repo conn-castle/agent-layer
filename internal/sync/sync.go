@@ -1,6 +1,7 @@
 package sync
 
 import (
+	"context"
 	"fmt"
 	"io/fs"
 	"os"
@@ -27,25 +28,35 @@ type Result struct {
 // `al skills` mutation running concurrently can never be observed half-applied.
 // Returns any sync-time warnings and an error if sync failed.
 func Run(root string) (*Result, error) {
-	return RunWithSystemFS(RealSystem{}, os.DirFS(root), root)
+	return RunContext(context.Background(), root)
+}
+
+// RunContext regenerates configured outputs unless ctx is canceled.
+func RunContext(ctx context.Context, root string) (*Result, error) {
+	return RunWithSystemFSContext(ctx, RealSystem{}, os.DirFS(root), root)
 }
 
 // RunWithSystemFS loads the combined source snapshot from fsys inside the
 // project lock and runs sync with the provided System.
 // sys provides OS operations for sync writers; fsys must be rooted at repo root.
 func RunWithSystemFS(sys System, fsys fs.FS, root string) (*Result, error) {
+	return RunWithSystemFSContext(context.Background(), sys, fsys, root)
+}
+
+// RunWithSystemFSContext checks cancellation during lock acquisition and before projection steps.
+func RunWithSystemFSContext(ctx context.Context, sys System, fsys fs.FS, root string) (*Result, error) {
 	if sys == nil {
 		return nil, fmt.Errorf(messages.SyncSystemRequired)
 	}
 	if fsys == nil {
 		return nil, fmt.Errorf(messages.SyncConfigFSRequired)
 	}
-	return withProjectSyncLock(sys, root, func() (*Result, error) {
-		project, err := loadLockedProjectSources(sys, fsys, root)
+	return withProjectSyncLockContext(ctx, sys, root, func() (*Result, error) {
+		project, err := LoadSourcesLocked(sys, fsys, root, nil)
 		if err != nil {
 			return nil, err
 		}
-		return runWithProjectLocked(sys, root, project)
+		return runWithProjectLockedContext(ctx, sys, root, project)
 	})
 }
 
@@ -63,6 +74,10 @@ func RunLockedProject(sys System, root string, project *config.ProjectConfig) (*
 }
 
 func runWithProjectLocked(sys System, root string, project *config.ProjectConfig) (*Result, error) {
+	return runWithProjectLockedContext(context.Background(), sys, root, project)
+}
+
+func runWithProjectLockedContext(ctx context.Context, sys System, root string, project *config.ProjectConfig) (*Result, error) {
 	if err := preflightMuseApprovals(project); err != nil {
 		return nil, err
 	}
@@ -188,7 +203,7 @@ func runWithProjectLocked(sys System, root string, project *config.ProjectConfig
 		steps = append(steps, func() error { return cleanCodexChimeHook(sys, root) })
 	}
 
-	if err := runSteps(steps); err != nil {
+	if err := runStepsContext(ctx, steps); err != nil {
 		return nil, err
 	}
 
@@ -253,8 +268,11 @@ func collectWarnings(project *config.ProjectConfig, extra []warnings.Warning) ([
 	return collected, nil
 }
 
-func runSteps(steps []func() error) error {
+func runStepsContext(ctx context.Context, steps []func() error) error {
 	for _, step := range steps {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		if err := step(); err != nil {
 			return err
 		}

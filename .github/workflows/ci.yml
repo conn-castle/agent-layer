@@ -80,6 +80,15 @@ jobs:
         run: go test -race ./cmd/al -run '^TestUpdateCommand' -count=1
       - name: Test dispatch shutdown with slow persistence
         run: go test -race ./internal/agentdispatch -run '^TestRunnerBoundsHandoffAndCleansDescendants$/slow_persistence' -count=1
+      - name: Test native upgrade prompt cancellation on a real tty
+        env:
+          AL_TEST_UPGRADE_PROMPT_TTY: "1"
+        run: |
+          python3 - <<'PY'
+          import os, pty
+          status = pty.spawn(["go", "test", "-race", "./cmd/al", "-run", "^TestUpgradePromptCancellation", "-count=1"])
+          raise SystemExit(os.waitstatus_to_exitcode(status))
+          PY
       - name: Cache pinned native Muse
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:

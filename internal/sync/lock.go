@@ -1,6 +1,8 @@
 package sync
 
 import (
+	"context"
+
 	"github.com/conn-castle/agent-layer/internal/projectlock"
 	"github.com/conn-castle/agent-layer/internal/skilljournal"
 )
@@ -25,8 +27,12 @@ func RecoverInterruptedImport(root string) error {
 // Recovery of an interrupted import runs first: ordinary projection must never
 // build its snapshot from a half-applied import transaction.
 func withProjectSyncLock(sys System, root string, fn func() (*Result, error)) (*Result, error) {
+	return withProjectSyncLockContext(context.Background(), sys, root, fn)
+}
+
+func withProjectSyncLockContext(ctx context.Context, sys System, root string, fn func() (*Result, error)) (*Result, error) {
 	var result *Result
-	err := projectlock.With(sys, root, func() error {
+	err := projectlock.WithContext(ctx, sys, root, func() error {
 		if recoverErr := RecoverInterruptedImport(root); recoverErr != nil {
 			return recoverErr
 		}

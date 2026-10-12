@@ -26,6 +26,9 @@ func RollbackUpgradeSnapshot(root string, snapshotID string, opts RollbackUpgrad
 	if strings.TrimSpace(root) == "" || opts.System == nil || strings.TrimSpace(snapshotID) == "" || filepath.Base(snapshotID) != snapshotID {
 		return rollbackUpgradeSnapshot(root, snapshotID, opts)
 	}
+	if err := validateUpgradeStateDirs(root, opts.System); err != nil {
+		return err
+	}
 	return skillmigration.WithRecovered(root, func() error { return rollbackUpgradeSnapshot(root, snapshotID, opts) })
 }
 
@@ -44,6 +47,10 @@ func rollbackUpgradeSnapshot(root string, snapshotID string, opts RollbackUpgrad
 	sys := opts.System
 	if sys == nil {
 		return fmt.Errorf(messages.InstallSystemRequired)
+	}
+
+	if err := validateUpgradeStateDirs(root, sys); err != nil {
+		return err
 	}
 
 	snapshotDir := filepath.Join(root, filepath.FromSlash(upgradeSnapshotDirRelPath))
@@ -216,6 +223,9 @@ func snapshotEntryAbsPath(root string, relPath string) (string, error) {
 }
 
 func rollbackUpgradeSnapshotState(root string, sys System, snapshot upgradeSnapshot, targets []string) error {
+	if err := validateUpgradeStateDirs(root, sys); err != nil {
+		return err
+	}
 	if err := validateUpgradeSnapshot(snapshot); err != nil {
 		return err
 	}

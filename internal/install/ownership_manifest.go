@@ -218,6 +218,9 @@ func readManagedBaselineState(root string, sys System) (managedBaselineState, er
 	if sys == nil {
 		return managedBaselineState{}, fmt.Errorf(messages.InstallSystemRequired)
 	}
+	if err := validateUpgradeStateDirs(root, sys); err != nil {
+		return managedBaselineState{}, err
+	}
 	path := filepath.Join(root, filepath.FromSlash(baselineStateRelPath))
 	data, err := sys.ReadFile(path)
 	if err != nil {
@@ -270,6 +273,9 @@ func writeManagedBaselineState(root string, sys System, state managedBaselineSta
 		return fmt.Errorf(messages.InstallSystemRequired)
 	}
 	if err := validateManagedBaselineState(state); err != nil {
+		return err
+	}
+	if err := validateUpgradeStateDirs(root, sys); err != nil {
 		return err
 	}
 	path := filepath.Join(root, filepath.FromSlash(baselineStateRelPath))

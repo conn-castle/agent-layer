@@ -27,7 +27,17 @@ import (
 // Callers must already hold the project lock; use WithLockedProject unless the
 // lock is held for a larger operation.
 func LoadSources(fsys fs.FS, root string) (*config.ProjectConfig, error) {
-	project, err := config.LoadProjectConfigFS(fsys, root)
+	return loadSources(fsys, root, nil)
+}
+
+func loadSources(fsys fs.FS, root string, proposed *config.Config) (*config.ProjectConfig, error) {
+	var project *config.ProjectConfig
+	var err error
+	if proposed == nil {
+		project, err = config.LoadProjectConfigFS(fsys, root)
+	} else {
+		project, err = config.LoadProjectConfigWithConfigFS(fsys, root, proposed)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -39,13 +49,19 @@ func LoadSources(fsys fs.FS, root string) (*config.ProjectConfig, error) {
 	return project, nil
 }
 
-// loadLockedProjectSources prunes empty user-managed skill directories and then
-// loads the combined source snapshot. Callers must already hold the project lock.
-func loadLockedProjectSources(sys System, fsys fs.FS, root string) (*config.ProjectConfig, error) {
+// LoadSourcesLocked prunes empty user-managed skill directories and loads the
+// combined source snapshot using proposed, or the on-disk config when it is nil.
+// Callers must already hold the project lock and recover interrupted imports.
+// A proposed config is validated by its caller before source loading, so pending
+// config writes use the same pruning and ownership checks as ordinary sync.
+func LoadSourcesLocked(sys System, fsys fs.FS, root string, proposed *config.Config) (*config.ProjectConfig, error) {
+	if sys == nil {
+		return nil, fmt.Errorf(messages.SyncSystemRequired)
+	}
 	if err := removeEmptyDeployedSkillDirs(sys, root); err != nil {
 		return nil, err
 	}
-	return LoadSources(fsys, root)
+	return loadSources(fsys, root, proposed)
 }
 
 // removeEmptyDeployedSkillDirs removes empty immediate children from the
@@ -102,7 +118,7 @@ func WithLockedProject(sys System, root string, fn func(*config.ProjectConfig) e
 		return fmt.Errorf(messages.SyncSystemRequired)
 	}
 	_, err := withProjectSyncLock(sys, root, func() (*Result, error) {
-		project, loadErr := loadLockedProjectSources(sys, os.DirFS(root), root)
+		project, loadErr := LoadSourcesLocked(sys, os.DirFS(root), root, nil)
 		if loadErr != nil {
 			return nil, loadErr
 		}
@@ -120,7 +136,7 @@ func ProjectLocked(sys System, root string) (*Result, error) {
 	if sys == nil {
 		return nil, fmt.Errorf(messages.SyncSystemRequired)
 	}
-	project, err := loadLockedProjectSources(sys, os.DirFS(root), root)
+	project, err := LoadSourcesLocked(sys, os.DirFS(root), root, nil)
 	if err != nil {
 		return nil, err
 	}

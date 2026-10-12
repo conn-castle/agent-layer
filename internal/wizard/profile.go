@@ -14,6 +14,8 @@ import (
 	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/install"
 	"github.com/conn-castle/agent-layer/internal/messages"
+	"github.com/conn-castle/agent-layer/internal/skillmigration"
+	"github.com/conn-castle/agent-layer/internal/sync"
 )
 
 // RunProfile applies a non-interactive wizard profile from a TOML config file.
@@ -52,6 +54,40 @@ func RunProfile(root string, runSync syncer, pinVersion string, profilePath stri
 		return err
 	}
 
+	write := func() error {
+		return writeProfileConfig(root, configPath, profilePath, profileBytes, installed, apply, out)
+	}
+	if apply {
+		err = skillmigration.WithRecovered(root, write)
+	} else {
+		err = write()
+	}
+	if err != nil || !apply {
+		return err
+	}
+
+	_, _ = fmt.Fprintln(out, messages.WizardRunningSync)
+	result, err := runSync(root)
+	if err != nil {
+		return err
+	}
+	if len(result.Warnings) > 0 {
+		_, _ = fmt.Fprintln(out)
+		warnColor := color.New(color.FgYellow)
+		for _, warningItem := range result.Warnings {
+			_, _ = warnColor.Fprintf(out, messages.WizardWarningFmt, warningItem.Message)
+		}
+		_, _ = fmt.Fprintln(out)
+	}
+
+	_, _ = fmt.Fprintln(out, messages.WizardCompleted)
+	return nil
+}
+
+// writeProfileConfig reads the current config and preserves full profile replacement.
+// Apply callers hold the project lock; previews remain read-only and do not wait for it.
+func writeProfileConfig(root, configPath, profilePath string, profileBytes []byte, installed, apply bool, out io.Writer) error {
+	var err error
 	var currentConfig []byte
 	if installed {
 		currentConfig, err = os.ReadFile(configPath) // #nosec G304 -- configPath is the caller-resolved .agent-layer/config.toml path used as the profile merge target.
@@ -87,6 +123,15 @@ func RunProfile(root string, runSync syncer, pinVersion string, profilePath stri
 		}
 	}
 
+	proposed, err := config.ParseConfig(profileBytes, profilePath)
+	if err != nil {
+		return fmt.Errorf(messages.WizardProfileInvalidFmt, err)
+	}
+	_, err = sync.LoadSourcesLocked(sync.RealSystem{}, os.DirFS(root), root, proposed)
+	if err != nil {
+		return fmt.Errorf("wizard profile is inconsistent with project sources; config was not written: %w", err)
+	}
+
 	configPerm, err := filePermOr(configPath, 0o644)
 	if err != nil {
 		return err
@@ -99,21 +144,6 @@ func RunProfile(root string, runSync syncer, pinVersion string, profilePath stri
 		return fmt.Errorf(messages.WizardWriteConfigFailedFmt, err)
 	}
 
-	_, _ = fmt.Fprintln(out, messages.WizardRunningSync)
-	result, err := runSync(root)
-	if err != nil {
-		return err
-	}
-	if len(result.Warnings) > 0 {
-		_, _ = fmt.Fprintln(out)
-		warnColor := color.New(color.FgYellow)
-		for _, warningItem := range result.Warnings {
-			_, _ = warnColor.Fprintf(out, messages.WizardWarningFmt, warningItem.Message)
-		}
-		_, _ = fmt.Fprintln(out)
-	}
-
-	_, _ = fmt.Fprintln(out, messages.WizardCompleted)
 	return nil
 }
 
