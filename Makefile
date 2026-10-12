@@ -304,8 +304,8 @@ release-preflight: ## Run CI, build unsigned release artifacts, and scan them (s
 	  $(MAKE) release-vuln-check DIST_DIR="$$artifact_dir"
 
 .PHONY: release-catalog-certify
-release-catalog-certify: ## Certify clean, pushed main for release tagging in hosted CI
-	@./scripts/certify-release-catalog.sh
+release-catalog-certify: ## Certify exact-commit CI, catalog, and signed rehearsal before tagging (set AL_VERSION=vX.Y.Z)
+	@AL_VERSION="$(AL_VERSION)" ./scripts/certify-release-catalog.sh
 
 .PHONY: release-dist
 release-dist: test-release ## Build release artifacts (cross-compile)

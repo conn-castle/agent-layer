@@ -16,7 +16,7 @@ func TestCatalogDiagnosticsAreScopedUntilTierRootIsUnsafe(t *testing.T) {
 	proj := newProject(t)
 	require.NoError(t, os.MkdirAll(proj.paths.ImportedSkillsDir, 0o750))
 	for _, name := range []string{"other", "Other"} {
-		require.NoError(t, os.Mkdir(filepath.Join(proj.paths.ImportedSkillsDir, name), 0o750))
+		require.NoError(t, os.MkdirAll(filepath.Join(proj.paths.ImportedSkillsDir, name), 0o750))
 	}
 	require.NoError(t, os.WriteFile(filepath.Join(proj.paths.ImportedSkillsDir, "Implement"), []byte("preserve"), 0o600))
 	members, err := CatalogState(proj.root, developmentEntry(t))
