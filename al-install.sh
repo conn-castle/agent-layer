@@ -96,10 +96,6 @@ if [[ "$NO_COMPLETIONS" != "true" && -n "$SHELL_OVERRIDE" ]]; then
   esac
 fi
 
-if ! command -v curl >/dev/null 2>&1; then
-  fail "curl is required to install Agent Layer."
-fi
-
 checksum_tool=""
 if command -v sha256sum >/dev/null 2>&1; then
   checksum_tool="sha256sum"
@@ -164,6 +160,10 @@ else
     URL="${BASE_URL}/download/${TAG}/${ASSET}"
     SUMS_URL="${BASE_URL}/download/${TAG}/checksums.txt"
   fi
+fi
+
+if [[ "$LOCAL_ASSETS" != "true" ]] && ! command -v curl >/dev/null 2>&1; then
+  fail "curl is required to install Agent Layer."
 fi
 
 bin_dir="${PREFIX}/bin"
