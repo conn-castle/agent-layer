@@ -8,6 +8,7 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 
@@ -263,11 +264,7 @@ func (inst *installer) movedFileUpdates(plan migrationPlan, effects migrationPat
 			renameOnlyCovered[path] = struct{}{}
 		}
 	}
-	paths := make([]string, 0, len(origins))
-	for path := range origins {
-		paths = append(paths, path)
-	}
-	sort.Strings(paths)
+	paths := slices.Sorted(maps.Keys(origins))
 	removePath := func(changes []upgradeChangeWithTemplate, path string) []upgradeChangeWithTemplate {
 		out := changes[:0]
 		for _, change := range changes {
@@ -339,7 +336,7 @@ func cutMigrationPath(path, root string) (string, bool) {
 // chains. These extra origins do not change the shared unknown-deletion tree.
 func (inst *installer) templateOrigins(effects migrationPathEffects, templatePaths map[string]string) (map[string]string, error) {
 	origins := maps.Clone(effects.origins)
-	for _, path := range sortedMapKeys(templatePaths) {
+	for _, path := range slices.Sorted(maps.Keys(templatePaths)) {
 		if origins[path] != "" {
 			continue
 		}

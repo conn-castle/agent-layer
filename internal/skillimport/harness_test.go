@@ -1,10 +1,11 @@
 package skillimport
 
 import (
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strings"
 	"testing"
 
@@ -232,13 +233,8 @@ func (p *project) AppendConfig(content string) {
 // repository placeholder resolves its value from.
 func (p *project) WriteEnv(values map[string]string) {
 	p.t.Helper()
-	keys := make([]string, 0, len(values))
-	for key := range values {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
 	var builder strings.Builder
-	for _, key := range keys {
+	for _, key := range slices.Sorted(maps.Keys(values)) {
 		builder.WriteString(key + "=" + values[key] + "\n")
 	}
 	writeProjectFile(p.t, p.paths.EnvPath, builder.String())

@@ -9,10 +9,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	pathpkg "path"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 )
@@ -557,11 +559,7 @@ func findSecrets(scan treeScan) (findings []secretFinding, unreadable, disclosur
 	for _, profile := range scan.browserProfiles {
 		findings = append(findings, secretFinding{path: profile, reason: "browser profile contains Cookies with Login Data and/or Local State"})
 	}
-	paths := make([]string, 0, len(scan.secretCandidates))
-	for rel := range scan.secretCandidates {
-		paths = append(paths, rel)
-	}
-	sort.Strings(paths)
+	paths := slices.Sorted(maps.Keys(scan.secretCandidates))
 	for _, rel := range paths {
 		finding, problem, disclosure := probeSecret(rel, scan.secretCandidates[rel])
 		if finding != nil {
@@ -761,11 +759,7 @@ func classifyDir(item entry, ctx classifyContext) placement {
 		sizeEvidence = append(sizeEvidence, fmt.Sprintf("directory apparent size is %s (limit %s)", formatBytes(scan.apparentBytes), formatBytes(maxUnreviewedBytes)))
 	}
 	var childEvidence []string
-	children := make([]string, 0, len(scan.immediate))
-	for name := range scan.immediate {
-		children = append(children, name)
-	}
-	sort.Strings(children)
+	children := slices.Sorted(maps.Keys(scan.immediate))
 	for _, name := range children {
 		measure := scan.immediate[name]
 		var facts []string

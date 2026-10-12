@@ -6,8 +6,10 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -604,9 +606,6 @@ func (inst *installer) isUnderAgentLayerTmp(path string) bool {
 }
 
 func uniqueNormalizedPaths(paths []string) []string {
-	if len(paths) == 0 {
-		return nil
-	}
 	dedup := make(map[string]struct{}, len(paths))
 	for _, path := range paths {
 		clean := filepath.Clean(path)
@@ -615,12 +614,7 @@ func uniqueNormalizedPaths(paths []string) []string {
 		}
 		dedup[clean] = struct{}{}
 	}
-	out := make([]string, 0, len(dedup))
-	for path := range dedup {
-		out = append(out, path)
-	}
-	sort.Strings(out)
-	return out
+	return slices.Sorted(maps.Keys(dedup))
 }
 
 func (inst *installer) repoRelativePath(path string) (string, error) {

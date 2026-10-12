@@ -5,8 +5,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -320,11 +322,7 @@ func selectReadinessTasks(catalog []benchmarkPlanTask, requested []string, shard
 			}
 		}
 		if len(wanted) > 0 {
-			unknown := make([]string, 0, len(wanted))
-			for task := range wanted {
-				unknown = append(unknown, task)
-			}
-			sort.Strings(unknown)
+			unknown := slices.Sorted(maps.Keys(wanted))
 			return nil, fmt.Errorf("benchmark readiness tasks are not in the pinned catalog: %s", strings.Join(unknown, ", "))
 		}
 	}

@@ -3,8 +3,10 @@ package benchmark
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
 	"net/url"
 	"reflect"
+	"slices"
 	"sort"
 	"strings"
 	"unicode"
@@ -251,11 +253,7 @@ func placeholderNames(value reflect.Value) []string {
 }
 
 func mapValues(values map[string]string) []string {
-	keys := make([]string, 0, len(values))
-	for key := range values {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
+	keys := slices.Sorted(maps.Keys(values))
 	result := make([]string, 0, len(keys))
 	for _, key := range keys {
 		result = append(result, values[key])

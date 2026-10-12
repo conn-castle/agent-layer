@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"maps"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -646,11 +646,7 @@ func tomlInlineTable(values map[string]string) string {
 	if len(values) == 0 {
 		return "{}"
 	}
-	keys := make([]string, 0, len(values))
-	for key := range values {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
+	keys := slices.Sorted(maps.Keys(values))
 	parts := make([]string, 0, len(keys))
 	for _, key := range keys {
 		parts = append(parts, fmt.Sprintf("%q = %q", key, values[key]))

@@ -4,9 +4,10 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strings"
 
 	"github.com/conn-castle/agent-layer/internal/messages"
@@ -217,11 +218,7 @@ func (inst templateManager) catalogSkillTemplateDirs() ([]templateDir, error) {
 		return nil, err
 	}
 
-	sortedIDs := make([]string, 0, len(ids))
-	for id := range ids {
-		sortedIDs = append(sortedIDs, id)
-	}
-	sort.Strings(sortedIDs)
+	sortedIDs := slices.Sorted(maps.Keys(ids))
 	out := make([]templateDir, 0, len(sortedIDs))
 	for _, id := range sortedIDs {
 		destRoot := filepath.Join(inst.root, ".agent-layer", "skills", id)
@@ -282,7 +279,7 @@ func (inst templateManager) listManagedDiffs() ([]string, error) {
 			return nil, err
 		}
 	}
-	paths := sortedKeys(diffs)
+	paths := slices.Sorted(maps.Keys(diffs))
 	templatePathByRel, err := inst.managedTemplatePathByRel()
 	if err != nil {
 		return nil, err
@@ -305,7 +302,7 @@ func (inst templateManager) listMemoryDiffs() ([]string, error) {
 			return nil, err
 		}
 	}
-	paths := sortedKeys(diffs)
+	paths := slices.Sorted(maps.Keys(diffs))
 	templatePathByRel, err := inst.memoryTemplatePathByRel()
 	if err != nil {
 		return nil, err
@@ -389,19 +386,6 @@ func (inst templateManager) appendTemplateDirDiffs(diffs map[string]struct{}, di
 		}
 	}
 	return nil
-}
-
-// sortedKeys returns sorted keys for a set.
-func sortedKeys(entries map[string]struct{}) []string {
-	if len(entries) == 0 {
-		return nil
-	}
-	keys := make([]string, 0, len(entries))
-	for key := range entries {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-	return keys
 }
 
 func (inst templateManager) managedTemplatePathByRel() (map[string]string, error) {

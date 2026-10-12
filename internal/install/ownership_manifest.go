@@ -5,9 +5,11 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"maps"
 	"os"
 	"path"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -338,11 +340,7 @@ func EncodeReleaseTemplateManifest(versionRaw string, generatedAt time.Time, fil
 	if err != nil {
 		return nil, fmt.Errorf("normalize version %q: %w", versionRaw, err)
 	}
-	relPaths := make([]string, 0, len(files))
-	for relPath := range files {
-		relPaths = append(relPaths, relPath)
-	}
-	sort.Strings(relPaths)
+	relPaths := slices.Sorted(maps.Keys(files))
 	entries := make([]manifestFileEntry, 0, len(relPaths))
 	for _, relPath := range relPaths {
 		entry, err := templateManifestEntry(relPath, files[relPath], catalogSkillPrefixes)

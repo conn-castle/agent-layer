@@ -8,8 +8,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"maps"
 	"os"
-	"sort"
+	"slices"
 
 	"github.com/conn-castle/agent-layer/internal/messages"
 )
@@ -84,10 +85,6 @@ func unfinishedPackages(r io.Reader) ([]string, error) {
 		return nil, fmt.Errorf("line %d: %w", line, err)
 	}
 
-	unfinished := make([]string, 0, len(started))
-	for pkg := range started {
-		unfinished = append(unfinished, pkg)
-	}
-	sort.Strings(unfinished)
+	unfinished := slices.Sorted(maps.Keys(started))
 	return unfinished, nil
 }

@@ -3,8 +3,10 @@ package install
 import (
 	"errors"
 	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -77,7 +79,7 @@ func TestAppendTemplateFileDiffs_NormalizesRelativePath(t *testing.T) {
 	if err := inst.templates().appendTemplateFileDiffs(diffs, []templateFile{{path: path, template: "commands.allow"}}); err != nil {
 		t.Fatal(err)
 	}
-	paths := sortedKeys(diffs)
+	paths := slices.Sorted(maps.Keys(diffs))
 	if len(paths) != 1 || paths[0] != commandsAllowRelPath {
 		t.Fatalf("expected slash-normalized commands.allow path, got %v", paths)
 	}

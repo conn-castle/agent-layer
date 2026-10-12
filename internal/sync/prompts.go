@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 
 	"github.com/conn-castle/agent-layer/internal/config"
@@ -223,11 +225,7 @@ func materializeSkillTree(sys System, dir string, tree skilltree.Tree) error {
 			dirs[parent] = struct{}{}
 		}
 	}
-	sortedDirs := make([]string, 0, len(dirs))
-	for path := range dirs {
-		sortedDirs = append(sortedDirs, path)
-	}
-	sort.Strings(sortedDirs)
+	sortedDirs := slices.Sorted(maps.Keys(dirs))
 	for _, path := range sortedDirs {
 		if err := createSkillDirectory(sys, path); err != nil {
 			return err
