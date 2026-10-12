@@ -35,8 +35,9 @@ Do not duplicate information that belongs elsewhere:
 
 ## Temporary agent routing
 
-- User instruction on 2026-10-11: use Muse instead of Antigravity until Antigravity's usage quota resets, including subsequent work.
+- User instruction on 2026-10-11: use Muse instead of both Grok and Antigravity while their usage is unavailable, including subsequent work.
 - Antigravity reported an individual quota reset in about 52 hours at 2026-10-12 00:11 UTC. Resume Antigravity after its quota is available again; do not treat CLI availability as quota evidence.
+- Grok authenticated successfully but generation returned HTTP 402 (usage balance exhausted). Muse substitution does not count as successful live coverage of either unavailable provider.
 
 ## Skill sources
 
