@@ -47,8 +47,6 @@ func newImportCmd(instructions bool) *cobra.Command {
 			switch sub.Name() {
 			case "remove":
 				sub.Long = "Remove one exact instruction import and its order block. Local modifications block removal; inspect diff and explicitly reset first when needed. Local-only instructions remain untouched."
-			case "reset":
-				sub.Long = "Discard local modifications to one imported instruction and restore its locked upstream bytes. Fetch upstream changes separately with pull."
 			case "status":
 				sub.Long = "Inspect instruction imports and conflicts offline, without fetching or changing files. --all includes clean imports."
 			case "add":
@@ -323,7 +321,8 @@ func importService(cmd *cobra.Command, root string) *skillimport.Service {
 	return skillimport.New(root)
 }
 func instructionText(s string) string {
-	return strings.NewReplacer("skills", "instructions", "Skills", "Instructions", "skill", "instruction", "Skill", "Instruction").Replace(s)
+	// Keep the shared conflict workspace path literal when changing asset labels.
+	return strings.NewReplacer("skill-conflicts", "skill-conflicts", "skills", "instructions", "Skills", "Instructions", "skill", "instruction", "Skill", "Instruction").Replace(s)
 }
 func importOutput(cmd *cobra.Command, s string) string {
 	if isInstructionsCommand(cmd) {
