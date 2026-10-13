@@ -10,6 +10,8 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+
+	"github.com/conn-castle/agent-layer/internal/skilllock"
 )
 
 // Outcome names what happened to one skill in an operation. The set is closed
@@ -53,6 +55,18 @@ type SkillResult struct {
 	// or the destination a change was pushed to.
 	Detail string
 	Err    error
+}
+
+// entryResult is the outcome of the skill a lock entry records.
+func entryResult(entry skilllock.Entry, outcome Outcome) SkillResult {
+	return SkillResult{Name: entry.Name, Repository: entry.Repository, SelectedPath: entry.SelectedPath, Outcome: outcome}
+}
+
+// failedEntryResult is the failed outcome of the skill a lock entry records.
+func failedEntryResult(entry skilllock.Entry, err error) SkillResult {
+	result := entryResult(entry, OutcomeFailed)
+	result.Err = err
+	return result
 }
 
 // SourceResult is one import block's source-level outcome. A fetch,

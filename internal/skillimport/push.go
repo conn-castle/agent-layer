@@ -93,7 +93,7 @@ func (s *Service) pushLocked(ctx context.Context, st *state, report *Report) err
 
 	for index, block := range writable {
 		repository := config.NormalizeSkillRepository(block.Repository)
-		entries := selectedPushEntries(report, block, st.entriesForBlock(block))
+		entries := selectedPushEntries(report, block, st.entriesForBlock(st.lock.Skills, block))
 		if len(entries) == 0 {
 			continue
 		}
@@ -166,13 +166,7 @@ func (s *Service) pushLocked(ctx context.Context, st *state, report *Report) err
 		for _, entry := range entries {
 			candidate, candidateErr := buildPushCandidate(ctx, st, source, block, entry, sourceCommit)
 			if candidateErr != nil {
-				report.Add(SkillResult{
-					Name:         entry.Name,
-					Repository:   entry.Repository,
-					SelectedPath: entry.SelectedPath,
-					Outcome:      OutcomeFailed,
-					Err:          candidateErr,
-				})
+				report.Add(failedEntryResult(entry, candidateErr))
 				continue
 			}
 			group.Candidates = append(group.Candidates, candidate)
@@ -207,13 +201,9 @@ func selectedPushEntries(report *Report, block config.SkillImport, entries []ski
 			selected = append(selected, entry)
 			continue
 		}
-		report.Add(SkillResult{
-			Name:         entry.Name,
-			Repository:   entry.Repository,
-			SelectedPath: entry.SelectedPath,
-			Outcome:      OutcomeSkipped,
-			Detail:       "no longer selected by its import block; run 'al " + importKind(block.ExactFile) + " pull' to apply retirement rules",
-		})
+		result := entryResult(entry, OutcomeSkipped)
+		result.Detail = "no longer selected by its import block; run 'al " + importKind(block.ExactFile) + " pull' to apply retirement rules"
+		report.Add(result)
 	}
 	return selected
 }
@@ -321,13 +311,7 @@ func pushBranchForDefault(block config.SkillImport, destination gitrepo.Reposito
 // source and skill.
 func reportBlockedSkills(report *Report, entries []skilllock.Entry, err error) {
 	for _, entry := range entries {
-		report.Add(SkillResult{
-			Name:         entry.Name,
-			Repository:   entry.Repository,
-			SelectedPath: entry.SelectedPath,
-			Outcome:      OutcomeFailed,
-			Err:          err,
-		})
+		report.Add(failedEntryResult(entry, err))
 	}
 }
 
@@ -368,7 +352,7 @@ func (s *Service) publishGroup(ctx context.Context, runner *gitrepo.Runner, work
 	// applies updates in order, so an unchecked overlap would silently let one
 	// skill overwrite another.
 	if err := rejectOverlappingDestinationPaths(group); err != nil {
-		s.failGroup(group, report, err)
+		failCandidates(report, group.Candidates, err)
 		return
 	}
 	groupDir, err := os.MkdirTemp(workRoot, "destination-")
@@ -378,36 +362,36 @@ func (s *Service) publishGroup(ctx context.Context, runner *gitrepo.Runner, work
 	}
 	destination, err := gitrepo.OpenDestination(ctx, runner, groupDir, group.Repository)
 	if err != nil {
-		s.failGroup(group, report, err)
+		failCandidates(report, group.Candidates, err)
 		return
 	}
 
 	head, branchExisted, err := destination.Head(ctx, group.Branch)
 	if err != nil {
-		s.failGroup(group, report, err)
+		failCandidates(report, group.Candidates, err)
 		return
 	}
 	if !branchExisted {
 		if !group.BranchConfigured {
-			s.failGroup(group, report, fmt.Errorf("destination %s has no branch %s", group.Repository, group.Branch))
+			failCandidates(report, group.Candidates, fmt.Errorf("destination %s has no branch %s", group.Repository, group.Branch))
 			return
 		}
 		defaultHead, defaultExists, headErr := destination.Head(ctx, group.DefaultBranch)
 		if headErr != nil {
-			s.failGroup(group, report, headErr)
+			failCandidates(report, group.Candidates, headErr)
 			return
 		}
 		if !defaultExists {
-			s.failGroup(group, report, fmt.Errorf("cannot create destination branch %s because default branch %s does not exist in %s", group.Branch, group.DefaultBranch, group.Repository))
+			failCandidates(report, group.Candidates, fmt.Errorf("cannot create destination branch %s because default branch %s does not exist in %s", group.Branch, group.DefaultBranch, group.Repository))
 			return
 		}
 		if fetchErr := destination.FetchCommit(ctx, group.Repository, defaultHead); fetchErr != nil {
-			s.failGroup(group, report, fetchErr)
+			failCandidates(report, group.Candidates, fetchErr)
 			return
 		}
 		head = defaultHead
 	} else if fetchErr := destination.FetchCommit(ctx, group.Repository, head); fetchErr != nil {
-		s.failGroup(group, report, fetchErr)
+		failCandidates(report, group.Candidates, fetchErr)
 		return
 	}
 
@@ -537,16 +521,8 @@ func (s *Service) publishGroup(ctx context.Context, runner *gitrepo.Runner, work
 	commit, err := destination.Publish(ctx, head, group.Branch, updates, groupCommitMessage(pushed))
 	if err != nil {
 		// A grouped commit or push failure affects every skill in the group.
-		failed := append(append([]pushCandidate{}, pushed...), unchangedCandidates...)
-		for _, candidate := range failed {
-			report.Add(SkillResult{
-				Name:         candidate.Entry.Name,
-				Repository:   candidate.Entry.Repository,
-				SelectedPath: candidate.Entry.SelectedPath,
-				Outcome:      OutcomeFailed,
-				Err:          err,
-			})
-		}
+		failCandidates(report, pushed, err)
+		failCandidates(report, unchangedCandidates, err)
 		return
 	}
 
@@ -556,13 +532,8 @@ func (s *Service) publishGroup(ctx context.Context, runner *gitrepo.Runner, work
 	flushUnchanged()
 
 	for _, candidate := range pushed {
-		result := SkillResult{
-			Name:         candidate.Entry.Name,
-			Repository:   candidate.Entry.Repository,
-			SelectedPath: candidate.Entry.SelectedPath,
-			Outcome:      OutcomePushed,
-			Detail:       fmt.Sprintf("%s %s @ %s", group.Repository, group.Branch, shortCommit(commit)),
-		}
+		result := entryResult(candidate.Entry, OutcomePushed)
+		result.Detail = fmt.Sprintf("%s %s @ %s", group.Repository, group.Branch, shortCommit(commit))
 		if advancesLock(group, candidate) {
 			entry := candidate.Entry
 			entry.Commit = commit
@@ -751,16 +722,10 @@ func advancesLock(group *pushGroup, candidate pushCandidate) bool {
 	return group.Branch == candidate.Entry.ResolvedRef
 }
 
-// failGroup records a destination-level failure against every candidate.
-func (s *Service) failGroup(group *pushGroup, report *Report, err error) {
-	for _, candidate := range group.Candidates {
-		report.Add(SkillResult{
-			Name:         candidate.Entry.Name,
-			Repository:   candidate.Entry.Repository,
-			SelectedPath: candidate.Entry.SelectedPath,
-			Outcome:      OutcomeFailed,
-			Err:          err,
-		})
+// failCandidates records a destination-level failure against every candidate.
+func failCandidates(report *Report, candidates []pushCandidate, err error) {
+	for _, candidate := range candidates {
+		report.Add(failedEntryResult(candidate.Entry, err))
 	}
 }
 

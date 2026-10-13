@@ -65,7 +65,7 @@ func buildStatus(st *state) (*Status, error) {
 		for _, selector := range block.ExclusionSelectors() {
 			status.Exclusions = append(status.Exclusions, StatusExclusion{Repository: repository, Selector: selector})
 		}
-		if len(st.entriesForBlock(block)) == 0 {
+		if len(st.entriesForBlock(st.lock.Skills, block)) == 0 {
 			ref := block.Ref
 			if ref == "" {
 				ref = "(default branch)"

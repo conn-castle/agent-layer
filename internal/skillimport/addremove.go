@@ -116,7 +116,7 @@ func (s *Service) addLocked(ctx context.Context, st *state, opts AddOptions, rep
 	lockedEntries := []skilllock.Entry{}
 	if hasExisting {
 		blockIndex = existingIndex
-		lockedEntries = st.entriesForBlock(existing)
+		lockedEntries = st.entriesForBlock(st.lock.Skills, existing)
 	}
 
 	txn := s.newTransaction(pathSetFor(st), st.lock)
@@ -210,7 +210,7 @@ func (s *Service) removeSelectorsLocked(ctx context.Context, st *state, block co
 
 	txn := s.newTransaction(pathSetFor(st), st.lock)
 	txn.SetConfig(nextConfig)
-	lockedEntries := st.entriesForBlock(block)
+	lockedEntries := st.entriesForBlock(st.lock.Skills, block)
 
 	if len(remaining) == 0 {
 		for _, entry := range lockedEntries {
@@ -265,7 +265,7 @@ func (s *Service) applySelectorEdit(ctx context.Context, st *state, txn *transac
 		return err
 	}
 	commit := blockCtx.Resolution.Commit
-	desired, failures, err := resolveBlock(ctx, blockCtx.Source, edit.blockIndex, block, commit)
+	desired, failures, err := resolveBlock(ctx, blockCtx.Source, block, commit)
 	if err != nil {
 		return err
 	}
@@ -277,7 +277,7 @@ func (s *Service) applySelectorEdit(ctx context.Context, st *state, txn *transac
 	if len(newFailures) > 0 {
 		return fmt.Errorf("no local state was changed: %w", candidateFailureError(newFailures))
 	}
-	prospective := prospectiveSelectorEdit(edit.blockIndex, block, desired, edit.lockedEntries)
+	prospective := prospectiveSelectorEdit(block, desired, edit.lockedEntries)
 	if err := validateDesiredSet(combineWithOtherEntries(st, block, edit.lockedEntries, st.lock.Skills, prospective)); err != nil {
 		return err
 	}
@@ -294,7 +294,7 @@ func (s *Service) applySelectorEdit(ctx context.Context, st *state, txn *transac
 		updated := entry
 		updated.Selector = selector
 		txn.SetLockEntry(updated)
-		report.Add(SkillResult{Name: entry.Name, Repository: entry.Repository, SelectedPath: entry.SelectedPath, Outcome: OutcomeUnchanged})
+		report.Add(entryResult(entry, OutcomeUnchanged))
 	}
 	for _, skill := range desired {
 		if _, locked := lockedByPath[skill.SelectedPath]; locked {
@@ -378,7 +378,7 @@ func failuresForNewPaths(failures []candidateFailure, lockedByPath map[string]sk
 // existing independently locked entry the edited selectors still select. The
 // existing entry's recorded name wins because selector edits do not advance or
 // revalidate its upstream generation.
-func prospectiveSelectorEdit(blockIndex int, block config.SkillImport, desired []desiredSkill, lockedEntries []skilllock.Entry) []desiredSkill {
+func prospectiveSelectorEdit(block config.SkillImport, desired []desiredSkill, lockedEntries []skilllock.Entry) []desiredSkill {
 	lockedByPath := make(map[string]skilllock.Entry, len(lockedEntries))
 	for _, entry := range lockedEntries {
 		lockedByPath[entry.SelectedPath] = entry
@@ -395,7 +395,6 @@ func prospectiveSelectorEdit(blockIndex int, block config.SkillImport, desired [
 			continue
 		}
 		prospective = append(prospective, desiredSkill{
-			BlockIndex:   blockIndex,
 			Block:        block,
 			Selector:     selector,
 			SelectedPath: entry.SelectedPath,
@@ -410,7 +409,7 @@ func prospectiveSelectorEdit(blockIndex int, block config.SkillImport, desired [
 // block against what the earlier blocks already staged rather than against the
 // snapshot it started from.
 func withOtherPendingEntries(st *state, txn *transaction, block config.SkillImport, desired []desiredSkill) []desiredSkill {
-	return combineWithOtherEntries(st, block, txnEntriesForBlock(st, txn, block), txn.lock.Skills, desired)
+	return combineWithOtherEntries(st, block, st.entriesForBlock(txn.lock.Skills, block), txn.lock.Skills, desired)
 }
 
 // combineWithOtherEntries appends every recorded entry outside the block under

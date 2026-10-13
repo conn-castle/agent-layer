@@ -44,13 +44,10 @@ func NewSourceOnly(root string) *Service {
 
 // blockContext is one import block's resolved source access for an operation.
 type blockContext struct {
-	Index      int
 	Block      config.SkillImport
 	Source     *gitrepo.Source
 	Resolution gitrepo.Resolution
 	Tracking   string
-	// TargetCommit is the commit this operation's desired set is resolved at.
-	TargetCommit string
 }
 
 // withLockedState runs fn inside the project lock with freshly loaded state.
@@ -147,16 +144,12 @@ func (s *Service) openBlock(ctx context.Context, runner *gitrepo.Runner, workRoo
 		return nil, err
 	}
 
-	blockCtx := &blockContext{
-		Index:        index,
-		Block:        block,
-		Source:       source,
-		Resolution:   resolution,
-		Tracking:     tracking,
-		TargetCommit: resolution.Commit,
-	}
-
-	return blockCtx, nil
+	return &blockContext{
+		Block:      block,
+		Source:     source,
+		Resolution: resolution,
+		Tracking:   tracking,
+	}, nil
 }
 
 // isRetarget reports whether the configured selection moved to a different
