@@ -608,7 +608,11 @@ func TestMaybeExec_EnsureCachedBinaryError(t *testing.T) {
 	t.Setenv(EnvVersionOverride, "1.0.0")
 	t.Setenv(EnvCacheDir, t.TempDir())
 
-	// No mock server -> download fails
+	// Disable the network so the download fails deterministically even when
+	// the requested version has been published. Without this, a successful
+	// download would hand a real release binary to RealSystem.ExecBinary and
+	// replace the test process.
+	t.Setenv(EnvNoNetwork, "1")
 
 	err := maybeExec(context.Background(), RealSystem{}, []string{"cmd"}, "0.9.0", ".")
 	if err == nil {
