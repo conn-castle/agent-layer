@@ -12,7 +12,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-	"unicode/utf8"
 
 	"github.com/conn-castle/agent-layer/internal/clients/grok"
 	"github.com/conn-castle/agent-layer/internal/clients/muse"
@@ -25,10 +24,8 @@ import (
 )
 
 var (
-	loadConfigLenientFunc = config.LoadConfigLenient
-	loadEnvFunc           = config.LoadEnv
-	lookPathFunc          = exec.LookPath
-	commandOutputFunc     = func(name string, args ...string) ([]byte, error) {
+	lookPathFunc      = exec.LookPath
+	commandOutputFunc = func(name string, args ...string) ([]byte, error) {
 		return commandOutputWithTimeout(antigravityVersionTimeout, name, args...)
 	}
 )
@@ -42,23 +39,18 @@ const antigravityVersionWaitDelay = 100 * time.Millisecond
 // size metrics (instructions, MCP tool schemas).
 const MaxSkillCatalogMetadataTokens = 4000
 
-// SkillCatalogMetadata returns the concatenated skill names and descriptions and their
-// combined Unicode rune count. The returned text is the canonical input for estimating
-// catalog-metadata tokens; the rune count is retained for callers and tests that need the
-// raw size.
-func SkillCatalogMetadata(cfg *config.ProjectConfig) (text string, chars int) {
+// SkillCatalogMetadata returns the concatenated trimmed skill names and descriptions.
+// The returned text is the canonical input for estimating catalog-metadata tokens.
+func SkillCatalogMetadata(cfg *config.ProjectConfig) string {
 	if cfg == nil {
-		return "", 0
+		return ""
 	}
 	var sb strings.Builder
 	for _, skill := range cfg.Skills {
-		name := strings.TrimSpace(skill.Name)
-		desc := strings.TrimSpace(skill.Description)
-		sb.WriteString(name)
-		sb.WriteString(desc)
-		chars += utf8.RuneCountInString(name) + utf8.RuneCountInString(desc)
+		sb.WriteString(strings.TrimSpace(skill.Name))
+		sb.WriteString(strings.TrimSpace(skill.Description))
 	}
-	return sb.String(), chars
+	return sb.String()
 }
 
 func commandOutputWithTimeout(timeout time.Duration, name string, args ...string) ([]byte, error) {
@@ -234,7 +226,7 @@ func CheckConfig(root string) ([]Result, *config.ProjectConfig) {
 		// Config has validation errors. Try lenient loading so downstream
 		// checks (secrets, agents) can still run.
 		configPath := filepath.Join(root, ".agent-layer", "config.toml")
-		lenientCfg, lenientErr := loadConfigLenientFunc(configPath)
+		lenientCfg, lenientErr := config.LoadConfigLenient(configPath)
 		if lenientErr != nil {
 			// TOML syntax error or file unreadable — can't recover.
 			results = append(results, Result{
@@ -279,7 +271,7 @@ func CheckConfig(root string) ([]Result, *config.ProjectConfig) {
 		// from CheckSecrets that points at the wrong root cause.
 		envPath := filepath.Join(root, ".agent-layer", ".env")
 		var env map[string]string
-		if loaded, envErr := loadEnvFunc(envPath); envErr == nil {
+		if loaded, envErr := config.LoadEnv(envPath); envErr == nil {
 			env = loaded
 		} else if !errors.Is(envErr, os.ErrNotExist) {
 			results = append(results, Result{
@@ -700,7 +692,7 @@ func CheckSkills(cfg *config.ProjectConfig) []Result {
 		}
 	}
 
-	catalogText, _ := SkillCatalogMetadata(cfg)
+	catalogText := SkillCatalogMetadata(cfg)
 	if catalogTokens := warnings.EstimateTokens(catalogText); catalogTokens > MaxSkillCatalogMetadataTokens {
 		results = append(results, Result{
 			Status:         StatusWarn,

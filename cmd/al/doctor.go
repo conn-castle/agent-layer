@@ -114,9 +114,6 @@ func newDoctorCmd() *cobra.Command {
 				// 7. Check CLI Skills (catalog-installed skills' binaries on PATH).
 				report(doctor.CheckCLISkills(cfg)...)
 			}
-			if cfg == nil {
-				modelResults = nil
-			}
 			for modelResults != nil || updateResults != nil {
 				select {
 				case result, ok := <-modelResults:
@@ -163,7 +160,7 @@ func newDoctorCmd() *cobra.Command {
 				instTokens, instSubject, instErr = measureInstructions(root)
 
 				// MCP check (Doctor runs discovery)
-				enabledServerIDs := enabledMCPServerIDs(cfg.Config)
+				enabledServerIDs := projection.EffectiveEnabledServerIDs(cfg.Config)
 				progressOut := out
 				if quiet {
 					progressOut = io.Discard
@@ -202,7 +199,7 @@ func newDoctorCmd() *cobra.Command {
 			// noise mode. It is informational, not a warning, so its visibility is independent
 			// of warning suppression.
 			if cfg != nil {
-				skillText, _ := doctor.SkillCatalogMetadata(cfg)
+				skillText := doctor.SkillCatalogMetadata(cfg)
 				// Skills are unmeasurable (not merely empty) when the lenient
 				// fallback emitted a Skills FAIL because loading failed. Naming
 				// them as excluded avoids silently reporting 0 tokens, mirroring
@@ -334,12 +331,6 @@ func renderSizeSummary(out io.Writer, w config.WarningsConfig, instTokens int, i
 	} else {
 		_, _ = fmt.Fprintf(out, messages.DoctorSizeTotalExcludesFmt, total, strings.Join(excludes, ", "))
 	}
-}
-
-// enabledMCPServerIDs returns every server doctor will discover, including the
-// derived Agent Dispatch server when at least one dispatch-capable client is enabled.
-func enabledMCPServerIDs(cfg config.Config) []string {
-	return projection.EffectiveEnabledServerIDs(cfg)
 }
 
 // startMCPDiscoveryReporter prints progress events from MCP discovery and returns a reporter + stop function.
@@ -504,9 +495,6 @@ func (r *mcpDiscoveryReporter) finalizePending() {
 func (r *mcpDiscoveryReporter) advanceSpinner() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if len(r.spinnerFrames) == 0 {
-		return
-	}
 	r.spinnerIndex = (r.spinnerIndex + 1) % len(r.spinnerFrames)
 }
 
@@ -533,22 +521,11 @@ func (r *mcpDiscoveryReporter) formatLine(serverID string) string {
 }
 
 func (r *mcpDiscoveryReporter) formatLineLocked(serverID string) string {
-	switch r.statusForLocked(serverID) {
-	case warnings.MCPDiscoveryStatusDone:
-		return fmt.Sprintf("  - %s: done", serverID)
-	case warnings.MCPDiscoveryStatusAuthNotValidated:
-		return fmt.Sprintf("  - %s: %s", serverID, messages.WarningsMCPOAuthNotValidated)
-	case warnings.MCPDiscoveryStatusError:
-		if err := r.errors[serverID]; err != nil {
-			return fmt.Sprintf("  - %s: error (%v)", serverID, err)
-		}
-		return fmt.Sprintf("  - %s: error", serverID)
-	default:
-		if r.useSpinner {
-			return fmt.Sprintf("  - %s: %s working", serverID, r.spinnerFrames[r.spinnerIndex])
-		}
-		return fmt.Sprintf("  - %s: starting", serverID)
+	status := r.statusForLocked(serverID)
+	if status == warnings.MCPDiscoveryStatusStart && r.useSpinner {
+		return fmt.Sprintf("  - %s: %s working", serverID, r.spinnerFrames[r.spinnerIndex])
 	}
+	return formatMCPDiscoveryEvent(warnings.MCPDiscoveryEvent{ServerID: serverID, Status: status, Err: r.errors[serverID]})
 }
 
 func (r *mcpDiscoveryReporter) statusForLocked(serverID string) warnings.MCPDiscoveryStatus {

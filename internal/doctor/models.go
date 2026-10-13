@@ -9,15 +9,6 @@ import (
 	"github.com/conn-castle/agent-layer/internal/config"
 )
 
-// CheckModels queries enabled harnesses with explicit model overrides
-// concurrently, without sync. Client defaults need no model lookup. A model
-// absent from a picker is not necessarily invalid (aliases and custom endpoints
-// remain supported); report it as a warning rather than rejecting config.
-// The caller must supply a non-nil, loaded project configuration.
-func CheckModels(project *config.ProjectConfig, req agentoptions.DiscoveryRequest) []Result {
-	return CheckModelsWithProgress(project, req, nil)
-}
-
 // ModelCheckAgents lists enabled harnesses that need an explicit model lookup.
 func ModelCheckAgents(project *config.ProjectConfig) []string {
 	agents := []struct {
@@ -40,8 +31,13 @@ func ModelCheckAgents(project *config.ProjectConfig) []string {
 	return names
 }
 
-// CheckModelsWithProgress reports each completed lookup promptly. The callback
-// runs concurrently and must be safe for use by multiple harness workers.
+// CheckModelsWithProgress queries enabled harnesses with explicit model
+// overrides concurrently, without sync. Client defaults need no model lookup. A
+// model absent from a picker is not necessarily invalid (aliases and custom
+// endpoints remain supported); report it as a warning rather than rejecting
+// config. The caller must supply a non-nil, loaded project configuration.
+// onResult, when non-nil, reports each completed lookup promptly; it runs
+// concurrently and must be safe for use by multiple harness workers.
 func CheckModelsWithProgress(project *config.ProjectConfig, req agentoptions.DiscoveryRequest, onResult func(Result)) []Result {
 	agents := ModelCheckAgents(project)
 	req.Project = project
