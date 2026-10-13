@@ -17,7 +17,7 @@ import (
 )
 
 const (
-	probePrompt          = "List the contents of any AGENTS.md you see, then summarize what skills you have access to (just names). State each MCP server name you can see. Finally, call the " + FixtureToolName + " tool and report exactly what it returns."
+	probePrompt          = "List the contents of any AGENTS.md you see, then summarize what skills you have access to (just names). State each MCP server name you can see. Finally, call the " + probe.FixtureToolName + " tool and report exactly what it returns."
 	maxProbeLogTailBytes = 1024 * 1024
 	// probeRunTimeout bounds one probe run. Exceeding it is recorded as an
 	// explicit timeout result rather than being conflated with a failed run.
@@ -33,25 +33,11 @@ func Probe(ctx context.Context, tmpRoot string) (*Result, error) {
 	if err != nil {
 		return nil, fmt.Errorf("antigravity probe requires agy on PATH: %w", err)
 	}
-	// filepath.Abs always returns an absolute path on success (per the Go
-	// contract). The previous belt-and-braces `IsAbs(absTmpRoot)` guard was
-	// dead code (Round 2 F-A2-3 / F-B2-6).
-	absTmpRoot, err := filepath.Abs(tmpRoot)
-	if err != nil {
-		return nil, fmt.Errorf("resolve antigravity probe tmp root: %w", err)
-	}
-	if err := os.MkdirAll(absTmpRoot, 0o700); err != nil {
-		return nil, fmt.Errorf("create antigravity probe tmp root %s: %w", absTmpRoot, err)
-	}
-
 	probedAt := time.Now().UTC()
-	probeDir, err := createProbeDir(absTmpRoot, probedAt)
+	probeDir, err := probe.CreateDir(tmpRoot, "antigravity", probedAt)
 	if err != nil {
-		return nil, fmt.Errorf("create antigravity probe dir in %s: %w", absTmpRoot, err)
+		return nil, err
 	}
-	// seedProbeWorkspace joins paths from absTmpRoot, which is guaranteed
-	// absolute above; the legacy `IsAbs(geminiDir)` guard was dead code
-	// (Round 2 F-A2-3 / F-B2-6).
 	fixture, err := probeMCPFixtureCommand(probeDir)
 	if err != nil {
 		return nil, err
@@ -82,22 +68,17 @@ func Probe(ctx context.Context, tmpRoot string) (*Result, error) {
 		probePrompt,
 	)
 	cmd.Dir = workspaceDir
-	cmd.Env = append(os.Environ(), "AGY_CLI_DISABLE_AUTO_UPDATE=1", FixtureMarkerEnvVar+"="+fixture.MarkerPath)
+	cmd.Env = append(os.Environ(), "AGY_CLI_DISABLE_AUTO_UPDATE=1", probe.FixtureMarkerEnvVar+"="+fixture.MarkerPath)
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 
 	start := time.Now()
 	runErr := probe.Run(runCtx, cmd)
 	elapsed := time.Since(start)
-	exitCode := commandExitCode(runErr)
+	exitCode := probe.ExitCode(runErr)
 
-	stdoutPath := filepath.Join(probeDir, "stdout.txt")
-	stderrPath := filepath.Join(probeDir, "stderr.txt")
-	if err := os.WriteFile(stdoutPath, stdout.Bytes(), 0o600); err != nil {
-		return nil, fmt.Errorf("write antigravity probe stdout: %w", err)
-	}
-	if err := os.WriteFile(stderrPath, stderr.Bytes(), 0o600); err != nil {
-		return nil, fmt.Errorf("write antigravity probe stderr: %w", err)
+	if err := probe.WriteOutputs(probeDir, "antigravity", stdout.Bytes(), stderr.Bytes()); err != nil {
+		return nil, err
 	}
 
 	logPath, logText, logErr := latestLogText(logDir)
@@ -113,7 +94,7 @@ func Probe(ctx context.Context, tmpRoot string) (*Result, error) {
 		// A run that outlives probeRunTimeout is reported as its own outcome.
 		// Folding it into a generic failure would hide whether the client never
 		// answered or answered wrongly.
-		TimedOut: probeTimedOut(runErr),
+		TimedOut: errors.Is(runErr, context.DeadlineExceeded),
 	}
 	if runErr != nil {
 		result.Error = runErr.Error()
@@ -127,15 +108,11 @@ func Probe(ctx context.Context, tmpRoot string) (*Result, error) {
 	}
 
 	result.Capabilities, result.Evidence = ParseCapabilities(logText, stdout.String())
-	if invoked, evidence := inspectFixtureMarker(fixture.MarkerPath); invoked {
+	if probe.FixtureInvoked(fixture.MarkerPath) {
 		result.Capabilities.MCPToolInvoked = true
-		result.Evidence = append(result.Evidence, evidence)
+		result.Evidence = append(result.Evidence, probe.FixtureInvokedEvidence)
 	}
 	return result, nil
-}
-
-func probeTimedOut(err error) bool {
-	return errors.Is(err, context.DeadlineExceeded)
 }
 
 // probeMCPFixture describes the deterministic stdio MCP server seeded into the
@@ -157,24 +134,9 @@ func probeMCPFixtureCommand(probeDir string) (probeMCPFixture, error) {
 	}
 	return probeMCPFixture{
 		Command:    executable,
-		Args:       []string{"__probe-mcp-fixture"},
+		Args:       []string{probe.FixtureSubcommand},
 		MarkerPath: filepath.Join(probeDir, "mcp-tool-invoked.txt"),
 	}, nil
-}
-
-func inspectFixtureMarker(markerPath string) (bool, string) {
-	data, err := os.ReadFile(markerPath) // #nosec G304 -- probe-owned path.
-	if err != nil {
-		return false, ""
-	}
-	if string(bytes.TrimSpace(data)) != FixtureToolReply {
-		return false, ""
-	}
-	return true, "mcp fixture: " + FixtureToolName + " was invoked by the client"
-}
-
-func createProbeDir(absTmpRoot string, probedAt time.Time) (string, error) {
-	return os.MkdirTemp(absTmpRoot, "probe-antigravity-"+probedAt.Format("20060102T150405Z")+"-")
 }
 
 func seedProbeWorkspace(probeDir string, fixture probeMCPFixture) (string, string, string, error) {
@@ -308,20 +270,6 @@ func detectAgyVersion(ctx context.Context, agyPath string) string {
 		return ""
 	}
 	return string(bytes.TrimSpace(output.Bytes()))
-}
-
-func commandExitCode(err error) int {
-	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-		return 124
-	}
-	if err == nil {
-		return 0
-	}
-	var exitErr *exec.ExitError
-	if errors.As(err, &exitErr) {
-		return exitErr.ExitCode()
-	}
-	return -1
 }
 
 func latestLogText(logDir string) (string, string, error) {

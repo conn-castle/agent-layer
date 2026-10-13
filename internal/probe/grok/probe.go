@@ -17,12 +17,11 @@ import (
 	"github.com/conn-castle/agent-layer/internal/clients"
 	clientgrok "github.com/conn-castle/agent-layer/internal/clients/grok"
 	"github.com/conn-castle/agent-layer/internal/probe"
-	probeantigravity "github.com/conn-castle/agent-layer/internal/probe/antigravity"
 	"github.com/conn-castle/agent-layer/internal/tomlpatch"
 )
 
 const (
-	probePrompt              = "Call the " + probeantigravity.FixtureToolName + " tool and report exactly what it returns."
+	probePrompt              = "Call the " + probe.FixtureToolName + " tool and report exactly what it returns."
 	probeRunTimeout          = 45 * time.Second
 	maxStreamingJSONLineSize = 16 * 1024 * 1024
 	maxProbeOutputBytes      = 32 * 1024 * 1024
@@ -84,18 +83,10 @@ func probeWithOutputLimit(ctx context.Context, tmpRoot string, authHome string, 
 	if err != nil {
 		return nil, fmt.Errorf("grok probe requires grok on PATH: %w", err)
 	}
-	absTmpRoot, err := filepath.Abs(tmpRoot)
-	if err != nil {
-		return nil, fmt.Errorf("resolve grok probe tmp root: %w", err)
-	}
-	if err := os.MkdirAll(absTmpRoot, 0o700); err != nil {
-		return nil, fmt.Errorf("create grok probe tmp root %s: %w", absTmpRoot, err)
-	}
-
 	probedAt := time.Now().UTC()
-	probeDir, err := os.MkdirTemp(absTmpRoot, "probe-grok-"+probedAt.Format("20060102T150405Z")+"-")
+	probeDir, err := probe.CreateDir(tmpRoot, "grok", probedAt)
 	if err != nil {
-		return nil, fmt.Errorf("create grok probe dir in %s: %w", absTmpRoot, err)
+		return nil, err
 	}
 
 	workspaceDir, grokHome, promptPath, markerPath, err := seedGrokProbeWorkspace(probeDir)
@@ -136,7 +127,7 @@ func probeWithOutputLimit(ctx context.Context, tmpRoot string, authHome string, 
 	start := time.Now()
 	runErr := probe.Run(runCtx, cmd)
 	elapsed := time.Since(start)
-	exitCode := commandExitCode(runErr)
+	exitCode := probe.ExitCode(runErr)
 	if authPath != "" {
 		if err := os.Remove(authPath); err != nil && !os.IsNotExist(err) {
 			return nil, fmt.Errorf("remove disposable grok probe credentials: %w", err)
@@ -144,11 +135,8 @@ func probeWithOutputLimit(ctx context.Context, tmpRoot string, authHome string, 
 		authPath = ""
 	}
 
-	if err := os.WriteFile(filepath.Join(probeDir, "stdout.txt"), stdout.Bytes(), 0o600); err != nil {
-		return nil, fmt.Errorf("write grok probe stdout: %w", err)
-	}
-	if err := os.WriteFile(filepath.Join(probeDir, "stderr.txt"), stderr.Bytes(), 0o600); err != nil {
-		return nil, fmt.Errorf("write grok probe stderr: %w", err)
+	if err := probe.WriteOutputs(probeDir, "grok", stdout.Bytes(), stderr.Bytes()); err != nil {
+		return nil, err
 	}
 
 	result := &Result{
@@ -190,9 +178,9 @@ func probeWithOutputLimit(ctx context.Context, tmpRoot string, authHome string, 
 			result.Error = streamErr.Error()
 		}
 	}
-	if invoked := inspectFixtureMarker(markerPath); invoked {
+	if probe.FixtureInvoked(markerPath) {
 		result.Capabilities.MCPToolInvoked = true
-		result.Evidence = append(result.Evidence, "mcp fixture: "+probeantigravity.FixtureToolName+" was invoked by the client")
+		result.Evidence = append(result.Evidence, probe.FixtureInvokedEvidence)
 	}
 	return result, nil
 }
@@ -318,7 +306,7 @@ func seedGrokProbeWorkspace(probeDir string) (workspaceDir, grokHome, promptPath
 		return "", "", "", "", fmt.Errorf("resolve grok probe MCP fixture command: %w", err)
 	}
 	config := fmt.Sprintf("[mcp_servers.probe]\ncommand = %q\nargs = [%q]\nenv = { %q = %q }\n",
-		executable, "__probe-mcp-fixture", probeantigravity.FixtureMarkerEnvVar, markerPath)
+		executable, probe.FixtureSubcommand, probe.FixtureMarkerEnvVar, markerPath)
 	if err := os.WriteFile(filepath.Join(workspaceDir, ".grok", "config.toml"), []byte(config), 0o600); err != nil {
 		return "", "", "", "", fmt.Errorf("write grok probe project config: %w", err)
 	}
@@ -344,14 +332,6 @@ func seedGrokProbeWorkspace(probeDir string) (workspaceDir, grokHome, promptPath
 	return workspaceDir, grokHome, promptPath, markerPath, nil
 }
 
-func inspectFixtureMarker(markerPath string) bool {
-	data, err := os.ReadFile(markerPath) // #nosec G304 -- probe-owned path.
-	if err != nil {
-		return false
-	}
-	return string(bytes.TrimSpace(data)) == probeantigravity.FixtureToolReply
-}
-
 func detectGrokVersion(ctx context.Context, grokPath string) string {
 	runCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
@@ -365,18 +345,4 @@ func detectGrokVersion(ctx context.Context, grokPath string) string {
 		return ""
 	}
 	return string(bytes.TrimSpace(output.Bytes()))
-}
-
-func commandExitCode(err error) int {
-	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-		return 124
-	}
-	if err == nil {
-		return 0
-	}
-	var exitErr *exec.ExitError
-	if errors.As(err, &exitErr) {
-		return exitErr.ExitCode()
-	}
-	return -1
 }

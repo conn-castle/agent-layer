@@ -3,9 +3,7 @@ package antigravity
 import (
 	"bytes"
 	"context"
-	"errors"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -24,55 +22,13 @@ func TestProbeTimedOutDistinguishesDeadlineFromCancellation(t *testing.T) {
 	if err != nil || result == nil || !result.TimedOut || result.ExitCode != 124 || result.AgyVersion != "" {
 		t.Fatalf("deadline result: %+v, %v", result, err)
 	}
-	deadlineCtx, deadlineCancel := context.WithDeadline(context.Background(), time.Now().Add(-time.Second))
-	defer deadlineCancel()
-	if !probeTimedOut(deadlineCtx.Err()) {
-		t.Fatal("expired deadline was not reported as a timeout")
-	}
-	if probeTimedOut(nil) || commandExitCode(nil) != 0 {
-		t.Fatal("success before cleanup deadline was reported as a timeout")
-	}
 
 	cancelledCtx, cancel := context.WithCancel(context.Background())
 	cancel()
-	if probeTimedOut(cancelledCtx.Err()) {
-		t.Fatal("caller cancellation was reported as a timeout")
+	result, err = Probe(cancelledCtx, t.TempDir())
+	if err != nil || result == nil || result.TimedOut || result.ExitCode != 124 || !strings.Contains(result.Error, "context canceled") {
+		t.Fatalf("cancellation result: %+v, %v", result, err)
 	}
-}
-
-func TestCommandExitCode(t *testing.T) {
-	t.Run("cancelled context returns 124", func(t *testing.T) {
-		ctx, cancel := context.WithCancel(context.Background())
-		cancel()
-		// Cancellation captured during execution wins over other errors.
-		if got := commandExitCode(errors.Join(ctx.Err(), errors.New("boom"))); got != 124 {
-			t.Fatalf("expected 124 for cancelled context, got %d", got)
-		}
-	})
-
-	t.Run("nil error returns 0", func(t *testing.T) {
-		if got := commandExitCode(nil); got != 0 {
-			t.Fatalf("expected 0 for nil error, got %d", got)
-		}
-	})
-
-	t.Run("exit error returns its code", func(t *testing.T) {
-		// `false` exits with code 1; produces a real *exec.ExitError.
-		err := exec.Command("false").Run()
-		var exitErr *exec.ExitError
-		if !errors.As(err, &exitErr) {
-			t.Skipf("could not produce an *exec.ExitError on this platform: %v", err)
-		}
-		if got := commandExitCode(err); got != 1 {
-			t.Fatalf("expected 1 for exit-1 command, got %d", got)
-		}
-	})
-
-	t.Run("generic error returns -1", func(t *testing.T) {
-		if got := commandExitCode(errors.New("not an exit error")); got != -1 {
-			t.Fatalf("expected -1 for generic error, got %d", got)
-		}
-	})
 }
 
 func TestParseCapabilities(t *testing.T) {
@@ -283,29 +239,30 @@ func TestReadProbeLogTailMissingFile(t *testing.T) {
 	}
 }
 
-func TestCreateProbeDirAvoidsSecondLevelCollisions(t *testing.T) {
-	root := t.TempDir()
-	probedAt := time.Date(2026, 5, 22, 3, 46, 18, 0, time.UTC)
-
-	first, err := createProbeDir(root, probedAt)
+// TestProbeSeedsTheValidMCPFixture proves the seeded MCP configuration points
+// at the fixture rather than a program that cannot speak the protocol.
+func TestProbeSeedsTheValidMCPFixture(t *testing.T) {
+	probeDir := t.TempDir()
+	fixture, err := probeMCPFixtureCommand(probeDir)
 	if err != nil {
-		t.Fatalf("create first probe dir: %v", err)
+		t.Fatalf("resolve fixture command: %v", err)
 	}
-	second, err := createProbeDir(root, probedAt)
-	if err != nil {
-		t.Fatalf("create second probe dir: %v", err)
+	if _, _, _, err := seedProbeWorkspace(probeDir, fixture); err != nil {
+		t.Fatalf("seed probe workspace: %v", err)
 	}
-
-	if first == second {
-		t.Fatalf("expected unique probe dirs, got %s twice", first)
-	}
-	for _, path := range []string{first, second} {
-		info, err := os.Stat(path)
+	for _, rel := range []string{
+		filepath.Join("workspace", ".agents", "mcp_config.json"),
+		filepath.Join("agycfg", "antigravity-cli", "mcp_config.json"),
+	} {
+		data, err := os.ReadFile(filepath.Join(probeDir, rel)) // #nosec G304 -- test-owned path.
 		if err != nil {
-			t.Fatalf("stat probe dir %s: %v", path, err)
+			t.Fatalf("read %s: %v", rel, err)
 		}
-		if !info.IsDir() {
-			t.Fatalf("expected probe path to be a directory: %s", path)
+		if strings.Contains(string(data), "/usr/bin/true") {
+			t.Fatalf("%s still seeds a non-protocol MCP command:\n%s", rel, data)
+		}
+		if !strings.Contains(string(data), "__probe-mcp-fixture") {
+			t.Fatalf("%s does not seed the probe MCP fixture:\n%s", rel, data)
 		}
 	}
 }
