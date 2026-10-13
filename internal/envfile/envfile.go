@@ -3,7 +3,8 @@ package envfile
 import (
 	"bufio"
 	"fmt"
-	"sort"
+	"maps"
+	"slices"
 	"strings"
 
 	"github.com/conn-castle/agent-layer/internal/messages"
@@ -63,11 +64,7 @@ func Patch(content string, updates map[string]string) string {
 		}
 	}
 
-	keys := make([]string, 0, len(updates))
-	for key := range updates {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
+	keys := slices.Sorted(maps.Keys(updates))
 
 	updatedKeys := make(map[string]bool)
 	for _, key := range keys {

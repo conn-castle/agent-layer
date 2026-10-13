@@ -2,9 +2,11 @@ package doctor
 
 import (
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -241,15 +243,10 @@ func findUnknownConfigKeys(raw any, schema *configSchemaNode, path string, detai
 }
 
 func (n *configSchemaNode) allowedKeys() []string {
-	if n == nil || len(n.children) == 0 {
+	if n == nil {
 		return nil
 	}
-	keys := make([]string, 0, len(n.children))
-	for key := range n.children {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-	return keys
+	return slices.Sorted(maps.Keys(n.children))
 }
 
 func joinConfigPath(path string, key string) string {

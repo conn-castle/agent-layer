@@ -6,9 +6,11 @@ import (
 	"encoding/json"
 	"errors"
 	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
@@ -849,7 +851,7 @@ func TestLoadUpgradeMigrationManifest_0_8_8_RenamesAndBackfillsClaudeVSCodeKey(t
 
 	renameOp, ok := byID["a-rename-claude-vscode-enabled-key"]
 	if !ok {
-		t.Fatalf("missing rename operation, got IDs: %v", mapKeys(byID))
+		t.Fatalf("missing rename operation, got IDs: %v", slices.Sorted(maps.Keys(byID)))
 	}
 	if renameOp.Kind != upgradeMigrationKindConfigRenameKey {
 		t.Fatalf("rename op kind = %q, want %q", renameOp.Kind, upgradeMigrationKindConfigRenameKey)
@@ -866,7 +868,7 @@ func TestLoadUpgradeMigrationManifest_0_8_8_RenamesAndBackfillsClaudeVSCodeKey(t
 
 	defaultOp, ok := byID["b-set-default-claude_vscode-enabled"]
 	if !ok {
-		t.Fatalf("missing set-default operation, got IDs: %v", mapKeys(byID))
+		t.Fatalf("missing set-default operation, got IDs: %v", slices.Sorted(maps.Keys(byID)))
 	}
 	if defaultOp.Kind != upgradeMigrationKindConfigSetDefault {
 		t.Fatalf("set-default op kind = %q, want %q", defaultOp.Kind, upgradeMigrationKindConfigSetDefault)
@@ -931,7 +933,7 @@ func TestLoadUpgradeMigrationManifest_0_9_0_IncludesMigrateSkillsFormat(t *testi
 
 	renameDirOp, ok := byID["c-rename-slash-commands-dir-to-skills"]
 	if !ok {
-		t.Fatalf("missing slash-commands rename operation, got IDs: %v", mapKeys(byID))
+		t.Fatalf("missing slash-commands rename operation, got IDs: %v", slices.Sorted(maps.Keys(byID)))
 	}
 	if renameDirOp.Kind != upgradeMigrationKindRenameFile {
 		t.Fatalf("rename-dir op kind = %q, want %q", renameDirOp.Kind, upgradeMigrationKindRenameFile)
@@ -948,7 +950,7 @@ func TestLoadUpgradeMigrationManifest_0_9_0_IncludesMigrateSkillsFormat(t *testi
 
 	migrateOp, ok := byID["d-migrate-all-skills-to-directory-format"]
 	if !ok {
-		t.Fatalf("missing migrate_skills_format operation, got IDs: %v", mapKeys(byID))
+		t.Fatalf("missing migrate_skills_format operation, got IDs: %v", slices.Sorted(maps.Keys(byID)))
 	}
 	if migrateOp.Kind != upgradeMigrationKindMigrateSkillsFormat {
 		t.Fatalf("migrate op kind = %q, want %q", migrateOp.Kind, upgradeMigrationKindMigrateSkillsFormat)
@@ -3053,15 +3055,6 @@ func writePinForTest(t *testing.T, root string, version string) {
 	if err := os.WriteFile(pinPath, []byte(version+"\n"), 0o600); err != nil {
 		t.Fatalf("write pin: %v", err)
 	}
-}
-
-func mapKeys(m map[string]upgradeMigrationOperation) []string {
-	keys := make([]string, 0, len(m))
-	for key := range m {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-	return keys
 }
 
 func migrationReportEntryByID(entries []UpgradeMigrationEntry, id string) (UpgradeMigrationEntry, bool) {

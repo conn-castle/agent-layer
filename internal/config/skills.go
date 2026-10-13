@@ -2,8 +2,10 @@ package config
 
 import (
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 
@@ -89,11 +91,7 @@ func loadSkills(dir string, readDir skillReadDir, readTree skillReadTree) ([]Ski
 		}
 	}
 
-	names := make([]string, 0, len(byName))
-	for name := range byName {
-		names = append(names, name)
-	}
-	sort.Strings(names)
+	names := slices.Sorted(maps.Keys(byName))
 
 	skills := make([]Skill, 0, len(names))
 	for _, name := range names {

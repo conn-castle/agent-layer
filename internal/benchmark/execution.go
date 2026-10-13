@@ -7,12 +7,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
 	"runtime"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -733,11 +734,7 @@ func benchmarkProcessEnvironment(credentials map[string]string) []string {
 			values = append(values, key+"="+value)
 		}
 	}
-	names := make([]string, 0, len(credentials))
-	for name := range credentials {
-		names = append(names, name)
-	}
-	sort.Strings(names)
+	names := slices.Sorted(maps.Keys(credentials))
 	for _, name := range names {
 		values = append(values, name+"="+credentials[name])
 	}

@@ -2,8 +2,10 @@ package skillimport
 
 import (
 	"context"
+	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -38,12 +40,12 @@ func interruptAfterPublishing(t *testing.T, proj *project, writeConfig bool, bui
 	if err := txn.prepareJournal(); err != nil {
 		t.Fatalf("prepare journal: %v", err)
 	}
-	for _, name := range sortedKeys(txn.writes) {
+	for _, name := range slices.Sorted(maps.Keys(txn.writes)) {
 		if _, err := txn.publishTree(name); err != nil {
 			t.Fatalf("publish %s: %v", name, err)
 		}
 	}
-	for _, name := range sortedKeys(txn.deletes) {
+	for _, name := range slices.Sorted(maps.Keys(txn.deletes)) {
 		if _, err := txn.removeTree(name); err != nil {
 			t.Fatalf("remove %s: %v", name, err)
 		}
@@ -87,6 +89,13 @@ func TestInterruptedImportIsRolledBackByTheNextOperation(t *testing.T) {
 		advanced.Commit = strings.Repeat("f", 40)
 		txn.SetLockEntry(advanced)
 	})
+	journal, err := os.ReadFile(filepath.Join(skilljournal.StagingRoot(proj.paths.ImportedSkillsDir), skilljournal.FileName))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(journal), `"deletes": []`) {
+		t.Fatalf("journal must record no deletes as [], got:\n%s", journal)
+	}
 	// The interruption is real: the replaced tree and configuration are live
 	// while the lock still describes the previous generation.
 	if !strings.Contains(proj.ImportedFile("alpha", "SKILL.md"), "Interrupted body") {

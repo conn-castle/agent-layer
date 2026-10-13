@@ -3,7 +3,9 @@ package skilltree
 import (
 	"bytes"
 	"fmt"
+	"maps"
 	"path"
+	"slices"
 	"sort"
 	"unicode/utf8"
 )
@@ -191,12 +193,7 @@ func unionPaths(trees ...Tree) []string {
 			seen[file.Path] = struct{}{}
 		}
 	}
-	paths := make([]string, 0, len(seen))
-	for filePath := range seen {
-		paths = append(paths, filePath)
-	}
-	sort.Strings(paths)
-	return paths
+	return slices.Sorted(maps.Keys(seen))
 }
 
 func sameFile(left File, hasLeft bool, right File, hasRight bool) bool {

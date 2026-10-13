@@ -2,9 +2,10 @@ package config
 
 import (
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strings"
 
 	"github.com/mitchellh/go-homedir"
@@ -51,11 +52,7 @@ func SubstituteEnvVarsWith(input string, env map[string]string, replacer EnvVarR
 	})
 
 	if len(missing) > 0 {
-		names := make([]string, 0, len(missing))
-		for name := range missing {
-			names = append(names, name)
-		}
-		sort.Strings(names)
+		names := slices.Sorted(maps.Keys(missing))
 		return "", fmt.Errorf(messages.ConfigMissingEnvVarsFmt, strings.Join(names, ", "))
 	}
 

@@ -168,13 +168,3 @@ func TestExactTemplateMatcher_Branches(t *testing.T) {
 		t.Fatal("expected non-template content to fail match")
 	}
 }
-
-func TestSortedMapKeys_Sorts(t *testing.T) {
-	keys := sortedMapKeys(map[string]string{
-		"beta":  "2",
-		"alpha": "1",
-	})
-	if len(keys) != 2 || keys[0] != "alpha" || keys[1] != "beta" {
-		t.Fatalf("unexpected key order: %#v", keys)
-	}
-}

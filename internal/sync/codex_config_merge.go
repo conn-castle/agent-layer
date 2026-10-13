@@ -3,6 +3,7 @@ package sync
 import (
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"reflect"
 	"slices"
@@ -610,11 +611,7 @@ func (e *codexTomlEditor) expandCodexHookAssignment(path string, event string) e
 					return fmt.Errorf(messages.SyncCodexExistingConfigShapeConflictFmt, path, eventHooksPath)
 				}
 				lines = append(lines, "[["+eventHooksPath+"]]")
-				hookKeys := make([]string, 0, len(hookMap))
-				for key := range hookMap {
-					hookKeys = append(hookKeys, key)
-				}
-				sort.Strings(hookKeys)
+				hookKeys := slices.Sorted(maps.Keys(hookMap))
 				for _, key := range hookKeys {
 					lines = append(lines, tomlpatch.FormatKey(key)+" = "+formatInlineValue(hookMap[key]))
 				}
@@ -989,11 +986,7 @@ func arrayTableLines(path []string, value any) []string {
 			return nil
 		}
 		lines = append(lines, "[["+tomlpatch.FormatDottedKeyPath(path)+"]]")
-		keys := make([]string, 0, len(entryMap))
-		for key := range entryMap {
-			keys = append(keys, key)
-		}
-		sort.Strings(keys)
+		keys := slices.Sorted(maps.Keys(entryMap))
 		for _, key := range keys {
 			lines = append(lines, tomlpatch.FormatKey(key)+" = "+formatInlineValue(entryMap[key]))
 		}
@@ -1147,11 +1140,7 @@ func (e *codexTomlEditor) appendMissingProjects(path string, existing map[string
 		return nil
 	}
 	existingProjects, _ := existing[config.CodexProjectsKey].(map[string]any)
-	projectKeys := make([]string, 0, len(managedProjects))
-	for projectPath := range managedProjects {
-		projectKeys = append(projectKeys, projectPath)
-	}
-	sort.Strings(projectKeys)
+	projectKeys := slices.Sorted(maps.Keys(managedProjects))
 	for _, projectPath := range projectKeys {
 		if _, exists := existingProjects[projectPath]; exists {
 			continue
@@ -1236,11 +1225,7 @@ func extractNamespaceLines(content string, namespace []string) []string {
 }
 
 func renderProjectBlock(projectPath string, entry map[string]any) []string {
-	keys := make([]string, 0, len(entry))
-	for key := range entry {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
+	keys := slices.Sorted(maps.Keys(entry))
 	lines := make([]string, 0, 1+len(keys))
 	lines = append(lines, "[projects."+tomlpatch.FormatKey(projectPath)+"]")
 	for _, key := range keys {
@@ -1264,11 +1249,7 @@ func collectLeafValues(prefix []string, value any, out *[]codexPathValue) {
 		*out = append(*out, codexPathValue{path: append([]string(nil), prefix...), value: value})
 		return
 	}
-	keys := make([]string, 0, len(table))
-	for key := range table {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
+	keys := slices.Sorted(maps.Keys(table))
 	for _, key := range keys {
 		collectLeafValues(append(prefix, key), table[key], out)
 	}
@@ -1368,11 +1349,7 @@ func formatInlineValue(value any) string {
 		}
 		return "[" + strings.Join(parts, ", ") + "]"
 	case map[string]any:
-		keys := make([]string, 0, len(v))
-		for key := range v {
-			keys = append(keys, key)
-		}
-		sort.Strings(keys)
+		keys := slices.Sorted(maps.Keys(v))
 		parts := make([]string, 0, len(keys))
 		for _, key := range keys {
 			parts = append(parts, tomlpatch.FormatKey(key)+" = "+formatInlineValue(v[key]))

@@ -7,10 +7,12 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"maps"
 	"os"
 	"path"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"sort"
 	"strings"
 
@@ -1485,9 +1487,6 @@ func (inst *installer) matchesTemplateDocsManifest(manifest templateManifest) (b
 }
 
 func dedupSortedStrings(values []string) []string {
-	if len(values) == 0 {
-		return nil
-	}
 	set := make(map[string]struct{}, len(values))
 	for _, value := range values {
 		trimmed := strings.TrimSpace(value)
@@ -1496,12 +1495,7 @@ func dedupSortedStrings(values []string) []string {
 		}
 		set[trimmed] = struct{}{}
 	}
-	out := make([]string, 0, len(set))
-	for value := range set {
-		out = append(out, value)
-	}
-	sort.Strings(out)
-	return out
+	return slices.Sorted(maps.Keys(set))
 }
 
 func loadUpgradeMigrationManifestByVersion(versionRaw string) (upgradeMigrationManifest, string, error) {

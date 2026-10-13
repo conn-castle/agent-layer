@@ -5,11 +5,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"net/http"
 	"net/url"
 	"os"
 	"os/exec"
-	"sort"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -282,11 +283,7 @@ func buildMCPCommandEnv(baseEnv []string, serverEnv map[string]string) []string 
 		values[key] = value
 	}
 
-	keys := make([]string, 0, len(values))
-	for key := range values {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
+	keys := slices.Sorted(maps.Keys(values))
 
 	env := make([]string, 0, len(keys))
 	for _, key := range keys {

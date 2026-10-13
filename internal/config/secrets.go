@@ -1,6 +1,9 @@
 package config
 
-import "sort"
+import (
+	"maps"
+	"slices"
+)
 
 // RequiredEnvVarsForMCPServer returns required env var names for a single MCP server.
 // server is the MCP server definition; returns a sorted list of unique names.
@@ -27,16 +30,7 @@ func RequiredEnvVarsForMCPServer(server MCPServer) []string {
 		add(value)
 	}
 
-	if len(seen) == 0 {
-		return nil
-	}
-
-	names := make([]string, 0, len(seen))
-	for name := range seen {
-		names = append(names, name)
-	}
-	sort.Strings(names)
-	return names
+	return slices.Sorted(maps.Keys(seen))
 }
 
 // RequiredEnvVarsForMCPServers returns required env var names across all MCP servers.
@@ -48,13 +42,5 @@ func RequiredEnvVarsForMCPServers(servers []MCPServer) []string {
 			seen[name] = struct{}{}
 		}
 	}
-	if len(seen) == 0 {
-		return nil
-	}
-	names := make([]string, 0, len(seen))
-	for name := range seen {
-		names = append(names, name)
-	}
-	sort.Strings(names)
-	return names
+	return slices.Sorted(maps.Keys(seen))
 }

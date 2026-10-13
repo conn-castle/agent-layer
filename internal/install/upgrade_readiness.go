@@ -5,9 +5,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -300,15 +302,7 @@ func requiredAgentLayerEnvVarsForEnabledServers(cfg *config.Config) []string {
 			}
 		}
 	}
-	if len(seen) == 0 {
-		return nil
-	}
-	keys := make([]string, 0, len(seen))
-	for key := range seen {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-	return keys
+	return slices.Sorted(maps.Keys(seen))
 }
 
 func readinessSubstitutionEnv(raw string, env map[string]string, repoRoot string, sys System) map[string]string {
@@ -483,8 +477,7 @@ func detectFloatingDependencies(cfg *config.Config) *UpgradeReadinessCheck {
 		for argIdx, arg := range server.Args {
 			details = append(details, floatingDetails(i, server.ID, fmt.Sprintf("args[%d]", argIdx), arg)...)
 		}
-		envKeys := sortedMapKeys(server.Env)
-		for _, envKey := range envKeys {
+		for _, envKey := range slices.Sorted(maps.Keys(server.Env)) {
 			details = append(details, floatingDetails(i, server.ID, fmt.Sprintf("env.%s", envKey), server.Env[envKey])...)
 		}
 	}
@@ -835,16 +828,4 @@ func maxModTime(current time.Time, candidate time.Time) time.Time {
 func combinedBoolOr(a, b *bool) *bool {
 	v := (a != nil && *a) || (b != nil && *b)
 	return &v
-}
-
-func sortedMapKeys(m map[string]string) []string {
-	if len(m) == 0 {
-		return nil
-	}
-	keys := make([]string, 0, len(m))
-	for key := range m {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-	return keys
 }

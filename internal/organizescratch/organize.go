@@ -5,10 +5,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"os/exec"
 	pathpkg "path"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 
@@ -255,11 +257,7 @@ func readStationaryOwners(root string, keep []string) ([]placement, error) {
 		names[name] = struct{}{}
 		callerKept[name] = struct{}{}
 	}
-	ordered := make([]string, 0, len(names))
-	for name := range names {
-		ordered = append(ordered, name)
-	}
-	sort.Strings(ordered)
+	ordered := slices.Sorted(maps.Keys(names))
 
 	canonicalRoot := canonicalPath(root)
 	owners := make([]placement, 0, len(ordered))
@@ -696,7 +694,7 @@ func markMainRepository(candidate *placement, rel, kind, target string, registra
 	}
 	markRegisteredWorktree(candidate, rel, kind, target)
 	var external []string
-	for _, registered := range sortedRegistrationPaths(registrations) {
+	for _, registered := range slices.Sorted(maps.Keys(registrations)) {
 		if registrations[registered] == "" {
 			candidate.worktreeRepairs = appendUniqueRepair(candidate.worktreeRepairs, worktreeRepair{context: target, target: registered})
 		}
@@ -707,15 +705,6 @@ func markMainRepository(candidate *placement, rel, kind, target string, registra
 	if len(external) > 0 {
 		candidate.reason += fmt.Sprintf("; %s has %d externally registered linked worktree(s): %s", kind, len(external), strings.Join(firstN(external, examplesShown), ", "))
 	}
-}
-
-func sortedRegistrationPaths(registrations map[string]string) []string {
-	paths := make([]string, 0, len(registrations))
-	for path := range registrations {
-		paths = append(paths, path)
-	}
-	sort.Strings(paths)
-	return paths
 }
 
 func pathWithin(root, path string) bool {
@@ -1011,11 +1000,7 @@ func renderReviewDoc(prior []placement, outcomes []moveOutcome, dryRun bool, ope
 	}
 
 	doc.WriteString("## Needs review\n\n")
-	dests := make([]string, 0, len(grouped))
-	for dest := range grouped {
-		dests = append(dests, dest)
-	}
-	sort.Strings(dests)
+	dests := slices.Sorted(maps.Keys(grouped))
 	if len(dests) == 0 {
 		doc.WriteString("Nothing currently filed under `review/` requires a judgement call.\n\n")
 	}
