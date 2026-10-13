@@ -1059,9 +1059,19 @@ func createJSONExclusive(path string, value any) (bool, error) {
 	return err == nil, err
 }
 
-// publishJSON writes value to a synced temporary file beside path, then
-// exposes it at path with publish.
+// publishJSON encodes value as one JSON line and exposes it at path with
+// publish.
 func publishJSON(path string, value any, publish func(oldpath, newpath string) error) error {
+	data, err := json.Marshal(value)
+	if err != nil {
+		return err
+	}
+	return publishBytes(path, append(data, '\n'), publish)
+}
+
+// publishBytes writes data to a synced private temporary file beside path,
+// then exposes it at path with publish.
+func publishBytes(path string, data []byte, publish func(oldpath, newpath string) error) error {
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
@@ -1076,35 +1086,6 @@ func publishJSON(path string, value any, publish func(oldpath, newpath string) e
 		_ = file.Close()
 		return err
 	}
-	if err := json.NewEncoder(file).Encode(value); err != nil {
-		_ = file.Close()
-		return err
-	}
-	if err := file.Sync(); err != nil {
-		_ = file.Close()
-		return err
-	}
-	if err := file.Close(); err != nil {
-		return err
-	}
-	return publish(temp, path)
-}
-
-func writeBytesAtomic(path string, data []byte, mode fs.FileMode) error {
-	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return err
-	}
-	file, err := os.CreateTemp(dir, ".dispatch-result-*.tmp")
-	if err != nil {
-		return err
-	}
-	temp := file.Name()
-	defer func() { _ = os.Remove(temp) }()
-	if err := file.Chmod(mode); err != nil {
-		_ = file.Close()
-		return err
-	}
 	if _, err := file.Write(data); err != nil {
 		_ = file.Close()
 		return err
@@ -1116,7 +1097,7 @@ func writeBytesAtomic(path string, data []byte, mode fs.FileMode) error {
 	if err := file.Close(); err != nil {
 		return err
 	}
-	return os.Rename(temp, path) // #nosec G703 -- temp and destination share Agent Layer's private directory.
+	return publish(temp, path)
 }
 
 func readJSON(path string, target any) error {
