@@ -213,15 +213,3 @@ func copyStringMap(source map[string]string) map[string]string {
 	}
 	return copy
 }
-
-func sameStringMap(left, right map[string]string) bool {
-	if len(left) != len(right) {
-		return false
-	}
-	for key, value := range left {
-		if right[key] != value {
-			return false
-		}
-	}
-	return true
-}

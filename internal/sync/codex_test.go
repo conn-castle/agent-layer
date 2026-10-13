@@ -3,6 +3,7 @@ package sync
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -634,10 +635,10 @@ func TestBuildCodexConfigDefaultStatuslineIncludesWeeklyLimitOnly(t *testing.T) 
 	}
 	tui := parseCodexTUI(t, output)
 	items := stringListFromValue(t, tui["status_line"])
-	if !containsString(items, "weekly-limit") {
+	if !slices.Contains(items, "weekly-limit") {
 		t.Fatalf("expected weekly-limit in status line, got %#v", items)
 	}
-	if containsString(items, "five-hour-limit") {
+	if slices.Contains(items, "five-hour-limit") {
 		t.Fatalf("did not expect five-hour-limit in status line, got %#v", items)
 	}
 	if !strings.HasPrefix(output, codexPartialHeader) {
@@ -990,15 +991,6 @@ func stringListFromValue(t *testing.T, value any) []string {
 		t.Fatalf("expected status_line array, got %#v", value)
 		return nil
 	}
-}
-
-func containsString(values []string, want string) bool {
-	for _, value := range values {
-		if value == want {
-			return true
-		}
-	}
-	return false
 }
 
 func TestBuildCodexConfigMissingEnv(t *testing.T) {

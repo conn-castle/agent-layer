@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/conn-castle/agent-layer/internal/config"
@@ -41,15 +42,7 @@ func BuildChildPrompt(project *config.ProjectConfig, target string, prompt strin
 }
 
 func projectHasSkill(project *config.ProjectConfig, skill string) bool {
-	if project == nil {
-		return false
-	}
-	for _, candidate := range project.Skills {
-		if candidate.Name == skill {
-			return true
-		}
-	}
-	return false
+	return project != nil && slices.ContainsFunc(project.Skills, func(candidate config.Skill) bool { return candidate.Name == skill })
 }
 
 func validateSkillProjection(root string, target targetMeta, skill string) error {

@@ -5,6 +5,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -528,7 +529,7 @@ func TestDispatchNameVocabularyStaysValidAndLargeEnough(t *testing.T) {
 		t.Fatalf("nameElectrical length = %d, want the approved extra parts", len(nameElectrical))
 	}
 	for _, word := range []string{"red", "blue", "gold", "quirky", "lucky"} {
-		if !containsString(nameShapes, word) {
+		if !slices.Contains(nameShapes, word) {
 			t.Fatalf("nameShapes omitted requested non-size token %q", word)
 		}
 	}
@@ -538,7 +539,7 @@ func TestDispatchNameVocabularyStaysValidAndLargeEnough(t *testing.T) {
 		"speaker", "microphone", "buzzer", "crystal", "antenna", "ferrite", "balun",
 		"connector",
 	} {
-		if !containsString(nameElectrical, word) {
+		if !slices.Contains(nameElectrical, word) {
 			t.Fatalf("nameElectrical omitted approved part %q", word)
 		}
 	}

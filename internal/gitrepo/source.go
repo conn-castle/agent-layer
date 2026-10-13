@@ -6,6 +6,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 
@@ -274,12 +275,7 @@ func parseTreeRecord(record string) (mode string, objectType string, object stri
 // isIgnoredTreePath reports whether a repository-relative path names one of the
 // three artifacts excluded from every canonical skill content operation.
 func isIgnoredTreePath(name string) bool {
-	for _, segment := range strings.Split(name, "/") {
-		if skilltree.IsIgnoredName(segment) {
-			return true
-		}
-	}
-	return false
+	return slices.ContainsFunc(strings.Split(name, "/"), skilltree.IsIgnoredName)
 }
 
 // ListDirectories returns every directory path at a commit, sorted, so wildcard

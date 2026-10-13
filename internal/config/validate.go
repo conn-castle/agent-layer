@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 
@@ -23,12 +24,7 @@ func isValidApprovalMode(mode string) bool {
 	if !ok {
 		return false
 	}
-	for _, opt := range field.Options {
-		if opt.Value == mode {
-			return true
-		}
-	}
-	return false
+	return slices.ContainsFunc(field.Options, func(opt FieldOption) bool { return opt.Value == mode })
 }
 
 // validClients lists clients that can appear in mcp.servers[].clients.

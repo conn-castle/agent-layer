@@ -3,6 +3,7 @@ package install
 import (
 	"fmt"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/aymanbagabas/go-udiff"
@@ -404,12 +405,7 @@ func pruneEmptyUnifiedDiffHunks(lines []string) []string {
 }
 
 func hasUnifiedDiffChangeLine(lines []string) bool {
-	for _, line := range lines {
-		if isUnifiedDiffChangeLine(line) {
-			return true
-		}
-	}
-	return false
+	return slices.ContainsFunc(lines, isUnifiedDiffChangeLine)
 }
 
 func sectionAwareMarkerForPath(relPath string) (string, bool) {

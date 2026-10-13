@@ -1,6 +1,9 @@
 package config
 
-import "testing"
+import (
+	"slices"
+	"testing"
+)
 
 func TestCodexFeatureKeyLists_ReturnDefensiveCopies(t *testing.T) {
 	t.Parallel()
@@ -40,20 +43,11 @@ func TestCodexManagedTopLevelKeys_IncludesSharedConfigOwnershipSet(t *testing.T)
 		CodexSandboxModeKey,
 		CodexWebSearchKey,
 	} {
-		if !containsString(got, want) {
+		if !slices.Contains(got, want) {
 			t.Fatalf("expected managed key %q in %#v", want, got)
 		}
 	}
-	if containsString(got, "mutated") {
+	if slices.Contains(got, "mutated") {
 		t.Fatalf("managed keys aliased caller mutation: %#v", got)
 	}
-}
-
-func containsString(values []string, want string) bool {
-	for _, value := range values {
-		if value == want {
-			return true
-		}
-	}
-	return false
 }

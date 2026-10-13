@@ -268,10 +268,10 @@ func TestPlanUpgradeMigrations_RollbackTargetsIncludeRenameDestination(t *testin
 	}
 	legacyAbs := filepath.Clean(filepath.Join(root, ".agent-layer", "legacy.md"))
 	newAbs := filepath.Clean(filepath.Join(root, ".agent-layer", "new.md"))
-	if !containsString(plan.rollbackTargets, legacyAbs) {
+	if !slices.Contains(plan.rollbackTargets, legacyAbs) {
 		t.Fatalf("rollback targets missing legacy path %q: %#v", legacyAbs, plan.rollbackTargets)
 	}
-	if !containsString(plan.rollbackTargets, newAbs) {
+	if !slices.Contains(plan.rollbackTargets, newAbs) {
 		t.Fatalf("rollback targets missing rename destination %q: %#v", newAbs, plan.rollbackTargets)
 	}
 }
@@ -2030,7 +2030,7 @@ func TestPlanUpgradeMigrations_UnpinnedMCPGeminiClientRunsOlderSourceAgnosticMan
 		execIDs = append(execIDs, op.ID)
 	}
 	for _, id := range []string{"replace-gemini-client", "set-claude-statusline"} {
-		if !containsString(execIDs, id) {
+		if !slices.Contains(execIDs, id) {
 			t.Fatalf("missing executable migration %s, got %v", id, execIDs)
 		}
 	}
@@ -3374,16 +3374,16 @@ func TestListMigrationManifestVersions(t *testing.T) {
 		}
 	}
 	// Verify known versions exist.
-	if !containsString(versions, "0.7.0") {
+	if !slices.Contains(versions, "0.7.0") {
 		t.Fatalf("expected 0.7.0 in versions, got %v", versions)
 	}
-	if !containsString(versions, "0.8.2") {
+	if !slices.Contains(versions, "0.8.2") {
 		t.Fatalf("expected 0.8.2 in versions, got %v", versions)
 	}
-	if !containsString(versions, "0.8.8") {
+	if !slices.Contains(versions, "0.8.8") {
 		t.Fatalf("expected 0.8.8 in versions, got %v", versions)
 	}
-	if !containsString(versions, "0.9.0") {
+	if !slices.Contains(versions, "0.9.0") {
 		t.Fatalf("expected 0.9.0 in versions, got %v", versions)
 	}
 }
@@ -3686,10 +3686,10 @@ func TestPlanUpgradeMigrations_ChainsIntermediateManifests(t *testing.T) {
 	for _, e := range plan.report.Entries {
 		ids = append(ids, e.ID)
 	}
-	if !containsString(ids, "intermediate-op") {
+	if !slices.Contains(ids, "intermediate-op") {
 		t.Fatalf("missing intermediate-op in entries: %v", ids)
 	}
-	if !containsString(ids, "target-op") {
+	if !slices.Contains(ids, "target-op") {
 		t.Fatalf("missing target-op in entries: %v", ids)
 	}
 
@@ -3777,7 +3777,7 @@ func TestPlanUpgradeMigrations_UnknownSourceUsesTargetSupportedSourceAgnosticCha
 		ids = append(ids, entry.ID)
 	}
 	for _, id := range []string{"from-0-6-0", "from-0-6-1", "target-only"} {
-		if !containsString(ids, id) {
+		if !slices.Contains(ids, id) {
 			t.Fatalf("missing %s in entries: %v", id, ids)
 		}
 	}
@@ -3842,13 +3842,13 @@ func TestPlanUpgradeMigrations_ChainSourceTooOldPerManifest(t *testing.T) {
 	for _, op := range plan.executable {
 		execIDs = append(execIDs, op.ID)
 	}
-	if !containsString(execIDs, "safe-op") {
+	if !slices.Contains(execIDs, "safe-op") {
 		t.Fatalf("expected safe-op in executable, got %v", execIDs)
 	}
-	if containsString(execIDs, "gated-op") {
+	if slices.Contains(execIDs, "gated-op") {
 		t.Fatalf("did not expect gated-op in executable, got %v", execIDs)
 	}
-	if !containsString(execIDs, "agnostic-later") {
+	if !slices.Contains(execIDs, "agnostic-later") {
 		t.Fatalf("expected agnostic-later in executable, got %v", execIDs)
 	}
 }
@@ -4470,7 +4470,7 @@ func TestExecuteAppendToFile_RollbackCoverage(t *testing.T) {
 		t.Fatalf("planUpgradeMigrations: %v", err)
 	}
 	targetAbs := filepath.Clean(filepath.Join(root, ".agent-layer", "instructions", "00_rules.md"))
-	if !containsString(plan.rollbackTargets, targetAbs) {
+	if !slices.Contains(plan.rollbackTargets, targetAbs) {
 		t.Fatalf("rollback targets missing append path %q: %#v", targetAbs, plan.rollbackTargets)
 	}
 	if _, ok := plan.coveredPaths[".agent-layer/instructions/00_rules.md"]; !ok {
@@ -4566,15 +4566,6 @@ func TestRunMigrations_AppendToFileAppliesAndReports(t *testing.T) {
 	if !strings.Contains(string(data), "**New rule:**") {
 		t.Fatalf("expected appended content in file, got:\n%s", string(data))
 	}
-}
-
-func containsString(values []string, want string) bool {
-	for _, value := range values {
-		if value == want {
-			return true
-		}
-	}
-	return false
 }
 
 func containsAll(text string, parts ...string) bool {

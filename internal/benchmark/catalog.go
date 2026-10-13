@@ -3,6 +3,7 @@ package benchmark
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 )
 
@@ -196,15 +197,13 @@ func ParseModelSelection(value string) (Model, string, error) {
 			return model, effort, nil
 		}
 		if model.Adapter == adapterGrok {
-			if containsString(grokEfforts, effort) {
+			if slices.Contains(grokEfforts, effort) {
 				return model, effort, nil
 			}
 			return Model{}, "", fmt.Errorf("unsupported Grok reasoning effort %q (supported: %s)", parts[1], strings.Join(grokEfforts, ", "))
 		}
-		for _, supported := range legacyEfforts {
-			if supported == effort {
-				return model, effort, nil
-			}
+		if slices.Contains(legacyEfforts, effort) {
+			return model, effort, nil
 		}
 		return Model{}, "", fmt.Errorf("unsupported reasoning effort %q (supported: %s)", parts[1], strings.Join(legacyEfforts, ", "))
 	}
@@ -252,15 +251,6 @@ func validTaskName(task string) bool {
 		return false
 	}
 	return true
-}
-
-func containsString(values []string, wanted string) bool {
-	for _, value := range values {
-		if value == wanted {
-			return true
-		}
-	}
-	return false
 }
 
 func validRequiredDispatchRole(role string) bool {

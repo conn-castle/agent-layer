@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -139,7 +140,7 @@ func TestMuseLaunchContextChildProcess(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := []string{"AL_DEV_BYPASS_VERSION_DISPATCH=1", "AL_DEV_EXECUTABLE=" + canonicalDev, canonicalDev, "muse", "resume", "child-session"}
-	if len(argv) < 2 || argv[0] != commandEnv || !strings.HasPrefix(argv[1], envRecoveryGeneration+"=") || !equalStrings(argv[2:], want) {
+	if len(argv) < 2 || argv[0] != commandEnv || !strings.HasPrefix(argv[1], envRecoveryGeneration+"=") || !slices.Equal(argv[2:], want) {
 		t.Fatalf("persisted argv = %#v, want generation-prefixed %#v", argv, want)
 	}
 	for _, argument := range argv {

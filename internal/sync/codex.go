@@ -364,11 +364,9 @@ func injectCodexAgentLayerDirectToolNamespace(agentSpecific map[string]any) (map
 			return nil, fmt.Errorf("agents.codex.agent_specific.features.code_mode.%s must be an array of strings", codexDirectOnlyToolNamespacesKey)
 		}
 	}
-	for _, namespace := range namespaces {
-		if namespace == codexAgentLayerToolNamespace {
-			codeMode[codexDirectOnlyToolNamespacesKey] = namespaces
-			return agentSpecific, nil
-		}
+	if slices.Contains(namespaces, codexAgentLayerToolNamespace) {
+		codeMode[codexDirectOnlyToolNamespacesKey] = namespaces
+		return agentSpecific, nil
 	}
 	codeMode[codexDirectOnlyToolNamespacesKey] = append(namespaces, codexAgentLayerToolNamespace)
 	return agentSpecific, nil

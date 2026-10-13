@@ -234,12 +234,7 @@ func isExplicitDependencyOrCache(name string) bool {
 }
 
 func pathUnderDependencyOrCache(rel string) bool {
-	for _, part := range strings.Split(filepath.ToSlash(rel), "/") {
-		if isExplicitDependencyOrCache(part) {
-			return true
-		}
-	}
-	return false
+	return slices.ContainsFunc(strings.Split(filepath.ToSlash(rel), "/"), isExplicitDependencyOrCache)
 }
 
 func firstComponent(rel string) string {

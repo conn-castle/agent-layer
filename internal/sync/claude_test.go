@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -389,14 +390,14 @@ func TestBuildClaudeSettingsAgentSpecificDenyPreservesManagedAllow(t *testing.T)
 	if !ok || len(allow) < 2 {
 		t.Fatalf("expected managed permissions allow list, got %#v", permissions["allow"])
 	}
-	if !stringSliceContains(allow, "Bash(git status:*)") {
+	if !slices.Contains(allow, "Bash(git status:*)") {
 		t.Fatalf("expected generated command allow entry, got %#v", allow)
 	}
-	if !stringSliceContains(allow, "mcp__example__*") {
+	if !slices.Contains(allow, "mcp__example__*") {
 		t.Fatalf("expected generated MCP allow entry, got %#v", allow)
 	}
 	deny, ok := permissions["deny"].([]string)
-	if !ok || !stringSliceContains(deny, "AskUserQuestion") {
+	if !ok || !slices.Contains(deny, "AskUserQuestion") {
 		t.Fatalf("expected custom permissions deny list, got %#v", permissions["deny"])
 	}
 }
@@ -511,15 +512,6 @@ func TestWriteClaudeSettingsMarshalError(t *testing.T) {
 	if err := writeClaudeSettings(sys, root, project); err == nil {
 		t.Fatal("expected marshal error")
 	}
-}
-
-func stringSliceContains(values []string, want string) bool {
-	for _, value := range values {
-		if value == want {
-			return true
-		}
-	}
-	return false
 }
 
 func TestBuildClaudeSettingsDisableTogglesAgentSpecific(t *testing.T) {
@@ -871,7 +863,7 @@ func TestBuildClaudeSettings_InjectionPreservesManagedAllow(t *testing.T) {
 	}
 	permissions := settings["permissions"].(map[string]any)
 	allow, ok := permissions["allow"].([]string)
-	if !ok || !stringSliceContains(allow, "Bash(git status:*)") || !stringSliceContains(allow, "mcp__example__*") {
+	if !ok || !slices.Contains(allow, "Bash(git status:*)") || !slices.Contains(allow, "mcp__example__*") {
 		t.Fatalf("expected managed allow entries preserved, got %#v", permissions["allow"])
 	}
 	if !anyDenyContains(permissions["deny"], "AskUserQuestion") {
@@ -1672,7 +1664,7 @@ func anyDenyContains(value any, want string) bool {
 			}
 		}
 	case []string:
-		return stringSliceContains(values, want)
+		return slices.Contains(values, want)
 	}
 	return false
 }
