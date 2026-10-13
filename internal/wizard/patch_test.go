@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/tomlpatch"
 )
 
@@ -2068,41 +2069,30 @@ features = { multi_agent = true }
 	assert.NotContains(t, out, "[agents.codex.agent_specific.features]")
 }
 
-func TestReadCodexAppsEnabled(t *testing.T) {
-	t.Run("missing agent_specific returns false", func(t *testing.T) {
-		assert.False(t, readCodexAppsEnabled(nil))
-	})
-	t.Run("missing features returns false", func(t *testing.T) {
-		assert.False(t, readCodexAppsEnabled(map[string]any{"other": true}))
-	})
-	t.Run("features wrong type returns false", func(t *testing.T) {
-		assert.False(t, readCodexAppsEnabled(map[string]any{"features": "not-a-map"}))
-	})
-	t.Run("apps wrong type returns false", func(t *testing.T) {
-		agentSpecific := map[string]any{"features": map[string]any{"apps": "yes"}}
-		assert.False(t, readCodexAppsEnabled(agentSpecific))
-	})
-	t.Run("apps true returns true", func(t *testing.T) {
-		agentSpecific := map[string]any{"features": map[string]any{"apps": true}}
-		assert.True(t, readCodexAppsEnabled(agentSpecific))
-	})
-	t.Run("apps false returns false", func(t *testing.T) {
-		agentSpecific := map[string]any{"features": map[string]any{"apps": false}}
-		assert.False(t, readCodexAppsEnabled(agentSpecific))
-	})
-}
-
-func TestReadCodexFeatureReaders(t *testing.T) {
-	agentSpecific := map[string]any{"features": map[string]any{"plugins": true}}
-
-	assert.True(t, readCodexPluginsEnabled(agentSpecific))
-	assert.False(t, readCodexAppsEnabled(agentSpecific))
-}
-
-func TestReadCodexPluginsEnabledDefaultsToNativeEnabled(t *testing.T) {
-	assert.True(t, readCodexPluginsEnabled(nil))
-	assert.True(t, readCodexPluginsEnabled(map[string]any{"features": map[string]any{"plugins": true}}))
-	assert.False(t, readCodexPluginsEnabled(map[string]any{"features": map[string]any{"plugins": false}}))
+func TestReadCodexFeatureValueOr(t *testing.T) {
+	tests := []struct {
+		name          string
+		agentSpecific map[string]any
+		key           string
+		def           bool
+		want          bool
+	}{
+		{"missing agent_specific returns apps default", nil, config.CodexFeatureAppsKey, codexFeatureDefaultApps, false},
+		{"missing agent_specific returns plugins default", nil, config.PluginsKey, codexFeatureDefaultPlugins, true},
+		{"missing features returns default", map[string]any{"other": true}, config.CodexFeatureAppsKey, codexFeatureDefaultApps, false},
+		{"features wrong type returns default", map[string]any{"features": "not-a-map"}, config.CodexFeatureAppsKey, codexFeatureDefaultApps, false},
+		{"value wrong type returns default", map[string]any{"features": map[string]any{"apps": "yes"}}, config.CodexFeatureAppsKey, codexFeatureDefaultApps, false},
+		{"other key absent returns default", map[string]any{"features": map[string]any{"plugins": true}}, config.CodexFeatureAppsKey, codexFeatureDefaultApps, false},
+		{"apps true", map[string]any{"features": map[string]any{"apps": true}}, config.CodexFeatureAppsKey, codexFeatureDefaultApps, true},
+		{"apps false", map[string]any{"features": map[string]any{"apps": false}}, config.CodexFeatureAppsKey, codexFeatureDefaultApps, false},
+		{"plugins true", map[string]any{"features": map[string]any{"plugins": true}}, config.PluginsKey, codexFeatureDefaultPlugins, true},
+		{"plugins false overrides default", map[string]any{"features": map[string]any{"plugins": false}}, config.PluginsKey, codexFeatureDefaultPlugins, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, readCodexFeatureValueOr(tt.agentSpecific, tt.key, tt.def))
+		})
+	}
 }
 
 func TestPatchConfig_CodexBrowserDisabledOnFreshConfig(t *testing.T) {
