@@ -182,10 +182,7 @@ func writeJSON(path string, value any) error {
 	if err != nil {
 		return fmt.Errorf("encode benchmark evidence: %w", err)
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		return fmt.Errorf("create benchmark evidence directory: %w", err)
-	}
-	return fsutil.WriteFileAtomic(path, data, 0o600)
+	return writeJSONBytes(path, data)
 }
 
 func writeJSONBytes(path string, data []byte) error {

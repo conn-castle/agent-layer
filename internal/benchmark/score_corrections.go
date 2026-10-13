@@ -1,7 +1,6 @@
 package benchmark
 
 import (
-	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"io/fs"
@@ -149,7 +148,7 @@ func readCanonicalResult(resultPath string, raw []byte, source AttemptResult, ar
 	if err := json.Unmarshal(data, &record); err != nil ||
 		record.SchemaVersion != canonicalResultSchema ||
 		record.CorrectionID != obsidianCorrectionID ||
-		record.SourceResultSHA256 != fmt.Sprintf("%x", sha256.Sum256(raw)) ||
+		record.SourceResultSHA256 != digestBytes(raw) ||
 		record.Result.Validate() != nil ||
 		record.Result.Status != source.Status ||
 		record.Result.Task != source.Task ||
@@ -196,7 +195,7 @@ func canonicalizeAttemptResult(resultPath string, raw []byte, source AttemptResu
 	// content-addressed record atomically for later reads.
 	record := canonicalAttemptResult{
 		SchemaVersion: canonicalResultSchema, CorrectionID: obsidianCorrectionID,
-		SourceResultSHA256: fmt.Sprintf("%x", sha256.Sum256(raw)), Result: corrected,
+		SourceResultSHA256: digestBytes(raw), Result: corrected,
 	}
 	if err := writeJSON(canonicalResultPath(resultPath), record); err != nil {
 		return AttemptResult{}, fmt.Errorf("cache canonical benchmark result: %w", err)

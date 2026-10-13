@@ -1,8 +1,6 @@
 package benchmark
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -59,17 +57,12 @@ func pierDirectoryChecksum(root string) (string, error) {
 			if err != nil {
 				return "", err
 			}
-			sum := sha256.Sum256(data)
-			property = "data:" + hex.EncodeToString(sum[:])
+			property = "data:" + digestBytes(data)
 		}
 		descriptors = append(descriptors, property+"\x00name:"+entry.Name())
 	}
 	sort.Strings(descriptors)
-	sum := sha256.Sum256([]byte(strings.Join(descriptors, "\x00\x00")))
-	return hex.EncodeToString(sum[:]), nil
+	return digestBytes([]byte(strings.Join(descriptors, "\x00\x00"))), nil
 }
 
-var emptyPierDirectoryChecksum = func() string {
-	sum := sha256.Sum256(nil)
-	return hex.EncodeToString(sum[:])
-}()
+var emptyPierDirectoryChecksum = digestBytes(nil)
