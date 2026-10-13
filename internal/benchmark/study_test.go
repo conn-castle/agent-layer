@@ -8,6 +8,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -395,7 +396,7 @@ func TestStudyReportDisclosesTerminalVerifierTestTimeouts(t *testing.T) {
 	if report.Experiments[0].VerifierTestTimeoutRuns != 1 || report.Experiments[0].Tasks[0].VerifierTestTimeouts != 1 {
 		t.Fatalf("timeout disclosure counts = %#v", report.Experiments[0])
 	}
-	if !containsString(report.Limitations, "1 completed run(s) exhausted the candidate test-execution timeout and were recorded explicitly as zero-score verifier outcomes.") {
+	if !slices.Contains(report.Limitations, "1 completed run(s) exhausted the candidate test-execution timeout and were recorded explicitly as zero-score verifier outcomes.") {
 		t.Fatalf("timeout limitation missing: %#v", report.Limitations)
 	}
 }
@@ -453,7 +454,7 @@ func TestStudyReportGatesNoncompliantComparisonsAndKeepsEligibleHolmFamily(t *te
 	if report.Experiments[0].WorkflowNoncomplianceRuns != 4 || report.Experiments[0].DispatchConformantRuns != 0 {
 		t.Fatalf("noncompliant counts = %#v", report.Experiments[0])
 	}
-	if !containsString(report.Experiments[0].ComparabilityWarnings, "Workflow-noncompliant completed runs are retained as scored evidence; statistical comparisons involving this experiment are unavailable.") {
+	if !slices.Contains(report.Experiments[0].ComparabilityWarnings, "Workflow-noncompliant completed runs are retained as scored evidence; statistical comparisons involving this experiment are unavailable.") {
 		t.Fatalf("missing noncompliance warning: %#v", report.Experiments[0].ComparabilityWarnings)
 	}
 	if report.Experiments[1].WorkflowNoncomplianceRuns != 0 || report.Experiments[2].WorkflowNoncomplianceRuns != 0 {
@@ -499,7 +500,7 @@ func TestStudyReportPreservesPartialAndOneExperimentWithoutInference(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	if report.Experiments[0].Score != nil || report.Experiments[0].Tasks[1].RepetitionsCompleted != 0 || len(report.Comparisons) != 0 || !containsString(report.Limitations, "This study declares one experiment, so there are no pairwise comparisons.") {
+	if report.Experiments[0].Score != nil || report.Experiments[0].Tasks[1].RepetitionsCompleted != 0 || len(report.Comparisons) != 0 || !slices.Contains(report.Limitations, "This study declares one experiment, so there are no pairwise comparisons.") {
 		t.Fatalf("partial report = %#v", report)
 	}
 	if _, err := os.Stat(jsonPath); err != nil {

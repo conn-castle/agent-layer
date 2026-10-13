@@ -3,6 +3,7 @@ package agentdispatch
 import (
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/conn-castle/agent-layer/internal/clients"
@@ -90,7 +91,7 @@ func (p benchmarkPolicy) constrainOptions(options *OptionsResponse) {
 	}
 	var agents []string
 	for _, target := range p.targets {
-		if !containsPolicyValue(agents, target.Agent) {
+		if !slices.Contains(agents, target.Agent) {
 			agents = append(agents, target.Agent)
 		}
 	}
@@ -101,10 +102,10 @@ func (p benchmarkPolicy) constrainOptions(options *OptionsResponse) {
 			if target.Agent != agent {
 				continue
 			}
-			if !containsPolicyValue(models, target.Model) {
+			if !slices.Contains(models, target.Model) {
 				models = append(models, target.Model)
 			}
-			if !containsPolicyValue(efforts, target.Effort) {
+			if !slices.Contains(efforts, target.Effort) {
 				efforts = append(efforts, target.Effort)
 			}
 		}
@@ -135,13 +136,4 @@ func (p benchmarkPolicy) constrainStart(agent *string, model *string, effort *st
 	*model = matches[0].Model
 	*effort = matches[0].Effort
 	return nil
-}
-
-func containsPolicyValue(values []string, wanted string) bool {
-	for _, value := range values {
-		if value == wanted {
-			return true
-		}
-	}
-	return false
 }

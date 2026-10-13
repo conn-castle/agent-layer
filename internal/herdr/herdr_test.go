@@ -8,6 +8,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -59,7 +60,7 @@ func TestHandleStoresExactResumeForEveryProviderAndBijectiveBase32Panes(t *testi
 					}
 					waitFakeHerdR(t, done)
 					params := (<-reports)["params"].(map[string]any)
-					if params[requestPaneIDKey] != pane.paneID || params[requestSourceKey] != tc.source || !equalStrings(interfaceStrings(params[requestResumeArgvKey]), tc.want) {
+					if params[requestPaneIDKey] != pane.paneID || params[requestSourceKey] != tc.source || !slices.Equal(interfaceStrings(params[requestResumeArgvKey]), tc.want) {
 						t.Fatalf("report = %#v, want pane %q source %q argv %#v", params, pane.paneID, tc.source, tc.want)
 					}
 					path, err := sessionPath(socket)
@@ -296,7 +297,7 @@ func TestMuseFirstPromptRootHookStoresRetainedSessionWithDevelopmentCommand(t *t
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !equalStrings(argv, []string{commandEnv, envRecoveryGeneration + "=" + launchGeneration(os.Getpid(), start), EnvDevBypass + "=1", EnvDevExecutable + "=" + canonicalDev, canonicalDev, providerMuse, resumeVerb, "retained-muse-id"}) {
+	if !slices.Equal(argv, []string{commandEnv, envRecoveryGeneration + "=" + launchGeneration(os.Getpid(), start), EnvDevBypass + "=1", EnvDevExecutable + "=" + canonicalDev, canonicalDev, providerMuse, resumeVerb, "retained-muse-id"}) {
 		t.Fatalf("retained Muse development argv = %#v", argv)
 	}
 }
@@ -386,7 +387,7 @@ func TestMuseCurrentLaunchDoesNotTrustIdenticalResumeFromEarlierLaunch(t *testin
 		}
 		previousSequence = sequence
 		argv := interfaceStrings(params[requestResumeArgvKey])
-		if !equalStrings(argv, want) {
+		if !slices.Equal(argv, want) {
 			t.Fatalf("current launch resume argv = %#v, want %#v", argv, want)
 		}
 	}
@@ -485,10 +486,10 @@ func TestResumeArgvCarriesOnlyDevelopmentExecutable(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if argv[0] != "env" || contains(argv, "HOME="+filepath.Join(root, "home")) || argv[len(argv)-2] != "resume" || argv[len(argv)-1] != "id" {
+	if argv[0] != "env" || slices.Contains(argv, "HOME="+filepath.Join(root, "home")) || argv[len(argv)-2] != "resume" || argv[len(argv)-1] != "id" {
 		t.Fatalf("argv = %#v", argv)
 	}
-	if contains(argv, "SECRET=must-not-appear") {
+	if slices.Contains(argv, "SECRET=must-not-appear") {
 		t.Fatalf("secret persisted: %#v", argv)
 	}
 }
@@ -773,7 +774,7 @@ func assertLiteralPersistedResume(t *testing.T, path, workspaceID, internalPaneI
 			if !ok || pane.AgentResume == nil {
 				continue
 			}
-			if pane.AgentResume.Source == source && pane.AgentResume.Agent == agent && equalStrings(pane.AgentResume.Argv, argv) {
+			if pane.AgentResume.Source == source && pane.AgentResume.Agent == agent && slices.Equal(pane.AgentResume.Argv, argv) {
 				return
 			}
 			t.Fatalf("persisted pane %q recipe = %#v, want source %q agent %q argv %#v", internalPaneID, pane.AgentResume, source, agent, argv)
@@ -789,25 +790,6 @@ func interfaceStrings(value any) []string {
 		result[i], _ = value.(string)
 	}
 	return result
-}
-func equalStrings(a, b []string) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i] != b[i] {
-			return false
-		}
-	}
-	return true
-}
-func contains(values []string, want string) bool {
-	for _, value := range values {
-		if value == want {
-			return true
-		}
-	}
-	return false
 }
 
 func TestReleaseLaunchRecordIgnoresAmbientDevelopmentHookEnvironment(t *testing.T) {
@@ -835,7 +817,7 @@ func TestReleaseLaunchRecordIgnoresAmbientDevelopmentHookEnvironment(t *testing.
 	waitFakeHerdR(t, done)
 	argv := interfaceStrings((<-reports)["params"].(map[string]any)["resume_argv"])
 	want := []string{commandEnv, envRecoveryGeneration + "=" + launchGeneration(os.Getpid(), start), "al", providerMuse, resumeVerb, "release-id"}
-	if !equalStrings(argv, want) {
+	if !slices.Equal(argv, want) {
 		t.Fatalf("release record inherited ambient identity or generation: %#v", argv)
 	}
 }

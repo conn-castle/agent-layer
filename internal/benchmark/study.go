@@ -8,9 +8,11 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -1383,14 +1385,10 @@ func validCachedAuthenticationPreflight(adapter string, evidence AuthenticationP
 	}
 	switch adapter {
 	case adapterCodex:
-		if evidence.Provider != adapterCodex || evidence.Check != codexLoginStatusCheck {
-			return false
-		}
-		for _, method := range codexLoginStatusAllowlist {
-			if evidence.AuthenticationMethod == method.normalized {
-				return true
-			}
-		}
+		return evidence.Provider == adapterCodex && evidence.Check == codexLoginStatusCheck &&
+			slices.ContainsFunc(codexLoginStatusAllowlist, func(method codexLoginStatusMethod) bool {
+				return evidence.AuthenticationMethod == method.normalized
+			})
 	case adapterAntigravity:
 		return evidence.Provider == adapterAntigravity && evidence.Check == authCheckOAuthProfilePresence && evidence.AuthenticationMethod == authMethodGoogleOAuth
 	case adapterGrok:
@@ -1556,8 +1554,8 @@ func reusableStudyArmManifest(root string) (studyArmManifest, bool, error) {
 func compatibleStudyArmManifest(manifest studyArmManifest, selectionID string, tasks []benchmarkPlanTask, checksums map[string]string, destination *matrixArm) bool {
 	return manifest.SchemaVersion == studyArmManifestSchema && manifest.SelectionID == selectionID &&
 		manifest.Mode == destination.Mode && manifest.Model == destination.Loaded.Model.PublishedIdentifier &&
-		manifest.Reasoning == destination.Loaded.Effort && sameStringMap(manifest.TaskChecksums, checksums) &&
-		sameIntMap(manifest.Repetitions, repetitionsForTasks(tasks)) && manifest.AgentTimeoutMultiplier == destination.AgentTimeoutMultiplier &&
+		manifest.Reasoning == destination.Loaded.Effort && maps.Equal(manifest.TaskChecksums, checksums) &&
+		maps.Equal(manifest.Repetitions, repetitionsForTasks(tasks)) && manifest.AgentTimeoutMultiplier == destination.AgentTimeoutMultiplier &&
 		manifest.TreatmentHash == bundleManifestHash(destination.Bundle) && manifest.AdapterSHA256 == destination.AdapterSHA256
 }
 
@@ -1578,8 +1576,8 @@ func compatibleLegacyMatrixArmManifest(manifest matrixArmManifest, selectionID s
 	}
 	return manifest.SchemaVersion == matrixManifestSchema && manifest.SelectionID == selectionID &&
 		manifest.Mode == destination.Mode && manifest.Model == destination.Loaded.Model.PublishedIdentifier &&
-		manifest.Reasoning == destination.Loaded.Effort && sameStringMap(manifest.TaskChecksums, checksums) &&
-		sameIntMap(manifest.Repetitions, repetitionsForTasks(tasks)) && multiplier == destination.AgentTimeoutMultiplier &&
+		manifest.Reasoning == destination.Loaded.Effort && maps.Equal(manifest.TaskChecksums, checksums) &&
+		maps.Equal(manifest.Repetitions, repetitionsForTasks(tasks)) && multiplier == destination.AgentTimeoutMultiplier &&
 		manifest.TreatmentHash == bundleManifestHash(destination.Bundle) && (destination.Bundle != nil || destination.AdapterSHA256 == "")
 }
 

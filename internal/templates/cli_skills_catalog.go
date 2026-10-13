@@ -5,6 +5,7 @@ import (
 	"net/url"
 	"path"
 	"regexp"
+	"slices"
 	"strings"
 
 	toml "github.com/pelletier/go-toml/v2"
@@ -124,12 +125,7 @@ var RetiredSkillNames = []string{"implement", "ship-pr", "auto-skill-loop", "aud
 
 // IsRetiredSkill reports names whose former bundled local slot must be preserved.
 func IsRetiredSkill(name string) bool {
-	for _, candidate := range RetiredSkillNames {
-		if name == candidate {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(RetiredSkillNames, name)
 }
 
 func validateCatalogSource(e CLISkillCatalogEntry, read func(string) ([]byte, error)) error {

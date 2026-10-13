@@ -222,17 +222,8 @@ func selectOptionalValue(ui UI, title string, options []string, value *string) e
 	selection := *value
 	if selection == "" {
 		selection = messages.WizardLeaveBlankOption
-	} else {
-		found := false
-		for _, option := range options {
-			if selection == option {
-				found = true
-				break
-			}
-		}
-		if !found {
-			selection = messages.WizardCustomOption
-		}
+	} else if !slices.Contains(options, selection) {
+		selection = messages.WizardCustomOption
 	}
 	opts := make([]string, 0, len(options)+2)
 	opts = append(opts, messages.WizardLeaveBlankOption)

@@ -5,6 +5,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
@@ -50,7 +51,7 @@ func TestStudyReportOneRepetitionUsesPublishedProxy(t *testing.T) {
 	if comparison.HolmAdjustedPValue == nil || *comparison.HolmAdjustedPValue != *comparison.RawTwoSidedPValue {
 		t.Fatalf("holm adjustment = %#v", comparison)
 	}
-	if !containsString(report.Limitations, "published_proxy inference estimates uncertainty from pinned published DeepSWE runs, not from the executed repetitions in this study.") {
+	if !slices.Contains(report.Limitations, "published_proxy inference estimates uncertainty from pinned published DeepSWE runs, not from the executed repetitions in this study.") {
 		t.Fatalf("missing proxy limitation: %#v", report.Limitations)
 	}
 	firstCombined := (.25 * .8) * (.25 * .8) * .16 * 2
@@ -119,10 +120,10 @@ func TestStudyReportMismatchWarningsAppearInJSONAndHTML(t *testing.T) {
 		"second-task": {.6},
 	}, sol, medium)
 	want := "Selector/executed mismatch: executed model/reasoning is gpt-5-6-sol/medium; selector published evidence is from gpt-5-6-luna/low."
-	if !containsString(report.Experiments[1].ComparabilityWarnings, want) {
+	if !slices.Contains(report.Experiments[1].ComparabilityWarnings, want) {
 		t.Fatalf("missing mismatch warning: %#v", report.Experiments[1].ComparabilityWarnings)
 	}
-	if containsString(report.Experiments[0].ComparabilityWarnings, "Selector/executed mismatch:") {
+	if slices.Contains(report.Experiments[0].ComparabilityWarnings, "Selector/executed mismatch:") {
 		t.Fatalf("matching arm was warned: %#v", report.Experiments[0].ComparabilityWarnings)
 	}
 	html, err := renderStudyReportHTML(report)

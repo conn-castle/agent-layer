@@ -381,18 +381,6 @@ func TestCredentialSecretValuesIncludesGrokJWTKey(t *testing.T) {
 	}
 }
 
-func TestProviderPreflightMapComparisonRejectsMissingOrChangedCapacity(t *testing.T) {
-	if !sameIntMap(map[string]int{"grok": 1}, map[string]int{"grok": 1}) {
-		t.Fatal("identical provider capacity maps differ")
-	}
-	if sameIntMap(map[string]int{"grok": 1}, map[string]int{"grok": 1, "antigravity": 1}) {
-		t.Fatal("provider capacity maps with different members compared equal")
-	}
-	if sameIntMap(map[string]int{"grok": 1}, map[string]int{"grok": 2}) {
-		t.Fatal("provider capacity maps with different capacity compared equal")
-	}
-}
-
 func TestBenchmarkProviderRegistryCoversEverySelectableModel(t *testing.T) {
 	for _, model := range historicalModels {
 		provider, err := benchmarkProvider(model.Adapter)

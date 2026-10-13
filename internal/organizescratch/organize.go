@@ -775,7 +775,7 @@ func inspectGitDir(ctx context.Context, target string) (gitDirKind, error) {
 
 func markRegisteredWorktree(candidate *placement, rel, kind, target string) {
 	normalized := normalizedWorktreeRel(rel)
-	if containsString(candidate.worktreeTargets, normalized) {
+	if slices.Contains(candidate.worktreeTargets, normalized) {
 		return
 	}
 	candidate.worktreeTargets = append(candidate.worktreeTargets, normalized)
@@ -806,15 +806,6 @@ func normalizedWorktreeRel(rel string) string {
 		return "."
 	}
 	return rel
-}
-
-func containsString(values []string, wanted string) bool {
-	for _, value := range values {
-		if value == wanted {
-			return true
-		}
-	}
-	return false
 }
 
 func repairWorktrees(ctx context.Context, root string, outcomes []moveOutcome, stderr io.Writer) error {

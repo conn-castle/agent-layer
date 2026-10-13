@@ -13,6 +13,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -690,7 +691,7 @@ func containsResume(session persistedSession, paneID string, spec providerSpec, 
 			return false, nil
 		}
 		resume := pane.AgentResume
-		return resume.Source == spec.source && resume.Agent == spec.agent && equalArgv(resume.Argv, argv), nil
+		return resume.Source == spec.source && resume.Agent == spec.agent && slices.Equal(resume.Argv, argv), nil
 	}
 	return false, nil
 }
@@ -716,18 +717,6 @@ func splitCanonicalPaneID(paneID string) (string, int, error) {
 func stringValue(value any) string {
 	text, _ := value.(string)
 	return text
-}
-
-func equalArgv(got, want []string) bool {
-	if len(got) != len(want) {
-		return false
-	}
-	for i := range got {
-		if got[i] != want[i] {
-			return false
-		}
-	}
-	return true
 }
 
 func responseError(response map[string]any) string {

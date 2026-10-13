@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -141,10 +142,10 @@ func TestRunGitDoesNotInheritExternalIndex(t *testing.T) {
 
 	tree := runGit(t, nestedRoot, "ls-tree", "--name-only", "-r", "HEAD")
 	entries := strings.Fields(tree)
-	if !containsString(entries, "nested.txt") {
+	if !slices.Contains(entries, "nested.txt") {
 		t.Fatalf("nested commit tree omitted nested.txt: %q", tree)
 	}
-	if containsString(entries, "external-sentinel.txt") {
+	if slices.Contains(entries, "external-sentinel.txt") {
 		t.Fatalf("nested commit tree used external index entry: %q", tree)
 	}
 }

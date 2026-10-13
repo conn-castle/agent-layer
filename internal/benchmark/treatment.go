@@ -18,6 +18,7 @@ import (
 	"regexp"
 	"runtime"
 	"runtime/debug"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -258,7 +259,7 @@ func validatePinnedStudyBundle(bundle *TreatmentBundle) error {
 		return fmt.Errorf("rehash pinned study bundle: %w", err)
 	}
 	hash, err := hashCanonical(manifest)
-	if err != nil || hash != bundle.ManifestHash || !sameTreatmentFiles(manifest.Files, bundle.Manifest.Files) {
+	if err != nil || hash != bundle.ManifestHash || !slices.Equal(manifest.Files, bundle.Manifest.Files) {
 		return fmt.Errorf("pinned study bundle content differs from immutable manifest")
 	}
 	for _, item := range []struct{ path, want, label string }{{bundle.AdapterPath, bundle.AdapterSHA256, "adapter"}, {bundle.LinuxBinary, bundle.LinuxBinarySHA256, "runtime"}} {
@@ -275,18 +276,6 @@ func validatePinnedStudyBundle(bundle *TreatmentBundle) error {
 		}
 	}
 	return nil
-}
-
-func sameTreatmentFiles(left, right []TreatmentFile) bool {
-	if len(left) != len(right) {
-		return false
-	}
-	for i := range left {
-		if left[i] != right[i] {
-			return false
-		}
-	}
-	return true
 }
 
 // BuildStudyTreatmentBundle stages the immutable input snapshot prepared for

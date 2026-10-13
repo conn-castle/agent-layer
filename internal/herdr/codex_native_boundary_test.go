@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -91,7 +92,7 @@ func TestHandleForRootCodexTitleOwnership(t *testing.T) {
 					t.Fatalf("reports = %d", len(reports))
 				}
 				params := (<-reports)["params"].(map[string]any)
-				if params[requestPaneIDKey] != "w1:p1" || !equalStrings(interfaceStrings(params[requestResumeArgvKey]), want) {
+				if params[requestPaneIDKey] != "w1:p1" || !slices.Equal(interfaceStrings(params[requestResumeArgvKey]), want) {
 					t.Fatalf("recipe = %#v; want %#v", params, want)
 				}
 				assertBoundaryStored(t, root, "w1:p1", want)
@@ -482,7 +483,7 @@ func TestHandleForRootCodexNewForegroundLaunchInSamePane(t *testing.T) {
 	}
 	want := []string{commandEnv, EnvDevBypass + "=1", EnvDevExecutable + "=" + executable, executable, providerCodex, resumeVerb, boundaryThread}
 	params := (<-reports)["params"].(map[string]any)
-	if !equalStrings(interfaceStrings(params[requestResumeArgvKey]), want) {
+	if !slices.Equal(interfaceStrings(params[requestResumeArgvKey]), want) {
 		t.Fatalf("new foreground recipe = %#v", params)
 	}
 	assertBoundaryStored(t, root, "w1:p1", want)

@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"math"
+	"slices"
 	"time"
 )
 
@@ -65,7 +66,7 @@ func (result AttemptResult) Validate() error {
 		(result.Status != statusSuccess && result.Status != statusFailed) ||
 		result.TaskChecksum == "" || result.Provider == "" ||
 		result.PublishedModel == "" || result.RuntimeModel == "" ||
-		!containsString(supportedEfforts, result.ReasoningEffort) ||
+		!slices.Contains(supportedEfforts, result.ReasoningEffort) ||
 		result.ProviderClientVersion == "" || result.StartedAt.IsZero() ||
 		result.FinishedAt.IsZero() {
 		return fmt.Errorf("attempt result is missing required normalized fields")

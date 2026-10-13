@@ -112,18 +112,6 @@ type ExecutionRequest struct {
 	OnProgress                 func(ExecutionProgress)
 }
 
-func sameIntMap(left, right map[string]int) bool {
-	if len(left) != len(right) {
-		return false
-	}
-	for key, value := range left {
-		if right[key] != value {
-			return false
-		}
-	}
-	return true
-}
-
 func preflight(selections []parsedSelection) error {
 	for _, command := range []string{commandGit, commandDocker, commandUVX} {
 		if _, err := exec.LookPath(command); err != nil {

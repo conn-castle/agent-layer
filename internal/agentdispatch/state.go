@@ -11,6 +11,7 @@ import (
 	"math/big"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"syscall"
@@ -409,7 +410,7 @@ func inDispatchNamePool(name string) bool {
 	if !ok {
 		return false
 	}
-	return containsString(nameSizes, size) && containsString(nameShapes, shape) && containsString(nameElectrical, electrical)
+	return slices.Contains(nameSizes, size) && slices.Contains(nameShapes, shape) && slices.Contains(nameElectrical, electrical)
 }
 
 func splitDispatchName(name string) (string, string, string, bool) {
@@ -427,15 +428,6 @@ func splitDispatchName(name string) (string, string, string, bool) {
 		return "", "", "", false
 	}
 	return name[:first], rest[:second], electrical, true
-}
-
-func containsString(values []string, want string) bool {
-	for _, value := range values {
-		if value == want {
-			return true
-		}
-	}
-	return false
 }
 
 func shuffleStrings(values []string) error {
