@@ -80,41 +80,6 @@ func TestParseVersion(t *testing.T) {
 	}
 }
 
-func TestComparePrerelease(t *testing.T) {
-	cases := []struct {
-		name string
-		a    string
-		b    string
-		want int
-	}{
-		{"numeric identifier ordering", "rc.10", "rc.2", 1},
-		{"shorter is lower precedence", "alpha", "alpha.1", -1},
-		{"numeric < non-numeric", "alpha.1", "alpha.beta", -1},
-	}
-
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			got := comparePrerelease(tc.a, tc.b)
-			switch tc.want {
-			case -1:
-				if got >= 0 {
-					t.Fatalf("expected %q < %q, got %d", tc.a, tc.b, got)
-				}
-			case 0:
-				if got != 0 {
-					t.Fatalf("expected %q == %q, got %d", tc.a, tc.b, got)
-				}
-			case 1:
-				if got <= 0 {
-					t.Fatalf("expected %q > %q, got %d", tc.a, tc.b, got)
-				}
-			default:
-				t.Fatalf("invalid want: %d", tc.want)
-			}
-		})
-	}
-}
-
 func TestNormalizeVersionsJSON(t *testing.T) {
 	repo := t.TempDir()
 	versionsPath := filepath.Join(repo, "versions.json")
@@ -1533,55 +1498,6 @@ func TestRun_NormalizeVersionsJSONError(t *testing.T) {
 func TestParseVersion_InvalidMinor(t *testing.T) {
 	if _, err := parseVersion("1.a.3"); err == nil {
 		t.Fatal("expected error for invalid minor version")
-	}
-}
-
-func TestComparePrerelease_BranchCoverage(t *testing.T) {
-	tests := []struct {
-		a    string
-		b    string
-		want int
-	}{
-		{"beta", "1", 1},        // non-numeric > numeric
-		{"alpha", "beta", -1},   // lexical compare
-		{"beta", "alpha", 1},    // lexical compare
-		{"alpha", "alpha", 0},   // equal identifiers
-		{"alpha.1", "alpha", 1}, // longer list is higher precedence
-	}
-	for _, tt := range tests {
-		got := comparePrerelease(tt.a, tt.b)
-		switch tt.want {
-		case -1:
-			if got >= 0 {
-				t.Fatalf("comparePrerelease(%q,%q) = %d, want < 0", tt.a, tt.b, got)
-			}
-		case 0:
-			if got != 0 {
-				t.Fatalf("comparePrerelease(%q,%q) = %d, want 0", tt.a, tt.b, got)
-			}
-		case 1:
-			if got <= 0 {
-				t.Fatalf("comparePrerelease(%q,%q) = %d, want > 0", tt.a, tt.b, got)
-			}
-		}
-	}
-}
-
-func TestParseNumericIdentifier_EdgeCases(t *testing.T) {
-	if _, ok := parseNumericIdentifier("0"); !ok {
-		t.Fatal("expected 0 to be numeric")
-	}
-	if _, ok := parseNumericIdentifier(""); ok {
-		t.Fatal("expected empty string to be invalid")
-	}
-	if _, ok := parseNumericIdentifier("01"); ok {
-		t.Fatal("expected leading zero to be invalid")
-	}
-	if _, ok := parseNumericIdentifier("1a"); ok {
-		t.Fatal("expected non-digit to be invalid")
-	}
-	if _, ok := parseNumericIdentifier(strings.Repeat("9", 200)); ok {
-		t.Fatal("expected overflow to be invalid")
 	}
 }
 

@@ -695,11 +695,10 @@ type version struct {
 	minor      int
 	patch      int
 	prerelease string
-	original   string
 }
 
 func parseVersion(s string) (version, error) {
-	v := version{original: s}
+	var v version
 
 	parts := strings.SplitN(s, "-", 2)
 	core := parts[0]
@@ -755,74 +754,6 @@ func validatePrerelease(prerelease string) error {
 	}
 
 	return nil
-}
-
-// comparePrerelease compares two prerelease strings according to SemVer precedence rules.
-// It assumes a and b are non-empty strings (stable releases are handled separately).
-// It returns -1 if a < b, 0 if a == b, and 1 if a > b.
-func comparePrerelease(a string, b string) int {
-	aIDs := strings.Split(a, ".")
-	bIDs := strings.Split(b, ".")
-
-	for i := 0; i < len(aIDs) && i < len(bIDs); i++ {
-		aRaw := aIDs[i]
-		bRaw := bIDs[i]
-
-		aNum, aIsNum := parseNumericIdentifier(aRaw)
-		bNum, bIsNum := parseNumericIdentifier(bRaw)
-
-		switch {
-		case aIsNum && bIsNum:
-			if aNum < bNum {
-				return -1
-			}
-			if aNum > bNum {
-				return 1
-			}
-		case aIsNum && !bIsNum:
-			// Numeric identifiers have lower precedence than non-numeric.
-			return -1
-		case !aIsNum && bIsNum:
-			return 1
-		default:
-			if aRaw < bRaw {
-				return -1
-			}
-			if aRaw > bRaw {
-				return 1
-			}
-		}
-	}
-
-	// If all compared identifiers are equal, the longer list has higher precedence.
-	if len(aIDs) < len(bIDs) {
-		return -1
-	}
-	if len(aIDs) > len(bIDs) {
-		return 1
-	}
-	return 0
-}
-
-// parseNumericIdentifier reports whether s is a valid SemVer numeric identifier:
-// it must be all digits with no leading zeros (except the string "0").
-func parseNumericIdentifier(s string) (int, bool) {
-	if s == "0" {
-		return 0, true
-	}
-	if s == "" || s[0] == '0' {
-		return 0, false
-	}
-	for i := 0; i < len(s); i++ {
-		if s[i] < '0' || s[i] > '9' {
-			return 0, false
-		}
-	}
-	n, err := strconv.Atoi(s)
-	if err != nil {
-		return 0, false
-	}
-	return n, true
 }
 
 // minorKey returns the major.minor grouping key for a parsed version.
@@ -1176,16 +1107,12 @@ func normalizeVersionsJSON(repoB string) error {
 			return vi.patch > vj.patch
 		}
 
-		// Stable releases (no prerelease) come before prereleases.
-		if vi.prerelease == "" && vj.prerelease != "" {
-			return true
+		// Stable releases (no prerelease) come before prereleases. Prerelease
+		// precedence is irrelevant because selectRetainedVersions drops them all.
+		if (vi.prerelease == "") != (vj.prerelease == "") {
+			return vi.prerelease == ""
 		}
-		if vi.prerelease != "" && vj.prerelease == "" {
-			return false
-		}
-
-		// Both have prereleases, compare by SemVer precedence.
-		return comparePrerelease(vi.prerelease, vj.prerelease) > 0
+		return unique[i] > unique[j]
 	})
 
 	retained, dropped, err := selectRetainedVersions(unique)
