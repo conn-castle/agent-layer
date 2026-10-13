@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -427,17 +428,9 @@ func TestLoadTemplateConfig(t *testing.T) {
 func stringSliceValueContains(value any, want string) bool {
 	switch values := value.(type) {
 	case []string:
-		for _, value := range values {
-			if value == want {
-				return true
-			}
-		}
+		return slices.Contains(values, want)
 	case []any:
-		for _, value := range values {
-			if value == want {
-				return true
-			}
-		}
+		return slices.Contains(values, any(want))
 	}
 	return false
 }

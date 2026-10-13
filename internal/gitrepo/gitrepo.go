@@ -17,6 +17,7 @@ import (
 	"os"
 	"os/exec"
 	"regexp"
+	"slices"
 	"strings"
 )
 
@@ -265,10 +266,8 @@ func (r *Runner) runAllowExitInput(ctx context.Context, dir string, input []byte
 	var exitErr *exec.ExitError
 	if errors.As(err, &exitErr) {
 		code := exitErr.ExitCode()
-		for _, allowed := range allowedExitCodes {
-			if code == allowed {
-				return stdout.Bytes(), code, nil
-			}
+		if slices.Contains(allowedExitCodes, code) {
+			return stdout.Bytes(), code, nil
 		}
 		return stdout.Bytes(), code, r.commandError(args, stderr.String(), err)
 	}
