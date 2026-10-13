@@ -447,12 +447,12 @@ func ParseKeyLineWithState(line string, key string, state StringState) (KeyLine,
 	if !ok || !slices.Equal(path, wantPath) {
 		return KeyLine{}, false
 	}
-	inlineComment := extractInlineCommentWithState(trimmed, state)
+	inlineComment := InlineComment(trimmed, state)
 	return KeyLine{Raw: line, Indent: indent, Commented: commented, InlineComment: inlineComment}, true
 }
 
-// extractInlineCommentWithState returns the inline comment portion.
-func extractInlineCommentWithState(line string, state StringState) string {
+// InlineComment returns the trimmed inline comment portion of line, or "".
+func InlineComment(line string, state StringState) string {
 	commentPos, _ := ScanLineForComment(line, state)
 	if commentPos < 0 {
 		return ""
@@ -841,6 +841,20 @@ func isBareKey(key string) bool {
 		return false
 	}
 	return true
+}
+
+// AssignmentKeyPath returns the key path assigned by an uncommented line.
+func AssignmentKeyPath(line string, state StringState) ([]string, bool) {
+	trimmed := strings.TrimLeft(line, " \t")
+	if strings.HasPrefix(trimmed, "#") {
+		return nil, false
+	}
+	commentPos, _ := ScanLineForComment(trimmed, state)
+	clean := trimmed
+	if commentPos >= 0 {
+		clean = strings.TrimSpace(trimmed[:commentPos])
+	}
+	return assignmentKeyPath(clean)
 }
 
 func assignmentKeyPath(clean string) ([]string, bool) {

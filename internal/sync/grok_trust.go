@@ -266,15 +266,7 @@ func rewriteGrokInlineTableAssignment(editor *codexTomlEditor, target assignment
 	}
 	setNestedValue(table, rest, literalValue{literal: literal})
 
-	startLine := editor.lines[target.start]
-	lhs, _, _ := strings.Cut(stripLineComment(startLine), "=")
-	newLine := strings.TrimRight(lhs, " \t") + " = " + formatInlineValue(table)
-	if target.start == target.end {
-		if comment := inlineCommentOf(startLine); comment != "" {
-			newLine += " " + comment
-		}
-	}
-	editor.lines = replaceLineRange(editor.lines, target.start, target.end+1, []string{newLine})
+	editor.rewriteAssignment(target.start, target.end, formatInlineValue(table))
 	return true
 }
 
