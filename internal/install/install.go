@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 
@@ -226,12 +227,11 @@ type transactionStep struct {
 	rollbackTargets func() []string
 }
 
-func (inst upgradeOrchestrator) runUpgradeTransaction(snapshot *upgradeSnapshot) error {
-	catalogDirs, err := inst.templates().installedCatalogSkillTemplateDirs()
-	if err != nil {
-		return err
-	}
-	steps := []transactionStep{
+// upgradeTransactionSteps is the single source of step rollback targets:
+// snapshot capture covers the union of these targets, so every path a failed
+// step can roll back has a snapshot entry to restore.
+func (inst upgradeOrchestrator) upgradeTransactionSteps(catalogDirs []templateDir) []transactionStep {
+	return []transactionStep{
 		{name: "runMigrations", run: inst.runMigrations, rollbackTargets: inst.runMigrationsTargetPaths},
 		{name: "instructionOrder", run: inst.migrateInstructionOrder, rollbackTargets: func() []string { return []string{filepath.Join(inst.root, ".agent-layer", "config.toml")} }},
 		{name: "writeVersionFile", run: inst.writeVersionFile, rollbackTargets: inst.writeVersionFileTargetPaths},
@@ -248,8 +248,15 @@ func (inst upgradeOrchestrator) runUpgradeTransaction(snapshot *upgradeSnapshot)
 		{name: stepWriteVSCodeLaunchers, run: inst.writeVSCodeLaunchers, rollbackTargets: inst.writeVSCodeLaunchersTargetPaths},
 		{name: "handleUnknowns", run: inst.handleUnknowns, rollbackTargets: inst.handleUnknownsTargetPaths},
 	}
-	completedTargets := make(map[string]struct{})
-	for _, step := range steps {
+}
+
+func (inst upgradeOrchestrator) runUpgradeTransaction(snapshot *upgradeSnapshot) error {
+	catalogDirs, err := inst.templates().installedCatalogSkillTemplateDirs()
+	if err != nil {
+		return err
+	}
+	var completedTargets []string
+	for _, step := range inst.upgradeTransactionSteps(catalogDirs) {
 		currentStepTargets := step.rollbackTargets()
 		stepErr := inst.ctx.Err()
 		if stepErr == nil {
@@ -263,8 +270,7 @@ func (inst upgradeOrchestrator) runUpgradeTransaction(snapshot *upgradeSnapshot)
 			snapshot.FailureStep = step.name
 			snapshot.FailureError = err.Error()
 
-			rollbackTargets := mergeRollbackTargets(completedTargets, currentStepTargets)
-			rollbackErr := inst.rollbackUpgradeSnapshot(snapshot, rollbackTargets)
+			rollbackErr := inst.rollbackUpgradeSnapshot(snapshot, slices.Concat(completedTargets, currentStepTargets))
 			if rollbackErr != nil {
 				snapshot.FailureError = fmt.Sprintf("upgrade failed: %v; rollback failed: %v", err, rollbackErr)
 				if writeErr := inst.writeUpgradeSnapshot(*snapshot, false); writeErr != nil {
@@ -280,9 +286,7 @@ func (inst upgradeOrchestrator) runUpgradeTransaction(snapshot *upgradeSnapshot)
 			_, _ = fmt.Fprintf(inst.warnOutput(), messages.InstallUpgradeSnapshotRolledBackFmt, step.name, snapshot.SnapshotID)
 			return fmt.Errorf("upgrade step %s failed (rolled back to pre-upgrade state): %w", step.name, err)
 		}
-		for _, path := range currentStepTargets {
-			completedTargets[filepath.Clean(path)] = struct{}{}
-		}
+		completedTargets = append(completedTargets, currentStepTargets...)
 	}
 
 	snapshot.Status = upgradeSnapshotStatusApplied
@@ -292,22 +296,6 @@ func (inst upgradeOrchestrator) runUpgradeTransaction(snapshot *upgradeSnapshot)
 		return fmt.Errorf("mark upgrade snapshot %s as applied: %w", snapshot.SnapshotID, err)
 	}
 	return nil
-}
-
-func mergeRollbackTargets(completed map[string]struct{}, current []string) []string {
-	targets := make(map[string]struct{}, len(completed)+len(current))
-	for path := range completed {
-		targets[path] = struct{}{}
-	}
-	for _, path := range current {
-		targets[filepath.Clean(path)] = struct{}{}
-	}
-	out := make([]string, 0, len(targets))
-	for path := range targets {
-		out = append(out, path)
-	}
-	sort.Strings(out)
-	return out
 }
 
 func runSteps(steps []func() error) error {

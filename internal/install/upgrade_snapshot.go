@@ -361,7 +361,6 @@ func (inst *installer) captureUpgradeSnapshotEntries() ([]upgradeSnapshotEntry, 
 		return nil, err
 	}
 	targets := inst.upgradeSnapshotTargetPaths(catalogDirs)
-	targets = append(targets, filepath.Join(inst.root, ".agent-layer", "config.toml"))
 	entries := make(map[string]upgradeSnapshotEntry)
 	for _, target := range targets {
 		if err := inst.captureUpgradeSnapshotTarget(target, entries); err != nil {
@@ -552,8 +551,8 @@ func (inst *installer) writeVSCodeLaunchersTargetPaths() []string {
 }
 
 func (inst *installer) handleUnknownsTargetPaths() []string {
-	// Mirror upgradeSnapshotTargetPaths: tmp paths are not snapshotted, so
-	// they must not be rollback targets either. If they were, an automatic
+	// tmp paths are excluded from the snapshot (see upgradeSnapshotTargetPaths),
+	// so they must not be rollback targets either. If they were, an automatic
 	// rollback would `RemoveAll` tmp paths without any snapshot entry to
 	// restore them — silently wiping tmp content the user never confirmed
 	// for deletion.
@@ -569,74 +568,27 @@ func (inst *installer) handleUnknownsTargetPaths() []string {
 }
 
 func (inst *installer) upgradeSnapshotTargetPaths(catalogDirs []templateDir) []string {
-	root := inst.root
-	paths := make(map[string]struct{})
-	add := func(path string) {
-		clean := filepath.Clean(path)
-		// `.agent-layer/tmp/` holds ephemeral agent run artifacts (plans,
-		// reports, scratch dumps). Snapshotting it would balloon snapshot
-		// size and is not needed for rollback because tmp deletion now
-		// requires explicit, double-confirmed user consent.
-		if inst.isUnderAgentLayerTmp(clean) {
-			return
-		}
-		paths[clean] = struct{}{}
-	}
-
-	add(filepath.Join(root, ".agent-layer", "al.version"))
-	add(filepath.Join(root, ".agent-layer", ".gitignore"))
-	add(filepath.Join(root, ".agent-layer", UpgradeKeepListFileName))
 	// The managed baseline is rewritten after the transaction to the target
 	// version, so a manual rollback must restore (or remove) it alongside the
 	// pin. Otherwise later upgrades would trust a baseline newer than the
 	// restored files and skip migrations or misclassify templates. Only the file
 	// is captured: the state directory also holds upgrade-snapshots/.
-	add(filepath.Join(root, filepath.FromSlash(baselineStateRelPath)))
-	for _, file := range inst.templates().managedTemplateFiles() {
-		add(file.path)
+	paths := []string{filepath.Join(inst.root, filepath.FromSlash(baselineStateRelPath))}
+	// Every non-tmp step rollback target must be snapshotted. Otherwise an
+	// automatic rollback would RemoveAll a pre-existing path with no snapshot
+	// entry to restore it.
+	for _, step := range inst.upgrades().upgradeTransactionSteps(catalogDirs) {
+		for _, path := range step.rollbackTargets() {
+			// `.agent-layer/tmp/` holds ephemeral agent run artifacts (plans,
+			// reports, scratch dumps). Snapshotting it would balloon snapshot
+			// size and is not needed for rollback because tmp deletion now
+			// requires explicit, double-confirmed user consent.
+			if !inst.isUnderAgentLayerTmp(path) {
+				paths = append(paths, path)
+			}
+		}
 	}
-	for _, dir := range inst.templates().managedTemplateDirs() {
-		add(dir.destRoot)
-	}
-	for _, dir := range inst.templates().memoryTemplateDirs() {
-		add(dir.destRoot)
-	}
-	for _, dir := range catalogDirs {
-		add(dir.destRoot)
-	}
-	// Statusline sources are rollback targets of the writeStatuslineSources
-	// transaction step, so they must be snapshotted too. Otherwise an automatic
-	// rollback would RemoveAll a pre-existing, possibly user-customized source
-	// with no snapshot entry to restore it — the same trap documented for tmp
-	// paths in handleUnknownsTargetPaths.
-	for _, path := range inst.writeStatuslineSourcesTargetPaths() {
-		add(path)
-	}
-	// Capture legacy slots whose absence also matters to migration rollback.
-	// Restoring the user-managed tier would revert unrelated edits and new skills.
-	for _, name := range templates.RetiredSkillNames {
-		add(filepath.Join(root, ".agent-layer", "skills", name))
-	}
-	add(filepath.Join(root, ".gitignore"))
-	for _, path := range launchers.VSCodePaths(root).All() {
-		add(path)
-	}
-	for _, path := range inst.runMigrationsTargetPaths() {
-		add(path)
-	}
-	// Snapshot capture depends on scanUnknowns() having populated inst.unknowns
-	// before the transaction begins so rollback can restore paths that
-	// handleUnknowns() may delete.
-	for _, path := range inst.unknowns {
-		add(path)
-	}
-
-	out := make([]string, 0, len(paths))
-	for path := range paths {
-		out = append(out, path)
-	}
-	sort.Strings(out)
-	return out
+	return uniqueNormalizedPaths(paths)
 }
 
 // isUnderAgentLayerTmp reports whether path is the `.agent-layer/tmp` root or
