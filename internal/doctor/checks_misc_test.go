@@ -10,7 +10,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-	"unicode/utf8"
 
 	"github.com/conn-castle/agent-layer/internal/clients/muse"
 	"github.com/conn-castle/agent-layer/internal/config"
@@ -924,7 +923,7 @@ func TestCheckSkills_CatalogMetadataOneOverBoundaryWarns(t *testing.T) {
 	}
 }
 
-func TestSkillCatalogMetadata_SumsTrimmedRunesAndConcatenatesText(t *testing.T) {
+func TestSkillCatalogMetadata_ConcatenatesTrimmedText(t *testing.T) {
 	cfg := &config.ProjectConfig{
 		Skills: []config.Skill{
 			{Name: "  alpha ", Description: " first "},
@@ -932,23 +931,14 @@ func TestSkillCatalogMetadata_SumsTrimmedRunesAndConcatenatesText(t *testing.T) 
 		},
 	}
 
-	text, chars := SkillCatalogMetadata(cfg)
-	// Trimmed runes: "alpha"(5)+"first"(5)+"界"(1)+"二"(1) = 12.
-	if chars != 12 {
-		t.Fatalf("expected 12 chars, got %d", chars)
-	}
-	if text != "alphafirst界二" {
+	if text := SkillCatalogMetadata(cfg); text != "alphafirst界二" {
 		t.Fatalf("unexpected concatenated text: %q", text)
-	}
-	if chars != utf8.RuneCountInString(text) {
-		t.Fatalf("char count %d does not match rune count of text %d", chars, utf8.RuneCountInString(text))
 	}
 }
 
 func TestSkillCatalogMetadata_NilConfig(t *testing.T) {
-	text, chars := SkillCatalogMetadata(nil)
-	if text != "" || chars != 0 {
-		t.Fatalf("expected empty metadata for nil config, got text=%q chars=%d", text, chars)
+	if text := SkillCatalogMetadata(nil); text != "" {
+		t.Fatalf("expected empty metadata for nil config, got %q", text)
 	}
 }
 

@@ -9,72 +9,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/warnings"
 )
-
-func TestEnabledMCPServerIDs(t *testing.T) {
-	enabled := true
-	disabled := false
-	tests := []struct {
-		name        string
-		servers     []config.MCPServer
-		enableCodex bool
-		enableGrok  bool
-		want        []string
-	}{
-		{
-			name:    "empty",
-			servers: nil,
-			want:    []string{},
-		},
-		{
-			name: "omits servers no enabled client receives",
-			servers: []config.MCPServer{
-				{ID: "server-a", Enabled: &enabled},
-			},
-			want: []string{},
-		},
-		{
-			name:        "preserves order and includes built-in dispatch server",
-			enableCodex: true,
-			servers: []config.MCPServer{
-				{ID: "server-a", Enabled: &enabled},
-				{ID: "server-b", Enabled: &enabled},
-				{ID: "server-c", Enabled: &disabled},
-				{ID: "server-d"},
-				{ID: "server-e", Enabled: &enabled, Clients: []string{"grok"}},
-			},
-			want: []string{"server-a", "server-b", "agent-layer"},
-		},
-		{
-			name:       "includes built-in for another dispatch client",
-			enableGrok: true,
-			want:       []string{"agent-layer"},
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			cfg := config.Config{MCP: config.MCPConfig{Servers: tt.servers}}
-			if tt.enableCodex {
-				cfg.Agents.Codex.Enabled = &enabled
-			}
-			if tt.enableGrok {
-				cfg.Agents.Grok.Enabled = &enabled
-			}
-			got := enabledMCPServerIDs(cfg)
-			if len(got) != len(tt.want) {
-				t.Errorf("enabledMCPServerIDs() len = %d, want %d", len(got), len(tt.want))
-				return
-			}
-			for i := range got {
-				if got[i] != tt.want[i] {
-					t.Errorf("enabledMCPServerIDs()[%d] = %s, want %s", i, got[i], tt.want[i])
-				}
-			}
-		})
-	}
-}
 
 func TestFormatMCPDiscoveryEvent(t *testing.T) {
 	tests := []struct {

@@ -117,7 +117,7 @@ func TestCheckConfig_IncludesImportedSkills(t *testing.T) {
 		if len(cfg.Skills) != 2 || cfg.Skills[0].Name != "local" || cfg.Skills[1].Name != "remote" || !cfg.Skills[1].Imported {
 			t.Fatalf("lenient=%v: skills = %+v, want local and imported remote", lenient, cfg.Skills)
 		}
-		if text, _ := SkillCatalogMetadata(cfg); !strings.Contains(text, "The remote imported skill.") {
+		if text := SkillCatalogMetadata(cfg); !strings.Contains(text, "The remote imported skill.") {
 			t.Fatalf("lenient=%v: catalog metadata %q omits the imported skill", lenient, text)
 		}
 		if got := CheckSkills(cfg); len(got) != 1 || got[0].Message != fmt.Sprintf(messages.DoctorSkillsValidatedFmt, 2) {
