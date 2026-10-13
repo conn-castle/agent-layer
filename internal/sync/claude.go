@@ -42,14 +42,12 @@ func writeClaudeSettings(sys System, root string, project *config.ProjectConfig)
 
 func buildClaudeSettings(root string, project *config.ProjectConfig) (map[string]any, error) {
 	settings := make(map[string]any)
-	permissions := buildPermissionsBlock(
+	if allow := projection.ClaudeAllowRules(
 		project.Config,
 		project.CommandsAllow,
 		projection.EffectiveServerIDs(project.Config, projection.ClientClaude),
-		claudeRenderer{},
-	)
-	if permissions != nil {
-		settings["permissions"] = permissions
+	); len(allow) > 0 {
+		settings["permissions"] = map[string]any{"allow": allow}
 	}
 	// Write effortLevel to settings.json for persistable values only.
 	// "max" is session-only in Claude Code (passed via --effort CLI flag) and
@@ -99,17 +97,7 @@ func buildClaudeSettings(root string, project *config.ProjectConfig) (map[string
 		}
 	}
 	if config.IsAgentEnabled(project.Config.Agents.Muse.Enabled) {
-		claudeIDs := make(map[string]bool)
-		for _, id := range projection.EffectiveServerIDs(project.Config, projection.ClientClaude) {
-			claudeIDs[id] = true
-		}
-		var excluded []string
-		for _, id := range projection.EffectiveServerIDs(project.Config, projection.ClientMuse) {
-			if !claudeIDs[id] {
-				excluded = append(excluded, id)
-			}
-		}
-		if len(excluded) > 0 {
+		if excluded := projection.RootMCPExclusions(project.Config, projection.ClientClaude); len(excluded) > 0 {
 			// Preserve explicit user exclusions while enforcing client filters.
 			existing, err := stringSliceSetting(settings, "disabledMcpjsonServers")
 			if err != nil {

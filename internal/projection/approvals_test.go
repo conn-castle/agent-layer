@@ -108,3 +108,30 @@ func TestGrokAllowRulesKeepConfiguredServerIDs(t *testing.T) {
 		t.Fatalf("allow rules = %#v, want %#v", got, want)
 	}
 }
+
+// TestAntigravityAllowRulesGrantOnlyWhatTheModeAllows pins Antigravity's rule
+// syntax and keeps each mode from granting a feature it does not cover.
+func TestAntigravityAllowRulesGrantOnlyWhatTheModeAllows(t *testing.T) {
+	commands := []string{"git status"}
+	servers := []string{"zeta", "alpha"}
+
+	tests := []struct {
+		mode string
+		want []string
+	}{
+		{config.ApprovalModeNone, nil},
+		{config.ApprovalModeCommands, []string{"command(git status)"}},
+		{config.ApprovalModeMCP, []string{"mcp(alpha/)", "mcp(zeta/)"}},
+		{config.ApprovalModeAll, []string{"command(git status)", "mcp(alpha/)", "mcp(zeta/)"}},
+	}
+
+	for _, test := range tests {
+		t.Run(test.mode, func(t *testing.T) {
+			cfg := config.Config{Approvals: config.ApprovalsConfig{Mode: test.mode}}
+			got := AntigravityAllowRules(cfg, commands, servers)
+			if !slices.Equal(got, test.want) {
+				t.Fatalf("allow rules for mode %q = %#v, want %#v", test.mode, got, test.want)
+			}
+		})
+	}
+}

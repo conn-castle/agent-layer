@@ -29,16 +29,6 @@ type antigravityMCPServer struct {
 	Headers   map[string]string `json:"headers,omitempty"`
 }
 
-type antigravityRenderer struct{}
-
-func (antigravityRenderer) RenderCommand(pattern string) string {
-	return "command(" + pattern + ")"
-}
-
-func (antigravityRenderer) RenderMCP(serverID string) string {
-	return "mcp(" + serverID + "/)"
-}
-
 // writeAntigravitySettings patches Agent Layer-managed keys into the user's
 // native .agy/antigravity-cli/settings.json, preserving native state and the
 // file's existing permissions.
@@ -198,14 +188,12 @@ func buildAntigravitySettings(project *config.ProjectConfig) map[string]any {
 	if model := strings.TrimSpace(project.Config.Agents.Antigravity.Model); model != "" {
 		settings["model"] = model
 	}
-	permissions := buildPermissionsBlock(
+	if allow := projection.AntigravityAllowRules(
 		project.Config,
 		project.CommandsAllow,
-		projection.EffectiveServerIDs(project.Config, antigravityClientID),
-		antigravityRenderer{},
-	)
-	if permissions != nil {
-		settings["permissions"] = permissions
+		projection.EffectiveServerIDs(project.Config, projection.ClientAntigravity),
+	); len(allow) > 0 {
+		settings["permissions"] = map[string]any{"allow": allow}
 	}
 	mergeAgentSpecificSettings(settings, project.Config.Agents.Antigravity.AgentSpecific)
 	return settings
