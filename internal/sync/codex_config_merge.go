@@ -488,7 +488,7 @@ func (e *codexTomlEditor) rewriteAssignment(start int, end int, value string) {
 	lhs, _, _ := strings.Cut(stripLineComment(startLine), "=")
 	newLine := strings.TrimRight(lhs, " \t") + " = " + value
 	if start == end {
-		if comment := inlineCommentOf(startLine); comment != "" {
+		if comment := tomlpatch.InlineComment(startLine, tomlpatch.StateNone); comment != "" {
 			newLine += " " + comment
 		}
 	}
@@ -501,14 +501,6 @@ func stripLineComment(line string) string {
 		return line
 	}
 	return line[:commentPos]
-}
-
-func inlineCommentOf(line string) string {
-	commentPos, _ := tomlpatch.ScanLineForComment(line, tomlpatch.StateNone)
-	if commentPos < 0 {
-		return ""
-	}
-	return strings.TrimSpace(line[commentPos:])
 }
 
 func (e *codexTomlEditor) removePath(path []string) {
@@ -1090,7 +1082,7 @@ func (e *codexTomlEditor) walkAssignments(fn func(assignmentInfo)) {
 			standardContext = parsedOK && !isArray
 			return tomlpatch.LineWalkResult{}
 		}
-		keyPath, ok := assignmentKeyPath(line, state)
+		keyPath, ok := tomlpatch.AssignmentKeyPath(line, state)
 		if !ok {
 			return tomlpatch.LineWalkResult{}
 		}
@@ -1130,7 +1122,7 @@ func (e *codexTomlEditor) mutateRootInlineTable(top string, mutate func(map[stri
 		// Preserve a single-line inline table's trailing comment; a multiline inline
 		// table has no single unambiguous comment line to carry over.
 		if target.start == target.end {
-			if comment := inlineCommentOf(startLine); comment != "" {
+			if comment := tomlpatch.InlineComment(startLine, tomlpatch.StateNone); comment != "" {
 				newLine += " " + comment
 			}
 		}
@@ -1197,23 +1189,6 @@ type lineRange struct {
 
 type literalValue struct {
 	literal string
-}
-
-func assignmentKeyPath(line string, state tomlpatch.StringState) ([]string, bool) {
-	trimmed := strings.TrimLeft(line, " \t")
-	if strings.HasPrefix(trimmed, "#") {
-		return nil, false
-	}
-	commentPos, _ := tomlpatch.ScanLineForComment(trimmed, state)
-	clean := trimmed
-	if commentPos >= 0 {
-		clean = strings.TrimSpace(trimmed[:commentPos])
-	}
-	left, _, ok := strings.Cut(clean, "=")
-	if !ok {
-		return nil, false
-	}
-	return tomlpatch.ParseKeyPath(strings.TrimSpace(left))
 }
 
 func extractNamespaceLines(content string, namespace []string) []string {

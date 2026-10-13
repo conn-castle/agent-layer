@@ -301,6 +301,8 @@ selectors = [
 `
 	if _, err := SetSkillImportSelectors(unterminated, identity, []string{"skills/a"}); err == nil {
 		t.Fatal("expected an unterminated selectors array to fail")
+	} else if !strings.Contains(err.Error(), "failed to parse a [[skills.imports]] block") {
+		t.Fatalf("error = %v", err)
 	}
 
 	twoBlocksOneHeader := baseConfigTOML + `
@@ -407,8 +409,8 @@ selectors = ["skills/b"]
 
 // TestSetSkillImportSelectorsScansArrayDelimitersOutsideStringsAndComments
 // proves a selector edit finds the true end of the array. A `]` inside a
-// quoted selector, an escaped quote, a literal string, or a trailing comment
-// must not be mistaken for the closing bracket: doing so would truncate the
+// quoted selector, an escaped quote, a literal string, a multiline string, or a
+// trailing comment must not be mistaken for the closing bracket: doing so would truncate the
 // array and silently delete the user's remaining configuration.
 func TestSetSkillImportSelectorsScansArrayDelimitersOutsideStringsAndComments(t *testing.T) {
 	t.Parallel()
@@ -420,6 +422,8 @@ selectors = [ # keep everything below ]
   "skills/bracket]name",       # ] in a comment
   "skills/quote\"name",        # escaped quote
   'skills/literal]name',
+  """
+skills/multiline]name""",
 ]
 
 # trailing user configuration marker
@@ -442,7 +446,7 @@ max_depth = 3
 	if !strings.Contains(updated, "# trailing user configuration marker") || !strings.Contains(updated, "max_depth = 3") {
 		t.Fatalf("configuration after the selectors array was lost:\n%s", updated)
 	}
-	for _, stale := range []string{"skills/bracket]name", "skills/literal]name"} {
+	for _, stale := range []string{"skills/bracket]name", "skills/literal]name", "skills/multiline]name"} {
 		if strings.Contains(updated, stale) {
 			t.Fatalf("replaced selector %q survived the edit:\n%s", stale, updated)
 		}

@@ -202,6 +202,7 @@ func findSelectorsAssignment(lines []string, span skillImportBlockSpan) (start i
 	}
 	line := block[found]
 	indent = line[:len(line)-len(strings.TrimLeft(line, " \t"))]
+	// findImportBlocks decoded this block, so selectors is a closed array.
 	return span.start + found, span.start + tomlpatch.MultilineValueEndIndex(block, found) + 1, indent, nil
 }
 
