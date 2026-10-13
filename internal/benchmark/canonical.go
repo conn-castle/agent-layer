@@ -23,6 +23,7 @@ func hashCanonical(value any) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	hash := sha256.Sum256(data)
-	return hex.EncodeToString(hash[:]), nil
+	return digestBytes(data), nil
 }
+
+func digestBytes(data []byte) string { sum := sha256.Sum256(data); return hex.EncodeToString(sum[:]) }

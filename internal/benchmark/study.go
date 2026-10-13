@@ -2097,5 +2097,3 @@ func treeDigest(root string) (string, error) {
 	}
 	return hex.EncodeToString(hash.Sum(nil)), nil
 }
-
-func digestBytes(data []byte) string { sum := sha256.Sum256(data); return hex.EncodeToString(sum[:]) }

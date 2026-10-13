@@ -3,7 +3,6 @@ package benchmark
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
 	"embed"
 	"encoding/hex"
 	"encoding/json"
@@ -59,8 +58,7 @@ func embeddedPierAdapterSHA256() (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("read embedded Pier adapter: %w", err)
 	}
-	sum := sha256.Sum256(adapter)
-	return hex.EncodeToString(sum[:]), nil
+	return digestBytes(adapter), nil
 }
 
 // TreatmentBundle is the secret-free, immutable effective Agent Layer input.
@@ -270,8 +268,7 @@ func validatePinnedStudyBundle(bundle *TreatmentBundle) error {
 		if readErr != nil {
 			return fmt.Errorf("read pinned %s: %w", item.label, readErr)
 		}
-		actual := sha256.Sum256(data)
-		if !strings.EqualFold(item.want, hex.EncodeToString(actual[:])) {
+		if !strings.EqualFold(item.want, digestBytes(data)) {
 			return fmt.Errorf("pinned %s bytes differ from immutable manifest", item.label)
 		}
 	}
@@ -439,8 +436,18 @@ func BuildStudyTreatmentBundle(repoRoot string, experiment preparedStudyExperime
 	// Every Agent Layer experiment needs the exact matching runtime: config-only
 	// and instructions-only projections can contain normal MCP entries even when
 	// they do not activate dispatch skills.
-	binary, binaryHash := "", ""
-	binary, binaryHash, err = buildDevelopmentLinuxBinary(repoRoot, root, targetArch)
+	sourceRoot, commit, dirty, development, err := verifiedDevelopmentSourceCheckout()
+	if err != nil {
+		return nil, err
+	}
+	sourceKind, runtimeVersion := "development", ""
+	var binary, binaryHash string
+	if development {
+		binary, binaryHash, err = buildDevelopmentLinuxBinary(sourceRoot, root, targetArch)
+	} else {
+		sourceKind = treatmentRuntimeSourceRelease
+		binary, binaryHash, runtimeVersion, err = downloadReleasedLinuxBinary(root, targetArch)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -457,21 +464,6 @@ func BuildStudyTreatmentBundle(repoRoot string, experiment preparedStudyExperime
 	adapterSHA256, err := embeddedPierAdapterSHA256()
 	if err != nil {
 		return nil, err
-	}
-	commit, dirty, err := verifiedDevelopmentProvenance()
-	if err != nil {
-		return nil, err
-	}
-	sourceKind, runtimeVersion := "development", ""
-	if commit == "" {
-		sourceKind = treatmentRuntimeSourceRelease
-		if executable, versionErr := os.Executable(); versionErr == nil {
-			if output, outputErr := exec.CommandContext(context.Background(), executable, "--version").Output(); outputErr == nil { // #nosec G204 -- executable is the current Agent Layer binary.
-				if fields := strings.Fields(string(output)); len(fields) > 0 {
-					runtimeVersion = strings.TrimPrefix(fields[0], "v")
-				}
-			}
-		}
 	}
 	cleanup = false
 	return &TreatmentBundle{Root: root, Manifest: manifest, ManifestHash: manifestHash, LinuxArchitecture: targetArch, LinuxBinary: binary, LinuxBinarySHA256: binaryHash, AdapterPath: adapterPath, AdapterSHA256: adapterSHA256, TemplatesCommit: commit, TemplatesDirty: dirty, CredentialNames: credentialNames, RuntimeSourceKind: sourceKind, RuntimeVersion: runtimeVersion}, nil
@@ -663,14 +655,7 @@ func copyRequiredTree(source, destination string) error {
 	})
 }
 
-func buildDevelopmentLinuxBinary(_ string, root, targetArch string) (string, string, error) {
-	sourceRoot, commit, dirty, development, err := verifiedDevelopmentSourceCheckout()
-	if err != nil {
-		return "", "", err
-	}
-	if !development {
-		return downloadReleasedLinuxBinary(root, targetArch)
-	}
+func buildDevelopmentLinuxBinary(sourceRoot, root, targetArch string) (string, string, error) {
 	target := filepath.Join(root, ".agent-layer", "bin", "al-linux-"+targetArch)
 	if err := os.MkdirAll(filepath.Dir(target), 0o700); err != nil {
 		return "", "", err
@@ -685,10 +670,7 @@ func buildDevelopmentLinuxBinary(_ string, root, targetArch string) (string, str
 	if err != nil {
 		return "", "", err
 	}
-	hash := sha256.Sum256(data)
-	_ = commit
-	_ = dirty
-	return target, hex.EncodeToString(hash[:]), nil
+	return target, digestBytes(data), nil
 }
 
 // verifiedDevelopmentSourceCheckout refuses to treat a user project as Agent
@@ -745,62 +727,54 @@ func verifiedDevelopmentSourceCheckout() (root, commit string, dirty bool, devel
 	return root, commit, dirty, true, nil
 }
 
-func verifiedDevelopmentProvenance() (string, bool, error) {
-	_, commit, dirty, development, err := verifiedDevelopmentSourceCheckout()
-	if err != nil || !development {
-		return "", false, err
-	}
-	return commit, dirty, nil
-}
-
 // downloadReleasedLinuxBinary mirrors the installer security contract. A
 // checkout is the only development path; without one, the running released
 // executable must name an exact semver release and its Linux artifact must
-// match the release checksums file. There is intentionally no fallback.
-func downloadReleasedLinuxBinary(root, targetArch string) (string, string, error) {
+// match the release checksums file. There is intentionally no fallback. It
+// returns the staged binary path, its SHA-256, and the normalized release.
+func downloadReleasedLinuxBinary(root, targetArch string) (string, string, string, error) {
 	executable, err := os.Executable()
 	if err != nil {
-		return "", "", fmt.Errorf("locate released Agent Layer executable: %w", err)
+		return "", "", "", fmt.Errorf("locate released Agent Layer executable: %w", err)
 	}
 	output, err := exec.CommandContext(context.Background(), executable, "--version").Output() // #nosec G204 -- current executable only.
 	if err != nil {
-		return "", "", fmt.Errorf("read released Agent Layer version: %w", err)
+		return "", "", "", fmt.Errorf("read released Agent Layer version: %w", err)
 	}
 	fields := strings.Fields(string(output))
 	if len(fields) == 0 {
-		return "", "", fmt.Errorf("released Agent Layer executable did not report a version")
+		return "", "", "", fmt.Errorf("released Agent Layer executable did not report a version")
 	}
 	release, err := version.Normalize(strings.TrimPrefix(fields[0], "v"))
 	if err != nil {
-		return "", "", fmt.Errorf("released benchmark binary requires an exact release version: %w", err)
+		return "", "", "", fmt.Errorf("released benchmark binary requires an exact release version: %w", err)
 	}
 	asset := "al-linux-" + targetArch
 	base := strings.TrimRight(benchmarkReleasesBaseURL, "/") + "/download/v" + release
 	sums, err := downloadReleaseAsset(base + "/checksums.txt")
 	if err != nil {
-		return "", "", fmt.Errorf("download released Agent Layer checksums: %w", err)
+		return "", "", "", fmt.Errorf("download released Agent Layer checksums: %w", err)
 	}
 	expected, err := checksumForReleaseAsset(sums, asset)
 	if err != nil {
-		return "", "", err
+		return "", "", "", err
 	}
 	binary, err := downloadReleaseAsset(base + "/" + asset)
 	if err != nil {
-		return "", "", fmt.Errorf("download released Linux Agent Layer runtime: %w", err)
+		return "", "", "", fmt.Errorf("download released Linux Agent Layer runtime: %w", err)
 	}
-	actual := sha256.Sum256(binary)
-	actualHex := hex.EncodeToString(actual[:])
+	actualHex := digestBytes(binary)
 	if !strings.EqualFold(expected, actualHex) {
-		return "", "", fmt.Errorf("released Linux Agent Layer runtime checksum mismatch for %s", asset)
+		return "", "", "", fmt.Errorf("released Linux Agent Layer runtime checksum mismatch for %s", asset)
 	}
 	target := filepath.Join(root, ".agent-layer", "bin", asset)
 	if err := os.MkdirAll(filepath.Dir(target), 0o700); err != nil {
-		return "", "", err
+		return "", "", "", err
 	}
 	if err := os.WriteFile(target, binary, 0o700); err != nil { // #nosec G306 -- the downloaded runtime must be executable and is written into the private bundle.
-		return "", "", fmt.Errorf("write released Linux Agent Layer runtime: %w", err)
+		return "", "", "", fmt.Errorf("write released Linux Agent Layer runtime: %w", err)
 	}
-	return target, actualHex, nil
+	return target, actualHex, release, nil
 }
 
 func downloadReleaseAsset(url string) ([]byte, error) {
@@ -870,8 +844,7 @@ func treatmentManifest(root, mode string, requiredRoles []string, dispatchConfig
 		if clean == agentLayerEnvPath && string(data) != "# Intentionally empty; provider authentication is injected separately.\n" {
 			return fmt.Errorf("forbidden treatment content %s", clean)
 		}
-		hash := sha256.Sum256(data)
-		files = append(files, TreatmentFile{Path: clean, SHA256: hex.EncodeToString(hash[:])})
+		files = append(files, TreatmentFile{Path: clean, SHA256: digestBytes(data)})
 		return nil
 	})
 	if err != nil {
