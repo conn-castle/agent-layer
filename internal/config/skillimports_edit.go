@@ -188,70 +188,21 @@ func replaceSelectorsInBlock(lines []string, span skillImportBlockSpan, selector
 // findSelectorsAssignment returns the half-open line range covering the block's
 // `selectors = [...]` assignment along with its indentation.
 func findSelectorsAssignment(lines []string, span skillImportBlockSpan) (start int, end int, indent string, err error) {
-	state := tomlpatch.StateNone
-	for i := span.start; i < span.end; i++ {
-		line := lines[i]
-		if tomlpatch.StateInMultiline(state) {
-			_, state = tomlpatch.ScanLineForComment(line, state)
-			continue
-		}
+	block := lines[span.start:span.end]
+	found := -1
+	tomlpatch.WalkLinesOutsideMultiline(block, func(i int, line string, state tomlpatch.StringState) tomlpatch.LineWalkResult {
 		if _, _, ok := tomlpatch.ParseKeyValueWithState(line, "selectors", state); ok {
-			indent = line[:len(line)-len(strings.TrimLeft(line, " \t"))]
-			end, err := selectorsArrayEndIndex(lines, i, span.end)
-			if err != nil {
-				return 0, 0, "", err
-			}
-			return i, end, indent, nil
+			found = i
+			return tomlpatch.LineWalkResult{Stop: true}
 		}
-		_, state = tomlpatch.ScanLineForComment(line, state)
+		return tomlpatch.LineWalkResult{}
+	})
+	if found < 0 {
+		return 0, 0, "", fmt.Errorf(messages.ConfigSkillImportSelectorsAssignmentMissing)
 	}
-	return 0, 0, "", fmt.Errorf(messages.ConfigSkillImportSelectorsAssignmentMissing)
-}
-
-// selectorsArrayEndIndex returns the exclusive line index that closes the array
-// literal beginning on line startIdx, counting only brackets outside strings
-// and comments.
-func selectorsArrayEndIndex(lines []string, startIdx int, limit int) (int, error) {
-	depth := 0
-	for i := startIdx; i < limit; i++ {
-		line := lines[i]
-		commentPos, _ := tomlpatch.ScanLineForComment(line, tomlpatch.StateNone)
-		scan := line
-		if commentPos >= 0 {
-			scan = line[:commentPos]
-		}
-		inBasic := false
-		inLiteral := false
-		for pos := 0; pos < len(scan); pos++ {
-			ch := scan[pos]
-			switch {
-			case inBasic:
-				if ch == '\\' {
-					pos++
-					continue
-				}
-				if ch == '"' {
-					inBasic = false
-				}
-			case inLiteral:
-				if ch == '\'' {
-					inLiteral = false
-				}
-			case ch == '"':
-				inBasic = true
-			case ch == '\'':
-				inLiteral = true
-			case ch == '[':
-				depth++
-			case ch == ']':
-				depth--
-			}
-		}
-		if depth <= 0 {
-			return i + 1, nil
-		}
-	}
-	return 0, fmt.Errorf(messages.ConfigSkillImportSelectorsAssignmentUnterminated)
+	line := block[found]
+	indent = line[:len(line)-len(strings.TrimLeft(line, " \t"))]
+	return span.start + found, span.start + tomlpatch.MultilineValueEndIndex(block, found) + 1, indent, nil
 }
 
 // renderSelectorsAssignment renders a deterministic multi-line selectors array.

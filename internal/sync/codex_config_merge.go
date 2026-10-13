@@ -376,7 +376,7 @@ func newCodexTomlEditor(content string) *codexTomlEditor {
 }
 
 func (e *codexTomlEditor) render() string {
-	lines := collapseConsecutiveBlankLines(trimTrailingBlankLines(e.lines))
+	lines := collapseConsecutiveBlankLines(tomlpatch.TrimTrailingEmptyLines(e.lines))
 	return strings.Join(lines, "\n") + "\n"
 }
 
@@ -475,18 +475,24 @@ func (e *codexTomlEditor) replaceAssignmentValue(ranges []lineRange, literal str
 		r := ranges[i]
 		e.lines = append(e.lines[:r.start], e.lines[r.end+1:]...)
 	}
-	first := ranges[0]
-	startLine := e.lines[first.start]
-	// rangesForExactPath only matches assignment lines, so the key/value `=` is
-	// always present; Cut returns the whole (comment-stripped) line as lhs otherwise.
+	e.rewriteAssignment(ranges[0].start, ranges[0].end, literal)
+}
+
+// rewriteAssignment replaces the assignment spanning lines start..end with a
+// single line that keeps its left-hand side, and any inline comment when it is
+// a single line, followed by value.
+func (e *codexTomlEditor) rewriteAssignment(start int, end int, value string) {
+	startLine := e.lines[start]
+	// Callers pass assignment lines only, so the key/value `=` is always
+	// present; Cut returns the whole (comment-stripped) line as lhs otherwise.
 	lhs, _, _ := strings.Cut(stripLineComment(startLine), "=")
-	newLine := strings.TrimRight(lhs, " \t") + " = " + literal
-	if first.start == first.end {
+	newLine := strings.TrimRight(lhs, " \t") + " = " + value
+	if start == end {
 		if comment := inlineCommentOf(startLine); comment != "" {
 			newLine += " " + comment
 		}
 	}
-	e.lines = replaceLineRange(e.lines, first.start, first.end+1, []string{newLine})
+	e.lines = replaceLineRange(e.lines, start, end+1, []string{newLine})
 }
 
 func stripLineComment(line string) string {
@@ -525,7 +531,7 @@ func (e *codexTomlEditor) appendBlock(block []string) {
 	if len(block) == 0 {
 		return
 	}
-	e.lines = trimTrailingBlankLines(e.lines)
+	e.lines = tomlpatch.TrimTrailingEmptyLines(e.lines)
 	if len(e.lines) > 0 && strings.TrimSpace(e.lines[len(e.lines)-1]) != "" {
 		e.lines = append(e.lines, "")
 	}
@@ -1406,14 +1412,6 @@ func mergeLineRanges(ranges []lineRange) []lineRange {
 		merged = append(merged, r)
 	}
 	return merged
-}
-
-func trimTrailingBlankLines(lines []string) []string {
-	end := len(lines)
-	for end > 0 && strings.TrimSpace(lines[end-1]) == "" {
-		end--
-	}
-	return lines[:end]
 }
 
 func collapseConsecutiveBlankLines(lines []string) []string {
