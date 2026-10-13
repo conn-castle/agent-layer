@@ -249,6 +249,98 @@ func TestHandleUnknowns_SelectsKeepPathsThenUsesExistingDeletionFlow(t *testing.
 	}
 }
 
+func TestHandleUnknowns_RereadsKeepListEditedDuringPrompt(t *testing.T) {
+	root := t.TempDir()
+	editedPath := filepath.Join(root, ".agent-layer", "edited.txt")
+	selectedPath := filepath.Join(root, ".agent-layer", "selected.txt")
+	remainingPath := filepath.Join(root, "docs", "agent-layer", "review-me.md")
+	for _, path := range []string{editedPath, selectedPath, remainingPath} {
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			t.Fatalf("mkdir %s: %v", path, err)
+		}
+		if err := os.WriteFile(path, []byte("local\n"), 0o600); err != nil {
+			t.Fatalf("write %s: %v", path, err)
+		}
+	}
+	keepListPath := filepath.Join(root, ".agent-layer", UpgradeKeepListFileName)
+
+	var deletionPaths []string
+	inst := &installer{
+		root:      root,
+		overwrite: true,
+		sys:       RealSystem{},
+		prompter: &PromptFuncs{
+			SelectUnknownsToKeepFunc: func([]string) ([]string, error) {
+				// Simulate a hand edit while the prompt is open, including the path
+				// the user then selects.
+				if err := os.WriteFile(keepListPath, []byte(".agent-layer/edited.txt\n.agent-layer/selected.txt\n"), 0o600); err != nil {
+					return nil, err
+				}
+				return []string{".agent-layer/selected.txt"}, nil
+			},
+			DeleteUnknownAllFunc: func(paths []string) (bool, error) {
+				deletionPaths = append([]string(nil), paths...)
+				return false, nil
+			},
+			DeleteUnknownFunc: func(string) (bool, error) { return false, nil },
+		},
+	}
+	if err := inst.handleUnknowns(); err != nil {
+		t.Fatalf("handleUnknowns: %v", err)
+	}
+	if want := []string{"docs/agent-layer/review-me.md"}; !reflect.DeepEqual(deletionPaths, want) {
+		t.Fatalf("deletion paths = %v, want %v", deletionPaths, want)
+	}
+	data, err := os.ReadFile(keepListPath) // #nosec G304 -- path is constructed from test-controlled inputs.
+	if err != nil {
+		t.Fatalf("read keep list: %v", err)
+	}
+	if got, want := string(data), ".agent-layer/edited.txt\n.agent-layer/selected.txt\n"; got != want {
+		t.Fatalf("keep list = %q, want %q", got, want)
+	}
+}
+
+func TestHandleUnknowns_RereadsKeepListEditedDuringPromptWithoutSelection(t *testing.T) {
+	root := t.TempDir()
+	editedPath := filepath.Join(root, ".agent-layer", "edited.txt")
+	remainingPath := filepath.Join(root, "docs", "agent-layer", "review-me.md")
+	for _, path := range []string{editedPath, remainingPath} {
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			t.Fatalf("mkdir %s: %v", path, err)
+		}
+		if err := os.WriteFile(path, []byte("local\n"), 0o600); err != nil {
+			t.Fatalf("write %s: %v", path, err)
+		}
+	}
+	keepListPath := filepath.Join(root, ".agent-layer", UpgradeKeepListFileName)
+
+	var deletionPaths []string
+	inst := &installer{
+		root:      root,
+		overwrite: true,
+		sys:       RealSystem{},
+		prompter: &PromptFuncs{
+			SelectUnknownsToKeepFunc: func([]string) ([]string, error) {
+				if err := os.WriteFile(keepListPath, []byte(".agent-layer/edited.txt\n"), 0o600); err != nil {
+					return nil, err
+				}
+				return nil, nil
+			},
+			DeleteUnknownAllFunc: func(paths []string) (bool, error) {
+				deletionPaths = append([]string(nil), paths...)
+				return false, nil
+			},
+			DeleteUnknownFunc: func(string) (bool, error) { return false, nil },
+		},
+	}
+	if err := inst.handleUnknowns(); err != nil {
+		t.Fatalf("handleUnknowns: %v", err)
+	}
+	if want := []string{"docs/agent-layer/review-me.md"}; !reflect.DeepEqual(deletionPaths, want) {
+		t.Fatalf("deletion paths = %v, want %v", deletionPaths, want)
+	}
+}
+
 func TestHandleUnknowns_NoSelectionDoesNotCreateKeepList(t *testing.T) {
 	inst, _ := setupUnknownFile(t)
 	inst.prompter = &PromptFuncs{
