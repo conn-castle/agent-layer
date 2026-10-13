@@ -1,4 +1,6 @@
-// Package probe provides execution bounded to a capability probe's owned group.
+// Package probe provides shared capability-probe scaffolding: execution
+// bounded to the probe's owned process group, the deterministic MCP fixture,
+// and probe directory helpers.
 package probe
 
 import (

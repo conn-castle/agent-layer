@@ -1,4 +1,4 @@
-package antigravity
+package probe
 
 import (
 	"context"
@@ -53,48 +53,27 @@ func TestFixtureCompletesInitializationAndExposesOneTool(t *testing.T) {
 	}
 }
 
-// TestProbeSeedsTheValidMCPFixture proves the seeded MCP configuration points
-// at the fixture rather than a program that cannot speak the protocol.
-func TestProbeSeedsTheValidMCPFixture(t *testing.T) {
-	probeDir := t.TempDir()
-	fixture, err := probeMCPFixtureCommand(probeDir)
-	if err != nil {
-		t.Fatalf("resolve fixture command: %v", err)
-	}
-	if _, _, _, err := seedProbeWorkspace(probeDir, fixture); err != nil {
-		t.Fatalf("seed probe workspace: %v", err)
-	}
-	for _, rel := range []string{
-		filepath.Join("workspace", ".agents", "mcp_config.json"),
-		filepath.Join("agycfg", "antigravity-cli", "mcp_config.json"),
-	} {
-		data, err := os.ReadFile(filepath.Join(probeDir, rel)) // #nosec G304 -- test-owned path.
-		if err != nil {
-			t.Fatalf("read %s: %v", rel, err)
-		}
-		if strings.Contains(string(data), "/usr/bin/true") {
-			t.Fatalf("%s still seeds a non-protocol MCP command:\n%s", rel, data)
-		}
-		if !strings.Contains(string(data), "__probe-mcp-fixture") {
-			t.Fatalf("%s does not seed the probe MCP fixture:\n%s", rel, data)
-		}
-	}
-}
-
 // TestFixtureMarkerIsIgnoredWhenAbsentOrWrong proves the probe only reports a
-// tool invocation on exact fixture evidence, so an unrelated file cannot make
-// Antigravity look more capable than it is.
+// tool invocation on exact fixture evidence, so an unrelated file cannot make a
+// client look more capable than it is.
 func TestFixtureMarkerIsIgnoredWhenAbsentOrWrong(t *testing.T) {
 	dir := t.TempDir()
 	missing := filepath.Join(dir, "missing.txt")
-	if invoked, _ := inspectFixtureMarker(missing); invoked {
+	if FixtureInvoked(missing) {
 		t.Fatal("a missing marker must not count as an invocation")
 	}
 	wrong := filepath.Join(dir, "wrong.txt")
 	if err := os.WriteFile(wrong, []byte("something else"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if invoked, _ := inspectFixtureMarker(wrong); invoked {
+	if FixtureInvoked(wrong) {
 		t.Fatal("an unrelated marker must not count as an invocation")
+	}
+	valid := filepath.Join(dir, "valid.txt")
+	if err := os.WriteFile(valid, []byte(FixtureToolReply+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if !FixtureInvoked(valid) {
+		t.Fatal("a valid marker was not recognized")
 	}
 }

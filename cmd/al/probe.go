@@ -9,6 +9,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/conn-castle/agent-layer/internal/messages"
+	"github.com/conn-castle/agent-layer/internal/probe"
 	probeantigravity "github.com/conn-castle/agent-layer/internal/probe/antigravity"
 	probegrok "github.com/conn-castle/agent-layer/internal/probe/grok"
 )
@@ -38,11 +39,11 @@ func newProbeCmd() *cobra.Command {
 // probe never depends on a Go toolchain or a build step at probe time.
 func newProbeMCPFixtureCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:    "__probe-mcp-fixture",
+		Use:    probe.FixtureSubcommand,
 		Hidden: true,
 		Args:   cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return probeantigravity.RunMCPFixture(cmd.Context())
+			return probe.RunMCPFixture(cmd.Context())
 		},
 	}
 }

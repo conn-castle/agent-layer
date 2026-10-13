@@ -2,16 +2,13 @@ package grok
 
 import (
 	"context"
-	"errors"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	clientgrok "github.com/conn-castle/agent-layer/internal/clients/grok"
-	probeantigravity "github.com/conn-castle/agent-layer/internal/probe/antigravity"
 	"github.com/conn-castle/agent-layer/internal/tomlpatch"
 )
 
@@ -170,14 +167,8 @@ func TestSeedGrokProbeWorkspaceWritesTrustAndMCP(t *testing.T) {
 	if _, err := os.Stat(promptPath); err != nil {
 		t.Fatalf("missing prompt: %v", err)
 	}
-	if inspectFixtureMarker(markerPath) {
-		t.Fatal("marker must start absent")
-	}
-	if err := os.WriteFile(markerPath, []byte(probeantigravity.FixtureToolReply+"\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if !inspectFixtureMarker(markerPath) {
-		t.Fatal("valid marker was not recognized")
+	if want := filepath.Join(workspace, "mcp-tool-invoked.txt"); markerPath != want {
+		t.Fatalf("marker path = %s, want %s inside the sandboxed workspace", markerPath, want)
 	}
 }
 
@@ -244,25 +235,6 @@ func TestProbeCancellation(t *testing.T) {
 	result, err := Probe(ctx, t.TempDir(), "")
 	if err != nil || result == nil || result.TimedOut || result.ExitCode != 124 || result.GrokVersion != "" || !strings.Contains(result.Error, "context canceled") {
 		t.Fatalf("cancellation result: %+v, %v", result, err)
-	}
-}
-
-func TestCommandExitCode(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-	if got := commandExitCode(nil); got != 0 {
-		t.Fatalf("success before cleanup cancellation exit code = %d", got)
-	}
-	if got := commandExitCode(errors.Join(ctx.Err(), errors.New("cancelled"))); got != 124 {
-		t.Fatalf("cancelled exit code = %d", got)
-	}
-	cmd := exec.Command("/bin/sh", "-c", "exit 7")
-	err := cmd.Run()
-	if got := commandExitCode(err); got != 7 {
-		t.Fatalf("process exit code = %d, err %v", got, err)
-	}
-	if got := commandExitCode(errors.New("launch")); got != -1 {
-		t.Fatalf("launch exit code = %d", got)
 	}
 }
 
