@@ -4,9 +4,10 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 
 	"github.com/conn-castle/agent-layer/internal/fsutil"
 	"github.com/conn-castle/agent-layer/internal/skilljournal"
@@ -167,7 +168,7 @@ func (t *transaction) Commit() (err error) {
 	}
 
 	// Retire the old active slot before publishing its imported replacement.
-	for _, name := range sortedKeys(t.localRetirements) {
+	for _, name := range slices.Sorted(maps.Keys(t.localRetirements)) {
 		if _, err := t.readLocal(t.paths.LocalPath(name), name); err != nil {
 			return fail(err)
 		}
@@ -186,7 +187,7 @@ func (t *transaction) Commit() (err error) {
 	if err := t.verifyLocalRetirements(staging); err != nil {
 		return fail(err)
 	}
-	for _, name := range sortedKeys(t.writes) {
+	for _, name := range slices.Sorted(maps.Keys(t.writes)) {
 		applied, publishErr := t.publishTree(name)
 		if applied.Name != "" {
 			published.Writes = append(published.Writes, applied)
@@ -196,7 +197,7 @@ func (t *transaction) Commit() (err error) {
 		}
 		t.reached("write:" + name)
 	}
-	for _, name := range sortedKeys(t.deletes) {
+	for _, name := range slices.Sorted(maps.Keys(t.deletes)) {
 		applied, removeErr := t.removeTree(name)
 		if applied.Existed {
 			published.Deletes = append(published.Deletes, name)
@@ -245,7 +246,7 @@ func (t *transaction) Commit() (err error) {
 // source during staging or through an open file after retirement. Abort and
 // restore that source if it differs from the copy being published.
 func (t *transaction) verifyLocalRetirements(staging string) error {
-	for _, name := range sortedKeys(t.localRetirements) {
+	for _, name := range slices.Sorted(maps.Keys(t.localRetirements)) {
 		backup := filepath.Join(staging, skilljournal.LocalBackupPrefix+name)
 		current, err := t.readLocal(backup, name)
 		if err != nil {
@@ -262,15 +263,18 @@ func (t *transaction) verifyLocalRetirements(staging string) error {
 // records the transaction's intent, so an interrupted process can be recovered.
 // It runs before any live path changes.
 func (t *transaction) prepareJournal() error {
+	// The journal records no deletes as [], not null.
+	deletes := slices.AppendSeq([]string{}, maps.Keys(t.deletes))
+	slices.Sort(deletes)
 	doc := skilljournal.Document{
-		Deletes: sortedKeys(t.deletes),
+		Deletes: deletes,
 		Config:  t.configRaw != nil,
 	}
 	if len(t.localRetirements) > 0 {
 		doc.Version = skilljournal.AdoptionVersion
-		doc.LocalRetirements = sortedKeys(t.localRetirements)
+		doc.LocalRetirements = slices.Sorted(maps.Keys(t.localRetirements))
 	}
-	for _, name := range sortedKeys(t.writes) {
+	for _, name := range slices.Sorted(maps.Keys(t.writes)) {
 		existed, err := pathExists(filepath.Join(t.paths.ImportedSkillsDir, name))
 		if err != nil {
 			return err
@@ -302,7 +306,7 @@ func (t *transaction) prepareJournal() error {
 	}
 
 	// All replacement trees are prepared before the durable journal and live moves.
-	for _, name := range sortedKeys(t.writes) {
+	for _, name := range slices.Sorted(maps.Keys(t.writes)) {
 		staged := filepath.Join(t.stagingRoot, skilljournal.StagedTreePrefix+name)
 		if t.paths.ExactFiles {
 			if _, err := skilltree.ValidateNode(t.writes[name], name, true); err != nil {
@@ -424,15 +428,6 @@ func moveAside(target string, backup string) (bool, error) {
 		return false, fmt.Errorf("failed to move %s aside: %w", target, err)
 	}
 	return true, errors.Join(fsutil.SyncDir(filepath.Dir(target)), fsutil.SyncDir(filepath.Dir(backup)))
-}
-
-func sortedKeys[V any](values map[string]V) []string {
-	keys := make([]string, 0, len(values))
-	for key := range values {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-	return keys
 }
 
 // syncStagedTree makes every new file and directory durable before publication.

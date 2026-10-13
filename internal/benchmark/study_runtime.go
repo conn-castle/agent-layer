@@ -7,7 +7,6 @@ import (
 	"net/url"
 	"reflect"
 	"slices"
-	"sort"
 	"strings"
 	"unicode"
 
@@ -86,12 +85,7 @@ func studyMCPContract(configBytes []byte, source string) (studyMCPPreflight, []s
 			}
 		}
 	}
-	names := make([]string, 0, len(credentials))
-	for name := range credentials {
-		names = append(names, name)
-	}
-	sort.Strings(names)
-	return contract, names, nil
+	return contract, slices.Sorted(maps.Keys(credentials)), nil
 }
 
 // rejectLiteralStudyConfigSecrets walks the parsed effective configuration so
@@ -244,12 +238,7 @@ func placeholderNames(value reflect.Value) []string {
 		}
 	}
 	walk(value)
-	names := make([]string, 0, len(seen))
-	for name := range seen {
-		names = append(names, name)
-	}
-	sort.Strings(names)
-	return names
+	return slices.Sorted(maps.Keys(seen))
 }
 
 func mapValues(values map[string]string) []string {

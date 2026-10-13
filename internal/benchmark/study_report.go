@@ -4,9 +4,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"math"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -324,10 +326,7 @@ func buildStudyExperimentReport(experiment preparedStudyExperiment, arm matrixAr
 	// current command option during report regeneration; zero explicitly means
 	// unavailable rather than inventing historical concurrency.
 	_ = workers
-	for client := range clientSet {
-		item.ProviderClients = append(item.ProviderClients, client)
-	}
-	sort.Strings(item.ProviderClients)
+	item.ProviderClients = slices.Sorted(maps.Keys(clientSet))
 	if len(item.ProviderClients) > 1 {
 		item.ComparabilityWarnings = append(item.ComparabilityWarnings, "Evidence contains more than one provider client version.")
 	}
