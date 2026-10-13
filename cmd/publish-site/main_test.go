@@ -216,6 +216,35 @@ func TestNormalizeVersionsJSON(t *testing.T) {
 	}
 }
 
+func TestNormalizeVersionsJSON_EqualCoreStringTieBreak(t *testing.T) {
+	for _, input := range []string{
+		`["1.02.3", "1.2.3"]`,
+		`["1.2.3", "1.02.3"]`,
+	} {
+		t.Run(input, func(t *testing.T) {
+			repo := t.TempDir()
+			versionsPath := filepath.Join(repo, "versions.json")
+			if err := os.WriteFile(versionsPath, []byte(input), 0o600); err != nil {
+				t.Fatalf("write versions.json: %v", err)
+			}
+			if err := normalizeVersionsJSON(repo); err != nil {
+				t.Fatalf("normalize: %v", err)
+			}
+			out, err := os.ReadFile(versionsPath) // #nosec G304 -- path is constructed from test-controlled inputs.
+			if err != nil {
+				t.Fatalf("read versions.json: %v", err)
+			}
+			var got []string
+			if err := json.Unmarshal(out, &got); err != nil {
+				t.Fatalf("unmarshal: %v", err)
+			}
+			if strings.Join(got, ",") != "1.2.3,1.02.3" {
+				t.Fatalf("expected equal-core releases in descending string order, got %v", got)
+			}
+		})
+	}
+}
+
 func TestSelectRetainedVersions_SparseHistory(t *testing.T) {
 	sorted := []string{"1.3.2", "1.3.1", "1.2.0", "1.1.5"}
 
