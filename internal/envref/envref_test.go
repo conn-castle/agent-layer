@@ -177,3 +177,29 @@ func TestRedactReplacesResolvedValuesWithPlaceholders(t *testing.T) {
 		t.Fatalf("Redact with no placeholders = %q", got)
 	}
 }
+
+// TestPlaceholderHeaderFormsRequireExactShape proves the header forms that
+// Codex projects as environment references accept no surrounding text or
+// whitespace, so sync and its policy warning agree on one shape.
+func TestPlaceholderHeaderFormsRequireExactShape(t *testing.T) {
+	t.Parallel()
+	for _, input := range []string{"", "AL_TOKEN", " ${AL_TOKEN}", "${AL_TOKEN} ", "x${AL_TOKEN}", "${AL_A}${AL_B}", "Bearer ${AL_TOKEN}"} {
+		if name, ok := ExactPlaceholder(input); ok {
+			t.Fatalf("ExactPlaceholder(%q) = %q, want no match", input, name)
+		}
+	}
+	if name, ok := ExactPlaceholder("${AL_TOKEN}"); !ok || name != "AL_TOKEN" {
+		t.Fatalf("ExactPlaceholder = %q, %v; want AL_TOKEN", name, ok)
+	}
+
+	for _, input := range []string{"Bearer ${AL_TOKEN}", "bearer ${AL_TOKEN}", "BEARER ${AL_TOKEN}"} {
+		if name, ok := BearerPlaceholder(input); !ok || name != "AL_TOKEN" {
+			t.Fatalf("BearerPlaceholder(%q) = %q, %v; want AL_TOKEN", input, name, ok)
+		}
+	}
+	for _, input := range []string{"Bearer ", "Bearer", "${AL_TOKEN}", "Bearer  ${AL_TOKEN}", "Bearer ${AL_TOKEN} ", "Bearer x${AL_TOKEN}", "Token ${AL_TOKEN}"} {
+		if name, ok := BearerPlaceholder(input); ok {
+			t.Fatalf("BearerPlaceholder(%q) = %q, want no match", input, name)
+		}
+	}
+}

@@ -33,7 +33,7 @@ func CheckPolicy(project *config.ProjectConfig) []Warning {
 	}
 
 	for _, server := range project.Config.MCP.Servers {
-		if server.Enabled == nil || !*server.Enabled {
+		if !config.IsAgentEnabled(server.Enabled) {
 			continue
 		}
 
@@ -49,7 +49,7 @@ func CheckPolicy(project *config.ProjectConfig) []Warning {
 			})
 		}
 
-		if isClientTargeted(server.Clients, "codex") && isEnabled(project.Config.Agents.Codex.Enabled) {
+		if server.AppliesToClient("codex") && config.IsAgentEnabled(project.Config.Agents.Codex.Enabled) {
 			if detail, ok := findUnsupportedCodexHeaderForm(server.Headers); ok {
 				results = append(results, Warning{
 					Code:     CodePolicyCodexHeaderForm,
@@ -178,17 +178,6 @@ func agentSpecificOverrideWarning(client string, keys []string) *Warning {
 	}
 }
 
-func isEnabled(enabled *bool) bool {
-	return enabled != nil && *enabled
-}
-
-func isClientTargeted(clients []string, target string) bool { //nolint:unparam // target is intentionally a parameter for readability and future extensibility
-	if len(clients) == 0 {
-		return true
-	}
-	return slices.Contains(clients, target)
-}
-
 // findSecretInURL scans the raw URL text rather than parsing it, because
 // url.Parse rejects a `${...}` placeholder in the host or userinfo and a parse
 // failure would otherwise hide a literal secret elsewhere in the same URL.
@@ -235,48 +224,26 @@ func hasLiteralUserinfo(rawURL string) bool {
 	return username != "" && !envref.IsEntirelyPlaceholders(username)
 }
 
+// findUnsupportedCodexHeaderForm reports the first header that Codex sync
+// would reject. It shares envref's placeholder rules with splitCodexHeaders
+// in internal/sync so the warning cannot accept a form sync refuses.
 func findUnsupportedCodexHeaderForm(headers map[string]string) (string, bool) {
-	if len(headers) == 0 {
-		return "", false
-	}
 	for key, value := range headers {
+		if len(envref.Names(value)) == 0 {
+			continue
+		}
+		if _, ok := envref.ExactPlaceholder(value); ok {
+			continue
+		}
 		if strings.EqualFold(key, "Authorization") {
-			if isLiteralHeaderValue(value) || isExactEnvPlaceholder(value) || isBearerEnvPlaceholder(value) {
+			if _, ok := envref.BearerPlaceholder(value); ok {
 				continue
 			}
 			return fmt.Sprintf("authorization header value %q is unsupported for codex projection", value), true
 		}
-		if isLiteralHeaderValue(value) || isExactEnvPlaceholder(value) {
-			continue
-		}
 		return fmt.Sprintf("header %q value %q is unsupported for codex projection", key, value), true
 	}
 	return "", false
-}
-
-func isLiteralHeaderValue(value string) bool {
-	return !hasEnvPlaceholder(value)
-}
-
-func isExactEnvPlaceholder(value string) bool {
-	names := config.ExtractEnvVarNames(value)
-	if len(names) != 1 {
-		return false
-	}
-	return value == fmt.Sprintf("${%s}", names[0])
-}
-
-func isBearerEnvPlaceholder(value string) bool {
-	const prefix = "Bearer "
-	if !strings.HasPrefix(strings.ToLower(value), strings.ToLower(prefix)) {
-		return false
-	}
-	token := strings.TrimSpace(value[len(prefix):])
-	return isExactEnvPlaceholder(token)
-}
-
-func hasEnvPlaceholder(value string) bool {
-	return len(config.ExtractEnvVarNames(value)) > 0
 }
 
 func dedupePolicyWarnings(items []Warning) []Warning {

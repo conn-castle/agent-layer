@@ -11,6 +11,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/conn-castle/agent-layer/internal/config"
+	"github.com/conn-castle/agent-layer/internal/envref"
 	"github.com/conn-castle/agent-layer/internal/herdr"
 	"github.com/conn-castle/agent-layer/internal/messages"
 	"github.com/conn-castle/agent-layer/internal/projection"
@@ -570,26 +571,26 @@ func splitCodexHeaders(headers map[string]string) (codexHeaderSpec, error) {
 	}
 	for key, value := range headers {
 		if strings.EqualFold(key, "Authorization") {
-			if envVar, ok := extractBearerEnvPlaceholder(value); ok {
+			if envVar, ok := envref.BearerPlaceholder(value); ok {
 				spec.BearerTokenEnvVar = envVar
 				continue
 			}
-			if envVar, ok := extractExactEnvPlaceholder(value); ok {
+			if envVar, ok := envref.ExactPlaceholder(value); ok {
 				spec.EnvHeaders[key] = envVar
 				continue
 			}
-			if !hasEnvPlaceholders(value) {
+			if len(envref.Names(value)) == 0 {
 				spec.HTTPHeaders[key] = value
 				continue
 			}
 			return codexHeaderSpec{}, fmt.Errorf(messages.SyncCodexAuthorizationPlaceholderUnsupportedFmt)
 		}
 
-		if envVar, ok := extractExactEnvPlaceholder(value); ok {
+		if envVar, ok := envref.ExactPlaceholder(value); ok {
 			spec.EnvHeaders[key] = envVar
 			continue
 		}
-		if !hasEnvPlaceholders(value) {
+		if len(envref.Names(value)) == 0 {
 			spec.HTTPHeaders[key] = value
 			continue
 		}
@@ -602,34 +603,6 @@ func splitCodexHeaders(headers map[string]string) (codexHeaderSpec, error) {
 		spec.HTTPHeaders = nil
 	}
 	return spec, nil
-}
-
-func extractExactEnvPlaceholder(value string) (string, bool) {
-	names := config.ExtractEnvVarNames(value)
-	if len(names) != 1 {
-		return "", false
-	}
-	placeholder := fmt.Sprintf("${%s}", names[0])
-	if value != placeholder {
-		return "", false
-	}
-	return names[0], true
-}
-
-func extractBearerEnvPlaceholder(value string) (string, bool) {
-	const prefix = "Bearer "
-	if len(value) <= len(prefix) {
-		return "", false
-	}
-	if !strings.EqualFold(value[:len(prefix)], prefix) {
-		return "", false
-	}
-	tokenPart := value[len(prefix):]
-	return extractExactEnvPlaceholder(tokenPart)
-}
-
-func hasEnvPlaceholders(value string) bool {
-	return len(config.ExtractEnvVarNames(value)) > 0
 }
 
 func tomlStringArray(values []string) string {

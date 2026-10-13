@@ -44,6 +44,27 @@ func Names(input string) []string {
 	return names
 }
 
+// ExactPlaceholder reports the variable name when value is exactly one
+// `${NAME}` placeholder with no surrounding text.
+func ExactPlaceholder(value string) (string, bool) {
+	names := Names(value)
+	if len(names) != 1 || value != "${"+names[0]+"}" {
+		return "", false
+	}
+	return names[0], true
+}
+
+// BearerPlaceholder reports the variable name when value is a
+// case-insensitive "Bearer " prefix followed exactly by one `${NAME}`
+// placeholder, with no other whitespace or text.
+func BearerPlaceholder(value string) (string, bool) {
+	const prefix = "Bearer "
+	if len(value) <= len(prefix) || !strings.EqualFold(value[:len(prefix)], prefix) {
+		return "", false
+	}
+	return ExactPlaceholder(value[len(prefix):])
+}
+
 // Redact replaces every occurrence of each resolved value in text with the
 // placeholder text that named it, so a diagnostic that echoes a resolved value
 // shows `${AL_TOKEN}` rather than the secret. placeholders maps a resolved

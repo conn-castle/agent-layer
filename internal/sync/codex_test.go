@@ -12,6 +12,7 @@ import (
 	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/projection"
 	"github.com/conn-castle/agent-layer/internal/templates"
+	"github.com/conn-castle/agent-layer/internal/warnings"
 )
 
 func TestSplitCodexHeaders(t *testing.T) {
@@ -66,6 +67,40 @@ func TestSplitCodexHeadersErrors(t *testing.T) {
 			t.Fatalf("expected error")
 		}
 	})
+}
+
+// TestCodexHeaderPolicyWarningMatchesSync proves the policy warning flags a
+// header exactly when sync would refuse to project it for Codex.
+func TestCodexHeaderPolicyWarningMatchesSync(t *testing.T) {
+	enabled := true
+	cases := []map[string]string{
+		{"Authorization": "Bearer ${AL_TOKEN}"},
+		{"Authorization": "bearer ${AL_TOKEN}"},
+		{"Authorization": "${AL_TOKEN}"},
+		{"Authorization": "Basic literal"},
+		{"Authorization": "Token ${AL_TOKEN}"},
+		{"Authorization": "Bearer  ${AL_TOKEN}"},
+		{"Authorization": "Bearer ${AL_TOKEN} "},
+		{"Authorization": "Bearer ${AL_A}${AL_B}"},
+		{"X-Custom": "${AL_TOKEN}"},
+		{"X-Custom": "Bearer ${AL_TOKEN}"},
+		{"X-Toolsets": "actions,issues"},
+	}
+	for _, headers := range cases {
+		_, syncErr := splitCodexHeaders(headers)
+		project := &config.ProjectConfig{Config: config.Config{
+			Agents: config.AgentsConfig{Codex: config.CodexConfig{Enabled: &enabled}},
+			MCP: config.MCPConfig{Servers: []config.MCPServer{{
+				ID: "srv", Enabled: &enabled, URL: "https://example.com/mcp", Headers: headers,
+			}}},
+		}}
+		warned := slices.ContainsFunc(warnings.CheckPolicy(project), func(w warnings.Warning) bool {
+			return w.Code == warnings.CodePolicyCodexHeaderForm
+		})
+		if warned != (syncErr != nil) {
+			t.Fatalf("headers %v: policy warned=%v, sync error=%v", headers, warned, syncErr)
+		}
+	}
 }
 
 func TestBuildCodexConfigHTTP(t *testing.T) {
