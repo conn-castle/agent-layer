@@ -208,7 +208,7 @@ func callerAssignsSessionID(agent string) bool {
 }
 
 func completeDispatchSuccess(request dispatchExecution, result executionResult, session Session) error {
-	if err := writeBytesAtomic(request.Run.Record.AnswerPath, []byte(result.Answer), 0o600); err != nil {
+	if err := publishBytes(request.Run.Record.AnswerPath, []byte(result.Answer), os.Rename); err != nil {
 		return finishDispatchFailure(request, wrapExitError(ExitConfig, "publish dispatch terminal answer", err))
 	}
 	// Keep the validated answer even if removing the private staged prompt fails.
