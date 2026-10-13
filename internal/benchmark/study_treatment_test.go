@@ -521,6 +521,91 @@ func TestStudyTreatmentBundleConfigOnlyStagesRuntimeWithoutWorkflow(t *testing.T
 	require.Equal(t, hashes["AGENTS.md"], hashes[sync.ClaudeInstructionsPath])
 }
 
+func TestStudyTreatmentBundleRejectsDevelopmentSourceChangesDuringBuild(t *testing.T) {
+	_, initialState, binaryDirty, development, err := verifiedDevelopmentSourceCheckout()
+	require.NoError(t, err)
+	if !development {
+		t.Skip("requires a development source checkout")
+	}
+	for _, test := range []struct {
+		name                    string
+		beforeDirty, afterDirty bool
+		changeCommit            bool
+		gitFailure              string
+		wantError               string
+	}{
+		{name: "unchanged clean"},
+		{name: "unchanged dirty", beforeDirty: true, afterDirty: true},
+		{name: "commit changed", changeCommit: true, wantError: "development source checkout changed while building matching Linux Agent Layer binary"},
+		{name: "became dirty", afterDirty: true, wantError: "development source checkout changed while building matching Linux Agent Layer binary"},
+		{name: "became clean", beforeDirty: true, wantError: "development source checkout changed while building matching Linux Agent Layer binary"},
+		{name: "revision unavailable after build", gitFailure: "rev-parse", wantError: "resolve development source revision:"},
+		{name: "status unavailable after build", gitFailure: "status", wantError: "inspect development source state:"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			root, bin := t.TempDir(), t.TempDir()
+			marker := filepath.Join(bin, "built")
+			t.Setenv("AL_TEST_BUILD_MARKER", marker)
+			t.Setenv("AL_TEST_COMMIT", initialState.commit)
+			t.Setenv("AL_TEST_AFTER_COMMIT", initialState.commit)
+			if test.changeCommit {
+				t.Setenv("AL_TEST_AFTER_COMMIT", strings.Repeat("0", 40))
+			}
+			t.Setenv("AL_TEST_BEFORE_STATUS", "")
+			t.Setenv("AL_TEST_AFTER_STATUS", "")
+			if test.beforeDirty {
+				t.Setenv("AL_TEST_BEFORE_STATUS", " M internal/source.go")
+			}
+			if test.afterDirty {
+				t.Setenv("AL_TEST_AFTER_STATUS", " M internal/source.go")
+			}
+			t.Setenv("AL_TEST_GIT_FAILURE", test.gitFailure)
+			gitScript := `#!/bin/sh
+if [ -f "$AL_TEST_BUILD_MARKER" ]; then
+  if [ "$3" = "$AL_TEST_GIT_FAILURE" ]; then exit 1; fi
+  commit=$AL_TEST_AFTER_COMMIT
+  status=$AL_TEST_AFTER_STATUS
+else
+  commit=$AL_TEST_COMMIT
+  status=$AL_TEST_BEFORE_STATUS
+fi
+case "$3" in
+  rev-parse) printf '%s\n' "$commit" ;;
+  status) printf '%s\n' "$status" ;;
+  *) exit 1 ;;
+esac
+`
+			goScript := `#!/bin/sh
+[ "$1" = build ] && [ "$3" = -o ] || exit 1
+printf 'fixture runtime\n' > "$4"
+printf 'built\n' > "$AL_TEST_BUILD_MARKER"
+`
+			for name, script := range map[string]string{"git": gitScript, "go": goScript} {
+				require.NoError(t, os.WriteFile(filepath.Join(bin, name), []byte(script), 0o700)) // #nosec G306 -- executable test stand-ins in a private temporary directory.
+			}
+			t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+			configPath := writeStudyTreatmentConfig(t, root)
+			bundle, err := BuildStudyTreatmentBundle(root, preparedStudyExperiment{
+				studyExperiment: studyExperiment{Config: filepath.Base(configPath)},
+				inputs:          studyExperimentInputs{Config: configPath},
+			})
+			require.FileExists(t, marker, "the runtime build must run before provenance is revalidated")
+			if test.wantError != "" {
+				require.ErrorContains(t, err, test.wantError)
+				require.Nil(t, bundle, "refuse to publish mismatched or unverifiable provenance")
+				stages, readErr := os.ReadDir(filepath.Join(root, ".agent-layer", "tmp"))
+				require.NoError(t, readErr)
+				require.Empty(t, stages, "remove rejected bundle staging")
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, initialState.commit, bundle.TemplatesCommit)
+			require.Equal(t, test.beforeDirty || binaryDirty, bundle.TemplatesDirty)
+			require.Equal(t, digestBytes([]byte("fixture runtime\n")), bundle.LinuxBinarySHA256)
+		})
+	}
+}
+
 func TestMaterializedInstructionsKeepRootRewriteAndSymlinkRejection(t *testing.T) {
 	t.Parallel()
 	for _, target := range []string{sync.ClaudeInstructionsTarget, "../unexpected.md"} {

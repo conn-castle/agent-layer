@@ -436,7 +436,7 @@ func BuildStudyTreatmentBundle(repoRoot string, experiment preparedStudyExperime
 	// Every Agent Layer experiment needs the exact matching runtime: config-only
 	// and instructions-only projections can contain normal MCP entries even when
 	// they do not activate dispatch skills.
-	sourceRoot, commit, dirty, development, err := verifiedDevelopmentSourceCheckout()
+	sourceRoot, sourceState, binaryDirty, development, err := verifiedDevelopmentSourceCheckout()
 	if err != nil {
 		return nil, err
 	}
@@ -450,6 +450,15 @@ func BuildStudyTreatmentBundle(repoRoot string, experiment preparedStudyExperime
 	}
 	if err != nil {
 		return nil, err
+	}
+	if development {
+		builtState, err := readDevelopmentSourceState(sourceRoot)
+		if err != nil {
+			return nil, err
+		}
+		if builtState != sourceState {
+			return nil, fmt.Errorf("development source checkout changed while building matching Linux Agent Layer binary")
+		}
 	}
 	// Hash only after every effective adapter/runtime byte has been staged.
 	// This is the content that is later atomically pinned and identified.
@@ -466,7 +475,7 @@ func BuildStudyTreatmentBundle(repoRoot string, experiment preparedStudyExperime
 		return nil, err
 	}
 	cleanup = false
-	return &TreatmentBundle{Root: root, Manifest: manifest, ManifestHash: manifestHash, LinuxArchitecture: targetArch, LinuxBinary: binary, LinuxBinarySHA256: binaryHash, AdapterPath: adapterPath, AdapterSHA256: adapterSHA256, TemplatesCommit: commit, TemplatesDirty: dirty, CredentialNames: credentialNames, RuntimeSourceKind: sourceKind, RuntimeVersion: runtimeVersion}, nil
+	return &TreatmentBundle{Root: root, Manifest: manifest, ManifestHash: manifestHash, LinuxArchitecture: targetArch, LinuxBinary: binary, LinuxBinarySHA256: binaryHash, AdapterPath: adapterPath, AdapterSHA256: adapterSHA256, TemplatesCommit: sourceState.commit, TemplatesDirty: sourceState.dirty || binaryDirty, CredentialNames: credentialNames, RuntimeSourceKind: sourceKind, RuntimeVersion: runtimeVersion}, nil
 }
 
 func validateTreatmentInstructionDependencies(root string) error {
@@ -678,53 +687,68 @@ func buildDevelopmentLinuxBinary(sourceRoot, root, targetArch string) (string, s
 // to this package's absolute source path and, when available, its build VCS
 // revision must match the checkout exactly. Trimpath/released binaries have no
 // absolute source path and therefore always take the verified release path.
-func verifiedDevelopmentSourceCheckout() (root, commit string, dirty bool, development bool, err error) {
+func verifiedDevelopmentSourceCheckout() (root string, state developmentSourceState, binaryDirty bool, development bool, err error) {
 	_, file, _, ok := runtime.Caller(0)
 	if !ok || !filepath.IsAbs(file) {
-		return "", "", false, false, nil
+		return "", developmentSourceState{}, false, false, nil
 	}
 	root = filepath.Clean(filepath.Join(filepath.Dir(file), "..", ".."))
 	goMod, readErr := os.ReadFile(filepath.Join(root, "go.mod"))
 	if readErr != nil {
 		if !errors.Is(readErr, os.ErrNotExist) {
-			return "", "", false, false, fmt.Errorf("read development source module: %w", readErr)
+			return "", developmentSourceState{}, false, false, fmt.Errorf("read development source module: %w", readErr)
 		}
-		return "", "", false, false, nil
+		return "", developmentSourceState{}, false, false, nil
 	}
 	if !strings.Contains(string(goMod), "module github.com/conn-castle/agent-layer") {
-		return "", "", false, false, nil
+		return "", developmentSourceState{}, false, false, nil
 	}
 	if _, statErr := os.Stat(filepath.Join(root, ".git")); statErr != nil {
 		if errors.Is(statErr, os.ErrNotExist) {
-			return "", "", false, false, nil
+			return "", developmentSourceState{}, false, false, nil
 		}
-		return "", "", false, false, fmt.Errorf("inspect development source checkout: %w", statErr)
+		return "", developmentSourceState{}, false, false, fmt.Errorf("inspect development source checkout: %w", statErr)
 	}
+	state, err = readDevelopmentSourceState(root)
+	if err != nil {
+		return "", developmentSourceState{}, false, false, err
+	}
+	if info, ok := debug.ReadBuildInfo(); ok {
+		for _, setting := range info.Settings {
+			if setting.Key == "vcs.revision" && setting.Value != "" && !strings.HasPrefix(state.commit, setting.Value) {
+				return "", developmentSourceState{}, false, false, fmt.Errorf("development binary revision %s does not match source checkout %s", setting.Value, state.commit)
+			}
+			if setting.Key == "vcs.modified" && setting.Value == booleanTrue {
+				binaryDirty = true
+			}
+		}
+	}
+	return root, state, binaryDirty, true, nil
+}
+
+// Keep checkout state separate from the running binary's immutable dirty flag
+// so that flag cannot hide a clean-to-dirty change during the runtime build.
+type developmentSourceState struct {
+	commit string
+	dirty  bool
+}
+
+func readDevelopmentSourceState(root string) (developmentSourceState, error) {
 	revision := exec.CommandContext(context.Background(), "git", "-C", root, "rev-parse", "HEAD") // #nosec G204 -- fixed command in verified source root.
 	revision.Env = gitenv.WithoutDiscovery()
 	data, commandErr := revision.Output()
 	if commandErr != nil {
-		return "", "", false, false, fmt.Errorf("resolve development source revision: %w", commandErr)
+		return developmentSourceState{}, fmt.Errorf("resolve development source revision: %w", commandErr)
 	}
-	commit = strings.TrimSpace(string(data))
-	if info, ok := debug.ReadBuildInfo(); ok {
-		for _, setting := range info.Settings {
-			if setting.Key == "vcs.revision" && setting.Value != "" && !strings.HasPrefix(commit, setting.Value) {
-				return "", "", false, false, fmt.Errorf("development binary revision %s does not match source checkout %s", setting.Value, commit)
-			}
-			if setting.Key == "vcs.modified" && setting.Value == booleanTrue {
-				dirty = true
-			}
-		}
-	}
+	state := developmentSourceState{commit: strings.TrimSpace(string(data))}
 	status := exec.CommandContext(context.Background(), "git", "-C", root, "status", "--porcelain", "--", "internal", "cmd", "go.mod", "go.sum") // #nosec G204 -- fixed command in verified source root.
 	status.Env = gitenv.WithoutDiscovery()
 	if data, statusErr := status.Output(); statusErr != nil {
-		return "", "", false, false, fmt.Errorf("inspect development source state: %w", statusErr)
+		return developmentSourceState{}, fmt.Errorf("inspect development source state: %w", statusErr)
 	} else if len(bytes.TrimSpace(data)) > 0 {
-		dirty = true
+		state.dirty = true
 	}
-	return root, commit, dirty, true, nil
+	return state, nil
 }
 
 // downloadReleasedLinuxBinary mirrors the installer security contract. A
