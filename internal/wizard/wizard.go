@@ -124,27 +124,17 @@ func runWithWriter(root string, ui UI, runSync syncer, pinVersion string, out io
 		applyFreshSetupDefaults(choices)
 	}
 
-	if err := promptWizardFlow(root, ui, choices, &wizardOptionDiscoveryCache{project: cfg, out: out}); err != nil {
-		if errors.Is(err, errWizardCancelled) || errors.Is(err, errWizardBack) {
-			if !freshInstall {
-				_, _ = fmt.Fprintln(out, messages.WizardExitWithoutChanges)
-			}
-			return nil
-		}
-		return err
+	err = promptWizardFlow(root, ui, choices, &wizardOptionDiscoveryCache{project: cfg, out: out})
+	if err == nil {
+		err = confirmAndApply(root, configPath, envPath, ui, choices, runSync, out, freshInstall, pinVersion)
 	}
-
-	if err := confirmAndApply(root, configPath, envPath, ui, choices, runSync, out, freshInstall, pinVersion); err != nil {
-		if errors.Is(err, errWizardCancelled) || errors.Is(err, errWizardBack) {
-			if !freshInstall {
-				_, _ = fmt.Fprintln(out, messages.WizardExitWithoutChanges)
-			}
-			return nil
+	if errors.Is(err, errWizardCancelled) || errors.Is(err, errWizardBack) {
+		if !freshInstall {
+			_, _ = fmt.Fprintln(out, messages.WizardExitWithoutChanges)
 		}
-		return err
+		return nil
 	}
-
-	return nil
+	return err
 }
 
 func applyFreshSetupDefaults(choices *Choices) {
@@ -320,8 +310,8 @@ func initializeChoicesWithCatalog(cfg *config.ProjectConfig, inspectCatalog bool
 	if cfg.Config.Agents.Codex.LocalConfigDir != nil {
 		choices.CodexLocalConfigDir = *cfg.Config.Agents.Codex.LocalConfigDir
 	}
-	choices.CodexApps = readCodexAppsEnabled(cfg.Config.Agents.Codex.AgentSpecific)
-	choices.CodexPlugins = readCodexPluginsEnabled(cfg.Config.Agents.Codex.AgentSpecific)
+	choices.CodexApps = readCodexFeatureValueOr(cfg.Config.Agents.Codex.AgentSpecific, config.CodexFeatureAppsKey, codexFeatureDefaultApps)
+	choices.CodexPlugins = readCodexFeatureValueOr(cfg.Config.Agents.Codex.AgentSpecific, config.PluginsKey, codexFeatureDefaultPlugins)
 	choices.CodexDisableBrowser = readCodexBrowserDisabled(cfg.Config.Agents.Codex.AgentSpecific)
 	choices.CodexStatusline = true
 	if cfg.Config.Agents.Codex.Statusline != nil {
@@ -370,24 +360,15 @@ func initializeChoicesWithCatalog(cfg *config.ProjectConfig, inspectCatalog bool
 	return choices, nil
 }
 
-// readCodexAppsEnabled returns the current value of
-// agents.codex.agent_specific.features.apps, defaulting to false when absent
-// or not a bool. The wizard's default is to disable the upstream Codex apps
-// surface; absence in config is treated as opting in to that default.
-func readCodexAppsEnabled(agentSpecific map[string]any) bool {
-	value, ok := readCodexFeatureValue(agentSpecific, config.CodexFeatureAppsKey)
-	if !ok {
-		return false
+// readCodexFeatureValueOr returns agents.codex.agent_specific.features.<key>,
+// or def when it is absent or not a bool. For apps the default is false: the
+// wizard disables the upstream Codex apps surface, and absence in config is
+// treated as opting in to that default.
+func readCodexFeatureValueOr(agentSpecific map[string]any, key string, def bool) bool {
+	if value, ok := readCodexFeatureValue(agentSpecific, key); ok {
+		return value
 	}
-	return value
-}
-
-func readCodexPluginsEnabled(agentSpecific map[string]any) bool {
-	value, ok := readCodexFeatureValue(agentSpecific, config.PluginsKey)
-	if !ok {
-		return true
-	}
-	return value
+	return def
 }
 
 func readCodexFeatureValue(agentSpecific map[string]any, key string) (bool, bool) {
@@ -414,11 +395,7 @@ const (
 // features are pinned off (features.browser_use == false). Absence is treated
 // as "not disabled" so the client keeps its native default.
 func readCodexBrowserDisabled(agentSpecific map[string]any) bool {
-	features, ok := agentSpecific["features"].(map[string]any)
-	if !ok {
-		return false
-	}
-	enabled, ok := features["browser_use"].(bool)
+	enabled, ok := readCodexFeatureValue(agentSpecific, "browser_use")
 	return ok && !enabled
 }
 
@@ -979,6 +956,15 @@ func promptCustomMCPServers(ui UI, choices *Choices) error {
 	return nil
 }
 
+// appendPreviewSection appends section to the rewrite preview, replacing the
+// preview when it is empty or only reports that no config rewrites are needed.
+func appendPreviewSection(preview, section string) string {
+	if preview == "" || strings.HasPrefix(preview, "No rewrites needed") {
+		return section
+	}
+	return preview + "\n\n" + section
+}
+
 func confirmAndApply(root, configPath, envPath string, ui UI, choices *Choices, runSync syncer, out io.Writer, freshInstall bool, pinVersion string) error {
 	confirmApply := true
 	scripted, isScripted := ui.(*ScriptedUI)
@@ -1020,33 +1006,21 @@ func confirmAndApply(root, configPath, envPath string, ui UI, choices *Choices, 
 	}
 	choices.previewedSkills = &skillsChangeSet
 	if skillsPreview := buildSkillsPreview(skillsChangeSet); skillsPreview != "" {
-		if rewritePreview == "" || strings.HasPrefix(rewritePreview, "No rewrites needed") {
-			rewritePreview = skillsPreview
-		} else {
-			rewritePreview = rewritePreview + "\n\n" + skillsPreview
-		}
+		rewritePreview = appendPreviewSection(rewritePreview, skillsPreview)
 	}
 	gitignoreChangeSet, err := computeGitignoreBlockChangeSet(root, choices)
 	if err != nil {
 		return err
 	}
 	if gitignorePreview := buildGitignoreBlockPreview(gitignoreChangeSet); gitignorePreview != "" {
-		if rewritePreview == "" || strings.HasPrefix(rewritePreview, "No rewrites needed") {
-			rewritePreview = gitignorePreview
-		} else {
-			rewritePreview = rewritePreview + "\n\n" + gitignorePreview
-		}
+		rewritePreview = appendPreviewSection(rewritePreview, gitignorePreview)
 	}
 	statuslineSourceChangeSet, err := computeStatuslineSourceChangeSet(root, choices)
 	if err != nil {
 		return err
 	}
 	if statuslinePreview := buildStatuslineSourcePreview(statuslineSourceChangeSet); statuslinePreview != "" {
-		if rewritePreview == "" || strings.HasPrefix(rewritePreview, "No rewrites needed") {
-			rewritePreview = statuslinePreview
-		} else {
-			rewritePreview = rewritePreview + "\n\n" + statuslinePreview
-		}
+		rewritePreview = appendPreviewSection(rewritePreview, statuslinePreview)
 	}
 	if err := ui.Note(messages.WizardRewritePreviewTitle, rewritePreview); err != nil {
 		return err

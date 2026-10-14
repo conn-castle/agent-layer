@@ -232,110 +232,72 @@ func applyAgentModelUpdates(block, templateBlock *tomlpatch.Block, choice AgentM
 		setOptionalKeyValue(block, templateBlock, modelKey, choice.Model, enabledKey)
 	}
 	if choice.ReasoningTouched {
-		anchor := modelKey
-		if _, ok := tomlpatch.FindKeyLine(block.Lines, anchor); !ok {
-			anchor = enabledKey
-		}
-		setOptionalKeyValue(block, templateBlock, "reasoning_effort", choice.Reasoning, anchor)
+		setOptionalKeyValue(block, templateBlock, "reasoning_effort", choice.Reasoning, firstExistingKey(block, modelKey, enabledKey))
 	}
+}
+
+// firstExistingKey returns the first of keys whose line exists in block, or the
+// last key when none of the earlier ones exist.
+func firstExistingKey(block *tomlpatch.Block, keys ...string) string {
+	for _, key := range keys[:len(keys)-1] {
+		if _, ok := tomlpatch.FindKeyLine(block.Lines, key); ok {
+			return key
+		}
+	}
+	return keys[len(keys)-1]
 }
 
 // applySectionUpdates mutates the block in place based on wizard choices.
 // name identifies the section; templateBlock provides canonical formatting for inserted keys.
 func applySectionUpdates(name string, block *tomlpatch.Block, templateBlock *tomlpatch.Block, choices *Choices) {
+	// Every agent section shares the enabled toggle. It is written first so
+	// agent-specific keys anchored after enabled land in place.
+	if choices.EnabledAgentsTouched && slices.Contains(supportedAgentKeys(), name+"."+enabledKey) {
+		agentID := strings.TrimPrefix(name, "agents.")
+		tomlpatch.SetKeyValue(block, templateBlock, enabledKey, tomlpatch.FormatValue(choices.EnabledAgents[agentID]), "")
+	}
 	switch name {
 	case approvalsSection:
 		if choices.ApprovalModeTouched {
 			tomlpatch.SetKeyValue(block, templateBlock, "mode", tomlpatch.FormatValue(choices.ApprovalMode), "")
 		}
 	case antigravitySection:
-		if choices.EnabledAgentsTouched {
-			tomlpatch.SetKeyValue(block, templateBlock, "enabled", tomlpatch.FormatValue(choices.EnabledAgents[AgentAntigravity]), "")
-		}
 		if !choices.EnabledAgentsTouched || choices.EnabledAgents[AgentAntigravity] {
 			applyAgentModelUpdates(block, templateBlock, choices.AgentModels[AgentAntigravity])
 		}
 	case claudeSection:
-		if choices.EnabledAgentsTouched {
-			tomlpatch.SetKeyValue(block, templateBlock, "enabled", tomlpatch.FormatValue(choices.EnabledAgents[AgentClaude]), "")
-		}
 		applyAgentModelUpdates(block, templateBlock, choices.AgentModels[AgentClaude])
 		if choices.ClaudeLocalConfigDirTouched {
-			if choices.ClaudeLocalConfigDir {
-				tomlpatch.SetKeyValue(block, templateBlock, "local_config_dir", tomlpatch.FormatValue(true), "model")
-			} else {
-				tomlpatch.SetCommentedKeyLine(block, templateBlock, "local_config_dir", "model")
-			}
+			writeOrCommentKey(block, templateBlock, "local_config_dir", tomlpatch.FormatValue(true), choices.ClaudeLocalConfigDir, modelKey)
 		}
 		if choices.ClaudeDisableQuestionToolTouched {
-			if choices.ClaudeDisableQuestionTool {
-				tomlpatch.SetKeyValue(block, templateBlock, "disable_question_tool", tomlpatch.FormatValue(true), "local_config_dir")
-			} else {
-				tomlpatch.SetCommentedKeyLine(block, templateBlock, "disable_question_tool", "local_config_dir")
-			}
+			writeOrCommentKey(block, templateBlock, "disable_question_tool", tomlpatch.FormatValue(true), choices.ClaudeDisableQuestionTool, "local_config_dir")
 		}
 		if choices.ClaudeStatuslineTouched {
 			tomlpatch.SetKeyValue(block, templateBlock, "statusline", tomlpatch.FormatValue(choices.ClaudeStatusline), "disable_question_tool")
 		}
-	case claudeVSCodeSection:
-		if choices.EnabledAgentsTouched {
-			tomlpatch.SetKeyValue(block, templateBlock, "enabled", tomlpatch.FormatValue(choices.EnabledAgents[AgentClaudeVSCode]), "")
-		}
 	case codexSection:
-		if choices.EnabledAgentsTouched {
-			tomlpatch.SetKeyValue(block, templateBlock, "enabled", tomlpatch.FormatValue(choices.EnabledAgents[AgentCodex]), "")
-		}
 		applyAgentModelUpdates(block, templateBlock, choices.AgentModels[AgentCodex])
 		if choices.CodexLocalConfigDirTouched {
-			if choices.CodexLocalConfigDir {
-				tomlpatch.SetKeyValue(block, templateBlock, "local_config_dir", tomlpatch.FormatValue(true), "reasoning_effort")
-			} else {
-				tomlpatch.SetCommentedKeyLine(block, templateBlock, "local_config_dir", "reasoning_effort")
-			}
+			writeOrCommentKey(block, templateBlock, "local_config_dir", tomlpatch.FormatValue(true), choices.CodexLocalConfigDir, "reasoning_effort")
 		}
 		if choices.CodexStatuslineTouched && codexStatuslineToggleVisible(choices) {
 			// Anchor statusline after local_config_dir when that line exists,
 			// otherwise fall back to reasoning_effort (the pre-local_config_dir
 			// anchor). This keeps statusline in place instead of reordering it to
 			// the top of a block that has no local_config_dir line.
-			statuslineAnchor := "local_config_dir"
-			if _, ok := tomlpatch.FindKeyLine(block.Lines, "local_config_dir"); !ok {
-				statuslineAnchor = "reasoning_effort"
-			}
+			statuslineAnchor := firstExistingKey(block, "local_config_dir", "reasoning_effort")
 			tomlpatch.SetKeyValue(block, templateBlock, "statusline", tomlpatch.FormatValue(choices.CodexStatusline), statuslineAnchor)
 		}
-	case "agents.vscode":
-		if choices.EnabledAgentsTouched {
-			tomlpatch.SetKeyValue(block, templateBlock, "enabled", tomlpatch.FormatValue(choices.EnabledAgents[AgentVSCode]), "")
-		}
 	case "agents.copilot_cli":
-		if choices.EnabledAgentsTouched {
-			tomlpatch.SetKeyValue(block, templateBlock, "enabled", tomlpatch.FormatValue(choices.EnabledAgents[AgentCopilotCLI]), "")
-		}
 		applyAgentModelUpdates(block, templateBlock, choices.AgentModels[AgentCopilotCLI])
 	case "agents.grok":
-		if choices.EnabledAgentsTouched {
-			tomlpatch.SetKeyValue(block, templateBlock, "enabled", tomlpatch.FormatValue(choices.EnabledAgents[AgentGrok]), "")
-		}
 		applyAgentModelUpdates(block, templateBlock, choices.AgentModels[AgentGrok])
 		if choices.GrokDisableMemoryTouched {
-			anchor := "reasoning_effort"
-			if _, ok := tomlpatch.FindKeyLine(block.Lines, anchor); !ok {
-				anchor = "model"
-				if _, ok := tomlpatch.FindKeyLine(block.Lines, anchor); !ok {
-					anchor = "enabled"
-				}
-			}
-			if choices.GrokDisableMemory {
-				tomlpatch.SetKeyValue(block, templateBlock, "disable_memory", tomlpatch.FormatValue(true), anchor)
-			} else {
-				tomlpatch.SetCommentedKeyLine(block, templateBlock, "disable_memory", anchor)
-			}
+			anchor := firstExistingKey(block, "reasoning_effort", modelKey, enabledKey)
+			writeOrCommentKey(block, templateBlock, "disable_memory", tomlpatch.FormatValue(true), choices.GrokDisableMemory, anchor)
 		}
 	case museSection:
-		if choices.EnabledAgentsTouched {
-			tomlpatch.SetKeyValue(block, templateBlock, enabledKey, tomlpatch.FormatValue(choices.EnabledAgents[AgentMuse]), "")
-		}
 		applyAgentModelUpdates(block, templateBlock, choices.AgentModels[AgentMuse])
 	case warningsSection:
 		if choices.WarningsEnabledTouched && choices.WarningsEnabled {
@@ -396,34 +358,26 @@ func buildMCPServerBlocks(currentDoc tomlpatch.Document, catalogDoc tomlpatch.Do
 
 	var ordered []tomlpatch.Block
 	for _, id := range defaultIDs {
-		if choices.EnabledMCPServersTouched {
-			block, ok := currentByID[id]
-			if !ok {
-				// Missing default: insert from the catalog only when the user
-				// selected (enabled) it. An unselected missing default stays
-				// absent — the wizard never adds an entry the user did not ask for.
-				if !choices.EnabledMCPServers[id] {
-					continue
-				}
-				tpl, exists := catalogByID[id]
-				if !exists {
-					return nil, fmt.Errorf(messages.WizardMissingDefaultMCPServerTemplateFmt, id)
-				}
-				block = tpl
+		block, ok := currentByID[id]
+		if !ok {
+			// Missing default: insert from the catalog only when the MCP step was
+			// touched and the user selected (enabled) it. An unselected missing
+			// default stays absent — the wizard never adds an entry the user did
+			// not ask for — and an untouched step preserves existing state.
+			if !choices.EnabledMCPServersTouched || !choices.EnabledMCPServers[id] {
+				continue
 			}
-			// Existing default: keep the block and set enabled to the user's choice.
-			// Disabling sets enabled = false rather than deleting the entry.
-			tb := updateMCPEnabled(block, catalogByID[id], choices, id)
-			sanitizeMCPServerBlock(&tb)
-			ordered = append(ordered, tb)
-			continue
+			tpl, exists := catalogByID[id]
+			if !exists {
+				return nil, fmt.Errorf(messages.WizardMissingDefaultMCPServerTemplateFmt, id)
+			}
+			block = tpl
 		}
-		// MCP step not touched: preserve existing state unchanged.
-		if block, ok := currentByID[id]; ok {
-			tb := updateMCPEnabled(block, catalogByID[id], choices, id)
-			sanitizeMCPServerBlock(&tb)
-			ordered = append(ordered, tb)
-		}
+		// Keep the block and set enabled to the user's choice. Disabling sets
+		// enabled = false rather than deleting the entry.
+		tb := updateMCPEnabled(block, catalogByID[id], choices, id)
+		sanitizeMCPServerBlock(&tb)
+		ordered = append(ordered, tb)
 	}
 
 	for _, block := range currentBlocks {
@@ -626,13 +580,7 @@ func applyCodexBooleanFeatureUpdate(doc *tomlpatch.Document, choices *Choices, k
 			return nil
 		}
 	}
-	block := &tomlpatch.Block{
-		Name:  codexFeaturesSection,
-		Lines: []string{"[" + codexFeaturesSection + "]"},
-	}
-	doc.Sections[codexFeaturesSection] = block
-	doc.Order = append(doc.Order, codexFeaturesSection)
-	tomlpatch.SetKeyValue(block, nil, key, tomlpatch.FormatValue(enabled), "")
+	tomlpatch.SetKeyValue(ensureSectionBlock(doc, codexFeaturesSection), nil, key, tomlpatch.FormatValue(enabled), "")
 	return nil
 }
 
@@ -675,13 +623,7 @@ func applyCodexBrowserUpdate(doc *tomlpatch.Document, choices *Choices) error {
 	if !choices.CodexDisableBrowser {
 		return nil
 	}
-	block := &tomlpatch.Block{
-		Name:  codexFeaturesSection,
-		Lines: []string{"[" + codexFeaturesSection + "]"},
-	}
-	doc.Sections[codexFeaturesSection] = block
-	doc.Order = append(doc.Order, codexFeaturesSection)
-	applyCodexBrowserKeys(block, "", true)
+	applyCodexBrowserKeys(ensureSectionBlock(doc, codexFeaturesSection), "", true)
 	return nil
 }
 
@@ -691,20 +633,7 @@ func applyCodexBrowserUpdate(doc *tomlpatch.Document, choices *Choices) error {
 // cannot edit those pins inside an inline table. Parallels the generic Codex
 // feature reader used for apps/plugins.
 func inlineFeaturesHasAnyCodexBrowserKey(block *tomlpatch.Block) bool {
-	if block == nil {
-		return false
-	}
-	var cfg struct {
-		Agents struct {
-			Codex struct {
-				AgentSpecific map[string]any `toml:"agent_specific"`
-			} `toml:"codex"`
-		} `toml:"agents"`
-	}
-	if err := toml.Unmarshal([]byte(strings.Join(block.Lines, "\n")), &cfg); err != nil {
-		return false
-	}
-	features, ok := cfg.Agents.Codex.AgentSpecific["features"].(map[string]any)
+	features, ok := codexAgentSpecificFromBlock(block)["features"].(map[string]any)
 	if !ok {
 		return false
 	}
@@ -809,44 +738,52 @@ func claudeDisableTogglesTouched(choices *Choices) bool {
 // leaving the toggle off comments any existing line and inserts nothing.
 func writeClaudeAgentSpecificKey(doc *tomlpatch.Document, key claudeAgentSpecificKey, disable bool) {
 	if block, exists := doc.Sections[key.expandedSection]; exists {
-		writeOrCommentKey(block, key.leafKey, key.value, disable)
+		writeOrCommentKey(block, nil, key.leafKey, key.value, disable, enabledKey)
 		return
 	}
 	if block, exists := doc.Sections[claudeAgentSpecificSection]; exists && key.expandedSection != claudeAgentSpecificSection {
-		writeOrCommentKey(block, key.parentDotted, key.value, disable)
+		writeOrCommentKey(block, nil, key.parentDotted, key.value, disable, enabledKey)
 		return
 	}
-	writeOrCommentKey(ensureClaudeSectionBlock(doc), key.claudeDotted, key.value, disable)
+	// The [agents.claude] section is present in every config derived from the
+	// template; creating it is a defensive fallback for hand-edited configs.
+	writeOrCommentKey(ensureSectionBlock(doc, claudeSection), nil, key.claudeDotted, key.value, disable, enabledKey)
 }
 
-// writeOrCommentKey sets key = value when disable is true, otherwise comments
-// any existing uncommented line for key (inserting nothing when absent). Keys
-// in [agents.claude] are placed after "enabled"; in sub-tables the afterKey is
-// not found and the key lands just after the section header.
-func writeOrCommentKey(block *tomlpatch.Block, key string, value string, disable bool) {
-	if disable {
-		tomlpatch.SetKeyValue(block, nil, key, value, "enabled")
+// writeOrCommentKey sets key = value when write is true, otherwise comments
+// any existing uncommented line for key (inserting nothing when absent). Either
+// line is placed after afterKey; when afterKey is not found (for example in a
+// sub-table) the key lands just after the section header.
+func writeOrCommentKey(block, templateBlock *tomlpatch.Block, key string, value string, write bool, afterKey string) {
+	if write {
+		tomlpatch.SetKeyValue(block, templateBlock, key, value, afterKey)
 		return
 	}
-	tomlpatch.SetCommentedKeyLine(block, nil, key, "enabled")
+	tomlpatch.SetCommentedKeyLine(block, templateBlock, key, afterKey)
 }
 
-// ensureClaudeSectionBlock returns the [agents.claude] block, creating an empty
-// one when absent. The section is present in every config derived from the
-// template; the create path is a defensive fallback for hand-edited configs.
-func ensureClaudeSectionBlock(doc *tomlpatch.Document) *tomlpatch.Block {
-	if block, exists := doc.Sections[claudeSection]; exists {
+// ensureSectionBlock returns the named section block, creating an empty one
+// appended to the document order when absent.
+func ensureSectionBlock(doc *tomlpatch.Document, name string) *tomlpatch.Block {
+	if block, exists := doc.Sections[name]; exists {
 		return block
 	}
-	block := &tomlpatch.Block{Name: claudeSection, Lines: []string{"[" + claudeSection + "]"}}
-	doc.Sections[claudeSection] = block
-	doc.Order = append(doc.Order, claudeSection)
+	block := &tomlpatch.Block{Name: name, Lines: []string{"[" + name + "]"}}
+	doc.Sections[name] = block
+	doc.Order = append(doc.Order, name)
 	return block
 }
 
 func codexFeatureValueFromAgentSpecificBlock(block *tomlpatch.Block, key string) (bool, bool) {
+	return readCodexFeatureValue(codexAgentSpecificFromBlock(block), key)
+}
+
+// codexAgentSpecificFromBlock decodes the agents.codex.agent_specific table
+// from an [agents.codex.agent_specific] block. Returns nil when block is nil or
+// does not parse.
+func codexAgentSpecificFromBlock(block *tomlpatch.Block) map[string]any {
 	if block == nil {
-		return false, false
+		return nil
 	}
 	var cfg struct {
 		Agents struct {
@@ -856,9 +793,9 @@ func codexFeatureValueFromAgentSpecificBlock(block *tomlpatch.Block, key string)
 		} `toml:"agents"`
 	}
 	if err := toml.Unmarshal([]byte(strings.Join(block.Lines, "\n")), &cfg); err != nil {
-		return false, false
+		return nil
 	}
-	return readCodexFeatureValue(cfg.Agents.Codex.AgentSpecific, key)
+	return cfg.Agents.Codex.AgentSpecific
 }
 
 func isCodexAgentSpecificSection(name string) bool {
@@ -943,13 +880,7 @@ func applyLegacyAliasToOrder(order []string, legacyName string, canonicalName st
 	canonicalSeen := false
 	for _, name := range order {
 		switch name {
-		case legacyName:
-			if canonicalSeen {
-				continue
-			}
-			normalized = append(normalized, canonicalName)
-			canonicalSeen = true
-		case canonicalName:
+		case legacyName, canonicalName:
 			if canonicalSeen {
 				continue
 			}
