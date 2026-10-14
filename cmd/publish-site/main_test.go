@@ -1049,6 +1049,59 @@ func TestPublishAgentMarkdownDocs_PreservesSourceLinksInExport(t *testing.T) {
 	}
 }
 
+func TestPublishAgentMarkdownDocs_PreservesContainerCodeExamples(t *testing.T) {
+	const source = "# Export\r\n\r\n" +
+		"- ```markdown\r\n  [list code](./reference.mdx#init)\r\n  [fake]: ./reference.mdx\r\n  ```\r\n\r\n" +
+		"> ```markdown\r\n> [quote code](./reference.mdx#init)\r\n> ```\r\n\r\n" +
+		"> - ~~~~markdown\r\n>   [nested code](./reference.mdx)\r\n>   ~~~~\r\n\r\n" +
+		"- Real [list link](./reference.mdx#init)\r\n" +
+		"  continuation [link](./reference.mdx?mode=plain#init)\r\n\r\n" +
+		"> Real [quote link](<./reference.mdx#init> 'Keep title')\r\n\r\n" +
+		"[reference]: <./reference.mdx#init> \"Title\"\r\n[one][reference] and [two][reference]\r\n\r\n" +
+		"`multi-line code\r\n[example](./reference.mdx)`\r\n\r\n" +
+		"\\[literal](./reference.mdx) and [real](./reference.mdx#init)\r\n"
+	const want = "# Export\r\n\r\n" +
+		"- ```markdown\r\n  [list code](./reference.mdx#init)\r\n  [fake]: ./reference.mdx\r\n  ```\r\n\r\n" +
+		"> ```markdown\r\n> [quote code](./reference.mdx#init)\r\n> ```\r\n\r\n" +
+		"> - ~~~~markdown\r\n>   [nested code](./reference.mdx)\r\n>   ~~~~\r\n\r\n" +
+		"- Real [list link](./reference.md#init)\r\n" +
+		"  continuation [link](./reference.md?mode=plain#init)\r\n\r\n" +
+		"> Real [quote link](<./reference.md#init> 'Keep title')\r\n\r\n" +
+		"[reference]: <./reference.md#init> \"Title\"\r\n[one][reference] and [two][reference]\r\n\r\n" +
+		"`multi-line code\r\n[example](./reference.mdx)`\r\n\r\n" +
+		"\\[literal](./reference.mdx) and [real](./reference.md#init)\r\n"
+	for _, tc := range []struct {
+		name   string
+		source string
+		want   string
+	}{
+		{"mixed containers and CRLF", source, want},
+		{"blockquote", "> ```markdown\n> [example](./reference.mdx)\n> ```\n\n> [real](./reference.mdx#init)\n", "> ```markdown\n> [example](./reference.mdx)\n> ```\n\n> [real](./reference.md#init)\n"},
+		{"multiline code span", "`code\nstill code` [Reference](./reference.mdx)\n", "`code\nstill code` [Reference](./reference.md)\n"},
+		{"list indentation", "- item\n    [Reference](./reference.mdx)\n\n    ```markdown\n    [example](./reference.mdx)\n    ```\n", "- item\n    [Reference](./reference.md)\n\n    ```markdown\n    [example](./reference.mdx)\n    ```\n"},
+		{"HTML block", "<pre>\n[example](./reference.mdx)\n</pre>\n\n[real](./reference.mdx#init)\n", "<pre>\n[example](./reference.mdx)\n</pre>\n\n[real](./reference.md#init)\n"},
+		{"table", "| Example | Link |\n| --- | --- |\n| `[example](./reference.mdx)` | [real](./reference.mdx#init) |\n", "| Example | Link |\n| --- | --- |\n| `[example](./reference.mdx)` | [real](./reference.md#init) |\n"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			repoA := t.TempDir()
+			repoB := t.TempDir()
+			writeFile(t, filepath.Join(repoA, "site", "docs", "guide.mdx"), tc.source)
+			writeFile(t, filepath.Join(repoA, "site", "docs", "reference.mdx"), "# Reference\n\n## Init\n")
+			if err := publishAgentMarkdownDocs(repoA, repoB); err != nil {
+				t.Fatalf("publishAgentMarkdownDocs: %v", err)
+			}
+			exported, err := os.ReadFile(filepath.Join(repoB, "static", "docs", "guide.md")) // #nosec G304 -- test-controlled path.
+			if err != nil || string(exported) != tc.want {
+				t.Fatalf("export changed code or non-destination bytes: got %q, %v; want %q", exported, err, tc.want)
+			}
+			original, err := os.ReadFile(filepath.Join(repoA, "site", "docs", "guide.mdx")) // #nosec G304 -- test-controlled path.
+			if err != nil || string(original) != tc.source {
+				t.Fatalf("canonical source changed: %q, %v", original, err)
+			}
+		})
+	}
+}
+
 func TestValidateRepoBRootErrors(t *testing.T) {
 	if err := validateRepoBRoot(filepath.Join(t.TempDir(), "missing")); err == nil {
 		t.Fatal("expected error for missing repo")

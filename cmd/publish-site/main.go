@@ -22,6 +22,11 @@ import (
 	"strings"
 	"time"
 	"unicode"
+
+	"github.com/yuin/goldmark/v2/ast"
+	"github.com/yuin/goldmark/v2/extension"
+	"github.com/yuin/goldmark/v2/parser"
+	"github.com/yuin/goldmark/v2/text"
 )
 
 func main() {
@@ -210,7 +215,11 @@ func publishAgentMarkdownDocs(repoA, repoB string) error {
 		if err != nil {
 			return fmt.Errorf("read Markdown export %s: %w", path, err)
 		}
-		if err := osWriteFileFunc(path, []byte(markdownExportLinks(string(data))), info.Mode()); err != nil {
+		exported, err := markdownExportLinks(string(data))
+		if err != nil {
+			return fmt.Errorf("rewrite Markdown export %s: %w", path, err)
+		}
+		if err := osWriteFileFunc(path, []byte(exported), info.Mode()); err != nil {
 			return fmt.Errorf("write Markdown export %s: %w", path, err)
 		}
 		if filepath.Ext(path) == ".mdx" {
@@ -220,63 +229,59 @@ func publishAgentMarkdownDocs(repoA, repoB string) error {
 	})
 }
 
-// The static mirror renames .mdx files to .md, so relative Markdown link
-// destinations must use the exported extension too. Leave website/external
-// URLs, query strings, fragments, and code examples unchanged.
-var markdownExportLinkRegexp = regexp.MustCompile(`(?m)(\]\([ \t]*<?|^[ \t]{0,3}\[[^\]\n]+\]:[ \t]*<?)(\.\.?/[^\s<>?#)]*)\.mdx([?#][^\s<>)]*)?([\s>)]|$)`)
-
-func markdownExportLinks(source string) string {
-	lines := strings.SplitAfter(source, "\n")
-	var fence string
-	for i, line := range lines {
-		trimmed := strings.TrimLeft(line, " ")
-		if len(line)-len(trimmed) <= 3 && (strings.HasPrefix(trimmed, "```") || strings.HasPrefix(trimmed, "~~~")) {
-			marker := trimmed[:1]
-			run := len(trimmed) - len(strings.TrimLeft(trimmed, marker))
-			if fence == "" {
-				fence = strings.Repeat(marker, run)
-			} else if strings.HasPrefix(trimmed, fence) && strings.TrimSpace(trimmed[run:]) == "" {
-				fence = ""
+// markdownExportLinks rewrites only parsed Markdown destinations, using source
+// offsets to preserve every other byte, including code in Markdown containers.
+func markdownExportLinks(source string) (string, error) {
+	data := []byte(source)
+	document := parser.New(parser.WithExtensions(extension.GFMParser)).Parse(data)
+	var offsets []int
+	err := ast.Walk(document, func(node ast.Node, entering bool) (ast.WalkStatus, error) {
+		if !entering {
+			return ast.WalkContinue, nil
+		}
+		var destination text.SingleLineValue
+		switch link := node.(type) {
+		case *ast.Link:
+			if link.Reference != nil {
+				return ast.WalkContinue, nil // Rewrite the definition once, not each use.
 			}
-			continue
+			destination = link.Destination
+		case *ast.Image:
+			if link.Reference != nil {
+				return ast.WalkContinue, nil
+			}
+			destination = link.Destination
+		case *ast.LinkReferenceDefinition:
+			destination = link.Destination
+		default:
+			return ast.WalkContinue, nil
 		}
-		if fence != "" || strings.HasPrefix(line, "    ") || strings.HasPrefix(line, "\t") {
-			continue
+		raw := destination.Str(data)
+		pathname := raw
+		if suffix := strings.IndexAny(raw, "?#"); suffix >= 0 {
+			pathname = raw[:suffix]
 		}
-		lines[i] = markdownExportTextLinks(line)
+		if !strings.HasPrefix(pathname, "./") && !strings.HasPrefix(pathname, "../") || !strings.HasSuffix(pathname, ".mdx") {
+			return ast.WalkContinue, nil
+		}
+		if destination.IsOwned() {
+			return ast.WalkStop, fmt.Errorf("markdown destination %q has no source position", raw)
+		}
+		offsets = append(offsets, destination.Index().Start+len(pathname)-1)
+		return ast.WalkContinue, nil
+	})
+	if err != nil {
+		return "", err
 	}
-	return strings.Join(lines, "")
-}
-
-func markdownExportTextLinks(text string) string {
-	var out strings.Builder
-	for text != "" {
-		start := strings.IndexByte(text, '`')
-		if start < 0 {
-			out.WriteString(markdownExportLinkRegexp.ReplaceAllString(text, "${1}${2}.md${3}${4}"))
-			break
-		}
-		out.WriteString(markdownExportLinkRegexp.ReplaceAllString(text[:start], "${1}${2}.md${3}${4}"))
-		text = text[start:]
-		run := len(text) - len(strings.TrimLeft(text, "`"))
-		end := run
-		for end < len(text) {
-			next := strings.IndexByte(text[end:], '`')
-			if next < 0 {
-				end = len(text)
-				break
-			}
-			end += next
-			closingRun := len(text[end:]) - len(strings.TrimLeft(text[end:], "`"))
-			end += closingRun
-			if closingRun == run {
-				break
-			}
-		}
-		out.WriteString(text[:end])
-		text = text[end:]
+	sort.Ints(offsets)
+	var exported strings.Builder
+	start := 0
+	for _, offset := range offsets {
+		exported.WriteString(source[start:offset])
+		start = offset + 1 // Remove only the final x in this source-file extension.
 	}
-	return out.String()
+	exported.WriteString(source[start:])
+	return exported.String(), nil
 }
 
 // repoRoot returns Repo A root by searching upwards for go.mod.
