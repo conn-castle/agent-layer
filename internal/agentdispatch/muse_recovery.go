@@ -154,7 +154,7 @@ func resolveMuseRecoveryBaseline(root, previousID string, baseline *museRecovery
 				if err != nil {
 					return nil, err
 				}
-				_ = readStructuredEventsWithLineage(file, io.Discard, AgentMuse, baseline.SessionID, false, func(event providerEvent) error {
+				replayErr := readStructuredEventsWithLineage(file, io.Discard, AgentMuse, baseline.SessionID, false, func(event providerEvent) error {
 					if event.Kind == eventSession && event.RootID != "" {
 						id, cursor, sequence = event.RootID, event.Cursor, event.Sequence
 					}
@@ -164,6 +164,9 @@ func resolveMuseRecoveryBaseline(root, previousID string, baseline *museRecovery
 					return nil
 				}, nil)
 				_ = file.Close()
+				if replayErr != nil {
+					return nil, fmt.Errorf("replay retained Muse stream: %w", replayErr)
+				}
 			}
 			if id != "" {
 				if baseline.ActiveAtRead && baseline.RootID != id {

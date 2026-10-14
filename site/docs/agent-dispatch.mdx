@@ -251,7 +251,7 @@ Inspection returns state, activity timestamps, and termination confirmation with
 
 Muse can complete a text-bearing turn and then announce a background continuation in the same invocation. Dispatch retracts that turn's provisional completion when an authenticated announcement arrives and waits for the background result. Before resume launches, a read-only Muse session snapshot and retained ownership evidence supply the turn/cursor baseline. If a resumed stream omits its new root link, its earlier task linkage must agree with an independent terminal snapshot at an advanced cursor. Foreign roots and sessions still fail validation. Sanitized lifecycle events record shutdown/protocol observations and executing Agent Layer build identity; retrieve them with events pagination or tail.
 
-Output is UTF-8 text capped at 65,536 bytes and sets `truncated` when more captured text exists. Missing, unreadable, invalid, or unavailable output fails explicitly.
+`truncated` indicates a remaining suffix, or an omitted prefix on a tail read. Missing, unreadable, invalid, or unavailable output fails explicitly.
 
 ## Configuration
 

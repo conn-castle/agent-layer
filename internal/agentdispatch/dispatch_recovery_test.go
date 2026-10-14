@@ -367,13 +367,19 @@ func TestCrossProviderShutdownSnapshots(t *testing.T) {
 
 func TestMuseRecoveryRetainsOwnedRootAcrossMissingViewFold(t *testing.T) {
 	raw := museCapturedFixture(t, "v1.4.6-text-background.jsonl")
+	frames := strings.Split(strings.TrimSpace(raw), "\n")
 	const linkedBackground = "01a132d6-69c2-7b51-bf05-e8b24f9711f3"
 	for _, test := range []struct {
 		name                                   string
 		legacy, foreign, unconfirmed, conflict bool
+		invalidTail                            string
 	}{
 		{name: "recorded root"},
 		{name: "legacy captured linkage", legacy: true},
+		{name: "legacy conflicting root after linkage", legacy: true, invalidTail: frames[1] + "\n"},
+		{name: "legacy foreign session after linkage", legacy: true, invalidTail: strings.ReplaceAll(frames[0], capturedMuseSession, "foreign") + "\n"},
+		{name: "legacy terminal rejection after linkage", legacy: true, invalidTail: strings.ReplaceAll(museBackgroundFinal(), "completed", "failed")},
+		{name: "legacy unsupported schema after linkage", legacy: true, invalidTail: `{"schema_version":2}` + "\n"},
 		{name: "foreign prior session", foreign: true},
 		{name: "unconfirmed prior termination", unconfirmed: true},
 		{name: "conflicting live turn", conflict: true},
@@ -404,7 +410,7 @@ func TestMuseRecoveryRetainsOwnedRootAcrossMissingViewFold(t *testing.T) {
 			if err := writeRunRecord(previous.Dir, &previous.Record); err != nil {
 				t.Fatal(err)
 			}
-			if err := os.WriteFile(previous.Record.StdoutPath, []byte(raw), 0o600); err != nil {
+			if err := os.WriteFile(previous.Record.StdoutPath, []byte(raw+test.invalidTail), 0o600); err != nil {
 				t.Fatal(err)
 			}
 			baseline := &museRecoveryBaseline{SessionID: capturedMuseSession, ObservedAt: now}
@@ -413,6 +419,12 @@ func TestMuseRecoveryRetainsOwnedRootAcrossMissingViewFold(t *testing.T) {
 				baseline.RootID = "foreign-active"
 			}
 			baseline, err = resolveMuseRecoveryBaseline(root, previous.Record.ID, baseline)
+			if test.invalidTail != "" {
+				if err == nil || baseline != nil || !strings.Contains(err.Error(), "replay retained Muse stream") {
+					t.Fatalf("rejected retained stream supplied recovery evidence: baseline=%#v err=%v", baseline, err)
+				}
+				return
+			}
 			if test.foreign || test.unconfirmed || test.conflict {
 				if err == nil {
 					t.Fatal("unsafe root baseline accepted")
