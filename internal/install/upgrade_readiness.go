@@ -498,9 +498,10 @@ type disabledArtifactFileSpec struct {
 }
 
 type disabledArtifactDirSpec struct {
-	root      string
-	suffix    string
-	exclusive bool // The entire root is managed; no marker or target reads needed.
+	root             string
+	suffix           string
+	exclusive        bool // The entire root is managed; no marker or target reads needed.
+	preservedEntries []string
 }
 
 type disabledAgentArtifactRule struct {
@@ -619,7 +620,7 @@ func detectDisabledAgentArtifacts(inst *installer, cfg *config.Config) (*Upgrade
 				details = append(details, fmt.Sprintf("%s: %s", rule.agent, filepath.ToSlash(inst.relativePath(dir.root))))
 				continue
 			}
-			paths, _, err := listReadinessFilesWithSuffix(inst, dir.root, dir.suffix, true)
+			paths, _, err := listReadinessFilesWithSuffix(inst, dir.root, dir.suffix, true, dir.preservedEntries...)
 			if err != nil {
 				return nil, err
 			}
@@ -639,7 +640,7 @@ func legacySkillProjectionDirs(repoRoot string) []disabledArtifactDirSpec {
 	specs := make([]disabledArtifactDirSpec, 0, len(config.LegacySkillProjections))
 	for _, projection := range config.LegacySkillProjections {
 		path := filepath.Join(append([]string{repoRoot}, projection.Dir...)...)
-		specs = append(specs, disabledArtifactDirSpec{root: path, suffix: projection.Suffix})
+		specs = append(specs, disabledArtifactDirSpec{root: path, suffix: projection.Suffix, preservedEntries: projection.PreservedEntries})
 	}
 	return specs
 }
@@ -773,7 +774,7 @@ func countMarkdownFiles(inst *installer, root string) (int, error) {
 	return count, nil
 }
 
-func listReadinessFilesWithSuffix(inst *installer, root string, suffix string, requireMarker bool) ([]string, time.Time, error) {
+func listReadinessFilesWithSuffix(inst *installer, root string, suffix string, requireMarker bool, preservedEntries ...string) ([]string, time.Time, error) {
 	if _, err := inst.sys.Stat(root); err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return nil, time.Time{}, nil
@@ -786,6 +787,12 @@ func listReadinessFilesWithSuffix(inst *installer, root string, suffix string, r
 	err := inst.sys.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
+		}
+		if filepath.Dir(path) == root && slices.Contains(preservedEntries, entry.Name()) {
+			if entry.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
 		}
 		if entry.IsDir() {
 			return nil

@@ -314,13 +314,15 @@ func SharedAgentSkillsEnabled(agents AgentsConfig) bool {
 type LegacySkillProjection struct {
 	Dir    []string
 	Suffix string
+	// PreservedEntries belong to the native client, not the retired projection.
+	PreservedEntries []string
 }
 
 // LegacySkillProjections is the canonical list of retired projection paths.
 // It is the single source of truth consumed by both the sync cleanup helper
 // and the upgrade-readiness check.
 var LegacySkillProjections = []LegacySkillProjection{
-	{Dir: []string{".codex", skillsDirName}, Suffix: skillManifestName},
+	{Dir: []string{".codex", skillsDirName}, Suffix: skillManifestName, PreservedEntries: []string{".system"}},
 	{Dir: []string{".agent", skillsDirName}, Suffix: skillManifestName},
 	{Dir: []string{".gemini", skillsDirName}, Suffix: skillManifestName},
 	{Dir: []string{".github", skillsDirName}, Suffix: skillManifestName},
