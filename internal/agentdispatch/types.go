@@ -254,7 +254,10 @@ type OutputRequest struct {
 	Handle       string
 	InvocationID string
 	Artifact     string
-	Stdout       io.Writer
+	// Offset is a byte cursor returned as next_offset. Tail selects the last page.
+	Offset int64
+	Tail   bool
+	Stdout io.Writer
 }
 
 // CancelRequest identifies one active invocation by handle or invocation UUID.

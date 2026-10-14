@@ -117,6 +117,13 @@ type RunRecord struct {
 	TerminationObservation  string     `json:"termination_observation,omitempty"`
 	TerminationAttemptError string     `json:"termination_attempt_error,omitempty"`
 	TerminationProof        string     `json:"termination_proof,omitempty"`
+
+	AgentLayerBuild  agentLayerBuildIdentity `json:"agent_layer_build,omitempty"`
+	MuseRecovery     *museRecoveryBaseline   `json:"muse_recovery,omitempty"`
+	MuseRootID       string                  `json:"muse_root_id,omitempty"`
+	MuseRootCursor   string                  `json:"muse_root_cursor,omitempty"`
+	MuseRootSequence string                  `json:"muse_root_sequence,omitempty"`
+
 	// ReservationExpiresAt marks a record created by `al dispatch reserve`.
 	ReservationExpiresAt *time.Time `json:"reservation_expires_at,omitempty"`
 	// LaunchDigest is the durable claim marker for a reservation start. Older

@@ -32,11 +32,16 @@ type InspectResult struct {
 
 // OutputResult contains bounded text from one supported invocation output.
 type OutputResult struct {
-	Handle       string `json:"handle"`
-	InvocationID string `json:"invocation_id"`
-	Artifact     string `json:"artifact"`
-	Content      string `json:"content"`
-	Truncated    bool   `json:"truncated,omitempty"`
+	Handle               string `json:"handle"`
+	InvocationID         string `json:"invocation_id"`
+	Artifact             string `json:"artifact"`
+	Content              string `json:"content"`
+	Truncated            bool   `json:"truncated,omitempty"`
+	Offset               int64  `json:"offset"`
+	NextOffset           int64  `json:"next_offset"`
+	SizeBytes            int64  `json:"size_bytes"`
+	State                string `json:"state"`
+	TerminationConfirmed bool   `json:"termination_confirmed"`
 }
 
 // Inspect returns a non-blocking observation of one invocation. It never
@@ -108,6 +113,9 @@ func inspectResultFromRecord(record RunRecord) InspectResult {
 // Output returns bounded text for a completed final answer or the captured
 // event stream that may contain partial output from any invocation state.
 func Output(request OutputRequest) error {
+	if request.Offset < 0 || (request.Tail && request.Offset != 0) {
+		return exitError(ExitUsage, "output offset must be nonnegative and cannot be combined with tail")
+	}
 	artifact := strings.TrimSpace(request.Artifact)
 	if artifact != artifactFinalAnswer && artifact != artifactEvents {
 		return exitError(ExitUsage, fmt.Sprintf("dispatch output %q is invalid; use final_answer or events", artifact))
@@ -128,42 +136,63 @@ func Output(request OutputRequest) error {
 			return exitError(ExitUnavailable, fmt.Sprintf("dispatch invocation %s has not produced partial output", record.ID))
 		}
 	}
-	content, truncated, err := readBoundedOutput(filepathForRun(request.Root, record.ID), path)
+	page, err := readOutputPage(filepathForRun(request.Root, record.ID), path, request.Offset, request.Tail)
 	if err != nil {
 		return wrapExitError(ExitConfig, "read dispatch output", err)
 	}
 	return writeJSONResult(writerOrDiscard(request.Stdout), OutputResult{
 		Handle: record.Name, InvocationID: record.ID, Artifact: artifact,
-		Content: content, Truncated: truncated,
+		Content: page.Content, Truncated: page.Truncated, Offset: page.Offset, NextOffset: page.NextOffset, SizeBytes: page.SizeBytes,
+		State: inspectResultFromRecord(record).State, TerminationConfirmed: record.TerminationConfirmed,
 	})
 }
 
-func readBoundedOutput(runDir string, path string) (string, bool, error) {
+// Pages are byte slices of captured text; JSONL records may span pages. The
+// returned cursor never splits a UTF-8 rune and lets callers assemble records.
+func readOutputPage(runDir, path string, offset int64, tail bool) (OutputResult, error) {
 	if strings.TrimSpace(path) == "" {
-		return "", false, errors.New("dispatch output path is empty")
+		return OutputResult{}, errors.New("dispatch output path is empty")
 	}
 	file, err := openOwnedRegularFile(runDir, path)
 	if err != nil {
-		return "", false, err
+		return OutputResult{}, err
 	}
 	defer func() { _ = file.Close() }()
-	data, err := io.ReadAll(io.LimitReader(file, maxOutputReadBytes+1))
+	info, err := file.Stat()
 	if err != nil {
-		return "", false, err
+		return OutputResult{}, err
 	}
-	truncated := len(data) > maxOutputReadBytes
-	if truncated {
-		data = data[:maxOutputReadBytes]
-		// A valid UTF-8 rune may straddle the fixed read boundary. Remove only
-		// that incomplete suffix; malformed captured text still fails below.
-		for removed := 0; removed < utf8.UTFMax-1 && !utf8.Valid(data); removed++ {
+	size := info.Size()
+	if tail && size > maxOutputReadBytes {
+		offset = size - maxOutputReadBytes
+	}
+	if offset > size {
+		return OutputResult{}, errors.New("output offset exceeds artifact size")
+	}
+	if _, err := file.Seek(offset, io.SeekStart); err != nil {
+		return OutputResult{}, err
+	}
+	data, err := io.ReadAll(io.LimitReader(file, min(int64(maxOutputReadBytes), size-offset)))
+	if err != nil {
+		return OutputResult{}, err
+	}
+	if tail && offset > 0 {
+		// Tail can start inside a rune. Only discard UTF-8 continuation bytes.
+		for removed := 0; removed < utf8.UTFMax-1 && len(data) > 0 && data[0]&0xc0 == 0x80; removed++ {
+			data = data[1:]
+			offset++
+		}
+	}
+	if offset+int64(len(data)) < size {
+		for removed := 0; removed < utf8.UTFMax-1 && !utf8.Valid(data) && len(data) > 0; removed++ {
 			data = data[:len(data)-1]
 		}
 	}
 	if !utf8.Valid(data) {
-		return "", false, errors.New("dispatch output is not valid UTF-8 text")
+		return OutputResult{}, errors.New("dispatch output is not valid UTF-8 text or offset splits a rune")
 	}
-	return string(data), truncated, nil
+	next := offset + int64(len(data))
+	return OutputResult{Content: string(data), Offset: offset, NextOffset: next, SizeBytes: size, Truncated: (tail && offset > 0) || next < size}, nil
 }
 
 func openOwnedRegularFile(runDir string, path string) (*os.File, error) {

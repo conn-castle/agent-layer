@@ -137,7 +137,7 @@ al dispatch wait <handle-or-invocation-id> [--condition terminal|termination_con
 
 al dispatch inspect <handle-or-invocation-id>
 
-al dispatch output <handle-or-invocation-id> --artifact final_answer|events
+al dispatch output <handle-or-invocation-id> --artifact final_answer|events [--offset <next_offset> | --tail]
 
 al dispatch continue <handle> \
   (--prompt <text> | --prompt-file <path>)
@@ -536,15 +536,69 @@ resumability.
 `inspect` returns promptly with state, activity timestamps, and termination
 confirmation. Process identities and proof details remain private. `output`
 retrieves bounded UTF-8 text for `final_answer` or `events`; events can contain
-partial output from failed or cancelled runs. Reads return at most 65,536 bytes
-and set `truncated` when more captured text exists. Missing, unreadable, invalid,
-or unavailable output fails explicitly.
+partial output from failed or cancelled runs. Reads return at most 65,536 bytes.
+Use `offset` (`--offset` on the CLI) with the returned `next_offset` to page
+forward, or `tail: true` (`--tail`) to retrieve the last page of late evidence.
+Offset and tail cannot be combined. `offset`, `next_offset`, and `size_bytes`
+are byte positions; continue while `next_offset < size_bytes`. Pages preserve
+UTF-8 rune boundaries, but JSONL records may span pages and need assembly.
+`truncated` indicates a remaining suffix, or an omitted prefix on a tail read.
+Output also reports invocation `state` and `termination_confirmed`; captured
+answers and provider completion events from a failed run remain partial evidence.
+`final_answer` stays available only for a completed invocation. Missing,
+unreadable, invalid, or unavailable output fails explicitly.
 
 The MCP surface exposes `options`, `start`, `wait`, `continue`, `cancel`, `inspect`,
 and `output` with the `dispatch_` prefix. `reserve` and `start --reservation`
 are CLI only.
 `al dispatch mcp-server`, which serves those tools over stdio, is a hidden entry
 point for generated client configuration, not a public command.
+
+## Provider lifecycle and Muse recovery
+
+Muse root ownership comes from a same-session `session.run.linked` event whose
+command and run IDs agree. A second root requires an accepted `turn.submit`
+from `muse-runtime-background-terminal` after the preceding root terminal.
+A text-bearing terminal is provider-turn completion; an authenticated background
+announcement emits `continuation`, retracts its provisional completion/answer,
+and cancels a shutdown deadline triggered solely by semantic completion. Leader
+exit, reader failure and termination retain their own shutdown bounds. The
+invocation publishes a final answer only after the latest root completes,
+output drains, and process termination is proven. An announcement arriving after
+containment has begun cannot revive an already failed invocation.
+
+Before a Muse resume launches, a separate bounded MSP host makes read-only
+`session/read` with `excludeItems: true`. The expected session and available
+view/turn cursor establish its starting baseline. If the view fold is missing
+after a crash, a confirmed stopped, failed invocation's persisted root linkage
+supplies ownership; older captures are replayed through the same lineage
+validator. Completed historical snapshots alone cannot seed an unlinked terminal.
+
+A resumed exec can also submit a new root yet omit its announcement/linkage from
+stdout. In that case an earlier same-session task link must nominate that exact
+command/run ID, and an independent read-only snapshot must identify its root
+terminal at an advanced view cursor. A terminal cannot nominate itself; stale
+cursors, foreign roots/sessions and contradictory terminal states fail. Root
+ownership is established before judging terminal success, and its provenance
+is persisted. Normal root linkage supersedes recovery. These reads do not
+attach, resume, submit, or read transcript items; absent authoritative evidence
+fails explicitly rather than trusting session equality.
+
+Normalized events include Agent Layer receipt timestamps and Muse root,
+background-command, event-ID/sequence and lineage-source provenance. Muse
+`complete` records have `CompletionScope: provider_turn`; a later `continuation`
+retracts them. On a protocol rejection or shutdown deadline failure, a sanitized
+`lifecycle` event captures the trigger/time/deadline, current semantic terminal,
+leader/reap/exit observations, process-group observation/proof, termination
+request, independent pipe-writer and reader/drain state, last event receipt and
+root/cursor baseline. `leader_reaped_known` distinguishes the wait loop's
+observation from a reader-side protocol snapshot. These events are retrievable
+with output pagination or tail, including on a failed invocation.
+
+The executing worker records its Agent Layer executable path and SHA-256 plus
+available Go/module/VCS build metadata in `dispatch.json` and lifecycle snapshots.
+Snapshots contain identifiers and local observations; prompts, credentials,
+answers, arguments and unrestricted provider/tool payloads are excluded.
 
 ## MCP server lifecycle diagnostics
 
