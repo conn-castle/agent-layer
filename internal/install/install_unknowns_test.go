@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -209,19 +210,33 @@ func TestWarnDifferences_WithDiffs(t *testing.T) {
 	}
 }
 
-func TestSortUnknowns(t *testing.T) {
+func TestScanUnknowns_SortsByRelativePath(t *testing.T) {
+	// Keeping a nested path makes the walk descend into "a" before visiting
+	// "a.txt", so walk order differs from relative-path order.
 	root := t.TempDir()
-	inst := &installer{
-		root:     root,
-		unknowns: []string{filepath.Join(root, "z"), filepath.Join(root, "a"), filepath.Join(root, "m")},
-		sys:      RealSystem{},
+	alDir := filepath.Join(root, ".agent-layer")
+	if err := os.MkdirAll(filepath.Join(alDir, "a"), 0o700); err != nil {
+		t.Fatalf("mkdir: %v", err)
 	}
-	inst.sortUnknowns()
-	// Check they're sorted
-	for i := 1; i < len(inst.unknowns); i++ {
-		if inst.relativePath(inst.unknowns[i-1]) > inst.relativePath(inst.unknowns[i]) {
-			t.Fatalf("unknowns not sorted")
+	for _, name := range []string{"a.txt", filepath.Join("a", "keep.txt"), filepath.Join("a", "x.txt")} {
+		if err := os.WriteFile(filepath.Join(alDir, name), []byte("x"), 0o600); err != nil {
+			t.Fatalf("write %s: %v", name, err)
 		}
+	}
+	inst := &installer{root: root, sys: RealSystem{}}
+	if err := os.WriteFile(inst.upgradeKeepListPath(), []byte(".agent-layer/a/keep.txt\n"), 0o600); err != nil {
+		t.Fatalf("write keep list: %v", err)
+	}
+	if err := inst.scanUnknowns(); err != nil {
+		t.Fatalf("scanUnknowns: %v", err)
+	}
+	var got []string
+	for _, path := range inst.unknowns {
+		got = append(got, inst.relativePath(path))
+	}
+	want := []string{filepath.Join(".agent-layer", "a.txt"), filepath.Join(".agent-layer", "a", "x.txt")}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("unknowns = %v, want %v", got, want)
 	}
 }
 
@@ -316,30 +331,23 @@ func TestHandleUnknowns_IndividualDeleteError(t *testing.T) {
 	}
 }
 
-func TestScanUnknownRoot_WalkDirError(t *testing.T) {
-	if os.PathSeparator == '\\' {
-		t.Skip("skipping permissions test on windows")
-	}
+func TestWalkUnknownsInRoot_WalkDirError(t *testing.T) {
 	root := t.TempDir()
 	alDir := filepath.Join(root, ".agent-layer")
 	if err := os.Mkdir(alDir, 0o700); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
-	subDir := filepath.Join(alDir, "subdir")
-	if err := os.Mkdir(subDir, 0o000); err != nil {
-		t.Fatalf("mkdir subdir: %v", err)
-	}
-	t.Cleanup(func() { _ = os.Chmod(subDir, 0o755) }) // #nosec G302 -- test toggles dir/file mode bits to drive a production error path; the executable/traversal bit is intentional.
+	sys := newFaultSystem(RealSystem{})
+	walkBoom := errors.New("walk boom")
+	sys.walkErrs[normalizePath(alDir)] = walkBoom
 
-	inst := &installer{root: root, sys: RealSystem{}}
-	known := map[string]struct{}{
-		filepath.Clean(alDir): {},
+	inst := &installer{root: root, sys: sys}
+	if _, err := inst.walkUnknownsInRoot(alDir, map[string]struct{}{}, nil); !errors.Is(err, walkBoom) {
+		t.Fatalf("expected walk error, got %v", err)
 	}
-	// WalkDir may error when trying to enter the unreadable subdir
-	_ = inst.scanUnknownRoot(alDir, known, nil)
 }
 
-func TestScanUnknownRoot_StatErrorNonNotExist(t *testing.T) {
+func TestWalkUnknownsInRoot_StatErrorNonNotExist(t *testing.T) {
 	// A Stat error that is NOT os.ErrNotExist must propagate as the wrapped
 	// "failed to stat" error (the ErrNotExist branch returns nil). Inject a
 	// generic stat error deterministically so the non-ErrNotExist branch is
@@ -352,7 +360,7 @@ func TestScanUnknownRoot_StatErrorNonNotExist(t *testing.T) {
 
 	inst := &installer{root: root, sys: sys}
 	known := make(map[string]struct{})
-	err := inst.scanUnknownRoot(alDir, known, nil)
+	_, err := inst.walkUnknownsInRoot(alDir, known, nil)
 	if err == nil {
 		t.Fatalf("expected error for non-ErrNotExist stat failure")
 	}

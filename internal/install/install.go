@@ -436,10 +436,6 @@ func (inst *installer) recordDiff(path string) {
 	inst.diffs = append(inst.diffs, path)
 }
 
-func (inst *installer) recordUnknown(path string) {
-	inst.unknowns = append(inst.unknowns, path)
-}
-
 func (inst *installer) warnOutput() io.Writer {
 	if inst.warnWriter != nil {
 		return inst.warnWriter
@@ -475,7 +471,6 @@ func (inst *installer) warnUnknowns() {
 		return
 	}
 
-	inst.sortUnknowns()
 	out := inst.warnOutput()
 	_, _ = fmt.Fprintln(out, messages.InstallUnknownHeader)
 	for _, path := range inst.unknowns {

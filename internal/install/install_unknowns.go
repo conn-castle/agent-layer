@@ -25,33 +25,11 @@ func (inst *installer) unknownScanRoots() []string {
 }
 
 func (inst *installer) scanUnknowns() error {
-	known, err := inst.buildKnownPaths()
+	unknowns, err := inst.scanCurrentUnknowns()
 	if err != nil {
 		return err
 	}
-	kept, err := inst.loadUpgradeKeepList()
-	if err != nil {
-		return err
-	}
-
-	for _, root := range inst.unknownScanRoots() {
-		if err := inst.scanUnknownRoot(root, known, kept); err != nil {
-			return err
-		}
-	}
-	inst.unknowns = inst.filterKeptAbsolutePaths(inst.unknowns, kept)
-	inst.sortUnknowns()
-	return nil
-}
-
-func (inst *installer) scanUnknownRoot(root string, known map[string]struct{}, kept upgradeKeepList) error {
-	found, err := inst.walkUnknownsInRoot(root, known, kept)
-	if err != nil {
-		return err
-	}
-	for _, path := range found {
-		inst.recordUnknown(path)
-	}
+	inst.unknowns = unknowns
 	return nil
 }
 
@@ -103,8 +81,9 @@ func (inst *installer) handleUnknowns() error {
 }
 
 // offerUnknownsToKeep presents keep-list candidates for non-tmp unknowns, with
-// `.agent-layer/tmp` last unless it is already kept. Tmp contents are not
-// offered individually; keeping the directory retains the whole tree.
+// `.agent-layer/tmp` last unless it is already kept, and appends any selected
+// paths to the keep list. Tmp contents are not offered individually; keeping
+// the directory retains the whole tree.
 func (inst *installer) offerUnknownsToKeep(otherUnknowns []string) error {
 	kept, err := inst.loadUpgradeKeepList()
 	if err != nil {
@@ -114,31 +93,24 @@ func (inst *installer) offerUnknownsToKeep(otherUnknowns []string) error {
 	if !upgradePathIsKept(agentLayerTmpKeepPath, kept) {
 		offered = append(offered, inst.agentLayerTmpDir())
 	}
-	_, err = inst.selectUnknownsToKeep(offered)
-	return err
-}
-
-func (inst *installer) selectUnknownsToKeep(unknowns []string) ([]string, error) {
-	if len(unknowns) == 0 {
-		return unknowns, nil
+	if len(offered) == 0 {
+		return nil
 	}
-	relative := inst.keepListCandidateRelPaths(unknowns)
+	relative := inst.keepListCandidateRelPaths(offered)
 	selected, err := inst.prompter.selectUnknownsToKeep(relative)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	if len(selected) == 0 {
-		return unknowns, nil
+		return nil
 	}
-	kept, err := inst.loadUpgradeKeepList()
+	// Reload so edits made while the prompt was open are preserved.
+	kept, err = inst.loadUpgradeKeepList()
 	if err != nil {
-		return nil, err
+		return err
 	}
-	kept, err = inst.addUpgradeKeepPaths(kept, selected, relative)
-	if err != nil {
-		return nil, err
-	}
-	return inst.filterKeptAbsolutePaths(unknowns, kept), nil
+	_, err = inst.addUpgradeKeepPaths(kept, selected, relative)
+	return err
 }
 
 // handleNonTmpUnknowns runs the bulk-vs-per-file deletion flow for unknowns
@@ -231,9 +203,8 @@ func (inst *installer) collapsedRelativePathList(tmpUnknowns, otherUnknowns []st
 	return rel
 }
 
-// scanCurrentUnknowns performs a fresh scan for unknown files, returning the
-// list directly without modifying inst.unknowns (which is preserved for
-// snapshot rollback safety).
+// scanCurrentUnknowns performs a fresh scan for unknown files, sorted by
+// root-relative path, without modifying inst.unknowns.
 func (inst *installer) scanCurrentUnknowns() ([]string, error) {
 	known, err := inst.buildKnownPaths()
 	if err != nil {
@@ -251,7 +222,6 @@ func (inst *installer) scanCurrentUnknowns() ([]string, error) {
 		}
 		unknowns = append(unknowns, found...)
 	}
-	unknowns = inst.filterKeptAbsolutePaths(unknowns, kept)
 	sort.Slice(unknowns, func(i, j int) bool {
 		return inst.relativePath(unknowns[i]) < inst.relativePath(unknowns[j])
 	})
@@ -313,12 +283,6 @@ func (inst *installer) deleteUnknowns(paths []string) error {
 		}
 	}
 	return nil
-}
-
-func (inst *installer) sortUnknowns() {
-	sort.Slice(inst.unknowns, func(i, j int) bool {
-		return inst.relativePath(inst.unknowns[i]) < inst.relativePath(inst.unknowns[j])
-	})
 }
 
 // keepListCandidateRelPaths converts absolute paths to root-relative keep-list
