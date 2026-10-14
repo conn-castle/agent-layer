@@ -57,6 +57,12 @@ Unscheduled user-visible features and tasks (distinct from issues; not refactors
     Acceptance criteria: User can run the skill against any `.html` output file, leave comments in the browser, and see agent-applied edits reflected in the page within ~10 s; `history.json` records each change with a timestamp; the Python server and overlay inject no external network dependencies.
     Notes: Before building, research the Codex native equivalent of this pattern (paraschopra/make-pages-interactive on GitHub is the conceptual reference; OpenAI Codex may have a first-party version). The investigation should determine whether to build from scratch, adapt an existing implementation, or provide a thin Agent Layer wrapper around a Codex-native mechanism.
 
+- Backlog 2026-05-26 shipped-skill-update-channel: Complete verification of refreshed skills
+    Priority: High. Area: skills / refresh verification
+    Description: Complete the review/verification procedure for refreshed third-party and catalog skills using the existing explicit import-update channel. Tavily and development skills are now external imports; bundled Agent Layer integration skills still need review before distribution.
+    Acceptance criteria: A repeatable refresh procedure identifies the reviewed upstream commit/diff, confirms license/notice preservation and local policy retention, checks positive/negative routing and repository-specific guardrails, and records verification before adopting refreshed imports or distributing changed bundled skills. Reuse existing structural validation and update commands rather than adding another update mechanism.
+    Notes: Upstream detection via al skills diff, three-way policy preservation via pull/resolve, and complete-tree validation already exist in internal/skillimport and internal/skilltree and are documented in site/docs/skill-imports.mdx. docs/SKILL-DESIGN.md provides routing/evaluation guidance, but a completed refresh-specific verification procedure satisfying the remaining acceptance has not been established. Keep only that remaining work; do not restore the former bundled third-party catalog or treat structural parsing as behavioral verification.
+
 - Backlog 2026-05-22 antigravity-slash-skill-verification: Re-verify Antigravity slash skill dispatch syntax
     Priority: Medium. Area: providers / antigravity
     Description: Re-check that `agy --print "/skill-name"` still invokes projected skills when Antigravity changes its CLI or skill behavior, especially on minor version bumps.
