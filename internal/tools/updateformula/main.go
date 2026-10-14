@@ -164,8 +164,7 @@ func readChecksums(path string) (map[string]string, error) {
 			continue
 		}
 		// Strip the binary-mode marker ("*") and a leading "./" so names match
-		// the release asset keys regardless of how sha256sum/shasum emitted them,
-		// consistent with the extractchecksum tool.
+		// the release asset keys regardless of how sha256sum/shasum emitted them.
 		filename := strings.TrimPrefix(strings.TrimPrefix(fields[1], "*"), "./")
 		checksums[filename] = fields[0]
 	}

@@ -146,12 +146,6 @@ const (
 	CheckTestEventsUnfinishedHeader     = "go test exited successfully, but these packages started without a package-level pass, fail, or skip event (a test binary was replaced or exited early):"
 	CheckTestEventsUnfinishedPackageFmt = "  %s\n"
 
-	// ExtractChecksumUsageFmt formats extract-checksum usage.
-	ExtractChecksumUsageFmt       = "Usage: %s <checksums-file> <target-filename>\n"
-	ExtractChecksumFileMissingFmt = "Error: %s not found\n"
-	ExtractChecksumReadFailedFmt  = "Error: failed to read %s: %v\n"
-	ExtractChecksumNotFoundFmt    = "Error: %s not found in %s\n"
-
 	UpdateFormulaUsageFmt           = "Usage: %s <formula-file> <tag> <checksums-file>\n"
 	UpdateFormulaFileMissingFmt     = "Error: %s not found\n"
 	UpdateFormulaStatFailedFmt      = "Error: failed to stat %s: %v\n"
