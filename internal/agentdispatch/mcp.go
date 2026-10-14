@@ -114,6 +114,8 @@ type OutputInput struct {
 	Handle       string `json:"handle,omitempty"`
 	InvocationID string `json:"invocation_id,omitempty"`
 	Artifact     string `json:"artifact"`
+	Offset       int64  `json:"offset,omitempty"`
+	Tail         bool   `json:"tail,omitempty"`
 }
 
 // RunMCPServer serves the Agent Dispatch tools over stdio until the client
@@ -392,6 +394,7 @@ func (s *dispatchToolServer) handleOutput(_ context.Context, _ *mcp.CallToolRequ
 	err := Output(OutputRequest{
 		Root: s.root, Handle: strings.TrimSpace(input.Handle),
 		InvocationID: strings.TrimSpace(input.InvocationID), Artifact: strings.TrimSpace(input.Artifact),
+		Offset: input.Offset, Tail: input.Tail,
 		Stdout: &out,
 	})
 	result, err := decodeJSONOutput[OutputResult](&out, err)

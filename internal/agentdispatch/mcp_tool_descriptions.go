@@ -42,7 +42,7 @@ func loadMCPToolDescriptions() (mcpToolDescriptionCatalog, error) {
 		ToolContinue: {handleParameter, "prompt", "prompt_file"},
 		ToolCancel:   {handleParameter, invocationIDParameter},
 		ToolInspect:  {handleParameter, invocationIDParameter},
-		ToolOutput:   {handleParameter, invocationIDParameter, "artifact"},
+		ToolOutput:   {handleParameter, invocationIDParameter, "artifact", "offset", "tail"},
 	}
 	if len(catalog.Tools) != len(expected) {
 		return mcpToolDescriptionCatalog{}, fmt.Errorf(

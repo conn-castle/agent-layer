@@ -133,26 +133,43 @@ type providerCommand struct {
 	Effort               string
 	ClaudeLineage        bool
 	ObserveMuseApprovals bool
+	MuseBaseline         *museRecoveryBaseline
 }
 
 type providerEvent struct {
-	Kind      string
-	SessionID string
-	Answer    string
-	Activity  string
-	Reason    string
+	Kind            string
+	ReceivedAt      time.Time `json:",omitempty"`
+	RootID          string    `json:",omitempty"`
+	CandidateID     string    `json:",omitempty"`
+	BackgroundID    string    `json:",omitempty"`
+	Cursor          string    `json:",omitempty"`
+	Sequence        string    `json:",omitempty"`
+	CompletionScope string    `json:",omitempty"`
+	LineageSource   string    `json:",omitempty"`
+	SessionID       string
+	Answer          string
+	Activity        string
+	Reason          string
 	// Usage is retained in provider.stdout for benchmark attribution.  The
 	// reducer keeps it visible to structured consumers rather than discarding
 	// the only request-level billing evidence.
-	Usage map[string]any
+	Recovery  *museRecoveryBaseline      `json:",omitempty"`
+	Lifecycle *providerLifecycleSnapshot `json:",omitempty"`
+	Usage     map[string]any
 }
 
 const (
-	eventSession  = "session"
-	eventAnswer   = "answer"
-	eventProgress = "progress"
-	eventComplete = "complete"
-	eventFailure  = "failure"
+	eventSession      = "session"
+	eventAnswer       = "answer"
+	eventProgress     = "progress"
+	eventComplete     = "complete"
+	eventFailure      = "failure"
+	eventContinuation = "continuation"
+	museRootLinked    = "session.run.linked"
+	museSessionRead   = "session/read"
+
+	museRecoveredRoot = "session/read_after_launch"
+	museRunStreamKind = "run"
 
 	codexAgentMessageType  = "agent_message"
 	codexItemCompletedType = "item.completed"
@@ -713,6 +730,9 @@ type museReducer struct {
 	terminalSeen       bool
 	awaitingBackground bool
 	backgroundRunID    string
+	recovery           *museRecoveryBaseline
+	lineageSource      string
+	candidateRunID     string
 }
 
 func (m *museReducer) reduce(value map[string]any) []providerEvent {
@@ -731,22 +751,27 @@ func (m *museReducer) reduce(value map[string]any) []providerEvent {
 	runStream, _ := mapValueV013(payload, "run_stream")
 	runKind, _ := runStream[jsonKindKey].(string)
 	runID, _ := runStream["id"].(string)
-	// A workflow can finish the submitting turn with no text, then submit a
-	// background turn in the same exec invocation to deliver its answer.
-	if payloadType == "runtime.command.accepted" && m.awaitingBackground &&
+	// A text-bearing terminal closes a provider turn, but an authenticated
+	// background command can still continue the workflow in this invocation.
+	if payloadType == "runtime.command.accepted" && m.terminalSeen &&
 		streamKind == eventSession && streamID == m.expectedSession &&
 		payload["client_id"] == "muse-runtime-background-terminal" && payload["command_kind"] == "turn.submit" {
+		if commandID == "" || commandID == m.rootRunID || (m.backgroundRunID != "" && m.backgroundRunID != commandID) {
+			return []providerEvent{{Kind: eventFailure, Reason: "Muse background command has invalid or conflicting root identity"}}
+		}
 		m.backgroundRunID = commandID
+		m.awaitingBackground = true
+		return []providerEvent{{Kind: eventContinuation, Activity: "muse_background_announced"}}
 	}
-	if (payloadType == "session.run.linked" || strings.HasPrefix(payloadType, "run.terminal.")) && (streamKind != eventSession || streamID != m.expectedSession) {
+	if (payloadType == museRootLinked || strings.HasPrefix(payloadType, "run.terminal.")) && (streamKind != eventSession || streamID != m.expectedSession) {
 		return []providerEvent{{Kind: eventFailure, Reason: "Muse root event omitted the expected session stream"}}
 	}
-	if payloadType == "session.run.linked" {
-		if runKind != "run" || runID == "" || commandID == "" || runID != commandID {
+	if payloadType == museRootLinked {
+		if runKind != museRunStreamKind || runID == "" || commandID == "" || runID != commandID {
 			return []providerEvent{{Kind: eventFailure, Reason: "Muse root run linkage is invalid"}}
 		}
 		if m.rootRunID != "" && m.rootRunID != runID {
-			if !m.awaitingBackground || runID != m.backgroundRunID {
+			if !m.terminalSeen || !m.awaitingBackground || runID != m.backgroundRunID {
 				return []providerEvent{{Kind: eventFailure, Reason: "Muse stream linked multiple root runs without a background continuation"}}
 			}
 			m.terminalSeen = false
@@ -754,7 +779,11 @@ func (m *museReducer) reduce(value map[string]any) []providerEvent {
 			m.backgroundRunID = ""
 		}
 		m.rootRunID = runID
+		m.lineageSource = museRootLinked
 		return []providerEvent{{Kind: eventSession, SessionID: streamID}, {Kind: eventProgress, Activity: payloadType}}
+	}
+	if payloadType == "task.stream.linked" && m.rootRunID == "" && m.candidateRunID == "" && streamKind == eventSession && streamID == m.expectedSession && commandID != "" && commandID == runID && runKind == museRunStreamKind {
+		m.candidateRunID = runID
 	}
 	if !strings.HasPrefix(payloadType, "run.terminal.") {
 		if payloadType != "" {
@@ -762,14 +791,33 @@ func (m *museReducer) reduce(value map[string]any) []providerEvent {
 		}
 		return nil
 	}
+	// Resume stdout may begin after the root link. Only an active/interrupted
+	// turn read from the provider's durable session before launch can seed it.
+	if m.rootRunID == "" && m.recovery != nil && m.recovery.verifyRoot != nil && runID != "" && runID == commandID && runKind == museRunStreamKind && runID == m.candidateRunID && runID != m.recovery.RootID {
+		observed, err := m.recovery.verifyRoot(runID)
+		if err != nil {
+			return []providerEvent{{Kind: eventFailure, Reason: "Muse resumed terminal has no authoritative root/cursor evidence"}}
+		}
+		m.recovery = observed
+	}
+	if m.rootRunID == "" && m.recovery != nil && m.recovery.RootID != "" {
+		m.rootRunID = m.recovery.RootID
+		m.lineageSource = museSessionRead
+		if m.recovery.Source != "" {
+			m.lineageSource = m.recovery.Source
+		}
+	}
 	if m.terminalSeen {
 		return []providerEvent{{Kind: eventFailure, Reason: "Muse stream has multiple root terminal events"}}
 	}
-	if m.rootRunID == "" || runKind != "run" || runID != m.rootRunID || commandID != m.rootRunID {
+	if m.rootRunID == "" || runKind != museRunStreamKind || runID != m.rootRunID || commandID != m.rootRunID {
 		return []providerEvent{{Kind: eventFailure, Reason: "Muse terminal event does not belong to the linked root run"}}
 	}
 	m.terminalSeen = true
 	terminal, _ := payload["terminal"].(string)
+	if m.lineageSource == museRecoveredRoot && terminal != m.recovery.TerminalState {
+		return []providerEvent{{Kind: eventFailure, Reason: "Muse terminal conflicts with authoritative recovered state"}}
+	}
 	if payloadType != "run.terminal.completed" || terminal != "completed" {
 		reason, _ := payload[jsonReasonKey].(string)
 		if reason == "" {
@@ -784,7 +832,11 @@ func (m *museReducer) reduce(value map[string]any) []providerEvent {
 		m.awaitingBackground = true
 		return []providerEvent{{Kind: eventProgress, Activity: "muse_waiting_for_background_answer"}}
 	}
-	return []providerEvent{{Kind: eventAnswer, Answer: answer}, {Kind: eventComplete}}
+	events := []providerEvent{{Kind: eventAnswer, Answer: answer}, {Kind: eventComplete}}
+	if m.recovery != nil && m.lineageSource != museRootLinked {
+		events = append([]providerEvent{{Kind: eventSession, SessionID: m.expectedSession}}, events...)
+	}
+	return events
 }
 
 func reduceGrokEvent(expected string, value map[string]any, textAccumulator *strings.Builder, terminalSeen *bool) []providerEvent {
@@ -908,13 +960,42 @@ func reduceAntigravityEvent(value map[string]any, terminalSeen *bool) []provider
 	return append(events, providerEvent{Kind: eventAnswer, Answer: answer}, providerEvent{Kind: eventProgress, Activity: "usage", Usage: usage}, providerEvent{Kind: eventComplete})
 }
 
-func readStructuredEventsWithLineage(reader io.Reader, rawWriter io.Writer, agent string, expectedSession string, claudeLineage bool, consume func(providerEvent) error, consumeLineage func(claudeLineageEvidence) error) error {
+func readStructuredEventsWithLineage(reader io.Reader, rawWriter io.Writer, agent string, expectedSession string, claudeLineage bool, consume func(providerEvent) error, consumeLineage func(claudeLineageEvidence) error, recovery ...*museRecoveryBaseline) error {
 	source := bufio.NewReaderSize(io.TeeReader(reader, rawWriter), structuredJSONBufferBytes)
 	parser := newSelectiveJSONReader()
 	normalizer := claudeLineageNormalizer{ignoredTasks: make(map[string]struct{})}
 	var grokAccumulator strings.Builder
 	var grokTerminalSeen, antigravityTerminalSeen bool
 	museState := museReducer{expectedSession: expectedSession}
+	if len(recovery) > 0 {
+		museState.recovery = recovery[0]
+		if museState.recovery != nil && museState.recovery.SessionID != expectedSession {
+			return fmt.Errorf("muse recovery baseline belongs to another session")
+		}
+	}
+	// All emitted records, including EOF/protocol diagnostics, carry local
+	// receipt time and the current reducer ownership state.
+	consumeEvent := consume
+	consume = func(event providerEvent) error {
+		if event.ReceivedAt.IsZero() {
+			event.ReceivedAt = time.Now().UTC()
+		}
+		if agent == AgentMuse {
+			if event.RootID == "" {
+				event.RootID = museState.rootRunID
+			}
+			if event.BackgroundID == "" {
+				event.BackgroundID = museState.backgroundRunID
+			}
+			if event.CandidateID == "" {
+				event.CandidateID = museState.candidateRunID
+			}
+			if event.LineageSource == "" {
+				event.LineageSource = museState.lineageSource
+			}
+		}
+		return consumeEvent(event)
+	}
 	claudeTasks := claudeTaskTracker{outstanding: make(map[string]struct{})}
 	finish := func() error {
 		if agent == AgentMuse && museState.awaitingBackground {
@@ -967,6 +1048,7 @@ func readStructuredEventsWithLineage(reader io.Reader, rawWriter io.Writer, agen
 			}
 			continue
 		}
+		receivedAt := time.Now().UTC()
 		trailing, trailingErr := parser.next()
 		if trailingErr != io.EOF {
 			if trailingErr == nil {
@@ -1003,10 +1085,27 @@ func readStructuredEventsWithLineage(reader io.Reader, rawWriter io.Writer, agen
 			events = reduceAntigravityEvent(record.Fields, &antigravityTerminalSeen)
 		case AgentMuse:
 			events = museState.reduce(record.Fields)
+			for i := range events {
+				events[i].RootID = museState.rootRunID
+				events[i].BackgroundID = museState.backgroundRunID
+				events[i].CandidateID = museState.candidateRunID
+				events[i].Cursor, _ = record.Fields["id"].(string)
+				if sequence := record.Fields["sequence"]; sequence != nil {
+					events[i].Sequence = fmt.Sprint(sequence)
+				}
+				events[i].LineageSource = museState.lineageSource
+				if museState.lineageSource == museRecoveredRoot {
+					events[i].Recovery = museState.recovery
+				}
+				if events[i].Kind == eventComplete {
+					events[i].CompletionScope = "provider_turn"
+				}
+			}
 		default:
 			return fmt.Errorf("unsupported structured dispatch provider %q", agent)
 		}
 		for _, event := range events {
+			event.ReceivedAt = receivedAt
 			if err := consume(event); err != nil {
 				return err
 			}

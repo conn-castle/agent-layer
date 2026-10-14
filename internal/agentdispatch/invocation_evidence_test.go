@@ -979,6 +979,30 @@ func TestMCPInspectAndOutputUseInvocationID(t *testing.T) {
 	if output.InvocationID != run.Record.ID || output.Content != "hello" {
 		t.Fatalf("mcp output = %#v", output)
 	}
+	for _, input := range []OutputInput{
+		{InvocationID: run.Record.ID, Artifact: artifactEvents, Offset: 2},
+		{InvocationID: run.Record.ID, Artifact: artifactEvents, Tail: true},
+	} {
+		call := callMCPTool(t, session, ToolOutput, input)
+		if call.IsError {
+			t.Fatalf("paged output failed: %s", toolResultText(call))
+		}
+		data, err := json.Marshal(call.StructuredContent)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var page OutputResult
+		if err := json.Unmarshal(data, &page); err != nil {
+			t.Fatal(err)
+		}
+		want := "hello"
+		if input.Offset != 0 {
+			want = "llo"
+		}
+		if page.Content != want || page.Offset != input.Offset || page.NextOffset != 5 || page.SizeBytes != 5 {
+			t.Fatalf("page=%#v", page)
+		}
+	}
 	both := callMCPTool(t, session, ToolInspect, SelectorInput{Handle: "tiny-round-capacitor", InvocationID: run.Record.ID})
 	if !both.IsError {
 		t.Fatal("mcp inspect accepted an ambiguous selector")

@@ -248,6 +248,7 @@ EXEC_BODY
 				Provider:             AgentMuse,
 				SessionID:            runtimeSessionID,
 				RunMode:              dispatchModeResume,
+				MuseBaseline:         &museRecoveryBaseline{SessionID: runtimeSessionID, ViewCursor: "baseline"},
 				ObserveMuseApprovals: true,
 			}, nil, run, root, nil, func(string) error { return nil })
 			if test.wantFailure == "" {

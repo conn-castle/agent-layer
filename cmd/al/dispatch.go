@@ -213,6 +213,8 @@ func newDispatchInspectCmd() *cobra.Command {
 
 func newDispatchOutputCmd() *cobra.Command {
 	var artifact string
+	var offset int64
+	var tail bool
 	cmd := &cobra.Command{
 		Use: "output <handle-or-invocation-id>", Short: "Read bounded final or partial output",
 		Args: cobra.ExactArgs(1), SilenceUsage: true,
@@ -222,11 +224,13 @@ func newDispatchOutputCmd() *cobra.Command {
 				return err
 			}
 			return dispatchCommandError(cmd, agentdispatch.Output(agentdispatch.OutputRequest{
-				Root: root, ID: args[0], Artifact: artifact, Stdout: cmd.OutOrStdout(),
+				Root: root, ID: args[0], Artifact: artifact, Offset: offset, Tail: tail, Stdout: cmd.OutOrStdout(),
 			}))
 		},
 	}
 	cmd.Flags().StringVar(&artifact, "artifact", "", "Output name (final_answer or events)")
+	cmd.Flags().Int64Var(&offset, "offset", 0, "Byte cursor from a previous next_offset")
+	cmd.Flags().BoolVar(&tail, "tail", false, "Read the last bounded page (incompatible with offset)")
 	_ = cmd.MarkFlagRequired("artifact")
 	return cmd
 }

@@ -567,7 +567,7 @@ func (p *selectiveJSONReader) readNonSpace() (byte, error) {
 func retainedStructuredPath(path []string) bool {
 	if len(path) == 1 {
 		switch path[0] {
-		case jsonTypeKey, jsonEventKey, "schema_version", "payload_type", "thread_id", "threadId", "id", jsonMessageKey, jsonTextKey, jsonReasonKey, jsonErrorKey, jsonResultKey, "session_id", jsonSessionIDCamelKey, "conversation_id", "conversationId", "is_error", "subtype", jsonStatusKey, jsonDataKey, "stopReason", "stop_reason":
+		case "sequence", jsonTypeKey, jsonEventKey, "schema_version", "payload_type", "thread_id", "threadId", "id", jsonMessageKey, jsonTextKey, jsonReasonKey, jsonErrorKey, jsonResultKey, "session_id", jsonSessionIDCamelKey, "conversation_id", "conversationId", "is_error", "subtype", jsonStatusKey, jsonDataKey, "stopReason", "stop_reason":
 			return true
 		}
 	}

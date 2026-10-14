@@ -90,6 +90,31 @@ func TestDispatchInspectAndOutputCLIAddressInvocationID(t *testing.T) {
 	if retrieved.Content != "cli-bytes" {
 		t.Fatalf("output CLI = %#v", retrieved)
 	}
+	for _, flags := range [][]string{{"--offset", "4"}, {"--tail"}} {
+		paged := newDispatchOutputCmd()
+		var out bytes.Buffer
+		paged.SetOut(&out)
+		paged.SetArgs(append([]string{id, "--artifact", "events"}, flags...))
+		if err := paged.Execute(); err != nil {
+			t.Fatal(err)
+		}
+		var page struct {
+			Content    string `json:"content"`
+			Offset     int64  `json:"offset"`
+			NextOffset int64  `json:"next_offset"`
+		}
+		if err := json.Unmarshal(out.Bytes(), &page); err != nil {
+			t.Fatal(err)
+		}
+		want := "cli-bytes"
+		if flags[0] == "--offset" {
+			want = "bytes"
+		}
+		if page.Content != want || page.NextOffset != 9 {
+			t.Fatalf("page=%#v", page)
+		}
+	}
+
 }
 
 func TestDispatchOutputRequiresArtifactFlag(t *testing.T) {

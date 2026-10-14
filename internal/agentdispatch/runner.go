@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"golang.org/x/sys/unix"
@@ -59,6 +60,8 @@ type executionResult struct {
 // remain. This is not an idle timeout for an actively working provider.
 const providerShutdownGrace = 5 * time.Second
 
+const shutdownSemanticTerminal = "semantic_terminal"
+
 // Each run-record write is locked and fsynced, and token-level progress events
 // can outpace it. Persisting every one stalls the stream reader until a
 // finished provider misses providerShutdownGrace, so progress-only activity is
@@ -103,6 +106,8 @@ func startFencedProvider(root string, run *dispatchRun, cmd *exec.Cmd, provider 
 			return exitError(ExitUnavailable, fmt.Sprintf("dispatch run %s is already %s", current.ID, current.State))
 		}
 		now := time.Now().UTC()
+		current.AgentLayerBuild = run.Record.AgentLayerBuild
+		current.MuseRecovery = run.Record.MuseRecovery
 		current.ProviderLaunchIntent = true
 		current.Revision++
 		current.UpdatedAt = now
@@ -245,6 +250,30 @@ func executeProvider(
 	cmd.Stdout = stdoutWrite
 	cmd.Stderr = stderrWrite
 	prepareProviderProcessGroup(cmd)
+	buildIdentity := currentBuildIdentity()
+	run.Record.AgentLayerBuild = buildIdentity
+	if command.Provider == AgentMuse && command.RunMode == dispatchModeResume {
+		if command.MuseBaseline == nil {
+			baseline, err := readMuseRecoveryBaseline(command, root)
+			if err != nil {
+				return executionResult{}, wrapExitError(ExitTargetFailure, "read Muse recovery baseline before launch", err)
+			}
+			baseline, err = resolveMuseRecoveryBaseline(root, run.Record.PreviousRunID, baseline)
+			if err != nil {
+				return executionResult{}, wrapExitError(ExitTargetFailure, "establish Muse recovery ownership before launch", err)
+			}
+			command.MuseBaseline = baseline
+		}
+		if command.MuseBaseline.SessionID != command.SessionID {
+			return executionResult{}, exitError(ExitTargetFailure, "Muse recovery baseline belongs to another session")
+		}
+		baseline := command.MuseBaseline
+		baseline.verifyRoot = func(id string) (*museRecoveryBaseline, error) {
+			return verifyMuseResumedRoot(command, root, baseline, id)
+		}
+		run.Record.MuseRecovery = command.MuseBaseline
+	}
+
 	approvalObserver, observerErr := startMuseApprovalObserver(command, root)
 	if observerErr != nil {
 		return executionResult{}, wrapExitError(ExitTargetFailure, "start Muse approval observer", observerErr)
@@ -283,6 +312,7 @@ func executeProvider(
 
 	var result executionResult
 	var pendingAnswer string
+	var pendingWorkflow bool
 	// lastDiagnostic keeps the latest non-terminal provider error, such as a
 	// Codex error event, so a run that then exits without a terminal failure
 	// event still includes the last reported diagnostic.
@@ -290,6 +320,38 @@ func executeProvider(
 	var resultMu sync.Mutex
 	var semanticErr error
 	var lastPersisted time.Time
+	var lastEvent providerEvent
+	var stdoutDrained, stderrDrained, stdoutReaderDone, stderrReaderDone atomic.Bool
+	appendEvent := func(event providerEvent) error {
+		encoded, err := json.Marshal(event)
+		if err != nil {
+			return err
+		}
+		_, err = events.Write(append(encoded, '\n'))
+		return err
+	}
+	semanticComplete := func() bool { resultMu.Lock(); defer resultMu.Unlock(); return result.Complete }
+	reportLifecycle := func(snapshot providerLifecycleSnapshot) error {
+		resultMu.Lock()
+		snapshot.SemanticTerminal = result.Complete
+		snapshot.PendingWorkflow = pendingWorkflow
+		snapshot.RootID, snapshot.BackgroundID = lastEvent.RootID, lastEvent.BackgroundID
+		snapshot.CandidateRootID, snapshot.RootEvidence = lastEvent.CandidateID, lastEvent.Recovery
+		snapshot.Cursor, snapshot.Sequence, snapshot.LineageSource = lastEvent.Cursor, lastEvent.Sequence, lastEvent.LineageSource
+		if !lastEvent.ReceivedAt.IsZero() {
+			received := lastEvent.ReceivedAt
+			snapshot.LastReceivedAt = &received
+		}
+		resultMu.Unlock()
+		snapshot.ObservedAt = time.Now().UTC()
+		snapshot.StdoutDrained, snapshot.StderrDrained = stdoutDrained.Load(), stderrDrained.Load()
+		snapshot.StdoutReaderDone, snapshot.StderrReaderDone = stdoutReaderDone.Load(), stderrReaderDone.Load()
+		snapshot.StdoutWritersClosed = snapshot.StdoutDrained || providerPipeWritersClosed(stdoutPipe)
+		snapshot.StderrWritersClosed = snapshot.StderrDrained || providerPipeWritersClosed(stderrPipe)
+		snapshot.Build = buildIdentity
+		snapshot.Recovery = command.MuseBaseline
+		return appendEvent(providerEvent{Kind: "lifecycle", ReceivedAt: snapshot.ObservedAt, Lifecycle: &snapshot})
+	}
 	terminal := make(chan struct{}, 1)
 	setFailure := func(err error) {
 		if err == nil {
@@ -312,6 +374,14 @@ func executeProvider(
 		}
 		now := time.Now().UTC()
 		run.Record.LastActivityAt = &now
+		if command.Provider == AgentMuse && event.Kind == eventSession && event.RootID != "" {
+			run.Record.MuseRootID = event.RootID
+			run.Record.MuseRootCursor = event.Cursor
+			run.Record.MuseRootSequence = event.Sequence
+			if event.Recovery != nil {
+				run.Record.MuseRecovery = event.Recovery
+			}
+		}
 		switch event.Kind {
 		case eventSession:
 			if event.SessionID == "" {
@@ -340,6 +410,9 @@ func executeProvider(
 				return persistErr
 			}
 		case eventProgress:
+			if event.Activity == "muse_waiting_for_background_answer" || event.Activity == "claude_waiting_for_background_tasks" {
+				pendingWorkflow = true
+			}
 			if event.Reason != "" {
 				lastDiagnostic = event.Reason
 			}
@@ -347,7 +420,17 @@ func executeProvider(
 			pendingAnswer = event.Answer
 			result.AnswerSeen = true
 			run.Record.LastOutputAt = &now
+		case eventContinuation:
+			pendingWorkflow = true
+			result.Complete = false
+			result.AnswerSeen = false
+			pendingAnswer = ""
+			select {
+			case terminal <- struct{}{}:
+			default:
+			}
 		case eventComplete:
+			pendingWorkflow = false
 			result.Complete = true
 			select {
 			case terminal <- struct{}{}:
@@ -384,12 +467,18 @@ func executeProvider(
 	stderrErr := make(chan error, 1)
 	go func() {
 		err := readStructuredEventsWithLineage(stdoutPipe, providerStdout, command.Provider, command.SessionID, command.ClaudeLineage, func(event providerEvent) error {
-			encoded, marshalErr := json.Marshal(event)
-			if marshalErr != nil {
-				return marshalErr
+			resultMu.Lock()
+			lastEvent = event
+			resultMu.Unlock()
+			if err := appendEvent(event); err != nil {
+				return err
 			}
-			if _, writeErr := events.Write(append(encoded, '\n')); writeErr != nil {
-				return writeErr
+			if event.Kind == eventFailure {
+				snapshot := providerLifecycleSnapshot{Trigger: "protocol_rejection", LeaderObservation: processStatus(leaderPID, leaderStart), TerminationRequested: termination.hasRequested()}
+				_, snapshot.GroupObservation, snapshot.GroupProof = observeTermination(RunRecord{PID: leaderPID, ProcessGroupID: leaderGroupID, ProcessStartIdentity: leaderStart})
+				if err := reportLifecycle(snapshot); err != nil {
+					return err
+				}
 			}
 			return consume(event)
 		}, func(evidence claudeLineageEvidence) error {
@@ -410,7 +499,9 @@ func executeProvider(
 				activity = "claude_task_" + evidence.Status
 			}
 			return consume(providerEvent{Kind: eventProgress, Activity: activity})
-		})
+		}, command.MuseBaseline)
+		stdoutDrained.Store(err == nil)
+		stdoutReaderDone.Store(true)
 		if err != nil {
 			setFailure(err)
 		}
@@ -418,6 +509,8 @@ func executeProvider(
 	}()
 	go func() {
 		_, err := io.Copy(providerStderr, stderrPipe)
+		stderrDrained.Store(err == nil)
+		stderrReaderDone.Store(true)
 		if err != nil {
 			setFailure(fmt.Errorf("capture provider stderr: %w", err))
 		}
@@ -426,7 +519,7 @@ func executeProvider(
 
 	streamResult, stderrResult, waitErr, terminationErr := awaitProviderCompletion(
 		cmd, termination, leaderPID, leaderGroupID, leaderStart,
-		stdoutPipe, stderrPipe, streamErr, stderrErr, terminal, setFailure,
+		stdoutPipe, stderrPipe, streamErr, stderrErr, terminal, setFailure, semanticComplete, reportLifecycle,
 	)
 	if err := approvalObserver.stop(); err != nil {
 		setFailure(err)
@@ -490,6 +583,9 @@ type providerWaitState struct {
 	terminationDone  <-chan struct{}
 	shutdownTimer    *time.Timer
 	shutdownDeadline <-chan time.Time
+	shutdownTrigger  string
+	triggeredAt      *time.Time
+	deadlineAt       *time.Time
 }
 
 func awaitProviderCompletion(
@@ -501,6 +597,8 @@ func awaitProviderCompletion(
 	streamErr, stderrErr chan error,
 	terminal <-chan struct{},
 	setFailure func(error),
+	semanticComplete func() bool,
+	reportLifecycle func(providerLifecycleSnapshot) error,
 ) (streamResult, stderrResult, waitErr, terminationErr error) {
 	wait := &providerWaitState{
 		cmd:             cmd,
@@ -510,8 +608,16 @@ func awaitProviderCompletion(
 		stderrPipe:      stderrPipe,
 		terminationDone: termination.done,
 	}
-	startShutdownDeadline := func() {
+	startShutdownDeadline := func(trigger string) {
+		// Once an independent shutdown condition appears, semantic continuation
+		// must not erase its deadline or revive an exiting/failed provider.
+		if wait.shutdownTimer != nil && wait.shutdownTrigger == shutdownSemanticTerminal && trigger != shutdownSemanticTerminal {
+			wait.shutdownTrigger = trigger
+		}
 		if wait.shutdownTimer == nil && (streamErr != nil || stderrErr != nil || !wait.reaped) {
+			now := time.Now().UTC()
+			deadline := now.Add(providerShutdownGrace)
+			wait.shutdownTrigger, wait.triggeredAt, wait.deadlineAt = trigger, &now, &deadline
 			wait.shutdownTimer = time.NewTimer(providerShutdownGrace)
 			wait.shutdownDeadline = wait.shutdownTimer.C
 		}
@@ -526,7 +632,14 @@ func awaitProviderCompletion(
 	defer waitPoll.Stop()
 	terminationPolling := observeInterval == providerTerminationPollInterval
 	for {
-		wait.observeLeader(startShutdownDeadline)
+		if wait.shutdownTrigger == shutdownSemanticTerminal && !semanticComplete() && !wait.reaped && !wait.termination.hasRequested() && streamErr != nil {
+			if wait.shutdownTimer != nil {
+				wait.shutdownTimer.Stop()
+			}
+			wait.shutdownTimer, wait.shutdownDeadline = nil, nil
+			wait.shutdownTrigger, wait.triggeredAt, wait.deadlineAt = "", nil, nil
+		}
+		wait.observeLeader(func() { startShutdownDeadline("leader_exit") })
 		if !terminationPolling && (wait.termination.hasRequested() || wait.shutdownTimer != nil) {
 			waitPoll.Reset(providerTerminationPollInterval)
 			terminationPolling = true
@@ -544,22 +657,29 @@ func awaitProviderCompletion(
 		}
 		select {
 		case <-terminal:
-			startShutdownDeadline()
+			if semanticComplete() {
+				startShutdownDeadline(shutdownSemanticTerminal)
+			}
 		case streamResult = <-streamErr:
 			streamErr = nil
-			startShutdownDeadline()
+			startShutdownDeadline("stdout_reader_done")
 		case stderrResult = <-stderrErr:
 			stderrErr = nil
 		case <-wait.terminationDone:
 			wait.terminationDone = nil
 			wait.terminationErr = wait.termination.err
-			startShutdownDeadline()
+			startShutdownDeadline("termination_done")
 			if wait.terminationErr != nil {
 				// Do not hang on an unkillable provider. Retain its active claim
 				// through the unproven-termination error below.
 				wait.abandonUnproven()
 			}
 		case <-wait.shutdownDeadline:
+			// An announcement can arrive concurrently with an expired timer.
+			// Recheck semantic ownership before turning the deadline into failure.
+			if wait.shutdownTrigger == shutdownSemanticTerminal && !semanticComplete() && !wait.reaped && !wait.termination.hasRequested() && streamErr != nil {
+				continue
+			}
 			wait.shutdownDeadline = nil
 			if wait.reaped && (streamErr == nil || providerPipeWritersClosed(wait.stdoutPipe)) &&
 				(stderrErr == nil || providerPipeWritersClosed(wait.stderrPipe)) {
@@ -568,7 +688,19 @@ func awaitProviderCompletion(
 				// the existing readers and still require their successful result.
 				continue
 			}
-			setFailure(fmt.Errorf("provider did not exit and close output streams within %s of terminal evidence or shutdown", providerShutdownGrace))
+			snapshot := providerLifecycleSnapshot{Trigger: wait.shutdownTrigger, TriggeredAt: wait.triggeredAt, Deadline: wait.deadlineAt, LeaderReaped: wait.reaped, LeaderReapedKnown: true, LeaderObservation: processStatus(leaderPID, leaderStart), TerminationRequested: termination.hasRequested()}
+			if wait.reaped {
+				if wait.waitErr == nil {
+					snapshot.ExitStatus = "success"
+				} else {
+					snapshot.ExitStatus = "nonzero"
+				}
+			}
+			_, snapshot.GroupObservation, snapshot.GroupProof = observeTermination(wait.leader)
+			if err := reportLifecycle(snapshot); err != nil {
+				setFailure(err)
+			}
+			setFailure(fmt.Errorf("provider did not exit and close output streams within %s of terminal evidence or shutdown (trigger=%s, leader_reaped=%t, stdout_drained=%t, stderr_drained=%t)", providerShutdownGrace, wait.shutdownTrigger, wait.reaped, streamErr == nil, stderrErr == nil))
 			_ = wait.stdoutPipe.Close()
 			_ = wait.stderrPipe.Close()
 		case <-waitPoll.C:

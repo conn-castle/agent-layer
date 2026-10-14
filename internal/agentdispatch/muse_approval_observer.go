@@ -179,31 +179,8 @@ func (observer *museApprovalObserver) stop() error {
 func observeMuseApprovals(ctx context.Context, stdin io.Writer, stdout io.Reader, sessionID, mode string, reportReady func(error)) error {
 	encoder := json.NewEncoder(stdin)
 	decoder := json.NewDecoder(stdout)
-	if err := encoder.Encode(map[string]any{
-		jsonRPCKey:    jsonRPCVersion,
-		"id":          1,
-		jsonMethodKey: "initialize",
-		jsonParamsKey: map[string]any{
-			"clientInfo":   map[string]any{"name": "agent_layer", museRPCVersionKey: "1"},
-			"capabilities": map[string]any{"userInputDialogs": false},
-		},
-	}); err != nil {
-		return fmt.Errorf("initialize Muse approval observer: %w", err)
-	}
-	frame, err := readMuseRPCResponse(decoder, encoder, 1)
-	if err != nil {
-		return fmt.Errorf("initialize Muse approval observer: %w", err)
-	}
-	var initialized struct {
-		Schema struct {
-			Version int `json:"version"`
-		} `json:"schema"`
-	}
-	if err := json.Unmarshal(frame.Result, &initialized); err != nil || initialized.Schema.Version != 1 {
-		return errors.New("initialize Muse approval observer: unsupported protocol response")
-	}
-	if err := encoder.Encode(map[string]any{jsonRPCKey: jsonRPCVersion, jsonMethodKey: "initialized", jsonParamsKey: map[string]any{}}); err != nil {
-		return fmt.Errorf("complete Muse approval observer initialization: %w", err)
+	if err := initializeMuseRPC(encoder, decoder); err != nil {
+		return err
 	}
 
 	requestID := 2
