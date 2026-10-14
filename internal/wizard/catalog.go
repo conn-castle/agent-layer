@@ -95,6 +95,7 @@ func (c *wizardOptionDiscoveryCache) prefetch(agent string) *wizardModelDiscover
 	c.entries[agent] = entry
 	req := wizardOptionDiscoveryRequestFunc()
 	req.Project = c.project
+	req.ConfigValues = true
 	req.Context = c.ctx
 	req.Cleanup = &c.cleanup
 	if !req.Live || !agentoptions.HasModelDiscovery(agent) {

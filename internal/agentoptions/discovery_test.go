@@ -635,6 +635,18 @@ func TestAntigravityDiscoveryWithoutProject(t *testing.T) {
 	}
 }
 
+func TestAntigravityConfigurationDiscoveryUsesDisplayNames(t *testing.T) {
+	req := harnessRequest(t, "antigravity-no-project")
+	req.ConfigValues = true
+	got, err := DiscoverModels("antigravity", req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{"Gemini Flash (Medium)", "Gemini Flash (High)"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("configuration models=%v want=%v", got, want)
+	}
+}
+
 func TestAntigravityMissingBinaryCreatesNoHome(t *testing.T) {
 	root := t.TempDir()
 	req := DiscoveryRequest{Project: &config.ProjectConfig{Root: root}, LookPath: func(string) (string, error) { return "", os.ErrNotExist }}

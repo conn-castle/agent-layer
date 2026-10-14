@@ -11,6 +11,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/pelletier/go-toml/v2"
+
 	"github.com/conn-castle/agent-layer/internal/agentoptions"
 	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/messages"
@@ -25,7 +27,7 @@ func TestModelDiscoveryPrefetchWaitsAndReusesResult(t *testing.T) {
 	original := wizardOptionDiscoveryRequestFunc
 	t.Cleanup(func() { wizardOptionDiscoveryRequestFunc = original })
 	path := filepath.Join(t.TempDir(), "agy")
-	if err := os.WriteFile(path, []byte("#!/bin/sh\nprintf 'new-model\\tNew Model\\n'\n"), 0o700); err != nil { // #nosec G306 -- executable harness fixture.
+	if err := os.WriteFile(path, []byte("#!/bin/sh\nprintf 'gemini-3.8-flash-medium\\tGemini 3.8 Flash (Medium)\\n'\n"), 0o700); err != nil { // #nosec G306 -- executable harness fixture.
 		t.Fatal(err)
 	}
 	started, release := make(chan struct{}), make(chan struct{})
@@ -47,10 +49,10 @@ func TestModelDiscoveryPrefetchWaitsAndReusesResult(t *testing.T) {
 	timer := time.AfterFunc(30*time.Millisecond, func() { close(release) })
 	defer timer.Stop()
 	ui := &MockUI{SelectFunc: func(_ string, options []string, current *string) error {
-		if !slices.Contains(options, "new-model") {
+		if !slices.Contains(options, "Gemini 3.8 Flash (Medium)") {
 			t.Errorf("missing discovered model: %v", options)
 		}
-		*current = "new-model"
+		*current = "Gemini 3.8 Flash (Medium)"
 		return nil
 	}}
 	var selected string
@@ -58,6 +60,19 @@ func TestModelDiscoveryPrefetchWaitsAndReusesResult(t *testing.T) {
 		if err := cache.selectModel(ui, AgentAntigravity, messages.WizardAntigravityModelTitle, &selected); err != nil {
 			t.Fatal(err)
 		}
+	}
+	choices := NewChoices()
+	choices.AgentModels[AgentAntigravity] = AgentModelChoice{ModelTouched: true, Model: selected}
+	patched, err := PatchConfig("[agents.antigravity]\nenabled = true\n", choices)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var cfg config.Config
+	if err := toml.Unmarshal([]byte(patched), &cfg); err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Agents.Antigravity.Model != "Gemini 3.8 Flash (Medium)" {
+		t.Fatalf("wizard saved native slug instead of configuration name: %q", cfg.Agents.Antigravity.Model)
 	}
 	if lookups.Load() != 1 {
 		t.Fatalf("discovery ran %d times", lookups.Load())

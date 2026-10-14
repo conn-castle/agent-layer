@@ -27,6 +27,9 @@ type DiscoveryRequest struct {
 	Env      []string
 	LookPath func(string) (string, error)
 	Live     bool
+	// ConfigValues selects names accepted by project configuration instead of
+	// native CLI override IDs when a provider exposes different namespaces.
+	ConfigValues bool
 	// Cleanup allows Claude's catalog to return before native shutdown. The
 	// owner must join cleanup before exit or another authenticated launch.
 	// Nil keeps discovery synchronous, including native shutdown errors.
