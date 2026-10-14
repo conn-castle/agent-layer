@@ -63,7 +63,7 @@ al skills add https://github.com/example/agent-skills.git \
   --ref v1.4.0
 ```
 
-Without `--ref`, the import tracks the repository's default branch. Use [`al skills status --all`](./reference#skill-import-commands) to see resolved source and local state.
+Without `--ref`, the import tracks the repository's default branch. Use [`al skills status --all`](./reference.mdx#skill-import-commands) to see resolved source and local state.
 
 ## Edit imported skills safely
 
@@ -114,4 +114,4 @@ A clean imported copy is deleted. A locally edited copy is preserved and reporte
 
 Imported skills are executable instructions for agents and may include scripts or other resources. Review the source and diff before enabling unfamiliar content. Agent Layer uses your existing Git authentication, refuses plain HTTP repositories, rejects symlinks and unsupported filesystem nodes, validates every skill tree, and never places credentials in its lock file.
 
-For every command and flag, see [Skill import commands](./reference#skill-import-commands). For configuration fields such as tracking, refs, write policies, and push destinations, see [Skill imports](./reference#skill-imports). For authoring and projection concepts, see [Skills](./skills).
+For every command and flag, see [Skill import commands](./reference.mdx#skill-import-commands). For configuration fields such as tracking, refs, write policies, and push destinations, see [Skill imports](./reference.mdx#skill-imports). For authoring and projection concepts, see [Skills](./skills.mdx).

@@ -203,11 +203,80 @@ func publishAgentMarkdownDocs(repoA, repoB string) error {
 		if err != nil {
 			return err
 		}
-		if info.IsDir() || filepath.Ext(path) != ".mdx" {
+		if info.IsDir() || !isDocMarkdownFile(path) {
 			return nil
 		}
-		return os.Rename(path, strings.TrimSuffix(path, ".mdx")+".md")
+		data, err := osReadFileFunc(path)
+		if err != nil {
+			return fmt.Errorf("read Markdown export %s: %w", path, err)
+		}
+		if err := osWriteFileFunc(path, []byte(markdownExportLinks(string(data))), info.Mode()); err != nil {
+			return fmt.Errorf("write Markdown export %s: %w", path, err)
+		}
+		if filepath.Ext(path) == ".mdx" {
+			return os.Rename(path, strings.TrimSuffix(path, ".mdx")+".md")
+		}
+		return nil
 	})
+}
+
+// The static mirror renames .mdx files to .md, so relative Markdown link
+// destinations must use the exported extension too. Leave website/external
+// URLs, query strings, fragments, and code examples unchanged.
+var markdownExportLinkRegexp = regexp.MustCompile(`(?m)(\]\([ \t]*<?|^[ \t]{0,3}\[[^\]\n]+\]:[ \t]*<?)(\.\.?/[^\s<>?#)]*)\.mdx([?#][^\s<>)]*)?([\s>)]|$)`)
+
+func markdownExportLinks(source string) string {
+	lines := strings.SplitAfter(source, "\n")
+	var fence string
+	for i, line := range lines {
+		trimmed := strings.TrimLeft(line, " ")
+		if len(line)-len(trimmed) <= 3 && (strings.HasPrefix(trimmed, "```") || strings.HasPrefix(trimmed, "~~~")) {
+			marker := trimmed[:1]
+			run := len(trimmed) - len(strings.TrimLeft(trimmed, marker))
+			if fence == "" {
+				fence = strings.Repeat(marker, run)
+			} else if strings.HasPrefix(trimmed, fence) && strings.TrimSpace(trimmed[run:]) == "" {
+				fence = ""
+			}
+			continue
+		}
+		if fence != "" || strings.HasPrefix(line, "    ") || strings.HasPrefix(line, "\t") {
+			continue
+		}
+		lines[i] = markdownExportTextLinks(line)
+	}
+	return strings.Join(lines, "")
+}
+
+func markdownExportTextLinks(text string) string {
+	var out strings.Builder
+	for text != "" {
+		start := strings.IndexByte(text, '`')
+		if start < 0 {
+			out.WriteString(markdownExportLinkRegexp.ReplaceAllString(text, "${1}${2}.md${3}${4}"))
+			break
+		}
+		out.WriteString(markdownExportLinkRegexp.ReplaceAllString(text[:start], "${1}${2}.md${3}${4}"))
+		text = text[start:]
+		run := len(text) - len(strings.TrimLeft(text, "`"))
+		end := run
+		for end < len(text) {
+			next := strings.IndexByte(text[end:], '`')
+			if next < 0 {
+				end = len(text)
+				break
+			}
+			end += next
+			closingRun := len(text[end:]) - len(strings.TrimLeft(text[end:], "`"))
+			end += closingRun
+			if closingRun == run {
+				break
+			}
+		}
+		out.WriteString(text[:end])
+		text = text[end:]
+	}
+	return out.String()
 }
 
 // repoRoot returns Repo A root by searching upwards for go.mod.

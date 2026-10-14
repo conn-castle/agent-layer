@@ -153,7 +153,7 @@ A prompt can say “I will be careful.” Approvals are what actually limit what
 
 ### Approvals modes
 
-Set the mode in `.agent-layer/config.toml` (see [Configuration](./reference#configuration)):
+Set the mode in `.agent-layer/config.toml` (see [Configuration](./reference.mdx#configuration)):
 
 ```toml
 [approvals]
@@ -293,11 +293,11 @@ AL_EXAMPLE_TOKEN=your-token-here
 ```
 
 Only variables prefixed with `AL_` are loaded from `.env`.
-See [Environment variables](./reference#environment-variables) for how `.env` is loaded and when `AL_NO_NETWORK` applies.
+See [Environment variables](./reference.mdx#environment-variables) for how `.env` is loaded and when `AL_NO_NETWORK` applies.
 
 ### Client targeting
 
-Use `clients = ["antigravity", "claude", "codex", "vscode", "copilot", "grok", "muse"]` to restrict a server to specific clients. If you omit `clients`, the server is projected to all supported clients. Muse uses per-client native names and disables shared project entries in its own settings to preserve these filters alongside Claude. See the [Muse notes](./reference#agents).
+Use `clients = ["antigravity", "claude", "codex", "vscode", "copilot", "grok", "muse"]` to restrict a server to specific clients. If you omit `clients`, the server is projected to all supported clients. Muse uses per-client native names and disables shared project entries in its own settings to preserve these filters alongside Claude. See the [Muse notes](./reference.mdx#agents).
 
 ### Built-in path placeholder
 
@@ -306,7 +306,7 @@ Use `clients = ["antigravity", "claude", "codex", "vscode", "copilot", "grok", "
 ### Doctor checks
 
 `al doctor` connects to each enabled MCP server that at least one enabled client receives, lists available tools, and warns about common issues. It waits up to 30 seconds per server before timing out.
-For the full checklist, see [Doctor](./reference#doctor).
+For the full checklist, see [Doctor](./reference.mdx#doctor).
 
 ### Skill sync
 
@@ -327,7 +327,7 @@ Start with one or two servers, verify with `al doctor`, then expand. It is easie
 
 Agent Dispatch lets an agent, person, or script start a headless provider conversation and coordinate it asynchronously. Starting work returns a handle immediately; callers use that handle to wait for a result, continue the same conversation, or cancel active work. Independent handles make parallel delegation possible without coupling the conversations. Valid dispatch targets are Codex, Claude, Antigravity, Grok, and Muse; enabled clients can call the tools when their runtime exposes Agent Layer's generated MCP server. Antigravity's current probe baseline does not yet expose those tools, so run `al probe agy` before relying on it as a caller.
 
-Agents access dispatch through Agent Layer's built-in `agent-layer` MCP server, while humans and scripts use matching `al dispatch` commands. Both use the same lifecycle and results. See [Agent Dispatch](./agent-dispatch) for the tools, commands, states, timeouts, and configuration.
+Agents access dispatch through Agent Layer's built-in `agent-layer` MCP server, while humans and scripts use matching `al dispatch` commands. Both use the same lifecycle and results. See [Agent Dispatch](./agent-dispatch.mdx) for the tools, commands, states, timeouts, and configuration.
 
 ## Project memory
 
@@ -409,11 +409,11 @@ Pin parser behavior:
 
 ### Upgrading a repo
 
-1. Run `al update` to update the global release binary through its current installation method. If the installed CLI predates that command, use the [legacy CLI fallback](./upgrades#how-to-upgrade).
+1. Run `al update` to update the global release binary through its current installation method. If the installed CLI predates that command, use the [legacy CLI fallback](./upgrades.mdx#how-to-upgrade).
 2. Run `al upgrade plan` to preview changes.
 3. Run `al upgrade` to apply changes (for CI-safe non-interactive apply: `al upgrade --yes --apply-managed-updates`).
 
-For compatibility guarantees, upgrade event categories, and release-versioned migration guidance, see [Upgrades](./upgrades).
+For compatibility guarantees, upgrade event categories, and release-versioned migration guidance, see [Upgrades](./upgrades.mdx).
 
 ### Overrides and offline mode
 

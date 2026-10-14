@@ -57,12 +57,12 @@ Only add these flags when intentionally applying those categories:
 - `--apply-tmp-deletions` — destructively delete files under `.agent-layer/tmp/` (ephemeral agent run artifacts; not snapshotted, not rollback-restorable). Requires `--yes` and is independent of `--apply-deletions`.
 
 :::warning Tmp deletions are destructive and not rollback-protected
-`--apply-tmp-deletions` permanently removes everything under `.agent-layer/tmp/`. The pre-upgrade snapshot does **not** capture tmp content, so `al upgrade rollback <snapshot-id>` will not bring back deleted plans, reports, or scratch files. Use this flag only when you are sure CI does not host any in-progress agent artifacts you need to keep. See [Ephemeral artifacts under .agent-layer/tmp/](./reference#ephemeral-artifacts-under-agent-layertmp) for the full rules.
+`--apply-tmp-deletions` permanently removes everything under `.agent-layer/tmp/`. The pre-upgrade snapshot does **not** capture tmp content, so `al upgrade rollback <snapshot-id>` will not bring back deleted plans, reports, or scratch files. Use this flag only when you are sure CI does not host any in-progress agent artifacts you need to keep. See [Ephemeral artifacts under .agent-layer/tmp/](./reference.mdx#ephemeral-artifacts-under-agent-layertmp) for the full rules.
 :::
 
 ## Shell quick paths (macOS/Linux)
 
-If the installed CLI does not recognize `al update`, first use the [legacy CLI fallback](./upgrades#how-to-upgrade). This applies to both shell paths below.
+If the installed CLI does not recognize `al update`, first use the [legacy CLI fallback](./upgrades.mdx#how-to-upgrade). This applies to both shell paths below.
 
 ### bash / zsh
 
@@ -86,4 +86,4 @@ al upgrade
 - `al upgrade prefetch` is the recommended cache warm-up command for offline/air-gapped workflows.
 - Snapshot IDs are JSON filename stems under `.agent-layer/state/upgrade-snapshots/` (run `al upgrade rollback --list` to discover them quickly).
 - Snapshots intentionally exclude `.agent-layer/tmp/`. Rollback will not restore tmp files — if you have in-progress agent artifacts under tmp that must survive an upgrade, copy them out before running `al upgrade`.
-- For policy guarantees and release migration rules, see [Upgrades](./upgrades).
+- For policy guarantees and release migration rules, see [Upgrades](./upgrades.mdx).

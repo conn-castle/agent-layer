@@ -14,7 +14,7 @@ Agent skills are structured Markdown workflows that guide AI coding agents throu
 
 A skill such as `ship-pr` can audit changes, run CI, wait for review comments, address every one, and confirm CI passes before finishing. You get that whole lifecycle from one invocation instead of restating the steps each time.
 
-Agent Layer also provides a Git-backed package workflow for skills: [import Agent Skills from any reachable repository](./skill-imports), customize them locally, merge upstream changes, and project the same content to every enabled client.
+Agent Layer also provides a Git-backed package workflow for skills: [import Agent Skills from any reachable repository](./skill-imports.mdx), customize them locally, merge upstream changes, and project the same content to every enabled client.
 
 ## The skill standard
 
@@ -49,7 +49,7 @@ You do not pay the context cost of every skill on every request.
 
 ### Skill structure
 
-The recommended section order is informed by research on how language models process instructions (primacy and recency effects). Critical rules go early; guardrails go at the end. For the full research basis, see [Skill Design Guide](/skill-design). For skills that route agents to installed command-line tools, use the [CLI Skill Design Guide](/cli-skill-design). For Agent Layer's root-skill model and current-to-target skill mapping, see [Skills approach](./skills-approach).
+The recommended section order is informed by research on how language models process instructions (primacy and recency effects). Critical rules go early; guardrails go at the end. For the full research basis, see [Skill Design Guide](/skill-design). For skills that route agents to installed command-line tools, use the [CLI Skill Design Guide](/cli-skill-design). For Agent Layer's root-skill model and current-to-target skill mapping, see [Skills approach](./skills-approach.mdx).
 
 1. **Opening contract** — one sentence stating what the skill does
 2. **Defaults** — what happens with no inputs
@@ -149,7 +149,7 @@ the current `al` binary.
 
 | Skill | What it does |
 | --- | --- |
-| `dispatch-agent` | Uses the built-in [Agent Dispatch](./agent-dispatch) MCP tools only when the user names an external dispatch target or another skill explicitly requires dispatch; it has no external binary requirement. |
+| `dispatch-agent` | Uses the built-in [Agent Dispatch](./agent-dispatch.mdx) MCP tools only when the user names an external dispatch target or another skill explicitly requires dispatch; it has no external binary requirement. |
 | `find-docs` | Uses Context7 for current API and library documentation when local docs or CLI help are insufficient. |
 | `playwright` | Uses `playwright-cli` for browser automation, screenshots, user interface inspection, and Playwright test work. |
 | `skill-sync` | Imports and updates skills from Git. |
@@ -194,10 +194,10 @@ al skills status
 al skills pull
 ```
 
-The dedicated [Import Agent Skills from Git](./skill-imports) guide covers reproducible project state, wildcard selection, local editing, three-way pulls, conflict resolution, and contributing improvements through explicit branches or forks. See the [CLI reference](./reference#skill-import-commands) for every command and the [configuration reference](./reference#skill-imports) for every `[[skills.imports]]` field.
+The dedicated [Import Agent Skills from Git](./skill-imports.mdx) guide covers reproducible project state, wildcard selection, local editing, three-way pulls, conflict resolution, and contributing improvements through explicit branches or forks. See the [CLI reference](./reference.mdx#skill-import-commands) for every command and the [configuration reference](./reference.mdx#skill-imports) for every `[[skills.imports]]` field.
 ## Skills approach
 
 The recommended skills follow an Agent Layer-specific model: root skills with
 stable inputs and outputs, composed by workflow skills that own loops and
-orchestration. See [Skills approach](./skills-approach) for the design
+orchestration. See [Skills approach](./skills-approach.mdx) for the design
 principles, target root modules, and mapping to the current skill names.

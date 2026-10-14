@@ -64,7 +64,7 @@ By default, `al init` prompts to run the setup wizard. The wizard can seed instr
 
 `al init` is intended to be run once per repo. If `.agent-layer/` already exists, `al init` errors; use `al upgrade plan` and `al upgrade` to refresh template-managed files.
 
-For detailed behavior, see [Init](./reference#init), [Upgrade](./reference#upgrade), and [Wizard](./reference#wizard).
+For detailed behavior, see [Init](./reference.mdx#init), [Upgrade](./reference.mdx#upgrade), and [Wizard](./reference.mdx#wizard).
 
 ### 3) Launch an agent
 
@@ -100,7 +100,7 @@ MCP servers add tools the model can call: current docs, web search, and other ex
 - `context7` for up-to-date library docs and examples (requires an API key)
 - `tavily` for web search/research and recency (requires an API key)
 
-See [MCP servers](./concepts#mcp-servers) for how they fit in and [MCP servers (configuration)](./reference#mcp-servers) for the exact config fields.
+See [MCP servers](./concepts.mdx#mcp-servers) for how they fit in and [MCP servers (configuration)](./reference.mdx#mcp-servers) for the exact config fields.
 
 To enable a server, set `enabled = true` and add any required secrets in `.agent-layer/.env`:
 
@@ -131,7 +131,7 @@ al doctor
 ```
 
 This validates configuration, checks for missing secrets, and probes enabled MCP servers.
-See [Doctor](./reference#doctor) for exactly what it checks.
+See [Doctor](./reference.mdx#doctor) for exactly what it checks.
 
 ## Repo layout
 
@@ -223,7 +223,7 @@ The Codex VS Code extension reads `CODEX_HOME` at startup. Repo-local launchers 
 
 On macOS, Claude Code keys its Keychain entry to `CLAUDE_CONFIG_DIR` and falls back to `.credentials.json` there if the Keychain write fails. Linux and Windows store `/login` credentials in `.credentials.json` under that directory. Other authentication modes may use external credential sources. See [Claude Code authentication](https://code.claude.com/docs/en/authentication).
 
-If you prefer to launch VS Code without the repo-local launcher, see the Codex and Claude fallback guidance in troubleshooting: [Global MCP server fallback for VS Code (Codex)](./troubleshooting#global-mcp-server-fallback-for-vs-code-codex) and [Global config fallback for VS Code (Claude)](./troubleshooting#global-config-fallback-for-vs-code-claude).
+If you prefer to launch VS Code without the repo-local launcher, see the Codex and Claude fallback guidance in troubleshooting: [Global MCP server fallback for VS Code (Codex)](./troubleshooting.mdx#global-mcp-server-fallback-for-vs-code-codex) and [Global config fallback for VS Code (Claude)](./troubleshooting.mdx#global-config-fallback-for-vs-code-claude).
 :::
 
 ### Safe to delete
@@ -260,41 +260,41 @@ Do not commit:
 
 Use this as a quick refresher when you are trying to remember the entry points or decide which command to run.
 
-This is a complete map of the CLI entry points. For details, see the [Reference](./reference).
+This is a complete map of the CLI entry points. For details, see the [Reference](./reference.mdx).
 
 If you only remember one pattern: `al <client>` syncs first, then launches.
 
 | Command | Purpose | Details |
 | --- | --- | --- |
-| `al init` | Seed the `.agent-layer/` scaffold and optionally open the setup wizard. | [Init](./reference#init) |
-| `al update` | Update the global CLI through its current installation method. | [Upgrade](./reference#upgrade) |
-| `al upgrade` | Apply template-managed updates and update the repo pin with line-level diff previews (use `--diff-lines` to raise per-file preview size). | [Upgrade](./reference#upgrade) |
-| `al upgrade plan` | Preview categorized upgrade changes and line-level diffs without writing files. | [Upgrade plan](./reference#upgrade-plan) |
-| `al upgrade rollback --list` | List available upgrade snapshot IDs and statuses before rollback. | [Upgrade rollback](./reference#upgrade-rollback) |
-| `al upgrade rollback <snapshot-id>` | Restore a previously applied managed-file snapshot. | [Upgrade rollback](./reference#upgrade-rollback) |
-| `al wizard` | Interactive configuration. | [Wizard](./reference#wizard) |
-| `al sync` | Regenerate configs without launching. | [Sync](./reference#sync) |
-| `al doctor` | Validate config and probe MCP servers. | [Doctor](./reference#doctor) |
-| `al probe agy` | Report observed Antigravity capabilities. | [CLI guide](./reference#cli-guide) |
-| `al probe grok` | Report observed Grok capabilities. | [CLI guide](./reference#cli-guide) |
-| `al completion` | Print or install shell completions. | [Completion](./reference#completion) |
-| `al agy` | Sync and launch Antigravity. | [Launch a client](./reference#launch-a-client) |
-| `al claude` | Sync and launch Claude Code. | [Launch a client](./reference#launch-a-client) |
-| `al codex` | Sync and launch Codex. | [Launch a client](./reference#launch-a-client) |
-| `al vscode` | Sync and launch VS Code. | [Launch a client](./reference#launch-a-client) |
-| `al copilot` | Sync and launch Copilot CLI. | [Launch a client](./reference#launch-a-client) |
-| `al grok` | Sync and launch Grok. | [Launch a client](./reference#launch-a-client) |
-| `al muse` | Sync and launch Muse Code. | [Launch a client](./reference#launch-a-client) |
-| `al dispatch` | Start, wait for, continue, or cancel a headless provider conversation. | [Agent Dispatch](./agent-dispatch) |
-| `al benchmark` | Create, preflight, run, and resume DeltaSelect benchmark studies. | [Benchmark runner](./reference#benchmark-runner) |
-| `al skills` | Import, inspect, update, reconcile, and publish Git-backed Agent Skills. | [Skill imports](./skill-imports) |
-| `al --version` | Print the installed version. | [Help and version](./reference#help-and-version) |
-| `al help` | Show help for a command. | [Help and version](./reference#help-and-version) |
+| `al init` | Seed the `.agent-layer/` scaffold and optionally open the setup wizard. | [Init](./reference.mdx#init) |
+| `al update` | Update the global CLI through its current installation method. | [Upgrade](./reference.mdx#upgrade) |
+| `al upgrade` | Apply template-managed updates and update the repo pin with line-level diff previews (use `--diff-lines` to raise per-file preview size). | [Upgrade](./reference.mdx#upgrade) |
+| `al upgrade plan` | Preview categorized upgrade changes and line-level diffs without writing files. | [Upgrade plan](./reference.mdx#upgrade-plan) |
+| `al upgrade rollback --list` | List available upgrade snapshot IDs and statuses before rollback. | [Upgrade rollback](./reference.mdx#upgrade-rollback) |
+| `al upgrade rollback <snapshot-id>` | Restore a previously applied managed-file snapshot. | [Upgrade rollback](./reference.mdx#upgrade-rollback) |
+| `al wizard` | Interactive configuration. | [Wizard](./reference.mdx#wizard) |
+| `al sync` | Regenerate configs without launching. | [Sync](./reference.mdx#sync) |
+| `al doctor` | Validate config and probe MCP servers. | [Doctor](./reference.mdx#doctor) |
+| `al probe agy` | Report observed Antigravity capabilities. | [CLI guide](./reference.mdx#cli-guide) |
+| `al probe grok` | Report observed Grok capabilities. | [CLI guide](./reference.mdx#cli-guide) |
+| `al completion` | Print or install shell completions. | [Completion](./reference.mdx#completion) |
+| `al agy` | Sync and launch Antigravity. | [Launch a client](./reference.mdx#launch-a-client) |
+| `al claude` | Sync and launch Claude Code. | [Launch a client](./reference.mdx#launch-a-client) |
+| `al codex` | Sync and launch Codex. | [Launch a client](./reference.mdx#launch-a-client) |
+| `al vscode` | Sync and launch VS Code. | [Launch a client](./reference.mdx#launch-a-client) |
+| `al copilot` | Sync and launch Copilot CLI. | [Launch a client](./reference.mdx#launch-a-client) |
+| `al grok` | Sync and launch Grok. | [Launch a client](./reference.mdx#launch-a-client) |
+| `al muse` | Sync and launch Muse Code. | [Launch a client](./reference.mdx#launch-a-client) |
+| `al dispatch` | Start, wait for, continue, or cancel a headless provider conversation. | [Agent Dispatch](./agent-dispatch.mdx) |
+| `al benchmark` | Create, preflight, run, and resume DeltaSelect benchmark studies. | [Benchmark runner](./reference.mdx#benchmark-runner) |
+| `al skills` | Import, inspect, update, reconcile, and publish Git-backed Agent Skills. | [Skill imports](./skill-imports.mdx) |
+| `al --version` | Print the installed version. | [Help and version](./reference.mdx#help-and-version) |
+| `al help` | Show help for a command. | [Help and version](./reference.mdx#help-and-version) |
 
 ## Next steps
 
-- Read [Concepts](./concepts) for safety boundaries and how MCP servers fit into the system.
-- Use [Agent Dispatch](./agent-dispatch) to delegate asynchronous, headless provider work through MCP tools or the CLI.
-- Use [Reference](./reference) when you are ready to tune configuration, wire secrets, or understand exactly what a CLI command touches.
-- Read [Upgrades](./upgrades) for compatibility guarantees and migration rules.
-- Visit [Troubleshooting](./troubleshooting) when something does not work; start with `al doctor`.
+- Read [Concepts](./concepts.mdx) for safety boundaries and how MCP servers fit into the system.
+- Use [Agent Dispatch](./agent-dispatch.mdx) to delegate asynchronous, headless provider work through MCP tools or the CLI.
+- Use [Reference](./reference.mdx) when you are ready to tune configuration, wire secrets, or understand exactly what a CLI command touches.
+- Read [Upgrades](./upgrades.mdx) for compatibility guarantees and migration rules.
+- Visit [Troubleshooting](./troubleshooting.mdx) when something does not work; start with `al doctor`.

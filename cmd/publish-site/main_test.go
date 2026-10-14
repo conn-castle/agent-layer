@@ -995,6 +995,60 @@ func TestPublishAgentMarkdownDocs_ReplacesOwnedMirror(t *testing.T) {
 	}
 }
 
+func TestPublishAgentMarkdownDocs_PreservesSourceLinksInExport(t *testing.T) {
+	repoA := t.TempDir()
+	repoB := t.TempDir()
+	source := "# Guide\n\n" +
+		"[Init](./reference.mdx#init), [query](./reference.mdx?mode=plain#init), [existing](./plain.md#plain).\n" +
+		"[nested](./nested/child.mdx), [parent](../overview.mdx#start), [titled](<./reference.mdx#init> \"Title\").\n" +
+		"[ref][reference]\n\n[reference]: ./reference.mdx#init \"Reference\"\n" +
+		"[external](https://example.com/reference.mdx#init), [route](/docs/reference), [anchor](#guide).\n" +
+		"[asset](./example.mdx.png), [query only](./plain.md?file=reference.mdx), [hash only](./plain.md#reference.mdx).\n" +
+		"`[example](./reference.mdx)` and ``[example](./reference.mdx) `literal` ``.\n" +
+		"```markdown\n[example](./reference.mdx)\n```\n" +
+		"~~~~markdown\n[example](./reference.mdx)\n~~~\n[still code](./reference.mdx)\n~~~~\n" +
+		"    [indented code](./reference.mdx)\n" +
+		"[after code](./reference.mdx#init)\n"
+	want := "# Guide\n\n" +
+		"[Init](./reference.md#init), [query](./reference.md?mode=plain#init), [existing](./plain.md#plain).\n" +
+		"[nested](./nested/child.md), [parent](../overview.md#start), [titled](<./reference.md#init> \"Title\").\n" +
+		"[ref][reference]\n\n[reference]: ./reference.md#init \"Reference\"\n" +
+		"[external](https://example.com/reference.mdx#init), [route](/docs/reference), [anchor](#guide).\n" +
+		"[asset](./example.mdx.png), [query only](./plain.md?file=reference.mdx), [hash only](./plain.md#reference.mdx).\n" +
+		"`[example](./reference.mdx)` and ``[example](./reference.mdx) `literal` ``.\n" +
+		"```markdown\n[example](./reference.mdx)\n```\n" +
+		"~~~~markdown\n[example](./reference.mdx)\n~~~\n[still code](./reference.mdx)\n~~~~\n" +
+		"    [indented code](./reference.mdx)\n" +
+		"[after code](./reference.md#init)\n"
+	for name, content := range map[string]string{
+		"guide.mdx": source, "plain.md": "[Init](./reference.mdx#init)\n",
+		"reference.mdx": "# Reference\n\n## Init\n", "overview.mdx": "# Overview\n",
+		"nested/child.mdx": "[Parent](../reference.mdx#init)\n",
+	} {
+		writeFile(t, filepath.Join(repoA, "site", "docs", name), content)
+	}
+	if err := publishAgentMarkdownDocs(repoA, repoB); err != nil {
+		t.Fatalf("publishAgentMarkdownDocs: %v", err)
+	}
+	for name, expected := range map[string]string{
+		"guide.md": want, "plain.md": "[Init](./reference.md#init)\n",
+		"nested/child.md": "[Parent](../reference.md#init)\n",
+		"reference.md":    "# Reference\n\n## Init\n",
+	} {
+		contents, err := os.ReadFile(filepath.Join(repoB, "static", "docs", name)) // #nosec G304 -- test-controlled path.
+		if err != nil || string(contents) != expected {
+			t.Fatalf("export %s = %q, %v; want %q", name, contents, err, expected)
+		}
+	}
+	contents, err := os.ReadFile(filepath.Join(repoA, "site", "docs", "guide.mdx")) // #nosec G304 -- test-controlled path.
+	if err != nil || string(contents) != source {
+		t.Fatalf("canonical source changed: %q, %v", contents, err)
+	}
+	if _, err := os.Stat(filepath.Join(repoB, "static", "docs", "reference.mdx")); !os.IsNotExist(err) {
+		t.Fatalf("unrenamed export remains: %v", err)
+	}
+}
+
 func TestValidateRepoBRootErrors(t *testing.T) {
 	if err := validateRepoBRoot(filepath.Join(t.TempDir(), "missing")); err == nil {
 		t.Fatal("expected error for missing repo")

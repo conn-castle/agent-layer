@@ -6,8 +6,8 @@ sidebar_position: 3
 
 This page is the authoritative reference for configuration, environment variables, and the `al` CLI. It is written for the moments when you want certainty: configuring a repo, debugging a launch, or reviewing what `al` will change.
 
-If you are setting up Agent Layer for the first time, start with [Getting started](./getting-started).
-For upgrade policy commitments (event model, guarantees, migration rules, and platform matrix), use [Upgrades](./upgrades).
+If you are setting up Agent Layer for the first time, start with [Getting started](./getting-started.mdx).
+For upgrade policy commitments (event model, guarantees, migration rules, and platform matrix), use [Upgrades](./upgrades.mdx).
 
 Agent Layer is explicit by design. It prefers failing fast over guessing, treats generated files as disposable outputs except for documented shared native state, and patches only owned paths in shared client settings. Use this page when you need to know exactly what will change on disk.
 
@@ -276,7 +276,7 @@ Supported agents:
 
 Agent Layer always projects one built-in MCP server, `agent-layer`, into every
 enabled Codex, Claude, Antigravity, VS Code, Copilot CLI, Grok, and Muse client. It serves
-the Agent Dispatch tools (see [Agent Dispatch](./agent-dispatch)),
+the Agent Dispatch tools (see [Agent Dispatch](./agent-dispatch.mdx)),
 is derived from your configuration rather than declared in it, and appears in
 generated permission allowlists alongside your own servers. Its `agent-layer`
 ID is reserved and cannot be used by a `[[mcp.servers]]` entry.
@@ -467,7 +467,7 @@ The set of environment variables is intentionally small. Configuration should li
 
 These variables only affect version dispatch, update checks, and downloads. They do not disable MCP server networking.
 
-For supported upgrade paths and release-line compatibility guarantees, see [Upgrades](./upgrades#compatibility-guarantees).
+For supported upgrade paths and release-line compatibility guarantees, see [Upgrades](./upgrades.mdx#compatibility-guarantees).
 
 :::caution Known issue in v0.6.0 and earlier
 In versions 0.6.0 and earlier, the internal `AL_SHIM_ACTIVE` environment variable can leak into VS Code's integrated terminal when launching via `al vscode`. This causes subsequent `al` commands in that terminal to fail with:
@@ -616,7 +616,7 @@ In non-interactive environments, the wizard is skipped.
 - Pin file parsing ignores blank lines and `#` comments, and expects exactly one version line.
 - If the pin file is empty, invalid, or contains multiple version lines, dispatch warns and falls back to the current CLI version; run `al upgrade` to rewrite a valid pin.
 - Update checks and pinned downloads require network access unless `AL_NO_NETWORK=1` is set.
-- For upgrade policy details and release-versioned migration notes, see [Upgrades](./upgrades).
+- For upgrade policy details and release-versioned migration notes, see [Upgrades](./upgrades.mdx).
 
 ### Upgrade
 
@@ -639,7 +639,7 @@ In non-interactive environments, the wizard is skipped.
 - Supports snapshot discovery and manual restore via `al upgrade rollback --list` and `al upgrade rollback <snapshot-id>`
 
 Use `--diff-lines N` to raise the per-file diff preview cap (default: 40 lines).
-For a concise team/CI runbook, see [Upgrade checklist](./upgrade-checklist).
+For a concise team/CI runbook, see [Upgrade checklist](./upgrade-checklist.mdx).
 
 ### Upgrade apply flags
 
@@ -945,7 +945,7 @@ failed-invocation exit.
 
 The agent-facing interface contains read-only `options` and `wait`, plus
 `start`, `continue`, and `cancel`. Parallel work uses independent conversation
-handles rather than a fanout resource. See [Agent Dispatch](./agent-dispatch)
+handles rather than a fanout resource. See [Agent Dispatch](./agent-dispatch.mdx)
 for the complete lifecycle, MCP interface, timeout behavior, and configuration.
 
 ### Benchmark runner
