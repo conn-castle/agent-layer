@@ -305,13 +305,15 @@ func (s *state) orphanDirectories() []string {
 	return orphans
 }
 
-// entriesForBlock returns the independent lock entries currently selected by a
-// configured block. Matching the recorded path as well as the recorded
-// selector lets a manual selector rewrite keep ownership of an already-selected
-// path without inventing a block identifier or shared block state.
-func (s *state) entriesForBlock(block config.SkillImport) []skilllock.Entry {
+// entriesForBlock returns the independent lock entries in skills currently
+// selected by a configured block. Callers pass the loaded lock's entries, or a
+// pending transaction's so a later stage sees membership reconciliation
+// results. Matching the recorded path as well as the recorded selector lets a
+// manual selector rewrite keep ownership of an already-selected path without
+// inventing a block identifier or shared block state.
+func (s *state) entriesForBlock(skills []skilllock.Entry, block config.SkillImport) []skilllock.Entry {
 	var entries []skilllock.Entry
-	for _, entry := range s.lock.Skills {
+	for _, entry := range skills {
 		if entryBelongsToBlock(s.cfg, block, entry) {
 			entries = append(entries, entry)
 		}

@@ -15,9 +15,7 @@ import (
 
 // desiredSkill is one resolved member of a block's desired set.
 type desiredSkill struct {
-	// BlockIndex is the configuration index of the owning block.
-	BlockIndex int
-	Block      config.SkillImport
+	Block config.SkillImport
 	// Selector is the positive selector that produced this path. When several
 	// positive selectors in the block match one path, the first in
 	// configuration order wins so the recorded identity is deterministic.
@@ -52,7 +50,7 @@ func (f candidateFailure) Name() string { return path.Base(f.Path) }
 // becomes one entry. An unreadable or invalid matched skill root is returned as
 // a per-candidate failure rather than an error, so callers decide whether it
 // blocks only that skill (pull) or the whole change (add and remove).
-func resolveBlock(ctx context.Context, source *gitrepo.Source, blockIndex int, block config.SkillImport, commit string) ([]desiredSkill, []candidateFailure, error) {
+func resolveBlock(ctx context.Context, source *gitrepo.Source, block config.SkillImport, commit string) ([]desiredSkill, []candidateFailure, error) {
 	if block.ExactFile {
 		selector := block.Selectors[0]
 		tree, err := source.ReadFile(ctx, commit, selector)
@@ -62,7 +60,7 @@ func resolveBlock(ctx context.Context, source *gitrepo.Source, blockIndex int, b
 		if err != nil {
 			return nil, []candidateFailure{{Selector: selector, Path: selector, Err: err}}, nil //nolint:nilerr // Candidate failure is returned as a scoped outcome, matching skill resolution.
 		}
-		return []desiredSkill{{BlockIndex: blockIndex, Block: block, Selector: selector, SelectedPath: selector, Name: path.Base(selector), Tree: tree}}, nil, nil
+		return []desiredSkill{{Block: block, Selector: selector, SelectedPath: selector, Name: path.Base(selector), Tree: tree}}, nil, nil
 	}
 	candidates, failures, err := expandPositiveSelectors(ctx, source, block, commit)
 	if err != nil {
@@ -98,7 +96,6 @@ func resolveBlock(ctx context.Context, source *gitrepo.Source, blockIndex int, b
 			continue
 		}
 		resolved = append(resolved, desiredSkill{
-			BlockIndex:   blockIndex,
 			Block:        block,
 			Selector:     candidate.selector,
 			SelectedPath: candidate.path,
@@ -288,11 +285,5 @@ func ensureTrackedRefKind(block config.SkillImport, resolution gitrepo.Resolutio
 		return "", fmt.Errorf("tracking = \"tracked\" requires a branch, but ref %q resolves to a %s; use tracking = \"pinned\" or configure a branch",
 			resolution.Ref, resolution.Kind)
 	}
-	if configured != "" {
-		return configured, nil
-	}
-	if resolution.Kind == skilllock.RefKindBranch {
-		return config.SkillTrackingTracked, nil
-	}
-	return config.SkillTrackingPinned, nil
+	return configuredTracking(block, resolution.Kind), nil
 }

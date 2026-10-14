@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"path"
-	"sort"
 	"strings"
 
 	"github.com/conn-castle/agent-layer/internal/config"
@@ -72,12 +71,12 @@ func (s *Service) pullBlock(ctx context.Context, runner *gitrepo.Runner, workRoo
 
 	// Lock entries are read from the pending transaction, not the loaded
 	// snapshot, so earlier blocks' independent results are visible here.
-	lockedEntries := txnEntriesForBlock(st, txn, block)
+	lockedEntries := st.entriesForBlock(txn.lock.Skills, block)
 
 	// Membership is always resolved at the operation's current source target.
 	// That lets a wildcard discover a new skill immediately without making an
 	// existing pinned sibling move off its own independently recorded commit.
-	desired, failures, err := resolveBlock(ctx, blockCtx.Source, index, block, blockCtx.Resolution.Commit)
+	desired, failures, err := resolveBlock(ctx, blockCtx.Source, block, blockCtx.Resolution.Commit)
 	if err != nil {
 		blocked(err)
 		return
@@ -116,7 +115,7 @@ func (s *Service) pullBlock(ctx context.Context, runner *gitrepo.Runner, workRoo
 		if !selected {
 			continue
 		}
-		prospective = append(prospective, desiredSkill{BlockIndex: index, Block: block, Selector: selector, SelectedPath: entry.SelectedPath, Name: entry.Name})
+		prospective = append(prospective, desiredSkill{Block: block, Selector: selector, SelectedPath: entry.SelectedPath, Name: entry.Name})
 	}
 	if err := validateDesiredSet(withOtherPendingEntries(st, txn, block, prospective)); err != nil {
 		blocked(err)
@@ -142,30 +141,26 @@ func (s *Service) pullBlock(ctx context.Context, runner *gitrepo.Runner, workRoo
 				retire(st, txn, entry, report)
 				continue
 			}
-			entryCtx := *blockCtx
-			entryCtx.TargetCommit = targetCommit
-			s.advanceExisting(ctx, runner, st, txn, &entryCtx, skill, entry, report)
+			s.advanceExisting(ctx, runner, st, txn, blockCtx, skill, entry, targetCommit, report)
 			continue
 		}
 
 		// This pin remains at its own commit. Read and validate that exact path so
 		// its lock evidence, rather than another member's generation, is the only
 		// merge base involved.
-		skill, skillErr := desiredSkillAtCommit(ctx, blockCtx.Source, index, block, entry, targetCommit)
+		skill, skillErr := desiredSkillAtCommit(ctx, blockCtx.Source, block, entry, targetCommit)
 		if skillErr != nil {
-			report.Add(SkillResult{Name: entry.Name, Repository: entry.Repository, SelectedPath: entry.SelectedPath, Outcome: OutcomeFailed, Err: skillErr})
+			report.Add(failedEntryResult(entry, skillErr))
 			continue
 		}
-		entryCtx := *blockCtx
-		entryCtx.TargetCommit = targetCommit
-		s.advanceExisting(ctx, runner, st, txn, &entryCtx, skill, entry, report)
+		s.advanceExisting(ctx, runner, st, txn, blockCtx, skill, entry, targetCommit, report)
 	}
 
 	for _, skill := range desired {
 		if _, locked := lockedByPath[skill.SelectedPath]; locked {
 			continue
 		}
-		s.importNewAt(st, txn, blockCtx, skill, blockCtx.TargetCommit, report)
+		s.importNewAt(st, txn, blockCtx, skill, blockCtx.Resolution.Commit, report)
 	}
 }
 
@@ -191,7 +186,7 @@ func reportCandidateFailures(report *Report, repository string, failures []candi
 // exact selector has no lock entry yet and would otherwise be missing from the
 // report entirely.
 func reportBlockedBlockSkills(report *Report, st *state, txn *transaction, block config.SkillImport, err error) {
-	entries := txnEntriesForBlock(st, txn, block)
+	entries := st.entriesForBlock(txn.lock.Skills, block)
 	reportBlockedSkills(report, entries, err)
 
 	covered := make(map[string]struct{}, len(entries))
@@ -222,7 +217,7 @@ func reportBlockedBlockSkills(report *Report, st *state, txn *transaction, block
 // desiredSkillAtCommit reconstructs one existing entry from its own locked
 // commit. It is used only when an unchanged pin deliberately stays behind the
 // operation's current source target.
-func desiredSkillAtCommit(ctx context.Context, source *gitrepo.Source, blockIndex int, block config.SkillImport, entry skilllock.Entry, commit string) (desiredSkill, error) {
+func desiredSkillAtCommit(ctx context.Context, source *gitrepo.Source, block config.SkillImport, entry skilllock.Entry, commit string) (desiredSkill, error) {
 	selector, selected := selectingPositiveSelector(block, entry.SelectedPath)
 	if !selected {
 		return desiredSkill{}, fmt.Errorf("selected path %s is no longer selected", entry.SelectedPath)
@@ -235,7 +230,7 @@ func desiredSkillAtCommit(ctx context.Context, source *gitrepo.Source, blockInde
 	if err != nil {
 		return desiredSkill{}, fmt.Errorf("locked source commit %s no longer provides a valid merge base for %s: %w", shortCommit(commit), entry.SelectedPath, err)
 	}
-	return desiredSkill{BlockIndex: blockIndex, Block: block, Selector: selector, SelectedPath: entry.SelectedPath, Name: info.Name, Tree: tree}, nil
+	return desiredSkill{Block: block, Selector: selector, SelectedPath: entry.SelectedPath, Name: info.Name, Tree: tree}, nil
 }
 
 // importNewAt imports a skill whose upstream tree was resolved at commit.
@@ -285,9 +280,9 @@ func (s *Service) importNewAt(st *state, txn *transaction, blockCtx *blockContex
 	report.Add(result)
 }
 
-// advanceExisting reconciles one already-imported skill against its new
-// upstream tree.
-func (s *Service) advanceExisting(ctx context.Context, runner *gitrepo.Runner, st *state, txn *transaction, blockCtx *blockContext, skill desiredSkill, entry skilllock.Entry, report *Report) {
+// advanceExisting reconciles one already-imported skill against its upstream
+// tree resolved at commit.
+func (s *Service) advanceExisting(ctx context.Context, runner *gitrepo.Runner, st *state, txn *transaction, blockCtx *blockContext, skill desiredSkill, entry skilllock.Entry, commit string, report *Report) {
 	result := SkillResult{Name: skill.Name, Repository: entry.Repository, SelectedPath: skill.SelectedPath}
 	observed := effectiveLocal(st, txn, skill.Name)
 
@@ -296,7 +291,7 @@ func (s *Service) advanceExisting(ctx context.Context, runner *gitrepo.Runner, s
 		// selected source. Adoption is handled before any block runs, so a
 		// same-name user-managed skill never reaches this path.
 		txn.WriteSkill(skill.Name, skill.Tree)
-		txn.SetLockEntry(preservePublication(lockEntryFor(skill, blockCtx, blockCtx.TargetCommit, skill.Tree), entry))
+		txn.SetLockEntry(preservePublication(lockEntryFor(skill, blockCtx, commit, skill.Tree), entry))
 		result.Outcome = OutcomeRestored
 		report.Add(result)
 		return
@@ -328,7 +323,7 @@ func (s *Service) advanceExisting(ctx context.Context, runner *gitrepo.Runner, s
 	// resolved ref kind must still be written through, or status, push
 	// freshness checks, and lock advancement would keep applying the superseded
 	// policy indefinitely.
-	nextEntry := preservePublication(lockEntryFor(skill, blockCtx, blockCtx.TargetCommit, skill.Tree), entry)
+	nextEntry := preservePublication(lockEntryFor(skill, blockCtx, commit, skill.Tree), entry)
 	if skill.Tree.Equal(base) && entry.Equal(nextEntry) {
 		result.Outcome = OutcomeUnchanged
 		report.Add(result)
@@ -365,7 +360,7 @@ func (s *Service) advanceExisting(ctx context.Context, runner *gitrepo.Runner, s
 	// The lock advances to the new upstream commit and hash even when the
 	// merged tree still carries local modifications.
 	txn.SetLockEntry(nextEntry)
-	if merged.Equal(observed.Tree) && entry.Commit == blockCtx.TargetCommit {
+	if merged.Equal(observed.Tree) && entry.Commit == commit {
 		result.Outcome = OutcomeUnchanged
 	} else {
 		result.Outcome = OutcomeUpdated
@@ -389,13 +384,9 @@ func adoptMissingImports(st *state, txn *transaction, report *Report) {
 			continue
 		}
 		txn.RemoveLockEntry(entry.Name)
-		report.Add(SkillResult{
-			Name:         entry.Name,
-			Repository:   entry.Repository,
-			SelectedPath: entry.SelectedPath,
-			Outcome:      OutcomePruned,
-			Detail:       "adopted as user-managed at " + relativeTo(st.paths.Root, dir),
-		})
+		result := entryResult(entry, OutcomePruned)
+		result.Detail = "adopted as user-managed at " + relativeTo(st.paths.Root, dir)
+		report.Add(result)
 	}
 }
 
@@ -416,13 +407,7 @@ func retireUnconfigured(st *state, txn *transaction, report *Report) {
 		// update nor retirement can choose one block's observation as authoritative.
 		selectionCount := st.configuredSelectionCount(entry)
 		if selectionCount > 1 {
-			report.Add(SkillResult{
-				Name:         entry.Name,
-				Repository:   entry.Repository,
-				SelectedPath: entry.SelectedPath,
-				Outcome:      OutcomeFailed,
-				Err:          fmt.Errorf("selected by multiple configured blocks; make selector ownership unambiguous before pulling"),
-			})
+			report.Add(failedEntryResult(entry, fmt.Errorf("selected by multiple configured blocks; make selector ownership unambiguous before pulling")))
 			continue
 		}
 		if selectionCount == 1 {
@@ -455,19 +440,6 @@ func reportedSkillKeys(report *Report) map[string]struct{} {
 // keep them in separate maps.
 func skillKey(repository string, path string) string {
 	return config.NormalizeSkillRepository(repository) + "\x00" + config.NormalizeSkillSelector(path)
-}
-
-// txnEntriesForBlock returns a block's lock entries from the pending
-// transaction so a later stage sees membership reconciliation results.
-func txnEntriesForBlock(st *state, txn *transaction, block config.SkillImport) []skilllock.Entry {
-	var entries []skilllock.Entry
-	for _, entry := range txn.lock.Skills {
-		if entryBelongsToBlock(st.cfg, block, entry) {
-			entries = append(entries, entry)
-		}
-	}
-	sort.Slice(entries, func(i, j int) bool { return entries[i].Name < entries[j].Name })
-	return entries
 }
 
 // failOnOrphans refuses to operate while `.agent-layer/skills-imported/`

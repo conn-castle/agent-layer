@@ -60,7 +60,6 @@ func (s *Service) resetLocked(ctx context.Context, st *state, name string, repor
 	}
 
 	skill := desiredSkill{
-		BlockIndex:   blockIndex,
 		Block:        block,
 		Selector:     selector,
 		SelectedPath: entry.SelectedPath,

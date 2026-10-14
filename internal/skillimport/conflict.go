@@ -296,15 +296,15 @@ func pullNextMatchesConfig(st *state, entry skilllock.Entry, next skilllock.Entr
 	return selected
 }
 
-// configuredTracking is the tracking mode resolve must compare against the
-// recorded lock. An omitted config value is derived from the recorded ref kind
-// the same way the first networked pull would: branches track, tags and
-// commits pin.
-func configuredTracking(block config.SkillImport, recordedRefKind string) string {
+// configuredTracking is the tracking mode a block implies for a ref kind. An
+// omitted config value is derived from the ref kind: branches track, tags and
+// commits pin. Networked operations pass the freshly resolved kind; resolve
+// compares against the recorded lock by passing the recorded kind.
+func configuredTracking(block config.SkillImport, refKind string) string {
 	if tracking := strings.TrimSpace(block.Tracking); tracking != "" {
 		return tracking
 	}
-	if recordedRefKind == skilllock.RefKindBranch {
+	if refKind == skilllock.RefKindBranch {
 		return config.SkillTrackingTracked
 	}
 	return config.SkillTrackingPinned
