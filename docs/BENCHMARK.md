@@ -158,10 +158,14 @@ Treatment bundles exclude project memory and personal context. Declared benchmar
 ## Release catalog registry access
 
 Push-triggered catalog certification keeps one active run per branch and cancels
-superseded main-commit runs. Its sixteen shards remain bounded individually;
-at most four run concurrently. Certification still belongs to the exact commit
-that was checked out, so cancelled or different-commit runs cannot satisfy a
-release gate.
+superseded main-commit push runs. Scheduled and manually dispatched runs each use
+a unique run-ID concurrency group, preserving explicit certification requests
+when later pushes or requests arrive. Scheduled runs and dispatches with
+`force=true` still run the full catalog, even if a later push changes no
+catalog-critical paths. Each run retains all sixteen shards with at most four
+running concurrently; independent runs can overlap. Certification still belongs
+to the exact commit that was checked out, so cancelled or different-commit runs
+cannot satisfy a release gate.
 
 The observed `toomanyrequests: Data limit exceeded` response is a data allowance
 failure, not evidence that a task failed. Anonymous ECR Public downloads share

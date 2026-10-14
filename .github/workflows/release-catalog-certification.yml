@@ -18,7 +18,9 @@ permissions:
   contents: read
 
 concurrency:
-  group: release-catalog-certification-${{ github.ref }}
+  # Only pushes supersede earlier runs on the same ref. Explicit certification
+  # requests get unique groups so later pushes or requests cannot cancel them.
+  group: release-catalog-certification-${{ github.event_name == 'push' && github.ref || github.run_id }}
   cancel-in-progress: true
 
 jobs:
