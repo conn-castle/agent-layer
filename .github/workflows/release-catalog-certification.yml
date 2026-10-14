@@ -18,8 +18,8 @@ permissions:
   contents: read
 
 concurrency:
-  group: release-catalog-certification-${{ github.sha }}
-  cancel-in-progress: false
+  group: release-catalog-certification-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   classify:
@@ -64,8 +64,14 @@ jobs:
     name: catalog-readiness (${{ matrix.shard }}/16)
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      ECR_PUBLIC_ROLE_ARN: ${{ vars.ECR_PUBLIC_ROLE_ARN }}
     strategy:
       fail-fast: false
+      max-parallel: 4
       matrix:
         shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
     steps:
@@ -77,13 +83,32 @@ jobs:
         with:
           go-version-file: go.mod
           cache: false
+      - name: Configure ECR Public pull credentials
+        if: env.ECR_PUBLIC_ROLE_ARN != ''
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ env.ECR_PUBLIC_ROLE_ARN }}
+          aws-region: us-east-1
+          role-session-name: catalog-${{ github.run_id }}-${{ matrix.shard }}
+      - name: Authenticate ECR Public image pulls
+        if: env.ECR_PUBLIC_ROLE_ARN != ''
+        run: |
+          aws ecr-public get-login-password --region us-east-1 |
+            docker login --username AWS --password-stdin public.ecr.aws
+      - name: Report anonymous registry quota
+        if: env.ECR_PUBLIC_ROLE_ARN == ''
+        run: echo '::notice::ECR Public pulls are anonymous and use the shared source-IP data quota. Set ECR_PUBLIC_ROLE_ARN to enable authenticated pulls; see docs/BENCHMARK.md.'
       - name: Initialize Agent Layer for benchmark readiness
         run: AL_NO_NETWORK=1 go run ./cmd/al init --here --no-wizard
       - name: Certify pinned benchmark catalog shard
-        run: >-
-          go run ./cmd/al benchmark readiness
-          --task-concurrency 1
-          --remove-task-images
-          --task-shard-index ${{ matrix.shard }}
-          --task-shard-count 16
-          --task-timeout 10m
+        run: |
+          unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN AWS_SECURITY_TOKEN
+          go run ./cmd/al benchmark readiness \
+            --task-concurrency 1 \
+            --remove-task-images \
+            --task-shard-index ${{ matrix.shard }} \
+            --task-shard-count 16 \
+            --task-timeout 10m
+      - name: Remove ECR Public login
+        if: always() && env.ECR_PUBLIC_ROLE_ARN != ''
+        run: docker logout public.ecr.aws
