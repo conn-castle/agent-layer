@@ -290,7 +290,7 @@ func TestWriteAntigravitySettingsRejectsInvalidStateBeforeWrite(t *testing.T) {
 			if err := os.WriteFile(path, before, 0o600); err != nil {
 				t.Fatal(err)
 			}
-			// Approvals mode all makes buildPermissionsBlock emit permissions.allow,
+			// Approvals mode all makes buildAntigravitySettings emit permissions.allow,
 			// so the shape-conflict seed is a path Agent Layer actually writes.
 			project := &config.ProjectConfig{Config: config.Config{Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeAll}}, CommandsAllow: []string{"git status"}}
 			if err := writeAntigravitySettings(RealSystem{}, root, project); err == nil {

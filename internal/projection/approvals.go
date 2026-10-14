@@ -76,22 +76,36 @@ func claudeMCPServerName(serverID string) string {
 // settings file and must pass these rules on the command line instead, so both
 // callers resolve them here rather than rendering the strings independently.
 func ClaudeAllowRules(cfg config.Config, commandsAllow []string, enabledServerIDs []string) []string {
-	return allowRules(cfg, commandsAllow, enabledServerIDs, ClaudeMCPRule)
+	return allowRules(cfg, commandsAllow, enabledServerIDs, ClaudeCommandRule, ClaudeMCPRule)
 }
 
 // GrokAllowRules resolves approvals into the ordered Grok allow rules. Grok
 // shares Claude's command rule syntax but renders MCP rules with grokMCPRule.
 func GrokAllowRules(cfg config.Config, commandsAllow []string, enabledServerIDs []string) []string {
-	return allowRules(cfg, commandsAllow, enabledServerIDs, grokMCPRule)
+	return allowRules(cfg, commandsAllow, enabledServerIDs, ClaudeCommandRule, grokMCPRule)
 }
 
-func allowRules(cfg config.Config, commandsAllow []string, enabledServerIDs []string, mcpRule func(string) string) []string {
+// AntigravityAllowRules resolves approvals into the ordered Antigravity allow
+// rules, rendered as command(<pattern>) and mcp(<server-id>/).
+func AntigravityAllowRules(cfg config.Config, commandsAllow []string, enabledServerIDs []string) []string {
+	return allowRules(cfg, commandsAllow, enabledServerIDs, antigravityCommandRule, antigravityMCPRule)
+}
+
+func antigravityCommandRule(pattern string) string {
+	return "command(" + pattern + ")"
+}
+
+func antigravityMCPRule(serverID string) string {
+	return "mcp(" + serverID + "/)"
+}
+
+func allowRules(cfg config.Config, commandsAllow []string, enabledServerIDs []string, commandRule func(string) string, mcpRule func(string) string) []string {
 	approvals := BuildApprovals(cfg, commandsAllow)
 	var rules []string
 
 	if approvals.AllowCommands {
 		for _, command := range approvals.Commands {
-			rules = append(rules, ClaudeCommandRule(command))
+			rules = append(rules, commandRule(command))
 		}
 	}
 
