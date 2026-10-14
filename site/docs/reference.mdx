@@ -236,8 +236,8 @@ that a custom model or alias is invalid.
 Dispatch options obtain fresh lists on each explicit request, with provider
 version checks also concurrent. Launch, sync, and dispatch start/continue do not
 query models. Model defaults are delegated to the harness, never hard-coded by
-Agent Layer. Antigravity suggestions use native model IDs; display names are
-not duplicated as separate choices. Discovery may create the normal repo-local `.agy` and `.grok-config` directories
+Agent Layer. The Antigravity wizard and model checker use display names accepted
+by project configuration; dispatch override suggestions retain native CLI IDs. Discovery may create the normal repo-local `.agy` and `.grok-config` directories
 when absent; it does not sync configuration or create dispatch runs.
 
 **Reasoning effort**
