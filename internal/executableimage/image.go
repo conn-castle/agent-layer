@@ -24,10 +24,14 @@ func capture() (string, os.FileInfo, error) {
 	}
 	info, err := os.Stat(image)
 	// Keep the invocation spelling too: a package-manager symlink can be
-	// repointed while its old executable target remains installed.
-	if invoked, lookupErr := exec.LookPath(os.Args[0]); lookupErr == nil {
+	// repointed while its old executable target remains installed. Adopt it only
+	// when it names this image, so a shadowing PATH entry cannot pair initialInfo
+	// with another file.
+	if invoked, lookupErr := exec.LookPath(os.Args[0]); lookupErr == nil && err == nil {
 		if absolute, absErr := filepath.Abs(invoked); absErr == nil {
-			p = absolute
+			if alias, statErr := os.Stat(absolute); statErr == nil && os.SameFile(alias, info) { // #nosec G703 -- own argv0, only compared with this image.
+				p = absolute
+			}
 		}
 	}
 	return p, info, err
