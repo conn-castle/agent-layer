@@ -154,3 +154,37 @@ The task line distinguishes a task-specific failure from Docker capacity, regist
 `study.toml` and every path it references must remain within the study directory. The runner snapshots those bytes before staging or execution, then content-addresses the selection, experiments, task trees, certified environments, treatment bundle, and evidence. Editing the study or its declared inputs intentionally creates a different experiment identity rather than mutating prior results.
 
 Treatment bundles exclude project memory and personal context. Declared benchmark instructions must therefore be self-contained; instructions that reference excluded project-state documents such as `CONTEXT.md`, `DECISIONS.md`, or `MEMORY.md`, or paths beneath `guides/`, fail before provider execution instead of producing treatment-only failed reads.
+
+## Release catalog registry access
+
+Push-triggered catalog certification keeps one active run per branch and cancels
+superseded main-commit push runs. Scheduled and manually dispatched runs each use
+a unique run-ID concurrency group, preserving explicit certification requests
+when later pushes or requests arrive. Scheduled runs and dispatches with
+`force=true` still run the full catalog, even if a later push changes no
+catalog-critical paths. Each run retains all sixteen shards with at most four
+running concurrently; independent runs can overlap. Certification still belongs
+to the exact commit that was checked out, so cancelled or different-commit runs
+cannot satisfy a release gate.
+
+The observed `toomanyrequests: Data limit exceeded` response is a data allowance
+failure, not evidence that a task failed. Anonymous ECR Public downloads share
+an allowance by source IP; slower scheduling cannot replenish an exhausted
+allowance. See [AWS's ECR pricing and quota explanation](https://aws.amazon.com/ecr/pricing/).
+
+To use authenticated pulls, configure the repository variable
+`ECR_PUBLIC_ROLE_ARN` with an IAM role trusted for GitHub OIDC from
+`repo:conn-castle/agent-layer:ref:refs/heads/main` and audience `sts.amazonaws.com`.
+Its pull-token permissions are `ecr-public:GetAuthorizationToken` and
+`sts:GetServiceBearerToken` (resource `*`; the latter can be restricted to service
+`ecr-public.amazonaws.com`). The workflow obtains temporary credentials in
+`us-east-1`, logs Docker into ECR Public, and removes the Docker login at job end.
+AWS credential variables are unset before task readiness execution. See
+[AWS's public registry authentication contract](https://docs.aws.amazon.com/AmazonECR/latest/public/public-registry-auth.html).
+
+Without that variable, the workflow explicitly reports anonymous access and its
+source-IP quota. A configured role/authentication failure stops its shard rather
+than silently switching back to anonymous pulls. AWS account quotas and data
+transfer billing still apply; configure the role only for an approved account.
+The PR does not create AWS resources or set repository variables, and cannot
+claim that a shared anonymous quota has been repaired by scheduling alone.
