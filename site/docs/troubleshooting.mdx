@@ -8,10 +8,10 @@ Use this page when installs fail, configs do not validate, or MCP servers do not
 
 Quick triage:
 
-- Run [`al doctor`](./reference#doctor) and read the warnings.
+- Run [`al doctor`](./reference.mdx#doctor) and read the warnings.
 - Confirm `al --version` works in the repo.
-- If you recently edited `.agent-layer/`, run [`al sync`](./reference#sync) to refresh generated client outputs.
-- If you are offline or locked down, set [`AL_NO_NETWORK=1`](./reference#environment-variables) to silence update checks.
+- If you recently edited `.agent-layer/`, run [`al sync`](./reference.mdx#sync) to refresh generated client outputs.
+- If you are offline or locked down, set [`AL_NO_NETWORK=1`](./reference.mdx#environment-variables) to silence update checks.
 
 ## In this page
 
@@ -67,7 +67,7 @@ Fix:
 
 ### "agent layer isn't initialized"
 
-Run [`al init`](./reference#init) in the repo to create `.agent-layer/`. To add `docs/agent-layer/` memory files when they are absent, run [`al wizard`](./reference#wizard) and choose Rules and memory.
+Run [`al init`](./reference.mdx#init) in the repo to create `.agent-layer/`. To add `docs/agent-layer/` memory files when they are absent, run [`al wizard`](./reference.mdx#wizard) and choose Rules and memory.
 
 ### Generated files showing up in git
 
@@ -118,7 +118,7 @@ Parser behavior:
 - exactly one non-comment version line is expected
 - empty/invalid/multi-version pin files produce a warning and fall back to the current CLI version
 
-Fix the file or run `al upgrade` to rewrite it to the current version. See [Version pinning](./concepts#version-pinning) and [Upgrades](./upgrades).
+Fix the file or run `al upgrade` to rewrite it to the current version. See [Version pinning](./concepts.mdx#version-pinning) and [Upgrades](./upgrades.mdx).
 
 ### `config.toml` validation failures
 
@@ -229,7 +229,7 @@ Install the target client CLI (Antigravity `agy`, Claude, Codex, Copilot CLI, Gr
 
 ## Pinning and offline mode
 
-For upgrade-policy guarantees and migration expectations, see [Upgrades](./upgrades).
+For upgrade-policy guarantees and migration expectations, see [Upgrades](./upgrades.mdx).
 
 ### "version is not cached" when offline
 
@@ -241,7 +241,7 @@ al upgrade prefetch --version X.Y.Z
 
 ## Still stuck
 
-Run [`al doctor`](./reference#doctor) and read the warnings. It reports missing secrets, invalid config, and MCP connectivity issues.
+Run [`al doctor`](./reference.mdx#doctor) and read the warnings. It reports missing secrets, invalid config, and MCP connectivity issues.
 
 If you still cannot get unstuck, open a GitHub issue and include the details below:
 

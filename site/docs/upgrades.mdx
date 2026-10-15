@@ -32,7 +32,7 @@ CLI `1.0.0` is the migration capability boundary. With active moved imports, sup
 - [Documentation version retention and access](#documentation-version-retention-and-access)
 - [OS and shell capability matrix](#os-and-shell-capability-matrix)
 - [Commitment level and limitations](#commitment-level-and-limitations)
-- [Upgrade checklist](./upgrade-checklist)
+- [Upgrade checklist](./upgrade-checklist.mdx)
 
 ## How to upgrade
 
@@ -41,7 +41,7 @@ CLI `1.0.0` is the migration capability boundary. With active moved imports, sup
    - If the installed CLI predates `al update`, update it once with `brew upgrade conn-castle/tap/agent-layer` for Homebrew or rerun the original script install command with the same prefix.
 2. Upgrade the repo: `al upgrade plan` then `al upgrade`.
 
-For a full step-by-step runbook (interactive and CI), see the [upgrade checklist](./upgrade-checklist).
+For a full step-by-step runbook (interactive and CI), see the [upgrade checklist](./upgrade-checklist.mdx).
 
 ## Upgrade event model
 
@@ -97,7 +97,7 @@ When an interactive upgrade finds unknown paths under `.agent-layer/` or `docs/a
 
 If automatic or manual rollback fails, the snapshot is recorded with status `rollback_failed` and remains available for recovery. Resolve the reported filesystem error, then retry `al upgrade rollback <snapshot-id>`. Every retry resets the snapshot's scoped targets before restoring them, so a failure that restored only some entries can safely converge on the captured state. After a successful retry, the snapshot keeps its prior failure details as recovery evidence and is marked `manually_rolled_back`.
 
-For full mechanics see [Ephemeral artifacts under .agent-layer/tmp/](./reference#ephemeral-artifacts-under-agent-layertmp) in the reference guide.
+For full mechanics see [Ephemeral artifacts under .agent-layer/tmp/](./reference.mdx#ephemeral-artifacts-under-agent-layertmp) in the reference guide.
 
 ## Migration rules by release
 

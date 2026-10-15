@@ -22,6 +22,11 @@ import (
 	"strings"
 	"time"
 	"unicode"
+
+	"github.com/yuin/goldmark/v2/ast"
+	"github.com/yuin/goldmark/v2/extension"
+	"github.com/yuin/goldmark/v2/parser"
+	"github.com/yuin/goldmark/v2/text"
 )
 
 func main() {
@@ -203,11 +208,80 @@ func publishAgentMarkdownDocs(repoA, repoB string) error {
 		if err != nil {
 			return err
 		}
-		if info.IsDir() || filepath.Ext(path) != ".mdx" {
+		if info.IsDir() || !isDocMarkdownFile(path) {
 			return nil
 		}
-		return os.Rename(path, strings.TrimSuffix(path, ".mdx")+".md")
+		data, err := osReadFileFunc(path)
+		if err != nil {
+			return fmt.Errorf("read Markdown export %s: %w", path, err)
+		}
+		exported, err := markdownExportLinks(string(data))
+		if err != nil {
+			return fmt.Errorf("rewrite Markdown export %s: %w", path, err)
+		}
+		if err := osWriteFileFunc(path, []byte(exported), info.Mode()); err != nil {
+			return fmt.Errorf("write Markdown export %s: %w", path, err)
+		}
+		if filepath.Ext(path) == ".mdx" {
+			return os.Rename(path, strings.TrimSuffix(path, ".mdx")+".md")
+		}
+		return nil
 	})
+}
+
+// markdownExportLinks rewrites only parsed Markdown destinations, using source
+// offsets to preserve every other byte, including code in Markdown containers.
+func markdownExportLinks(source string) (string, error) {
+	data := []byte(source)
+	document := parser.New(parser.WithExtensions(extension.GFMParser)).Parse(data)
+	var offsets []int
+	err := ast.Walk(document, func(node ast.Node, entering bool) (ast.WalkStatus, error) {
+		if !entering {
+			return ast.WalkContinue, nil
+		}
+		var destination text.SingleLineValue
+		switch link := node.(type) {
+		case *ast.Link:
+			if link.Reference != nil {
+				return ast.WalkContinue, nil // Rewrite the definition once, not each use.
+			}
+			destination = link.Destination
+		case *ast.Image:
+			if link.Reference != nil {
+				return ast.WalkContinue, nil
+			}
+			destination = link.Destination
+		case *ast.LinkReferenceDefinition:
+			destination = link.Destination
+		default:
+			return ast.WalkContinue, nil
+		}
+		raw := destination.Str(data)
+		pathname := raw
+		if suffix := strings.IndexAny(raw, "?#"); suffix >= 0 {
+			pathname = raw[:suffix]
+		}
+		if !strings.HasPrefix(pathname, "./") && !strings.HasPrefix(pathname, "../") || !strings.HasSuffix(pathname, ".mdx") {
+			return ast.WalkContinue, nil
+		}
+		if destination.IsOwned() {
+			return ast.WalkStop, fmt.Errorf("markdown destination %q has no source position", raw)
+		}
+		offsets = append(offsets, destination.Index().Start+len(pathname)-1)
+		return ast.WalkContinue, nil
+	})
+	if err != nil {
+		return "", err
+	}
+	sort.Ints(offsets)
+	var exported strings.Builder
+	start := 0
+	for _, offset := range offsets {
+		exported.WriteString(source[start:offset])
+		start = offset + 1 // Remove only the final x in this source-file extension.
+	}
+	exported.WriteString(source[start:])
+	return exported.String(), nil
 }
 
 // repoRoot returns Repo A root by searching upwards for go.mod.

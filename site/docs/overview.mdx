@@ -36,44 +36,44 @@ Follow the recommended path below to set up Agent Layer, customize it, and find 
 
 ## Recommended path
 
-1. [Getting started](./getting-started) - run your first agent
-2. [Concepts](./concepts) - learn how Agent Layer works and where the safety boundaries are
-3. [Reference](./reference) - config, environment variables, and CLI behavior
-4. [Agent Dispatch](./agent-dispatch) - asynchronous, headless provider delegation
-5. [Skills](./skills) - workflows for implementation, auditing, and shipping pull requests
-6. [Skill imports](./skill-imports) - import, edit, update, and contribute portable Agent Skills through Git
-7. [Skills approach](./skills-approach) - Agent Layer's skill ethos and target root-skill model
+1. [Getting started](./getting-started.mdx) - run your first agent
+2. [Concepts](./concepts.mdx) - learn how Agent Layer works and where the safety boundaries are
+3. [Reference](./reference.mdx) - config, environment variables, and CLI behavior
+4. [Agent Dispatch](./agent-dispatch.mdx) - asynchronous, headless provider delegation
+5. [Skills](./skills.mdx) - workflows for implementation, auditing, and shipping pull requests
+6. [Skill imports](./skill-imports.mdx) - import, edit, update, and contribute portable Agent Skills through Git
+7. [Skills approach](./skills-approach.mdx) - Agent Layer's skill ethos and target root-skill model
 8. [Best Practices](/best-practices) - universal skill, CLI skill, and instruction design guides
-9. [Troubleshooting](./troubleshooting) - common errors and fixes
-10. [Upgrades](./upgrades) - upgrade event model, compatibility guarantees, and migration rules
+9. [Troubleshooting](./troubleshooting.mdx) - common errors and fixes
+10. [Upgrades](./upgrades.mdx) - upgrade event model, compatibility guarantees, and migration rules
 
 ## Documentation map
 
-### [Getting started](./getting-started)
+### [Getting started](./getting-started.mdx)
 
-Install Agent Layer, initialize your first repo, and understand what gets generated. Includes: [Quick start](./getting-started#quick-start), [Repo layout](./getting-started#repo-layout), and [CLI command map](./getting-started#cli-command-map).
+Install Agent Layer, initialize your first repo, and understand what gets generated. Includes: [Quick start](./getting-started.mdx#quick-start), [Repo layout](./getting-started.mdx#repo-layout), and [CLI command map](./getting-started.mdx#cli-command-map).
 
-### [Concepts](./concepts)
+### [Concepts](./concepts.mdx)
 
-How Agent Layer keeps agents consistent, and the safety boundaries involved. Includes: [Single source of truth](./concepts#single-source-of-truth), [Approvals and safety](./concepts#approvals-and-safety), [MCP servers](./concepts#mcp-servers), [Agent Dispatch](./concepts#agent-dispatch), [Project memory](./concepts#project-memory), and [Version pinning](./concepts#version-pinning).
+How Agent Layer keeps agents consistent, and the safety boundaries involved. Includes: [Single source of truth](./concepts.mdx#single-source-of-truth), [Approvals and safety](./concepts.mdx#approvals-and-safety), [MCP servers](./concepts.mdx#mcp-servers), [Agent Dispatch](./concepts.mdx#agent-dispatch), [Project memory](./concepts.mdx#project-memory), and [Version pinning](./concepts.mdx#version-pinning).
 
-### [Reference](./reference)
+### [Reference](./reference.mdx)
 
-Authoritative configuration, environment variables, and CLI behavior. Includes: [Configuration](./reference#configuration), [Environment variables](./reference#environment-variables), and the [CLI guide](./reference#cli-guide).
+Authoritative configuration, environment variables, and CLI behavior. Includes: [Configuration](./reference.mdx#configuration), [Environment variables](./reference.mdx#environment-variables), and the [CLI guide](./reference.mdx#cli-guide).
 
-### [Agent Dispatch](./agent-dispatch)
+### [Agent Dispatch](./agent-dispatch.mdx)
 
-Asynchronous, headless provider conversations for agents, people, and scripts. Includes: [MCP tools](./agent-dispatch#mcp-tools), [CLI commands](./agent-dispatch#cli-commands), the [conversation lifecycle](./agent-dispatch#conversation-lifecycle), and [timeouts and cancellation](./agent-dispatch#waiting-and-cancellation).
+Asynchronous, headless provider conversations for agents, people, and scripts. Includes: [MCP tools](./agent-dispatch.mdx#mcp-tools), [CLI commands](./agent-dispatch.mdx#cli-commands), the [conversation lifecycle](./agent-dispatch.mdx#conversation-lifecycle), and [timeouts and cancellation](./agent-dispatch.mdx#waiting-and-cancellation).
 
-### [Skills](./skills)
+### [Skills](./skills.mdx)
 
-Imported development and tool skills alongside bundled operator skills. Includes: [Skill library](./skills#skill-library), [Anatomy of a skill](./skills#skill-structure), and [Writing your own skills](./skills#writing-your-own-skills).
+Imported development and tool skills alongside bundled operator skills. Includes: [Skill library](./skills.mdx#skill-library), [Anatomy of a skill](./skills.mdx#skill-structure), and [Writing your own skills](./skills.mdx#writing-your-own-skills).
 
-### [Skill imports](./skill-imports)
+### [Skill imports](./skill-imports.mdx)
 
 Import portable Agent Skills from Git, project them to every enabled client, preserve local edits while pulling upstream changes, and contribute improvements through explicit branches or forks.
 
-### [Skills approach](./skills-approach)
+### [Skills approach](./skills-approach.mdx)
 
 Agent Layer's skill ethos, target root modules, workflow boundaries, and mapping
 from conceptual names to current skill names.
@@ -86,13 +86,13 @@ Research-backed, product-neutral guides for designing [agent skills](/skill-desi
 
 Select the benchmark tasks most likely to detect an instruction or skill effect within a fixed evaluation budget, then export the selection for Agent Layer's benchmark runner.
 
-### [Troubleshooting](./troubleshooting)
+### [Troubleshooting](./troubleshooting.mdx)
 
-Fast fixes for install, config, and MCP issues. Includes: [Install issues](./troubleshooting#install-issues), [Configuration errors](./troubleshooting#configuration-errors), [MCP server issues](./troubleshooting#mcp-server-issues), and [Offline/pinning](./troubleshooting#pinning-and-offline-mode).
+Fast fixes for install, config, and MCP issues. Includes: [Install issues](./troubleshooting.mdx#install-issues), [Configuration errors](./troubleshooting.mdx#configuration-errors), [MCP server issues](./troubleshooting.mdx#mcp-server-issues), and [Offline/pinning](./troubleshooting.mdx#pinning-and-offline-mode).
 
-### [Upgrades](./upgrades)
+### [Upgrades](./upgrades.mdx)
 
-Upgrade policy and release migration expectations. Includes: [Upgrade event model](./upgrades#upgrade-event-model), [Compatibility guarantees](./upgrades#compatibility-guarantees), [Migration rules by release](./upgrades#migration-rules-by-release), [docs version retention and access](./upgrades#documentation-version-retention-and-access), and [OS and shell capability matrix](./upgrades#os-and-shell-capability-matrix).
+Upgrade policy and release migration expectations. Includes: [Upgrade event model](./upgrades.mdx#upgrade-event-model), [Compatibility guarantees](./upgrades.mdx#compatibility-guarantees), [Migration rules by release](./upgrades.mdx#migration-rules-by-release), [docs version retention and access](./upgrades.mdx#documentation-version-retention-and-access), and [OS and shell capability matrix](./upgrades.mdx#os-and-shell-capability-matrix).
 
 ## Other resources
 
