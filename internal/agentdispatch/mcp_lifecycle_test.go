@@ -45,7 +45,7 @@ func readMCPLifecycle(t *testing.T, root string) [][]mcpLifecycleRecord {
 			if err := json.Unmarshal(line, &r); err != nil {
 				t.Fatal(err)
 			}
-			if r.Schema != 1 || r.ConnectionID == "" || r.PID != os.Getpid() || r.ParentPID <= 0 || r.Version != "lifecycle-test" || r.Timestamp.IsZero() || r.Timestamp.Location() != time.UTC {
+			if r.Schema != 1 || r.ConnectionID == "" || r.PID != os.Getpid() || r.ParentPID <= 0 || r.Version != "1.2.3" || r.Timestamp.IsZero() || r.Timestamp.Location() != time.UTC {
 				t.Fatalf("invalid metadata: %+v", r)
 			}
 			if len(instance) > 0 && r.ConnectionID != instance[0].ConnectionID {
@@ -98,7 +98,7 @@ func TestMCPLifecycleRealTransport(t *testing.T) {
 			var stderr bytes.Buffer
 			done := make(chan error, 1)
 			go func() {
-				done <- runMCPServer(ctx, MCPServerOptions{Root: root, Version: "lifecycle-test", Env: []string{"SECRET=environment-canary", "TOKEN=credential-canary"}}, input, output, &stderr)
+				done <- runMCPServer(ctx, MCPServerOptions{Root: root, Version: "1.2.3", Env: []string{"SECRET=environment-canary", "TOKEN=credential-canary"}}, input, output, &stderr)
 			}()
 			clientCtx, stop := context.WithTimeout(context.Background(), 5*time.Second)
 			defer stop()
@@ -165,7 +165,7 @@ func TestMCPLifecycleFailuresAndConcurrentInstances(t *testing.T) {
 	done := make(chan error, 2)
 	for _, input := range []string{`{"jsonrpc":"2.0","method":"private-malformed-canary"`, `{"jsonrpc":"2.0","id":{"private-invalid-id-canary":true},"method":"initialize"}` + "\n"} {
 		go func() {
-			done <- runMCPServer(context.Background(), MCPServerOptions{Root: root, Version: "lifecycle-test"}, io.NopCloser(strings.NewReader(input)), io.Discard, io.Discard)
+			done <- runMCPServer(context.Background(), MCPServerOptions{Root: root, Version: "1.2.3"}, io.NopCloser(strings.NewReader(input)), io.Discard, io.Discard)
 		}()
 	}
 	for range 2 {
@@ -201,7 +201,7 @@ func TestMCPLifecycleStartupAndPersistenceFailures(t *testing.T) {
 			t.Fatal(err)
 		}
 		var stdout bytes.Buffer
-		err := runMCPServer(context.Background(), MCPServerOptions{Root: root, Version: "lifecycle-test"}, io.NopCloser(strings.NewReader("")), &stdout, io.Discard)
+		err := runMCPServer(context.Background(), MCPServerOptions{Root: root, Version: "1.2.3"}, io.NopCloser(strings.NewReader("")), &stdout, io.Discard)
 		if err == nil || stdout.Len() != 0 {
 			t.Fatalf("startup: %v stdout %s", err, stdout.String())
 		}
@@ -216,7 +216,7 @@ func TestMCPLifecycleStartupAndPersistenceFailures(t *testing.T) {
 			t.Fatal(err)
 		}
 		var stdout, stderr bytes.Buffer
-		err := runMCPServer(context.Background(), MCPServerOptions{Root: root, Version: "lifecycle-test"}, io.NopCloser(strings.NewReader("")), &stdout, &stderr)
+		err := runMCPServer(context.Background(), MCPServerOptions{Root: root, Version: "1.2.3"}, io.NopCloser(strings.NewReader("")), &stdout, &stderr)
 		if err != nil || stdout.Len() != 0 || !strings.Contains(stderr.String(), "could not be persisted") || strings.Contains(stderr.String(), root) || strings.Contains(stderr.String(), "canary") {
 			t.Fatalf("best effort: %v stdout=%s stderr=%s", err, stdout.String(), stderr.String())
 		}
@@ -238,7 +238,7 @@ func (mcpFailingReader) Close() error               { return nil }
 func TestMCPLifecycleReadFailure(t *testing.T) {
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	sentinel := errors.New("private-read-error-canary")
-	err := runMCPServer(context.Background(), MCPServerOptions{Root: root, Version: "lifecycle-test"}, mcpFailingReader{sentinel}, io.Discard, io.Discard)
+	err := runMCPServer(context.Background(), MCPServerOptions{Root: root, Version: "1.2.3"}, mcpFailingReader{sentinel}, io.Discard, io.Discard)
 	if !errors.Is(err, sentinel) {
 		t.Fatalf("original read error lost: %v", err)
 	}
@@ -276,7 +276,7 @@ func TestMCPLifecycleDataWithPhysicalEOF(t *testing.T) {
 			root := writeDispatchRepo(t, dispatchRepoConfig{})
 			// Both inputs are invalid protocol. n>0, EOF must not turn a parser
 			// failure into a clean disconnect merely because physical EOF was seen.
-			err := runMCPServer(context.Background(), MCPServerOptions{Root: root, Version: "lifecycle-test"}, &mcpDataEOFReader{[]byte(input)}, io.Discard, io.Discard)
+			err := runMCPServer(context.Background(), MCPServerOptions{Root: root, Version: "1.2.3"}, &mcpDataEOFReader{[]byte(input)}, io.Discard, io.Discard)
 			if err == nil {
 				t.Fatal("invalid protocol accepted")
 			}
@@ -313,7 +313,7 @@ func TestMCPLifecyclePreservesSDKBatches(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			root := writeDispatchRepo(t, dispatchRepoConfig{})
-			opts := MCPServerOptions{Root: root, Version: "lifecycle-test"}
+			opts := MCPServerOptions{Root: root, Version: "1.2.3"}
 			sdkErr := exchangeMCPBatch(t, tc.handshake, func(ctx context.Context, input io.ReadCloser, output io.Writer) error {
 				server, err := newDispatchMCPServer(opts)
 				if err != nil {
@@ -436,7 +436,7 @@ func TestMCPLifecycleCompetingEOFAndCancellation(t *testing.T) {
 func testMCPLifecycleInflightShutdown(t *testing.T, compete bool) {
 	t.Helper()
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
-	opts := MCPServerOptions{Root: root, Version: "lifecycle-test"}
+	opts := MCPServerOptions{Root: root, Version: "1.2.3"}
 	server, err := newDispatchMCPServer(opts)
 	if err != nil {
 		t.Fatal(err)
@@ -546,7 +546,7 @@ func testMCPLifecycleInflightShutdown(t *testing.T, compete bool) {
 
 func TestMCPLifecycleSurvivesDispatchRetention(t *testing.T) {
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
-	if err := runMCPServer(context.Background(), MCPServerOptions{Root: root, Version: "lifecycle-test"}, io.NopCloser(strings.NewReader("")), io.Discard, io.Discard); err != nil {
+	if err := runMCPServer(context.Background(), MCPServerOptions{Root: root, Version: "1.2.3"}, io.NopCloser(strings.NewReader("")), io.Discard, io.Discard); err != nil {
 		t.Fatal(err)
 	}
 	before := readMCPLifecycle(t, root)
@@ -574,7 +574,7 @@ func (r mcpCloseFailingReader) Close() error { return r.err }
 func TestMCPLifecycleUnclassifiedRunError(t *testing.T) {
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	sentinel := errors.New("private-close-error-canary")
-	err := runMCPServer(context.Background(), MCPServerOptions{Root: root, Version: "lifecycle-test"}, mcpCloseFailingReader{strings.NewReader(""), sentinel}, io.Discard, io.Discard)
+	err := runMCPServer(context.Background(), MCPServerOptions{Root: root, Version: "1.2.3"}, mcpCloseFailingReader{strings.NewReader(""), sentinel}, io.Discard, io.Discard)
 	if !errors.Is(err, sentinel) {
 		t.Fatalf("close error lost: %v", err)
 	}
@@ -669,7 +669,7 @@ func TestMCPLifecycleCloseDuringOperation(t *testing.T) {
 	for _, ending := range []string{"clean-eof", "partial-eof", "masked-partial-eof", "parser-error", "read-error", "write-error", "closed-channel-eof"} {
 		t.Run(ending, func(t *testing.T) {
 			root := writeDispatchRepo(t, dispatchRepoConfig{})
-			l := newMCPLifecycle(MCPServerOptions{Root: root, Version: "lifecycle-test"}, io.Discard)
+			l := newMCPLifecycle(MCPServerOptions{Root: root, Version: "1.2.3"}, io.Discard)
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 			// Use the same reader and connection observers as production around a

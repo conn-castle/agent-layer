@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -11,8 +12,10 @@ func TestMakeSourceCommandBypassesInheritedVersionSelection(t *testing.T) {
 	// Exercise the real Makefile entry point without this agent's dev-launch
 	// environment. A conflicting override must not redirect a source command.
 	cmd := exec.Command("make", "--no-print-directory", "-s", "-f", "Makefile", "-f", "-", "test-source-version")
+	devDir := filepath.Join(t.TempDir(), "source with spaces $() `false` ' quote")
+	cmd.Args = append(cmd.Args, "AL_DEV_BIN_DIR="+strings.ReplaceAll(devDir, "$", "$$"))
 	cmd.Dir = "../.."
-	cmd.Stdin = strings.NewReader("test-source-version:\n\t@$(AL_RUN) --version\n")
+	cmd.Stdin = strings.NewReader("test-source-version: al-dev-build\n\t@$(AL_RUN) --version\n")
 	for _, entry := range os.Environ() {
 		name, _, _ := strings.Cut(entry, "=")
 		switch name {
@@ -25,6 +28,9 @@ func TestMakeSourceCommandBypassesInheritedVersionSelection(t *testing.T) {
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("source Make command must bypass release selection: %v\n%s", err, output)
+	}
+	if _, err := os.Stat(filepath.Join(devDir, "al")); err != nil {
+		t.Fatalf("atomic build did not publish literal executable path: %v", err)
 	}
 	if !strings.Contains(string(output), "dev") {
 		t.Fatalf("expected local development binary, got %s", output)

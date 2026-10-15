@@ -590,17 +590,14 @@ func TestVersionString(t *testing.T) {
 	}
 }
 
-// An absolute source invocation must carry its own executable to MCP children,
-// even when PATH selects an older installed al or a stale override is inherited.
-func TestRunMainExportsInvokingDevelopmentExecutable(t *testing.T) {
+// Explicit source provenance survives CLI setup instead of being replaced with
+// the current executable (which may be a transient go run binary).
+func TestRunMainPreservesExplicitDevelopmentExecutable(t *testing.T) {
 	t.Setenv(versiondispatch.EnvDevelopmentBypassVersionDispatch, "1")
 	t.Setenv(versiondispatch.EnvDevelopmentExecutable, "/stale/al")
 	oldExecute := executeFunc
 	t.Cleanup(func() { executeFunc = oldExecute })
-	want, err := os.Executable()
-	if err != nil {
-		t.Fatal(err)
-	}
+	want := "/stale/al"
 	executeFunc = func(context.Context, []string, io.Writer, io.Writer) error {
 		if got := os.Getenv(versiondispatch.EnvDevelopmentExecutable); got != want {
 			t.Fatalf("child executable = %q, want %q", got, want)

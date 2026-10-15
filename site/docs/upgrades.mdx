@@ -22,6 +22,14 @@ Reusable rules and memory instructions also become Git imports in the planned `1
 
 CLI `1.0.0` is the migration capability boundary. With active moved imports, supported rollback refuses snapshots that would restore a converted local slot or pin a pre-migration CLI. Version selection and downgrade preflight also refuse a pre-migration CLI before mutation. Snapshot evidence and imported modifications remain intact. An older executable invoked directly cannot apply this safeguard; if it recreates a duplicate, the new CLI preserves both copies and reports the conflict for explicit resolution.
 
+After `al update` and per-repository `al upgrade`, reconnect existing
+`agent-layer` MCP servers (Claude Code: `/mcp`; persistent Codex app: restart or
+reload MCP). A new chat may reuse a running server. Global updates continue to
+honor older project pins. Source Make workflows project source explicitly for
+the selected root; switching source/release mode also requires reconnecting.
+See [MCP code freshness](./agent-dispatch.mdx#mcp-tools) for stale-work refusal,
+durable controls, development rebuilds and the one-time pre-guard migration.
+
 ## In this page
 
 - [How to upgrade](#how-to-upgrade)

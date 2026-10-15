@@ -14,6 +14,7 @@ import (
 
 	"github.com/conn-castle/agent-layer/internal/clients"
 	"github.com/conn-castle/agent-layer/internal/config"
+	"github.com/conn-castle/agent-layer/internal/executableimage"
 	"github.com/conn-castle/agent-layer/internal/messages"
 	"github.com/conn-castle/agent-layer/internal/sync"
 )
@@ -339,7 +340,7 @@ func launchDetachedWorker(root string, runID string, logPath string) (launchedWo
 		return launchedWorker{}, err
 	}
 	cleanup := func() { _ = gateRead.Close(); _ = gateWrite.Close() }
-	executable, err := os.Executable()
+	executable, err := executableimage.Self()
 	if err != nil {
 		cleanup()
 		return launchedWorker{}, err
@@ -359,6 +360,12 @@ func launchDetachedWorker(root string, runID string, logPath string) (launchedWo
 	if err := cmd.Start(); err != nil {
 		_ = log.Close()
 		cleanup()
+		return launchedWorker{}, err
+	}
+	if _, err := executableimage.Self(); err != nil {
+		cleanup()
+		_ = log.Close()
+		_ = cmd.Process.Release()
 		return launchedWorker{}, err
 	}
 	_ = gateRead.Close()

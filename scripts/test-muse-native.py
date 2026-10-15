@@ -332,7 +332,7 @@ def verify_credential_backends(data_home):
 
 
 def verify_development_mcp(al, command, work, home, env, case, state):
-    """Exercise the generated shell launcher with a deliberately incompatible pin.
+    """Verify persisted source argv, then restore release pin selection.
 
     The cached pin is a local executable that fails with a marker, so this
     regression needs no released binary download or external credentials.
@@ -348,7 +348,8 @@ def verify_development_mcp(al, command, work, home, env, case, state):
     binary.chmod(0o700)
     pin = work / ".agent-layer/al.version"
     pin.write_text(pinned_version + "\n")
-    development_env = {**env, "AL_DEV_BYPASS_VERSION_DISPATCH": "1"}
+    development_env = {**env, "AL_DEV_BYPASS_VERSION_DISPATCH": "1",
+                       "AL_DEV_EXECUTABLE": str(al), "AL_DEV_SOURCE_ROOT": str(work)}
     previous_requested, previous_catalog = state["requested"], state["catalog"]
     try:
         run([str(al), "sync"], work, development_env, case / "sync-development-pin")
@@ -359,9 +360,16 @@ def verify_development_mcp(al, command, work, home, env, case, state):
         wrong_al = wrong_bin / "al"
         wrong_al.write_text("#!/bin/sh\necho WRONG_AL_SELECTED >&2\nexit 65\n")
         wrong_al.chmod(0o700)
-        explicit_env = {**development_env, "AL_DEV_EXECUTABLE": str(al),
-                        "PATH": str(wrong_bin) + os.pathsep + development_env["PATH"]}
-        for label, launch_env in (("development", development_env), ("explicit-source", explicit_env), ("pinned", env)):
+        parent_env = {key: value for key, value in development_env.items() if not key.startswith("AL_DEV_")}
+        explicit_env = {**parent_env, "PATH": str(wrong_bin) + os.pathsep + env["PATH"]}
+        for label, launch_env in (("development", parent_env), ("explicit-source", explicit_env), ("pinned", env)):
+            if label == "pinned":
+                # Restore release argv without executing the incompatible fixture during sync.
+                pin.unlink()
+                try:
+                    run([str(al), "sync"], work, env, case / "sync-release-pin")
+                finally:
+                    pin.write_text(pinned_version + "\n")
             state["requested"], state["catalog"] = {"stdio", "http", "command"}, set()
             log = case / ("mcp-" + label)
             run(command, work, launch_env, log, timeout=60)

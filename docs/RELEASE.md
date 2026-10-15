@@ -107,6 +107,8 @@ launchers in `Makefile`):
   unset CODEX_HOME CLAUDE_CONFIG_DIR AGY_CLI_DISABLE_AUTO_UPDATE GROK_HOME
   export PATH="$PWD/.agent-layer/tmp/dev-bin:$PATH"
   export AL_DEV_BYPASS_VERSION_DISPATCH=1
+  export AL_DEV_EXECUTABLE="$PWD/.agent-layer/tmp/dev-bin/al"
+  export AL_DEV_SOURCE_ROOT="$PWD"
   al dispatch options || exit 1
   wait_for_termination() {
     local result

@@ -31,17 +31,33 @@ This repo is built around determinism: the same inputs should produce the same c
 - Use the commands in `docs/agent-layer/COMMANDS.md` for format, lint, test, coverage reporting, and release builds.
 - Prefer `make` targets (see `docs/agent-layer/COMMANDS.md`) instead of running `goimports` / `golangci-lint` directly; tools are installed repo-locally under `.tools/bin` so you do not need to edit your shell PATH. This avoids “works on my machine” drift and keeps local output aligned with CI.
 - Use `make dev` for the fast local formatting and lint loop. Run `./scripts/setup.sh` or `make tools` first. Use `make test` for the global test gate and `make coverage` for diagnostic coverage reporting, and use `make ci` as the complete local/pre-PR verification command (hosted CI runs the same target).
-- **Template sources live in `internal/templates/`**, not in `.agent-layer/`. The `.agent-layer/` directory is the *install output* created by `al init`/`al upgrade` in target repos. When adding or editing templates (memory files, operator skills, config), always edit the source in `internal/templates/`. If you change installer templates, run `al upgrade` in a target repo to apply the updated templates. When testing from this source repo's scratch target (`tmp/dev-repo`), use `go run ../../cmd/al upgrade` (or `go run ../../cmd/al init` for a fresh repo).
+- **Template sources live in `internal/templates/`**, not in `.agent-layer/`. The `.agent-layer/` directory is the *install output* created by `al init`/`al upgrade` in target repos. When adding or editing templates (memory files, operator skills, config), always edit the source in `internal/templates/`. If you change installer templates, run `al upgrade` in a target repo to apply the updated templates. For scratch-project testing, run `make al-dev-build` in this checkout, then invoke the absolute `.agent-layer/tmp/dev-bin/al` path with `AL_DEV_EXECUTABLE` set to that path and `AL_DEV_BYPASS_VERSION_DISPATCH=1` and `AL_DEV_SOURCE_ROOT` set to the scratch project's absolute configuration root; use `upgrade` for an existing project or `init` for a fresh one.
 - If template-managed file semantics change for release upgrades, regenerate the release manifest: `./scripts/generate-template-manifest.sh --tag vX.Y.Z`.
 - If you change upgrade behavior or upgrade-facing guidance, update the canonical upgrade contract page at `site/docs/upgrades.mdx` and keep release notes/docs links aligned.
 - If you change VS Code launch behavior, update `docs/architecture/vscode-launch.md` and keep troubleshooting guidance aligned.
 
-Development launches carry `AL_DEV_EXECUTABLE` alongside
-`AL_DEV_BYPASS_VERSION_DISPATCH`. The CLI sets the executable to its own absolute
-path, and the built-in MCP launcher uses it only while the bypass is active.
-This keeps an absolute source invocation from starting an older `al` on `PATH`.
-Generated configuration forwards these values at runtime; it does not record a
-source binary path or bypass project pins for ordinary launches.
+`make al-sync`, `make al-upgrade`, `make al-wizard`, and the agent launch
+commands build `.agent-layer/tmp/dev-bin/al` to a unique sibling file, then
+publish it atomically. They explicitly set `AL_DEV_EXECUTABLE`,
+`AL_DEV_BYPASS_VERSION_DISPATCH` and `AL_DEV_SOURCE_ROOT` for this repository,
+and put that directory first on `PATH`.
+Sync embeds the absolute development executable as a quoted positional MCP
+launcher argument for every client. A client parent does not need these
+variables. After a rebuild, running MCP servers refuse new provider work until
+reconnected; admitted work keeps its original image. Bypass alone never promotes
+an arbitrary executable or a transient `go run` path into persistent source selection. The root marker
+must match the project's configuration root (canonical symlink spellings are
+accepted). Inherited Make environment from repository A does not persist MCP
+source selection when syncing repository B, and B honors its release pin.
+Same-root nested sync preserves source selection. For deliberate scratch-project
+source selection, explicitly set `AL_DEV_SOURCE_ROOT` to that scratch root;
+`AL_DEV_EXECUTABLE` may still point to this checkout's stable development binary.
+Generated argv carries the matching root marker without persisting provider env.
+
+A release `al sync` without development selection restores the pin/override
+launcher. Reconnect after rebuilding or changing source/release mode; sync does
+not replace a running server, and a new chat may reuse it. See
+[MCP code freshness](AGENT-DISPATCH.md#mcp-code-freshness) for recovery and limits.
 
 `make test-codex-mcp-native` tests installed Codex against generated MCP
 configuration without provider inference. It checks runtime dispatch context,

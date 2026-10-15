@@ -5,9 +5,10 @@
       "command": "/bin/sh",
       "args": [
         "-c",
-        "AL_MCP_WORKING_DIR=$PWD; export AL_MCP_WORKING_DIR; cd \"$1\" || exit; if [ -n \"$AL_DEV_BYPASS_VERSION_DISPATCH\" ] \u0026\u0026 [ -n \"$AL_DEV_EXECUTABLE\" ]; then exec \"$AL_DEV_EXECUTABLE\" dispatch mcp-server; else exec al dispatch mcp-server; fi",
+        "AL_MCP_WORKING_DIR=$PWD; export AL_MCP_WORKING_DIR; cd \"$1\" || exit; if [ -n \"$2\" ]; then AL_DEV_EXECUTABLE=$2; AL_DEV_BYPASS_VERSION_DISPATCH=1; AL_DEV_SOURCE_ROOT=$1; export AL_DEV_EXECUTABLE AL_DEV_BYPASS_VERSION_DISPATCH AL_DEV_SOURCE_ROOT; exec \"$2\" dispatch mcp-server; else unset AL_DEV_EXECUTABLE AL_DEV_BYPASS_VERSION_DISPATCH AL_DEV_SOURCE_ROOT; exec al dispatch mcp-server; fi",
         "agent-layer-mcp",
-        "__REPO_ROOT__"
+        "__REPO_ROOT__",
+        ""
       ]
     },
     "example": {

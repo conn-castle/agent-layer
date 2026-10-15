@@ -554,6 +554,35 @@ are CLI only.
 `al dispatch mcp-server`, which serves those tools over stdio, is a hidden entry
 point for generated client configuration, not a public command.
 
+## MCP code freshness
+
+The MCP launcher follows normal CLI version selection: the project pin or
+`AL_VERSION` override. Updating the global `al` preserves older project pins.
+Source Make workflows embed the stable development executable in launcher argv,
+scoped to the configuration root by `AL_DEV_SOURCE_ROOT`. The client parent
+needs no development environment. Ordinary release sync restores release selection.
+
+Running MCP servers keep their code until reconnected. After a pin change,
+executable replacement or source rebuild, `dispatch_options`, `dispatch_start`
+and `dispatch_continue` refuse new provider work if the selected code differs
+or freshness cannot be verified. Switching source/release mode or changing the
+launch environment also requires reconnecting; the running server cannot detect
+those projection changes. Wait, inspect, output and cancel remain available for existing runs. Already admitted work finishes on its original
+image; a rebuild does not cancel or replay it. On Linux detached workers use
+that same image; on macOS replacement before worker publication fails cleanly.
+Even a same-byte atomic rebuild requires reconnecting.
+
+For release updates, run `al update`, then `al upgrade` in each repository and
+reconnect the `agent-layer` MCP server once. In Claude Code use `/mcp` to
+reconnect; for a persistent Codex app restart the app or reload MCP configuration.
+A new chat can reuse an existing server. Source workflows use `make al-sync` or
+`make al-upgrade` to build and project source despite an older repository pin;
+reconnect after rebuilding. Do not edit the pin manually to select source.
+Servers from before the freshness guard need this reconnect once to acquire it.
+`al sync` updates launch configuration without replacing a running server.
+Timeout configuration changes also require reconnecting and reloading projected
+client timeouts.
+
 ## Provider lifecycle and Muse recovery
 
 Muse root ownership comes from a same-session `session.run.linked` event whose

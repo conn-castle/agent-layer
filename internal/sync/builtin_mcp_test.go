@@ -9,6 +9,7 @@ import (
 
 	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/projection"
+	"github.com/conn-castle/agent-layer/internal/versiondispatch"
 )
 
 func builtInProject(t *testing.T) *config.ProjectConfig {
@@ -29,7 +30,7 @@ func wantBuiltInDispatchInvocation(t *testing.T, command string, args []string, 
 	if command != "/bin/sh" {
 		t.Fatalf("built-in dispatch command = %q, want /bin/sh", command)
 	}
-	want := []string{"-c", `AL_MCP_WORKING_DIR=$PWD; export AL_MCP_WORKING_DIR; cd "$1" || exit; if [ -n "$AL_DEV_BYPASS_VERSION_DISPATCH" ] && [ -n "$AL_DEV_EXECUTABLE" ]; then exec "$AL_DEV_EXECUTABLE" dispatch mcp-server; else exec al dispatch mcp-server; fi`, "agent-layer-mcp", root}
+	want := []string{"-c", `AL_MCP_WORKING_DIR=$PWD; export AL_MCP_WORKING_DIR; cd "$1" || exit; if [ -n "$2" ]; then AL_DEV_EXECUTABLE=$2; AL_DEV_BYPASS_VERSION_DISPATCH=1; AL_DEV_SOURCE_ROOT=$1; export AL_DEV_EXECUTABLE AL_DEV_BYPASS_VERSION_DISPATCH AL_DEV_SOURCE_ROOT; exec "$2" dispatch mcp-server; else unset AL_DEV_EXECUTABLE AL_DEV_BYPASS_VERSION_DISPATCH AL_DEV_SOURCE_ROOT; exec al dispatch mcp-server; fi`, "agent-layer-mcp", root, versiondispatch.DevelopmentExecutable(root)}
 	if strings.Join(args, "\x00") != strings.Join(want, "\x00") {
 		t.Fatalf("built-in dispatch args = %q, want %q", args, want)
 	}

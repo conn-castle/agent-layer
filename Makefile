@@ -344,53 +344,58 @@ dev: ## Fast local formatting and lint loop
 
 # Local dev targets — run al subcommands against this repo's own .agent-layer using source
 # Source commands must bypass release pins even outside an agent dev session.
-AL_RUN := AL_DEV_BYPASS_VERSION_DISPATCH=1 GOCACHE="$(GO_CACHE)" GOMODCACHE="$(GO_MOD_CACHE)" go run ./cmd/al
+# Shell words for explicit paths must also preserve literal $, backticks and quotes.
+al_shell_quote = '$(subst ','"'"',$(1))'
+AL_RUN = $(AL_DEV_LAUNCH_ENV) $(call al_shell_quote,$(AL_DEV_BIN))
 AL_DEV_BIN_DIR := $(ROOT_DIR)/.agent-layer/tmp/dev-bin
 AL_DEV_BIN := $(AL_DEV_BIN_DIR)/al
-AL_DEV_LAUNCH_ENV := PATH="$(AL_DEV_BIN_DIR):$$PATH" AL_DEV_BYPASS_VERSION_DISPATCH=1
-AL_MANAGED_AGENT_ENV := AL_RUN_DIR AL_RUN_ID AL_DISPATCH_CALLER_AGENT AL_DISPATCH_ACTIVE AL_SHIM_ACTIVE AL_DEV_BYPASS_VERSION_DISPATCH CODEX_HOME CLAUDE_CONFIG_DIR AGY_CLI_DISABLE_AUTO_UPDATE GROK_HOME
+AL_DEV_LAUNCH_ENV := PATH=$(call al_shell_quote,$(AL_DEV_BIN_DIR)):"$$PATH" AL_DEV_BYPASS_VERSION_DISPATCH=1 AL_DEV_EXECUTABLE=$(call al_shell_quote,$(AL_DEV_BIN)) AL_DEV_SOURCE_ROOT=$(call al_shell_quote,$(ROOT_DIR))
+AL_MANAGED_AGENT_ENV := AL_RUN_DIR AL_RUN_ID AL_DISPATCH_CALLER_AGENT AL_DISPATCH_ACTIVE AL_SHIM_ACTIVE AL_DEV_BYPASS_VERSION_DISPATCH AL_DEV_EXECUTABLE AL_DEV_SOURCE_ROOT CODEX_HOME CLAUDE_CONFIG_DIR AGY_CLI_DISABLE_AUTO_UPDATE GROK_HOME
 
 .PHONY: al-dev-build
 al-dev-build: ## Build source al for development commands that launch child processes
-	@mkdir -p "$(AL_DEV_BIN_DIR)"
-	@GOCACHE="$(GO_CACHE)" GOMODCACHE="$(GO_MOD_CACHE)" go build -o "$(AL_DEV_BIN)" ./cmd/al
+	@mkdir -p $(call al_shell_quote,$(AL_DEV_BIN_DIR))
+	@dev_tmp=$$(mktemp $(call al_shell_quote,$(AL_DEV_BIN).build-XXXXXX)) || exit $$?; \
+	trap 'rm -f "$$dev_tmp"' EXIT; \
+	GOCACHE=$(call al_shell_quote,$(GO_CACHE)) GOMODCACHE=$(call al_shell_quote,$(GO_MOD_CACHE)) go build -o "$$dev_tmp" ./cmd/al && mv -f "$$dev_tmp" $(call al_shell_quote,$(AL_DEV_BIN))
+	@echo "Running MCP servers keep their code until reconnected; stale servers refuse new dispatch work."
 
 .PHONY: al-upgrade
-al-upgrade: ## Upgrade this repo's .agent-layer using current source
+al-upgrade: al-dev-build ## Upgrade this repo's .agent-layer using current source
 	@$(AL_RUN) upgrade
 
 .PHONY: al-sync
-al-sync: ## Sync this repo's generated agent files using current source
+al-sync: al-dev-build ## Sync this repo's generated agent files using current source
 	@$(AL_RUN) sync
 
 .PHONY: al-wizard
-al-wizard: ## Run al wizard against this repo using current source
+al-wizard: al-dev-build ## Run al wizard against this repo using current source
 	@$(AL_RUN) wizard
 
 .PHONY: al-doctor
 al-doctor: al-dev-build ## Run al doctor against this repo using current source
-	@unset $(AL_MANAGED_AGENT_ENV); $(AL_DEV_LAUNCH_ENV) "$(AL_DEV_BIN)" doctor
+	@unset $(AL_MANAGED_AGENT_ENV); $(AL_DEV_LAUNCH_ENV) $(call al_shell_quote,$(AL_DEV_BIN)) doctor
 
 .PHONY: al-claude
 al-claude: al-dev-build ## Run al claude against this repo using current source
-	@unset $(AL_MANAGED_AGENT_ENV); $(AL_DEV_LAUNCH_ENV) "$(AL_DEV_BIN)" claude
+	@unset $(AL_MANAGED_AGENT_ENV); $(AL_DEV_LAUNCH_ENV) $(call al_shell_quote,$(AL_DEV_BIN)) claude
 
 .PHONY: al-codex
 al-codex: al-dev-build ## Run al codex against this repo using current source
-	@unset $(AL_MANAGED_AGENT_ENV); $(AL_DEV_LAUNCH_ENV) "$(AL_DEV_BIN)" codex
+	@unset $(AL_MANAGED_AGENT_ENV); $(AL_DEV_LAUNCH_ENV) $(call al_shell_quote,$(AL_DEV_BIN)) codex
 
 .PHONY: al-agy
 al-agy: al-dev-build ## Run al agy against this repo using current source
-	@unset $(AL_MANAGED_AGENT_ENV); $(AL_DEV_LAUNCH_ENV) "$(AL_DEV_BIN)" agy
+	@unset $(AL_MANAGED_AGENT_ENV); $(AL_DEV_LAUNCH_ENV) $(call al_shell_quote,$(AL_DEV_BIN)) agy
 
 .PHONY: al-copilot
 al-copilot: al-dev-build ## Run al copilot against this repo using current source
-	@unset $(AL_MANAGED_AGENT_ENV); $(AL_DEV_LAUNCH_ENV) "$(AL_DEV_BIN)" copilot
+	@unset $(AL_MANAGED_AGENT_ENV); $(AL_DEV_LAUNCH_ENV) $(call al_shell_quote,$(AL_DEV_BIN)) copilot
 
 .PHONY: al-grok
 al-grok: al-dev-build ## Run al grok against this repo using current source
-	@unset $(AL_MANAGED_AGENT_ENV); $(AL_DEV_LAUNCH_ENV) "$(AL_DEV_BIN)" grok
+	@unset $(AL_MANAGED_AGENT_ENV); $(AL_DEV_LAUNCH_ENV) $(call al_shell_quote,$(AL_DEV_BIN)) grok
 
 .PHONY: al-muse
 al-muse: al-dev-build ## Run al muse against this repo using current source
-	@unset $(AL_MANAGED_AGENT_ENV); $(AL_DEV_LAUNCH_ENV) "$(AL_DEV_BIN)" muse
+	@unset $(AL_MANAGED_AGENT_ENV); $(AL_DEV_LAUNCH_ENV) $(call al_shell_quote,$(AL_DEV_BIN)) muse

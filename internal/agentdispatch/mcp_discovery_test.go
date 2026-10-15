@@ -165,7 +165,7 @@ func TestMCPProcessJoinsDiscoveryCleanupOnShutdown(t *testing.T) {
 			root := writeDispatchRepo(t, dispatchRepoConfig{})
 			done := make(chan error, 1)
 			go func() {
-				done <- runMCPServer(ctx, MCPServerOptions{Root: root, Version: "test"}, input, output, io.Discard)
+				done <- runMCPServer(ctx, MCPServerOptions{Root: root, Version: "dev"}, input, output, io.Discard)
 			}()
 			clientCtx, stop := context.WithTimeout(context.Background(), 3*time.Second)
 			defer stop()

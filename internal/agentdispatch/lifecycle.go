@@ -5,10 +5,11 @@ import (
 	"encoding/hex"
 	"io"
 	"os"
-	"runtime"
 	"runtime/debug"
 	"sync"
 	"time"
+
+	"github.com/conn-castle/agent-layer/internal/executableimage"
 )
 
 type agentLayerBuildIdentity struct {
@@ -26,10 +27,7 @@ var executingBuild agentLayerBuildIdentity
 func currentBuildIdentity() agentLayerBuildIdentity {
 	buildIdentityOnce.Do(func() {
 		executingBuild.Executable, _ = os.Executable()
-		executable := executingBuild.Executable
-		if runtime.GOOS == "linux" {
-			executable = "/proc/self/exe"
-		}
+		executable, _ := executableimage.Self()
 		file, err := os.Open(executable) // #nosec G304 -- own executable, no caller-controlled path.
 		if err == nil {
 			h := sha256.New()

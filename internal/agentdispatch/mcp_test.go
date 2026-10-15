@@ -42,6 +42,7 @@ func newMCPTestSession(t *testing.T, tools *dispatchToolServer) *mcp.ClientSessi
 func newMCPTestTools(root string, env ...string) *dispatchToolServer {
 	return &dispatchToolServer{
 		root:        root,
+		version:     "dev",
 		workDir:     root,
 		env:         env,
 		waitTimeout: 200 * time.Millisecond,

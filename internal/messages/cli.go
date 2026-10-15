@@ -93,7 +93,7 @@ const (
 	UpgradeOverwriteStatuslineSourcePromptFmt       = "Replace user-owned statusline source %s with the template version?"
 	UpgradeStartFmt                                 = "Upgrading this repository from %s to %s.\n"
 	UpgradeSuccessful                               = "Upgrade successful."
-	UpgradeReviewSettingsHint                       = "Run `al wizard` to review your settings."
+	UpgradeReviewSettingsHint                       = "Run `al wizard` to review your settings.\nRunning MCP servers keep their code until reconnected; stale servers refuse new dispatch work."
 	UpgradeRunningSync                              = "Running sync..."
 	UpgradeSyncFailedFmt                            = "upgrade applied; sync failed: %w (run `al sync` to retry)"
 
