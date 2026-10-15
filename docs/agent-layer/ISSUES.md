@@ -29,6 +29,18 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
 
 <!-- ENTRIES START -->
 
+- Issue 2026-10-14 catalog-certification-ecr-data-limit: Public ECR download limits can interrupt release catalog certification
+    Priority: Medium. Area: release / benchmark readiness / CI infrastructure
+    Description: The preexisting exact-commit catalog run for 26e5e35a failed in shards 2 and 14 before provider execution: Docker returned toomanyrequests: Data limit exceeded, blocking 14 catalog tasks. Push-triggered certification uses per-commit concurrency groups, so successive main commits can start simultaneous full-catalog downloads.
+    Evidence: https://github.com/conn-castle/agent-layer/actions/runs/38492719917; failed jobs 115621500742 and 115621500687; .github/workflows/release-catalog-certification.yml.
+    Next step: Retain the latest exact-commit certification outcome and establish the registry quota scope before changing CI. Four redundant intermediate catalog runs from this reconciliation were cancelled; final-main run 38496301339 subsequently certified all sixteen shards. A successful later run does not establish the quota scope or prevent recurrence.
+
+- Issue 2026-10-14 historical-migration-retirement: Historical migration and compatibility paths remain past their original retirement target
+    Priority: Medium. Area: upgrade / skills / compatibility
+    Description: Historical flat-skill migrations and transitional skill-ownership/recovery paths remain in internal/install and internal/skillmigration. The former v0.10.0 retirement target is obsolete; the accepted supported boundary is now v1.1.0.
+    Next step: Inventory the retained paths and their callers against Decision v1-1-historical-code-retirement before implementation.
+    Notes: Moved from Backlog 2026-03-01 remove-skill-migrations-v010 because this is maintainability debt. Preserve published manifests and ongoing import/crash-recovery capabilities; unfinished legacy state must retain the agreed v1.0.0 recovery guidance.
+
 - Issue 2026-10-11 manual-rollback-timeout-unclassified: First manual rollback exceeded the 40-second harness limit
     Priority: Low. Area: upgrade / rollback recovery
     Description: The original timeout remains unclassified; a reconstructed PIPE run restored all 30 entries in 0.598 s. A later disk-backed prompt check exceeded 5 s after SIGINT; a separate preparation trace captured an 8.37 s file fsync and a later directory fsync stall. Neither trace classifies the earlier failures.
@@ -39,7 +51,7 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
     Priority: High. Area: agent dispatch / v1.0.0 readiness
     Description: On main 1eb22499 plus PR385 head 9cd9790a, Claude 2.1.296 Sonnet low emitted a valid successful continuation answer but invocation 47c0da07-058d-4577-9ddb-926b6b4f4faa failed the five-second exit/output-drain deadline; durable process-group death was confirmed afterward. Separate Opus reviews and one Codex worker also hit that deadline after saving reports.
     Status: PR #389 (ca8b9476) fixed the deterministic slow-persistence false timeout; later 17 regular Codex/Claude/Muse invocations passed. On clean main 5568b922, six more native calls passed in ordinary disk-backed fixtures, including CLI/MCP handoff and MCP restart; all had durable termination. Evidence: /var/tmp/al-v1-dogfood-round2-5xozzmn2/dispatch_disk/report.md. The precise older native cause remains unproven: mocked handoff reproduced kernel I/O/fsync stalls, and the minimal candidate failed and was reverted. This batch fixes the separately observed cancellation/revision defect, not a proven cause of that older timeout. Evidence: /var/tmp/al-v1-final-dogfood-osw1igf8/dispatch-shutdown-test-investigation.md; /var/tmp/al-v1-final-batch-opmyi3v_/dispatch/report.md.
-    Next step: Capture the failed live provider's owned process tree and output-reader state at the deadline.
+    Next step: On a current-build recurrence, retain the lifecycle snapshot, executing-build identity, and owned process/output-reader evidence added by PR #412; use them to classify the missed shutdown condition. The new diagnostics do not retrospectively prove the older timeout's cause.
 
 - Issue 2026-10-08 external-skill-inherited-review-followups: Inherited skill reporting and diagnostics gaps
     Priority: Low. Area: external skills / audit reporting / CLI diagnostics
@@ -47,17 +59,17 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
     Evidence: nicholasjconn/skills PR #18 comments https://github.com/nicholasjconn/skills/pull/18#discussion_r4220303424, https://github.com/nicholasjconn/skills/pull/18#discussion_r4220303459, and https://github.com/nicholasjconn/skills/pull/18#discussion_r4220303532; original Agent Layer source 5dd9ba8ce27050ff6defef0713f8c97af1e8d70d.
     Notes: Deferred outside the migration; future fixes belong in the canonical skills repository. The current ship-pr whole-tree publication default remains unchanged, with memory notes included and temporary artifacts excluded.
 
-- Issue 2026-10-04 shared-scratch-deletion-recovery: WARNING — repeated discovery cleanup deleted other sessions' scratch work
-    Priority: High. Area: discovery / scratch ownership
-    Description: Discovery agents repeatedly deleted shared `/tmp/alhunt` contents and overwrote `/tmp/alhunt/al`. Still unrecovered: original binary bytes (`al`, `al-old`, `al-cur`), generated repositories `r1`–`r3` and their Git metadata, `strace.txt`, and any unknown branch identity, uncommitted/untracked work, or unrecorded changes beyond the verified recovered contents.
-    Evidence: Keep `/tmp/alhunt-recovery-d2dp71gh/RECOVERY.md` and `/tmp/alhunt-incident-recovery-881um2eg/RECOVERY.md` and their directories. The later report verifies 14,742 preserved surviving files, 1,032 historical file copies, and four later audit tests plus four overlays recovered from logged writes, with no checksum mismatches. Historical snapshots and replacement binaries do not establish complete recovery of either incident's unknown local work.
-    Notes: Before discovery, create a fresh unique scratch directory with `mktemp -d` or equivalent atomic unique creation and record its exact path. Clean up only the exact directories created by the current task; never reuse, overwrite, or delete pre-existing/shared scratch paths, guessed paths, or wildcard matches. Do not remove either recovery directory or restore historical copies over active code or shared scratch paths.
-
 - Issue 2026-10-06 codex-bundled-skills-cleanup-race: Repo-local Codex bundled-skill installation can race AL legacy cleanup.
     Priority: Medium. Area: Codex launch and sync.
     Description: An additional AL Codex pane failed before native startup because removing `.codex/skills` returned `directory not empty` while the native bundled-skill installer recreated that directory.
     Next step: Reproduce concurrent native cache installation and legacy cleanup, then distinguish Codex-owned cache from retired AL outputs.
     Notes: Verified native-acceptance-v8/same-pane-visible.json under `.agent-layer/tmp/herdr-daemon-fix`; ordinary legacy cleanup is in internal/sync/prompts.go. Recovery fixtures using bundled skills disabled do not prove this launch path.
+
+- Issue 2026-10-04 shared-scratch-deletion-recovery: WARNING — repeated discovery cleanup deleted other sessions' scratch work
+    Priority: High. Area: discovery / scratch ownership
+    Description: Discovery agents repeatedly deleted shared `/tmp/alhunt` contents and overwrote `/tmp/alhunt/al`. Still unrecovered: original binary bytes (`al`, `al-old`, `al-cur`), generated repositories `r1`–`r3` and their Git metadata, `strace.txt`, and any unknown branch identity, uncommitted/untracked work, or unrecorded changes beyond the historically reported recovered contents.
+    Evidence: Both `/tmp/alhunt-recovery-d2dp71gh` and `/tmp/alhunt-incident-recovery-881um2eg` were observed absent at the 2026-10-14 assessment. If either directory, its `RECOVERY.md`, or a surviving backup is found, preserve it. The reported 14,742 preserved surviving files, 1,032 historical file copies, four later audit tests plus four overlays recovered from logged writes, and absence of checksum mismatches are historical claims not re-verified by this batch. See the [immutable incident assessment](https://github.com/conn-castle/agent-layer/blob/f1e0966e66149a64337b3567f365756b0db395a6/docs/incident-evidence/2026-10-runtime-and-scratch.md). Historical snapshots and replacement binaries do not establish complete recovery of either incident's unknown local work; this issue remains open.
+    Notes: Before discovery, create a fresh unique scratch directory with `mktemp -d` or equivalent atomic unique creation and record its exact path. Clean up only the exact directories created by the current task; never reuse, overwrite, or delete pre-existing/shared scratch paths, guessed paths, or wildcard matches. Do not remove either recovery directory or restore historical copies over active code or shared scratch paths.
 
 ## Preserved handoff notes
 

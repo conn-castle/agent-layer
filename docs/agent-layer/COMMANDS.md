@@ -41,7 +41,7 @@ make tools
 ```
 Run from: repo root  
 Prerequisites: Go 1.27.0+, Make
-Notes: Uses versions pinned in `go.mod`. Installs tools into `.tools/bin`.
+Notes: Go package tools are pinned in `go.mod`; golangci-lint is pinned separately in `Makefile`. Installs tools into `.tools/bin`.
 
 - Install pre-commit hooks
 ```bash
@@ -234,6 +234,7 @@ make al-codex     # al codex
 make al-agy       # al agy
 make al-copilot   # al copilot
 make al-grok      # al grok
+make al-muse      # al muse
 ```
 Run from: repo root
 Prerequisites: Go 1.27.0+
@@ -263,7 +264,7 @@ make ci
 ```
 Run from: repo root
 Prerequisites: Go 1.27.0+, `make tools` has been run
-Notes: The complete local/pre-PR verification command; GitHub Actions runs the same target. Includes `make tidy-check`, `make fmt-check`, `make lint`, `make shell-syntax-check`, `make dead-code`, `make coverage`, `make test-deepswe-planner`, `make test-race` (race detector on concurrency-critical packages), `make test-release`, `make test-e2e-harness`, `make test-e2e-ci` (online e2e with required upgrade scenarios), and `make docs-cta-check`; requires network access for upgrade binary downloads. `tidy-check` permits an existing intended diff, reports a validation failure when `go mod tidy` changes the module files, and propagates dependency, toolchain, network, and filesystem errors.
+Notes: The complete local/pre-PR verification command; GitHub Actions runs the same target. Includes `make tidy-check`, `make fmt-check`, `make lint`, `make shell-syntax-check`, `make dead-code`, `make coverage`, `make test-muse-fixture`, `make test-deepswe-planner`, `make test-race` (race detector on concurrency-critical packages), `make test-release`, `make test-e2e-harness`, `make test-e2e-ci` (online e2e with required upgrade scenarios), and `make docs-cta-check`; requires network access for upgrade binary downloads. `tidy-check` permits an existing intended diff, reports a validation failure when `go mod tidy` changes the module files, and propagates dependency, toolchain, network, and filesystem errors.
 GitHub Actions also runs a separate website build job using `make website-build-check` against `conn-castle/agent-layer-web`.
 The release workflow runs this target on macOS before importing signing credentials.
 
@@ -318,13 +319,13 @@ Notes: Validates the tag and upgrade-contract docs before running `make ci` once
 
 - Certify the exact pushed `main` commit before creating a release tag
 ```bash
-make release-catalog-certify
+make release-catalog-certify AL_VERSION=vX.Y.Z
 ```
 Run from: repo root on `main`, after committing and pushing the release metadata but before creating the tag
-Prerequisites: GitHub CLI authentication, a clean working tree, and local `HEAD` equal to `origin/main`
-Notes: Reuses an existing successful certification for the exact commit or dispatches `Release Catalog Certification` and waits for it. Every push to `main` starts this workflow, so certification normally overlaps ordinary CI before release preparation reaches this command. The hosted workflow compares the commit with the previous reachable stable release tag. Changes under `internal/benchmark/`, to `cmd/al/benchmark.go`, Go module dependencies, or to the certification workflow/scope classifier require the full pinned catalog; other releases record an exact-commit successful classification without running Docker tasks. Required catalog checks use sixteen isolated bounded-disk shards, report each task as it starts and finishes, limit each task to 10 minutes, and limit each shard job to 30 minutes. A weekly forced run detects external catalog-image drift. The release workflow only accepts a successful certification workflow for the exact commit resolved by the tag; a result for another commit or branch cannot publish the release.
+Prerequisites: Explicit user approval of the exact stable release version, GitHub CLI authentication, a clean working tree, and local `HEAD` equal to `origin/main`
+Notes: Requires AL_VERSION=vX.Y.Z and verifies full CI, catalog certification, and a signed release rehearsal for the exact pushed commit. Reuses successful runs or waits for active runs; dispatches missing catalog certification and the release workflow with rehearsal=true when needed. Every push to main starts ordinary CI and catalog certification, but not the signed rehearsal. Catalog scope is classified against the previous reachable stable release tag; required catalog checks use sixteen bounded-disk shards. The release gate accepts only certification for the exact commit resolved by the tag. This command can dispatch a release rehearsal, so the approval gate above applies.
 
-Release order: prepare and commit the approved version metadata, run `make release-preflight RELEASE_TAG=vX.Y.Z`, push `main`, run `make release-catalog-certify`, and only then create and push `vX.Y.Z`.
+Release order: prepare and commit the approved version metadata, run `make release-preflight RELEASE_TAG=vX.Y.Z`, push `main`, run `make release-catalog-certify AL_VERSION=vX.Y.Z`, and only then create and push `vX.Y.Z`.
 
 - Validate upgrade-contract docs for a target release tag
 ```bash
@@ -435,5 +436,3 @@ The canonical `report/report.json` records exactly those declared experiments an
 Captured Agent Dispatch lifecycle evidence is retained with the candidate score, cost, receipt, and artifacts. A skills run is workflow-noncompliant when the completed fresh-root dispatches do not match the declared role contract one-to-one on the exact `RunRecord.role` plus the configured agent, model, and reasoning effort. Records that omit the role cannot fill a nonempty role contract; role-like prompt text is not attribution. Native-subagent substitution with no dispatch records is noncompliant. Noncompliance does not delete evidence or suppress experiment-level scores. Any statistical comparison involving a noncompliant experiment is unavailable and states why. Conformant and explicitly unconstrained experiments keep the existing comparison behavior. Holm adjustment continues over only the remaining available family.
 
 For an available pair, observed inference uses the fixed-selection score difference and variance `sum((weight*slope)^2 * (sA²/nA + sB²/nB))` with Welch-Satterthwaite degrees of freedom. `published_proxy` instead shares the pinned published variance as `sum((weight*slope)^2 * s² * (1/rL + 1/rR))` and adds `combined²/(n-1)` once per task. Raw two-sided Student-t p-values are adjusted by Holm step-down: sort the available unique pairs, multiply each raw p-value by the remaining family size, cap at one, and take the cumulative maximum. Report JSON records `inference_source` as `observed` or `published_proxy`. Historical selection-based matrix evidence is considered only when its immutable manifest, target, inputs, resources, task/environment receipts, and verifier evidence exactly match; eligible old normalized scores are atomically canonicalized. Private campaign evidence is never scanned or modified.
-
-arXiv paper forthcoming

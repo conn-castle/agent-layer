@@ -57,11 +57,11 @@ Unscheduled user-visible features and tasks (distinct from issues; not refactors
     Acceptance criteria: User can run the skill against any `.html` output file, leave comments in the browser, and see agent-applied edits reflected in the page within ~10 s; `history.json` records each change with a timestamp; the Python server and overlay inject no external network dependencies.
     Notes: Before building, research the Codex native equivalent of this pattern (paraschopra/make-pages-interactive on GitHub is the conceptual reference; OpenAI Codex may have a first-party version). The investigation should determine whether to build from scratch, adapt an existing implementation, or provide a thin Agent Layer wrapper around a Codex-native mechanism.
 
-- Backlog 2026-05-26 shipped-skill-update-channel: Keep bundled skills current
-    Priority: High. Area: skills / templates
-    Description: Define a repeatable way to track, review, and refresh Tavily and other third-party or bundled skills shipped with Agent Layer.
-    Acceptance criteria: Agent Layer has an update workflow that detects upstream skill changes, preserves local policy edits, and verifies refreshed skills before release.
-    Notes: Include license/notice preservation, routing quality, and repo-specific guardrails in the refresh process.
+- Backlog 2026-05-26 shipped-skill-update-channel: Complete verification of refreshed skills
+    Priority: High. Area: skills / refresh verification
+    Description: Complete the review/verification procedure for refreshed third-party and catalog skills using the existing explicit import-update channel. Tavily and development skills are now external imports; bundled Agent Layer integration skills still need review before distribution.
+    Acceptance criteria: A repeatable refresh procedure identifies the reviewed upstream commit/diff, confirms license/notice preservation and local policy retention, checks positive/negative routing and repository-specific guardrails, and records verification before adopting refreshed imports or distributing changed bundled skills. Reuse existing structural validation and update commands rather than adding another update mechanism.
+    Notes: Upstream detection via al skills diff, three-way policy preservation via pull/resolve, and complete-tree validation already exist in internal/skillimport and internal/skilltree and are documented in site/docs/skill-imports.mdx. docs/SKILL-DESIGN.md provides routing/evaluation guidance, but a completed refresh-specific verification procedure satisfying the remaining acceptance has not been established. Keep only that remaining work; do not restore the former bundled third-party catalog or treat structural parsing as behavioral verification.
 
 - Backlog 2026-05-22 antigravity-slash-skill-verification: Re-verify Antigravity slash skill dispatch syntax
     Priority: Medium. Area: providers / antigravity
@@ -87,17 +87,11 @@ Unscheduled user-visible features and tasks (distinct from issues; not refactors
     Acceptance criteria: README and marketing page accurately present the current product value, name the strongest current features, and no longer read like the v0.6-era feature set.
     Notes: Identify the current marketing-page source during planning; likely includes the sibling website repo.
 
-- Backlog 2026-05-07 mcp-catalog-docs-sibling-repo: Rewrite sibling-repo MCP-catalog docs after seed split
-    Priority: Medium. Area: docs / agent-layer-web
-    Description: After the wizard-catalog split landed (Decision 2026-05-07 mcp-catalog-seed-split), two pages in the sibling `agent-layer-web` repo are factually wrong: `docs/concepts.mdx:218` "Seeded servers (disabled by default)" list still implies the install seed ships six pre-disabled blocks, and `docs/getting-started.mdx:99` "`al init` seeds a small library of high-value MCP servers" sentence is no longer true. Rewrite both to describe the wizard-catalog model. Optionally, author a new canonical config-reference page that the slim seed's `[mcp]` URL (`https://agent-layer.dev/docs/reference#mcp-servers`) eventually points at as a dedicated page rather than a section anchor.
-    Acceptance criteria: `concepts.mdx` and `getting-started.mdx` accurately describe that `al init` ships zero `[[mcp.servers]]` blocks and the wizard owns the catalog; the docs URL referenced in the slim seed renders to a real, usable page.
-    Notes: Cross-repo work; out of scope for the trim PR per user direction. The current `reference#mcp-servers` anchor exists and is accurate, so the slim seed's URL is not broken — this is a follow-up for narrative consistency.
-
 - Backlog 2026-05-07 codex-openai-yaml-skill-metadata: Support Codex `agents/openai.yaml` skill metadata
     Priority: Medium. Area: skills / codex
-    Description: Add Agent Layer support for Codex-specific optional skill metadata in `agents/openai.yaml`, including UI metadata, implicit invocation policy, and tool dependency declarations when a concrete built-in or user skill needs those Codex-native extensions.
-    Acceptance criteria: Agent Layer can author or project Codex `agents/openai.yaml` metadata without weakening portable Agent Skills support or requiring duplicate source-of-truth files.
-    Notes: Deferred from the native skill folder alignment plan; document in the client skill spec first and implement only when there is a concrete use case.
+    Description: Evaluate generation or interpretation of Codex-specific `agents/openai.yaml` metadata, including UI metadata, implicit invocation policy, and tool dependencies, when a concrete skill needs it.
+    Acceptance criteria: A concrete use case establishes which metadata Agent Layer should author or interpret, and the client spec and implementation support that behavior without duplicate source-of-truth files.
+    Notes: Byte-exact projection of authored metadata already works through skilltree.Tree; the bundled benchmark skill includes agents/openai.yaml. The outstanding scope is metadata generation/interpretation, which docs/SKILL-CLIENT-SPEC.md still defers.
 
 - Backlog 2026-04-26 design-space-no-cost-prefilter: Do not pre-filter design options by implementation cost
     Priority: Medium. Area: instructions / templates
@@ -182,12 +176,6 @@ Unscheduled user-visible features and tasks (distinct from issues; not refactors
     Description: A skill that scans for dependency CVEs, code-level vulnerabilities (OWASP patterns), secrets/credentials in code, and insecure configurations, then produces a findings report.
     Acceptance criteria: Skill produces an actionable findings report with severity levels and recommended verdict groups that downstream fix workflows can consume.
     Notes: Should leverage available tools (dependency audit commands, grep-based pattern matching) rather than requiring external scanners.
-
-- Backlog 2026-03-01 remove-skill-migrations-v010: Remove one-off skill migration code by v0.10.0
-    Priority: Medium. Area: upgrade / skills
-    Description: If support signals are clean by v0.10.0, remove legacy one-off skill migration code paths so we do not carry indefinite compatibility shims.
-    Acceptance criteria: A v0.10.0 task removes obsolete skill migration code while preserving upgrade behavior for supported source versions.
-    Notes: Gate removal on evidence that dropping the migration path does not create user-impacting upgrade regressions.
 
 - Backlog 2026-02-25 playwright-headless-parity: Evaluate headless Playwright mode without functional regressions
     Priority: Medium. Area: test automation / Playwright runner UX
