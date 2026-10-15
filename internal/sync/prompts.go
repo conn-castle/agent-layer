@@ -259,17 +259,50 @@ func removeSkillRoot(sys System, liveRoot string) error {
 	return nil
 }
 
-// cleanLegacySkillOutputs removes retired Agent Layer-generated skill
-// projection directories. Agent Layer claims exclusive ownership of these
-// paths (see docs/SKILL-CLIENT-SPEC.md "Ownership of legacy projection
-// paths") and removes them unconditionally.
+// cleanLegacySkillOutputs removes retired projections while preserving native
+// client entries. Shared native roots are never removed recursively: a client
+// may install its cache after our directory snapshot.
 func cleanLegacySkillOutputs(sys System, root string) error {
 	for _, projection := range config.LegacySkillProjections {
 		path := filepath.Join(append([]string{root}, projection.Dir...)...)
-		if err := sys.RemoveAll(path); err != nil {
+		if err := cleanLegacySkillOutput(sys, path, projection.PreservedEntries); err != nil {
 			return fmt.Errorf(messages.SyncRemoveFailedFmt, path, err)
 		}
 	}
+	return nil
+}
+
+func cleanLegacySkillOutput(sys System, path string, preserved []string) error {
+	if len(preserved) == 0 {
+		return sys.RemoveAll(path)
+	}
+	info, err := sys.Lstat(path)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if !info.IsDir() {
+		return sys.Remove(path) // Remove a link/file without touching its target.
+	}
+	entries, err := sys.ReadDir(path)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	for _, entry := range entries {
+		if slices.Contains(preserved, entry.Name()) {
+			continue
+		}
+		if err := sys.RemoveAll(filepath.Join(path, entry.Name())); err != nil {
+			return err
+		}
+	}
+	// Keep the shared root even when empty; native cache creation can overlap
+	// cleanup and its .system namespace must never be removed by Agent Layer.
 	return nil
 }
 

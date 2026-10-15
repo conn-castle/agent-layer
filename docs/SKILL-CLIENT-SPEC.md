@@ -45,13 +45,13 @@ Agent Layer exclusively owns `.agents/skills/` and `.claude/skills/` in an Agent
 
 If a project uses Agent Layer, it must use Agent Layer to manage skills. `.agent-layer/skills/` and `.agent-layer/skills-imported/` are the two canonical source tiers, and the following client-side directories are claimed exclusively by Agent Layer and removed unconditionally on every `al sync`:
 
-- `.codex/skills/`
+- `.codex/skills/` entries other than the native `.system` cache
 - `.agent/skills/` (singular; legacy Antigravity location)
 - `.gemini/skills/`
 - `.github/skills/`
 - `.vscode/prompts/`
 
-Any content placed in those directories — generated or hand-authored — is destroyed during sync. Users who want skills surfaced through Codex, Antigravity, GitHub Copilot, or Copilot CLI must define them in one of the two canonical source tiers. The unconditional removal is intentional: it keeps the projection deterministic and prevents drift between a source and any disposable client folder.
+The `.codex/skills/` root is shared with Codex's bundled-skill installer. Agent Layer preserves the native `.system` namespace and leaves that root in place, even when empty, so a concurrent native installation cannot be recursively removed. Upgrade readiness does not inspect that cache. Other entries in `.codex/skills/`, and any content in the other listed directories — generated or hand-authored — are removed during sync. Users who want skills surfaced through Codex, Antigravity, GitHub Copilot, or Copilot CLI must define them in one of the two canonical source tiers. The unconditional removal is intentional: it keeps the projection deterministic and prevents drift between a source and any disposable client folder.
 
 ## VS Code Settings Contract
 

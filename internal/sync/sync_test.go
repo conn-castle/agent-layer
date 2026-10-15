@@ -325,8 +325,12 @@ func TestRunCleansLegacySkillOutputs(t *testing.T) {
 		t.Fatalf("sync run: %v", err)
 	}
 
+	codexCacheRoot := filepath.Join(root, ".codex", "skills")
+	entries, err := os.ReadDir(codexCacheRoot)
+	if err != nil || len(entries) != 0 {
+		t.Fatalf("retired Codex entries were not cleared from shared native root: entries=%v err=%v", entries, err)
+	}
 	for _, rel := range []string{
-		".codex/skills",
 		".agent/skills",
 		".gemini/skills",
 		".github/skills",
