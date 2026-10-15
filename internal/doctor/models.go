@@ -42,6 +42,7 @@ func CheckModelsWithProgress(project *config.ProjectConfig, req agentoptions.Dis
 	agents := ModelCheckAgents(project)
 	req.Project = project
 	req.Live = true
+	req.ConfigValues = true
 	results := make([]Result, len(agents))
 	var workers sync.WaitGroup
 	for i, agent := range agents {

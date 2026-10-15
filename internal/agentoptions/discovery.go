@@ -158,7 +158,7 @@ func ParseModelCommandOutput(agent string, output []byte) ([]string, error) {
 	var err error
 	switch agent {
 	case agentAntigravity:
-		models, err = readAntigravityModels(output)
+		models, err = readAntigravityModels(output, false)
 	case agentGrok:
 		models, err = readGrokModels(bytes.NewReader(output))
 	default:
@@ -344,7 +344,7 @@ func discoverCommandModels(agent string, req DiscoveryRequest, observer *claudeP
 		if err != nil {
 			return nil, err
 		}
-		models, err := readAntigravityModels(output)
+		models, err := readAntigravityModels(output, req.ConfigValues)
 		if err != nil {
 			return nil, err
 		}
@@ -560,7 +560,7 @@ func readGrokModels(reader io.Reader) ([]string, error) {
 
 // readAntigravityModels requires the native slug<TAB>display format so arbitrary
 // stdout, such as an authentication message, never becomes a model suggestion.
-func readAntigravityModels(output []byte) ([]string, error) {
+func readAntigravityModels(output []byte, configValues bool) ([]string, error) {
 	scanner := bufio.NewScanner(bytes.NewReader(output))
 	models := make([]string, 0)
 	for scanner.Scan() {
@@ -572,7 +572,11 @@ func readAntigravityModels(output []byte) ([]string, error) {
 		if !ok || strings.TrimSpace(slug) == "" || strings.TrimSpace(label) == "" || strings.Contains(label, "\t") {
 			return nil, errors.New("agy models returned an invalid model row; expected slug<TAB>display name")
 		}
-		models = append(models, strings.TrimSpace(slug))
+		value := slug
+		if configValues {
+			value = label
+		}
+		models = append(models, strings.TrimSpace(value))
 	}
 	if err := scanner.Err(); err != nil {
 		return nil, err

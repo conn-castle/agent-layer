@@ -37,6 +37,34 @@ func TestCheckModelsDistinguishesDiscoveryFailureAndUnlistedModel(t *testing.T) 
 	}
 }
 
+func TestCheckAntigravityModelsUsesConfigurationDisplayNames(t *testing.T) {
+	enabled := true
+	for _, tc := range []struct {
+		model  string
+		status Status
+	}{
+		{"Gemini 3.8 Flash (Medium)", StatusOK},
+		{"gemini-3.8-flash-medium", StatusWarn},
+		{"Custom Model", StatusWarn},
+	} {
+		t.Run(tc.model, func(t *testing.T) {
+			root := t.TempDir()
+			path := filepath.Join(root, "agy")
+			script := "#!/bin/sh\nprintf 'gemini-3.8-flash-medium\\tGemini 3.8 Flash (Medium)\\n'\n"
+			if err := os.WriteFile(path, []byte(script), 0o700); err != nil { // #nosec G306 -- executable model-list fixture.
+				t.Fatal(err)
+			}
+			project := &config.ProjectConfig{Root: root, Config: config.Config{Agents: config.AgentsConfig{
+				Antigravity: config.AntigravityConfig{Enabled: &enabled, Model: tc.model},
+			}}}
+			results := CheckModelsWithProgress(project, agentoptions.DiscoveryRequest{Env: []string{}, LookPath: func(string) (string, error) { return path, nil }}, nil)
+			if len(results) != 1 || results[0].Status != tc.status {
+				t.Fatalf("configuration model %q: results=%+v", tc.model, results)
+			}
+		})
+	}
+}
+
 func TestCheckModelsSkipsDisabledHarnesses(t *testing.T) {
 	results := CheckModelsWithProgress(&config.ProjectConfig{}, agentoptions.DiscoveryRequest{LookPath: func(string) (string, error) { t.Fatal("disabled harness queried"); return "", nil }}, nil)
 	if len(results) != 0 {
