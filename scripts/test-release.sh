@@ -6,6 +6,10 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
+# Test fixtures must not inherit the invoking commit hook's Git context.
+source "$SCRIPT_DIR/test-git-env.sh"
+isolate_test_git
+
 # These tests drive build-release.sh with a mock `go` and must never invoke real
 # code signing. `make release-dist` runs this suite as its `test-release`
 # prerequisite while exporting AL_CODESIGN_IDENTITY/AL_REQUIRE_CODESIGN for the

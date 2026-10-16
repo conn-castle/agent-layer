@@ -13,6 +13,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/conn-castle/agent-layer/internal/testutil"
 )
 
 // workerCommand is the hidden `al` subcommand that launchDetachedWorker runs.
@@ -28,6 +30,15 @@ func TestMain(m *testing.M) {
 	if len(os.Args) > 1 && os.Args[1] == workerCommand {
 		os.Exit(runTestWorker(os.Args[2:]))
 	}
+	// This exact provider stand-in is deliberately killed by its isolated
+	// parent. It cannot own another temporary root or provider shadow directory.
+	if len(os.Args) == 2 && os.Args[1] == "-test.run=^TestTerminationWaitsForProviderOutsideOriginalGroup$" && os.Getenv("AL_TEST_PROVIDER_JOIN_GROUP") != "" {
+		os.Exit(m.Run())
+	}
+	os.Exit(testutil.RunIsolated(func() int { return runIsolatedTests(m) }))
+}
+
+func runIsolatedTests(m *testing.M) int {
 	path, shadowRoot, err := hideProviders(os.Getenv("PATH"))
 	if err == nil {
 		err = os.Setenv("PATH", path)
@@ -46,7 +57,7 @@ func TestMain(m *testing.M) {
 		fmt.Fprintln(os.Stderr, err)
 		code = 1
 	}
-	os.Exit(code)
+	return code
 }
 
 // runTestWorker mirrors cmd/al's hidden worker command.

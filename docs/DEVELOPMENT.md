@@ -90,6 +90,42 @@ executables only. It runs in ordinary CI and before the native suite.
 ## Go Tooling & Environment
 Agent Layer uses several light shell wrappers and `make` targets around standard Go commands (`go fmt`, `go test`, etc.). This is intentional to ensure consistent behavior across local development and CI (GitHub Actions). It also keeps tool versions explicit, which makes regressions easier to trace.
 
+### Git fixture isolation
+
+Suites that invoke Git, directly or through product APIs, must call
+`testutil.RunIsolated(m.Run)` from `TestMain`. The shared test boundary removes
+inherited hook repository selection and command configuration before tests run,
+uses empty system/global Git configuration, and disables optional index refreshes
+from read-only Git commands. Required fixture writes remain enabled. Tests can
+then add their own identity, configuration and URL rewrites. Production Git
+environment handling retains its existing identity, authentication and
+configuration semantics.
+
+The runner resolves `TMPDIR` to its physical path and honors it when its ancestors
+contain no Git, Agent Layer or Go module root. Otherwise it selects a safe standard
+temporary location, failing explicitly if none is available. This also protects
+calls that intentionally remove Git discovery controls: a temporary nonrepository must never discover the
+developer's index through an ancestor checkout. Only the new test-owned temporary
+directory is removed when the suite finishes.
+
+Private re-exec helpers that exit, replace the process, or are deliberately killed
+enter through their exact helper protocol before allocating another isolated
+root. They retain their already-isolated parent fixture context; the parent owns
+cleanup. Keep these exceptions specific to the helper, with observable coverage
+for temporary-root leaks and inherited context.
+
+Shell e2e/release test entry points use `scripts/test-git-env.sh` at startup for
+the same inherited Git-context and safe temporary-parent boundaries; scenario URL
+rewrites are added afterward.
+
+This boundary runs for direct `go test`, `make test`, `make coverage` and tests
+started by commit hooks. Keep the owning hook's repository context intact;
+sanitize at the test boundary rather than wrapping or bypassing the hook.
+`go test ./internal/testutil -run '^TestGitIsolationBoundary$' -count=1` exercises
+real Git subprocesses and a linked-worktree pre-commit hook against disposable
+sentinel metadata, including inherited absolute paths, command config, nested
+fixtures, index clearing and intentional catalog URL rewrites.
+
 ### Common Issues
 - **`go mod tidy` or `go run` fails with network errors**: If your environment restricts access to `proxy.golang.org`, you can try setting `GOPROXY=direct` or ensure you have a working internet connection.
 - **Permission errors on Go cache**: If you see errors related to `GOCACHE` or `GOMODCACHE`, you can override them to a local directory:
