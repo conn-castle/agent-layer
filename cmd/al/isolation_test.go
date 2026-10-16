@@ -46,7 +46,8 @@ func TestShellFixtureRootIsolation(t *testing.T) {
 				t.Fatal(err)
 			}
 			git("add", "sentinel")
-			git("-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "commit", "--quiet", "-m", "seed")
+			// Keep detached maintenance from changing Git files between snapshots.
+			git("-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "-c", "maintenance.auto=false", "commit", "--quiet", "-m", "seed")
 			layer := filepath.Join(parent, ".agent-layer")
 			for _, dir := range []string{layer, filepath.Join(layer, "instructions"), filepath.Join(layer, "skills")} {
 				if err := os.MkdirAll(dir, 0o700); err != nil {
