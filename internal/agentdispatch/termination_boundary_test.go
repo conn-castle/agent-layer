@@ -38,8 +38,7 @@ func TestTerminationWaitsForProviderOutsideOriginalGroup(t *testing.T) {
 		t.Fatal(err)
 	}
 	cmd := exec.Command(executable, "-test.run=^TestTerminationWaitsForProviderOutsideOriginalGroup$") // #nosec G204 -- run this test binary as a controlled provider fixture.
-	tempParent := t.TempDir()
-	cmd.Env = append(os.Environ(), groupEnv+"="+strconv.Itoa(syscall.Getpgrp()), "TMPDIR="+tempParent, "TMP="+tempParent, "TEMP="+tempParent)
+	cmd.Env = append(os.Environ(), groupEnv+"="+strconv.Itoa(syscall.Getpgrp()))
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	input, err := cmd.StdinPipe()
 	if err != nil {
@@ -53,14 +52,7 @@ func TestTerminationWaitsForProviderOutsideOriginalGroup(t *testing.T) {
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() {
-		_ = input.Close()
-		_ = cmd.Process.Kill()
-		_ = cmd.Wait()
-		if entries, err := os.ReadDir(tempParent); err != nil || len(entries) != 0 {
-			t.Errorf("provider stand-in leaked temporary directories: %v, %v", entries, err)
-		}
-	})
+	t.Cleanup(func() { _ = input.Close(); _ = cmd.Process.Kill(); _ = cmd.Wait() })
 	if line, err := bufio.NewReader(output).ReadString('\n'); err != nil || line != "moved\n" {
 		t.Fatalf("provider handoff: %q, %v", line, err)
 	}

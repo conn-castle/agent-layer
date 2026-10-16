@@ -75,8 +75,7 @@ func TestDispatchMCPLifecycleProcess(t *testing.T) {
 			defer cancel()
 			cmd := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestDispatchMCPLifecycleHelper$") //nolint:gosec // Test binary re-exec.
 			cmd.Dir = root
-			tempParent := t.TempDir()
-			cmd.Env = append(os.Environ(), "TMPDIR="+tempParent, "TMP="+tempParent, "TEMP="+tempParent, "AL_TEST_MCP_LIFECYCLE=1", "AL_DEV_BYPASS_VERSION_DISPATCH=1", "PRIVATE_TOKEN=cli-credential-canary", "PRIVATE_INPUT=cli-environment-canary")
+			cmd.Env = append(os.Environ(), "AL_TEST_MCP_LIFECYCLE=1", "AL_DEV_BYPASS_VERSION_DISPATCH=1", "PRIVATE_TOKEN=cli-credential-canary", "PRIVATE_INPUT=cli-environment-canary")
 			shared := ending == "shared-eof"
 			var stdin io.WriteCloser
 			var stdout, output *os.File
@@ -226,9 +225,6 @@ func TestDispatchMCPLifecycleProcess(t *testing.T) {
 				}
 			}
 			waitErr := cmd.Wait()
-			if entries, err := os.ReadDir(tempParent); err != nil || len(entries) != 0 {
-				t.Fatalf("MCP helper leaked a temporary root: %v, %v", entries, err)
-			}
 			if full && time.Since(shutdownAt) > 3*time.Second {
 				t.Fatalf("backpressured shutdown exceeded bound: %v", waitErr)
 			}

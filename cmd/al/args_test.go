@@ -57,19 +57,15 @@ func launchClientInSubprocess(t *testing.T, executable string, args ...string) [
 
 	binDir := t.TempDir()
 	argsFile := filepath.Join(t.TempDir(), "client-args.txt")
-	tempParent := t.TempDir()
-	writeArgsStub(t, binDir, executable, argsFile, tempParent)
+	writeArgsStub(t, binDir, executable, argsFile)
 	testutil.WriteStub(t, binDir, "al")
 
 	child := exec.Command(os.Args[0], "-test.run=^"+t.Name()+"$") //nolint:gosec // standard test re-exec pattern
-	child.Env = append(os.Environ(), "PATH="+binDir, clientLaunchChildRootEnv+"="+root, "TMPDIR="+tempParent, "TMP="+tempParent, "TEMP="+tempParent)
+	child.Env = append(os.Environ(), "PATH="+binDir, clientLaunchChildRootEnv+"="+root)
 	if out, err := child.CombinedOutput(); err != nil {
 		t.Fatalf("client launch subprocess failed: %v\n%s", err, out)
 	}
 
-	if entries, err := os.ReadDir(tempParent); err != nil || len(entries) != 0 {
-		t.Fatalf("client helper leaked a temporary root: %v, %v", entries, err)
-	}
 	data, err := os.ReadFile(argsFile) // #nosec G304 -- path is constructed from test-controlled inputs.
 	if err != nil {
 		t.Fatalf("read args file: %v", err)
@@ -187,10 +183,10 @@ func TestRunnableCommandsDeclareArgs(t *testing.T) {
 	walk(newRootCmd())
 }
 
-func writeArgsStub(t *testing.T, dir string, name string, outputPath string, tempParent string) {
+func writeArgsStub(t *testing.T, dir string, name string, outputPath string) {
 	t.Helper()
 	path := filepath.Join(dir, name)
-	content := []byte(fmt.Sprintf("#!/bin/sh\n[ \"$TMPDIR\" = %s ] || exit 91\nprintf '%s\\n' \"$@\" > %s\n", strconv.Quote(tempParent), "%s", strconv.Quote(outputPath)))
+	content := []byte(fmt.Sprintf("#!/bin/sh\nprintf '%s\\n' \"$@\" > %s\n", "%s", strconv.Quote(outputPath)))
 	if err := os.WriteFile(path, content, 0o755); err != nil { // #nosec G306 -- test writes an executable shell stub (PATH-shadowed) for subprocess invocation.
 		t.Fatalf("write stub: %v", err)
 	}

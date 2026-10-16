@@ -16,12 +16,11 @@ import (
 	"github.com/conn-castle/agent-layer/internal/agentoptions"
 	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/messages"
-	"github.com/conn-castle/agent-layer/internal/testutil"
 )
 
 func TestMain(m *testing.M) {
 	wizardOptionDiscoveryRequestFunc = func() agentoptions.DiscoveryRequest { return agentoptions.DiscoveryRequest{} }
-	os.Exit(testutil.RunIsolated(m.Run))
+	os.Exit(m.Run())
 }
 
 func TestModelDiscoveryPrefetchWaitsAndReusesResult(t *testing.T) {

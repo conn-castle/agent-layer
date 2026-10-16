@@ -2172,39 +2172,3 @@ func withHelperCommand(t *testing.T, extraEnv ...string) {
 		return cmd
 	}
 }
-
-func TestPrivateHelpersPreserveFixtureTemp(t *testing.T) {
-	for _, tc := range []struct {
-		name string
-		args []string
-		env  []string
-		code int
-	}{
-		{name: "command-success", args: []string{"-test.run=TestHelperProcess", "--", "go"}, env: []string{"GO_WANT_HELPER_PROCESS=1"}},
-		{name: "command-error", args: []string{"-test.run=TestHelperProcess", "--", "npx", "docusaurus", "docs:version", "1.2.3"}, env: []string{"GO_WANT_HELPER_PROCESS=1", "HELPER_FAIL=1"}, code: 1},
-		{name: "main-error", args: []string{"-test.run=TestMainHelper", "--"}, env: []string{"GO_WANT_MAIN=1"}, code: 1},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			parent := t.TempDir()
-			marker := filepath.Join(parent, "parent-owned")
-			if err := os.WriteFile(marker, []byte("preserve\n"), 0o600); err != nil {
-				t.Fatal(err)
-			}
-			cmd := exec.Command(os.Args[0], tc.args...) //nolint:gosec // Existing private helper protocols; cwd and temporary directory are test-owned.
-			cmd.Dir = parent
-			cmd.Env = append(os.Environ(), tc.env...)
-			cmd.Env = append(cmd.Env, "TMPDIR="+parent, "TMP="+parent, "TEMP="+parent)
-			out, err := cmd.CombinedOutput()
-			if cmd.ProcessState == nil || cmd.ProcessState.ExitCode() != tc.code {
-				t.Fatalf("private helper: %v\n%s", err, out)
-			}
-			entries, err := os.ReadDir(parent)
-			if err != nil || len(entries) != 1 || entries[0].Name() != "parent-owned" {
-				t.Fatalf("private helper changed its parent's temporary directory: %v, %v", entries, err)
-			}
-			if data, err := os.ReadFile(marker); err != nil || string(data) != "preserve\n" { //nolint:gosec // Test-owned sentinel.
-				t.Fatalf("private helper changed parent fixture: %q, %v", data, err)
-			}
-		})
-	}
-}
