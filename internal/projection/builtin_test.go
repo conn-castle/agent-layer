@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/conn-castle/agent-layer/internal/config"
+	"github.com/conn-castle/agent-layer/internal/versiondispatch"
 )
 
 func dispatchCallerConfig(enabled ...string) config.Config {
@@ -133,7 +134,7 @@ func TestEffectiveDispatchServerCarriesRepoRoot(t *testing.T) {
 	if resolved[0].Command != "/bin/sh" {
 		t.Fatalf("built-in command = %q, want /bin/sh", resolved[0].Command)
 	}
-	want := []string{"-c", `AL_MCP_WORKING_DIR=$PWD; export AL_MCP_WORKING_DIR; cd "$1" || exit; if [ -n "$AL_DEV_BYPASS_VERSION_DISPATCH" ] && [ -n "$AL_DEV_EXECUTABLE" ]; then exec "$AL_DEV_EXECUTABLE" dispatch mcp-server; else exec al dispatch mcp-server; fi`, "agent-layer-mcp", root}
+	want := []string{"-c", `AL_MCP_WORKING_DIR=$PWD; export AL_MCP_WORKING_DIR; cd "$1" || exit; if [ -n "$2" ]; then AL_DEV_EXECUTABLE=$2; AL_DEV_BYPASS_VERSION_DISPATCH=1; AL_DEV_SOURCE_ROOT=$1; export AL_DEV_EXECUTABLE AL_DEV_BYPASS_VERSION_DISPATCH AL_DEV_SOURCE_ROOT; exec "$2" dispatch mcp-server; else unset AL_DEV_EXECUTABLE AL_DEV_BYPASS_VERSION_DISPATCH AL_DEV_SOURCE_ROOT; exec al dispatch mcp-server; fi`, "agent-layer-mcp", root, versiondispatch.DevelopmentExecutable(root)}
 	if len(resolved[0].Args) != len(want) {
 		t.Fatalf("built-in args = %q, want %q", resolved[0].Args, want)
 	}
@@ -148,6 +149,8 @@ func TestEffectiveDispatchServerCarriesRepoRoot(t *testing.T) {
 // observable boundary: the unchanged legacy al arguments run from the pinned
 // repository even when the MCP client starts elsewhere.
 func TestEffectiveDispatchInvocationSelectsRepoBeforeAl(t *testing.T) {
+	t.Setenv("AL_DEV_BYPASS_VERSION_DISPATCH", "")
+	t.Setenv("AL_DEV_EXECUTABLE", "")
 	cfg := dispatchCallerConfig(ClientClaude)
 	root := filepath.Join(t.TempDir(), "repo with spaces")
 	if err := os.Mkdir(root, 0o750); err != nil {
@@ -253,7 +256,6 @@ func TestDispatchLauncherDevelopmentExecutableSelection(t *testing.T) {
 			t.Fatal(err)
 		} // #nosec G302 -- test-owned executable.
 	}
-	server, _ := RootedBuiltInDispatchServer(dispatchCallerConfig(ClientClaude), ClientClaude, root)
 	for _, tc := range []struct{ name, bypass, executable, want string }{
 		{"development", "1", filepath.Join(bin, "source al"), "development\n"},
 		{"ordinary ignores stale executable", "", filepath.Join(bin, "source al"), "installed\n"},
@@ -261,8 +263,12 @@ func TestDispatchLauncherDevelopmentExecutableSelection(t *testing.T) {
 		{"missing explicit executable fails", "1", filepath.Join(bin, "missing"), ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("AL_DEV_BYPASS_VERSION_DISPATCH", tc.bypass)
+			t.Setenv("AL_DEV_EXECUTABLE", tc.executable)
+			t.Setenv("AL_DEV_SOURCE_ROOT", root)
+			server, _ := RootedBuiltInDispatchServer(dispatchCallerConfig(ClientClaude), ClientClaude, root)
 			cmd := exec.Command(server.Command, server.Args...) // #nosec G204 -- generated launcher under test.
-			cmd.Env = []string{"PATH=" + bin, "AL_DEV_BYPASS_VERSION_DISPATCH=" + tc.bypass, "AL_DEV_EXECUTABLE=" + tc.executable}
+			cmd.Env = []string{"PATH=" + bin}
 			out, err := cmd.Output()
 			if tc.want == "" {
 				if err == nil {
@@ -415,5 +421,69 @@ func TestEffectiveEnabledServerIDs(t *testing.T) {
 				t.Fatalf("EffectiveEnabledServerIDs() = %v, want %v", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestEveryProjectedDevelopmentLauncherWorksWithoutParentSelection(t *testing.T) {
+	base := t.TempDir()
+	root := filepath.Join(base, "repo $() `false` ; space")
+	devDir := filepath.Join(base, "dev $() `false` ; space")
+	releaseDir := filepath.Join(base, "release")
+	for _, dir := range []string{filepath.Join(root, ".agent-layer"), devDir, releaseDir} {
+		if err := os.MkdirAll(dir, 0700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Re-exec the test helper as a source binary, including the production
+	// ConfigureDevelopmentEnvironment used by al before its nested command.
+	source := filepath.Join(devDir, "al")
+	self, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(self, source); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(releaseDir, "al"), []byte("#!/bin/sh\n[ -z \"$AL_DEV_EXECUTABLE$AL_DEV_BYPASS_VERSION_DISPATCH$AL_DEV_SOURCE_ROOT\" ] || exit 2\nprintf release\n"), 0700); err != nil { // #nosec G304 G306 -- test-owned synthetic fixture paths and executables.
+		t.Fatal(err)
+	}
+	t.Setenv("AL_DEV_EXECUTABLE", source)
+	t.Setenv("AL_DEV_SOURCE_ROOT", root)
+	t.Setenv("AL_DEV_BYPASS_VERSION_DISPATCH", "1")
+	on := true
+	cfg := dispatchCallerConfig(ClientClaude, ClientCodex, ClientAntigravity, ClientCopilot, ClientVSCode)
+	cfg.Agents.Grok.Enabled = &on
+	cfg.Agents.Muse.Enabled = &on
+	for _, client := range mcpClients {
+		server, ok := RootedBuiltInDispatchServer(cfg, client, root)
+		if !ok {
+			t.Fatalf("missing %s", client)
+		}
+		for _, arg := range server.Args {
+			if strings.Contains(arg, "${") {
+				t.Fatalf("%s client-interpretable argv: %s", client, arg)
+			}
+		}
+		cmd := exec.Command(server.Command, server.Args...)
+		cmd.Env = []string{"PATH=" + releaseDir, "AL_TEST_PROJECTED_SOURCE=1"}
+		out, err := cmd.Output()
+		if err != nil || string(out) != "source" {
+			t.Fatalf("%s: %q %v", client, out, err)
+		}
+	}
+	// A deliberate release projection drops the development selection, even
+	// when the host itself later inherits an unrelated development environment.
+	t.Setenv("AL_DEV_BYPASS_VERSION_DISPATCH", "")
+	server, _ := RootedBuiltInDispatchServer(cfg, ClientCodex, root)
+	for _, arg := range server.Args {
+		if strings.Contains(arg, "${") {
+			t.Fatalf("release client-interpretable argv: %s", arg)
+		}
+	}
+	cmd := exec.Command(server.Command, server.Args...)
+	cmd.Env = []string{"PATH=" + releaseDir, "AL_DEV_BYPASS_VERSION_DISPATCH=1", "AL_DEV_EXECUTABLE=" + source, "AL_DEV_SOURCE_ROOT=" + root}
+	out, err := cmd.CombinedOutput()
+	if err != nil || string(out) != "release" {
+		t.Fatalf("release projection: %q %v", out, err)
 	}
 }

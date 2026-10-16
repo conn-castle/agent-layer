@@ -58,6 +58,7 @@ type MCPServerOptions struct {
 // every tool handler.
 type dispatchToolServer struct {
 	root             string
+	version          string
 	workDir          string
 	env              []string
 	waitTimeout      time.Duration
@@ -160,7 +161,9 @@ func newDispatchToolServer(opts MCPServerOptions) (*dispatchToolServer, error) {
 		return nil, err
 	}
 	tools := &dispatchToolServer{
-		root:             root,
+		root: root,
+		// MCP initialization includes display metadata; CLI selection uses the version alone.
+		version:          strings.SplitN(opts.Version, " ", 2)[0],
 		workDir:          strings.TrimSpace(opts.WorkDir),
 		env:              env,
 		waitTimeout:      config.DispatchMCPWaitTimeout(project.Config),
@@ -275,6 +278,9 @@ func guard[In, Out any](timeout time.Duration, handler mcp.ToolHandlerFor[In, Ou
 }
 
 func (s *dispatchToolServer) handleOptions(ctx context.Context, _ *mcp.CallToolRequest, _ OptionsInput) (*mcp.CallToolResult, *OptionsResponse, error) {
+	if err := s.checkFreshness(); err != nil {
+		return nil, nil, err
+	}
 	release, err := s.acquireDiscovery(ctx)
 	if err != nil {
 		return nil, nil, toolError(err)
@@ -289,6 +295,9 @@ func (s *dispatchToolServer) handleOptions(ctx context.Context, _ *mcp.CallToolR
 }
 
 func (s *dispatchToolServer) handleStart(ctx context.Context, _ *mcp.CallToolRequest, input StartInput) (*mcp.CallToolResult, *Result, error) {
+	if err := s.checkFreshness(); err != nil {
+		return nil, nil, err
+	}
 	agent := strings.TrimSpace(input.Agent)
 	model := strings.TrimSpace(input.Model)
 	effort := strings.TrimSpace(input.ReasoningEffort)
@@ -319,6 +328,9 @@ func (s *dispatchToolServer) handleWait(ctx context.Context, request *mcp.CallTo
 }
 
 func (s *dispatchToolServer) handleContinue(ctx context.Context, _ *mcp.CallToolRequest, input ContinueInput) (*mcp.CallToolResult, *Result, error) {
+	if err := s.checkFreshness(); err != nil {
+		return nil, nil, err
+	}
 	var out bytes.Buffer
 	err := Continue(ContinueOptions{
 		Context: ctx, Root: s.root, WorkDir: s.workDir, Handle: strings.TrimSpace(input.Handle),

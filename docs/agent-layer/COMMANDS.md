@@ -238,7 +238,7 @@ make al-muse      # al muse
 ```
 Run from: repo root
 Prerequisites: Go 1.27.0+
-Notes: Convenience wrappers against this repo's own `.agent-layer/` config. `al-doctor` and the interactive agent launchers build a source snapshot at `.agent-layer/tmp/dev-bin/al` and prepend that directory to `PATH`, so child `al dispatch` calls use the same source snapshot rather than the globally installed binary. The development launch bypasses repo version-pin handoff only for that Make invocation. `al-upgrade`, `al-sync`, and `al-wizard` continue to use `go run ./cmd/al`. Always use these wrappers instead of a globally installed `al` in this repo: this repo's `.agent-layer/config.toml` tracks the unreleased schema, so a released `al` rejects it as unrecognized keys.
+Notes: These wrappers use this repo's own `.agent-layer/` config. They atomically build `.agent-layer/tmp/dev-bin/al` and select it explicitly for this repository, including generated MCP launchers whose parent has no development environment. Child `al dispatch` calls use the source snapshot through `PATH`. After rebuilding, reconnect running MCP servers before starting new provider work; wait, inspect, output and cancel remain available. Always use these wrappers instead of a globally installed `al` in this repo: this repo's `.agent-layer/config.toml` tracks the unreleased schema, so a released `al` rejects it as unrecognized keys.
 
 - Run the Antigravity capability probe
 ```bash

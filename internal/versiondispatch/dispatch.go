@@ -24,6 +24,8 @@ const (
 	// EnvDevelopmentExecutable carries the invoking binary through native MCP
 	// clients whose server launcher otherwise resolves a different al on PATH.
 	EnvDevelopmentExecutable = "AL_DEV_EXECUTABLE"
+	// EnvDevelopmentSourceRoot scopes persistent source selection to one configuration root.
+	EnvDevelopmentSourceRoot = "AL_DEV_SOURCE_ROOT"
 
 	// sourceCurrent and sourcePin label the origin of the resolved version.
 	sourceCurrent = "current"
@@ -61,13 +63,20 @@ func maybeExec(ctx context.Context, sys System, args []string, currentVersion st
 	// child agents can invoke that same binary. Its explicit marker must bypass
 	// version pin resolution; otherwise a nested `al dispatch` could re-exec a
 	// cached release instead of the source snapshot.
-	if strings.TrimSpace(sys.Getenv(EnvDevelopmentBypassVersionDispatch)) != "" {
+	// Preserve the explicit legacy go-run bypass, but rooted Make sessions
+	// may bypass only their own project.
+	development := strings.TrimSpace(sys.Getenv(EnvDevelopmentBypassVersionDispatch)) != ""
+	if development && sys.Getenv(EnvDevelopmentSourceRoot) == "" {
 		return nil
 	}
 
 	rootDir, found, err := sys.FindAgentLayerRoot(cwd)
 	if err != nil {
 		return err
+	}
+
+	if development && sameDevelopmentRoot(rootDir, sys.Getenv(EnvDevelopmentSourceRoot)) {
+		return nil
 	}
 
 	requested, source, warning, overridePinned, hasOverridePinned, err := resolveRequestedVersion(sys, rootDir, found, current)

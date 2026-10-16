@@ -21,12 +21,13 @@ spec = importlib.util.spec_from_file_location("fixture", ROOT / "scripts/test-mu
 f = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(f)
 KEYS = ("AL_DISPATCH_ACTIVE", "AL_RUN_ID", "AL_RUN_DIR",
-        "AL_DEV_BYPASS_VERSION_DISPATCH", "AL_DEV_EXECUTABLE")
+        "AL_DEV_BYPASS_VERSION_DISPATCH", "AL_DEV_EXECUTABLE", "AL_DEV_SOURCE_ROOT")
 
 
 def record_and_exec(path, al):
     with Path(path).open("a") as output:
         output.write(json.dumps({key: os.environ.get(key) for key in KEYS}) + "\n")
+    os.environ["AL_DEV_EXECUTABLE"] = al
     os.execv(al, [al, *sys.argv[4:]])
 
 
@@ -109,7 +110,6 @@ def main():
     (source / ".env").write_text("")
     (source / "commands.allow").write_text("")
     (source / "gitignore.block").write_bytes((ROOT / "internal/templates/gitignore.block").read_bytes())
-    f.run([str(al), "sync"], work, {**env, "AL_DEV_BYPASS_VERSION_DISPATCH": "1"}, case / "sync")
     # No cached binary: lost bypass would fail before the MCP initialize response.
     (source / "al.version").write_text("0.0.1\n")
     for label in ("context", "unset"):
@@ -120,14 +120,18 @@ def main():
         wrapper.write_text("#!/bin/sh\nexec " + " ".join(shlex.quote(x) for x in
                            [sys.executable, str(Path(__file__).resolve()), "--record", str(recorded), str(al)]) + ' "$@"\n')
         wrapper.chmod(0o700)
-        launch_env = {**env, "AL_DEV_BYPASS_VERSION_DISPATCH": "1", "AL_DEV_EXECUTABLE": str(wrapper)}
+        launch_env = {**env, "AL_DEV_BYPASS_VERSION_DISPATCH": "1",
+                      "AL_DEV_EXECUTABLE": str(wrapper), "AL_DEV_SOURCE_ROOT": str(work)}
+        f.run([str(al), "sync"], work, launch_env, current / "sync")
         if label == "context":
             launch_env.update(AL_DISPATCH_ACTIVE="99", AL_RUN_ID="native-parent", AL_RUN_DIR=str(current))
-        probe([args.codex, "app-server", "--stdio"], work, launch_env, current, label == "context")
+        # The generated argv selects source even without dev env in the host.
+        parent_env = {key: value for key, value in launch_env.items() if not key.startswith("AL_DEV_")}
+        probe([args.codex, "app-server", "--stdio"], work, parent_env, current, label == "context")
         rows = [json.loads(line) for line in recorded.read_text().splitlines()]
         f.require(rows and all(row == {key: launch_env.get(key) for key in KEYS} for row in rows),
                   f"Native child context differs: {rows}")
-    # Exercise the actual al launcher with no executable selector supplied.
+    # Exercise the actual al launcher with explicit rooted source selection.
     # A client shim only normalizes its CLI arguments to the non-inference RPC mode.
     native = shutil.which(args.codex)
     f.require(native, "Codex executable missing")
@@ -135,7 +139,8 @@ def main():
     (bin_dir / "codex").chmod(0o700)
     bootstrap = case / "absolute-launch"
     bootstrap.mkdir()
-    probe([str(al), "codex"], work, {**env, "AL_DEV_BYPASS_VERSION_DISPATCH": "1"}, bootstrap, False)
+    probe([str(al), "codex"], work, {**env, "AL_DEV_BYPASS_VERSION_DISPATCH": "1",
+          "AL_DEV_EXECUTABLE": str(al), "AL_DEV_SOURCE_ROOT": str(work)}, bootstrap, False)
     print(f"PASS: Codex generated MCP startup, runtime context, unset context, depth guard, executable selection; evidence {case}")
 
 

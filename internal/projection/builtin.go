@@ -30,7 +30,7 @@ const (
 	builtInDispatchSubject = "dispatch"
 	builtInDispatchAction  = "mcp-server"
 	builtInDispatchShell   = "/bin/sh"
-	builtInDispatchScript  = `AL_MCP_WORKING_DIR=$PWD; export AL_MCP_WORKING_DIR; cd "$1" || exit; if [ -n "$AL_DEV_BYPASS_VERSION_DISPATCH" ] && [ -n "$AL_DEV_EXECUTABLE" ]; then exec "$AL_DEV_EXECUTABLE" dispatch mcp-server; else exec al dispatch mcp-server; fi`
+	builtInDispatchScript  = `AL_MCP_WORKING_DIR=$PWD; export AL_MCP_WORKING_DIR; cd "$1" || exit; if [ -n "$2" ]; then AL_DEV_EXECUTABLE=$2; AL_DEV_BYPASS_VERSION_DISPATCH=1; AL_DEV_SOURCE_ROOT=$1; export AL_DEV_EXECUTABLE AL_DEV_BYPASS_VERSION_DISPATCH AL_DEV_SOURCE_ROOT; exec "$2" dispatch mcp-server; else unset AL_DEV_EXECUTABLE AL_DEV_BYPASS_VERSION_DISPATCH AL_DEV_SOURCE_ROOT; exec al dispatch mcp-server; fi`
 	builtInDispatchArgZero = "agent-layer-mcp"
 )
 
@@ -64,7 +64,7 @@ func RootedBuiltInDispatchServer(cfg config.Config, client string, repoRoot stri
 		// arguments compatible with cached older binaries, which ignore the extra
 		// environment variable and run safely from the canonical root.
 		builtIn.Command = builtInDispatchShell
-		builtIn.Args = []string{"-c", builtInDispatchScript, builtInDispatchArgZero, repoRoot}
+		builtIn.Args = []string{"-c", builtInDispatchScript, builtInDispatchArgZero, repoRoot, versiondispatch.DevelopmentExecutable(repoRoot)}
 	}
 	return builtIn, true
 }
