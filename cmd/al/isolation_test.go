@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 
@@ -112,7 +113,21 @@ cd "$dir"
 			out, runErr := cmd.CombinedOutput()
 			after := snapshot()
 			if len(before) != len(after) {
-				t.Fatal("shell CLI changed sentinel files")
+				var added, removed []string
+				for path := range after {
+					if _, ok := before[path]; !ok {
+						added = append(added, strings.TrimPrefix(path, parent+string(os.PathSeparator)))
+					}
+				}
+				for path := range before {
+					if _, ok := after[path]; !ok {
+						removed = append(removed, strings.TrimPrefix(path, parent+string(os.PathSeparator)))
+					}
+				}
+				sort.Strings(added)
+				sort.Strings(removed)
+				selectedPath, selectedErr := os.ReadFile(selected) //nolint:gosec // Test-owned probe output.
+				t.Fatalf("shell CLI changed sentinel files: before=%d after=%d added=%v removed=%v selected=%q external=%q selectionError=%v cliError=%v", len(before), len(after), added, removed, selectedPath, external, selectedErr, runErr)
 			}
 			for path, data := range before {
 				if after[path] != data {
