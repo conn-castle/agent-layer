@@ -2,6 +2,9 @@
 # harness.sh — shared helpers for the e2e scenario-based test framework.
 # Sourced by test-e2e.sh; not executable on its own.
 
+# shellcheck source=../test-git-env.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/test-git-env.sh"
+
 # ---------------------------------------------------------------------------
 # Test tracking (same pattern as test-release.sh)
 # ---------------------------------------------------------------------------
@@ -60,12 +63,10 @@ skip_if_no_upgrade_manifest() {
 # Scenario isolation
 # ---------------------------------------------------------------------------
 
-# Match internal/gitenv.WithoutDiscovery: inherited hook variables must not
-# redirect fixture initialization into the invoking repository.
+# Standalone fixture initialization also clears context in its subshell, so
+# callers testing hook inheritance retain their own process environment.
 init_fixture_git() (
-  unset GIT_DIR GIT_WORK_TREE GIT_COMMON_DIR GIT_INDEX_FILE GIT_OBJECT_DIRECTORY \
-    GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_CEILING_DIRECTORIES \
-    GIT_DISCOVERY_ACROSS_FILESYSTEM GIT_PREFIX
+  isolate_test_git || return 1
   git -c init.templateDir= -c core.hooksPath=/dev/null init --quiet "$1"
 )
 

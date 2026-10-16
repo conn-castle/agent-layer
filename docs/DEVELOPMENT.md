@@ -90,6 +90,14 @@ executables only. It runs in ordinary CI and before the native suite.
 ## Go Tooling & Environment
 Agent Layer uses several light shell wrappers and `make` targets around standard Go commands (`go fmt`, `go test`, etc.). This is intentional to ensure consistent behavior across local development and CI (GitHub Actions). It also keeps tool versions explicit, which makes regressions easier to trace.
 
+### Git fixtures
+
+Git-using suites call `testutil.IsolateGit()` from a test-only `init`; shell test
+entry points call `isolate_test_git`. Startup clears inherited Git context/config,
+disables optional index refresh, and selects a physical temp parent outside
+Git/Agent Layer/Go roots. Fixtures use normal `t.TempDir` cleanup. Same-binary
+Go helpers inherit their parent’s test-owned Git configuration.
+
 ### Common Issues
 - **`go mod tidy` or `go run` fails with network errors**: If your environment restricts access to `proxy.golang.org`, you can try setting `GOPROXY=direct` or ensure you have a working internet connection.
 - **Permission errors on Go cache**: If you see errors related to `GOCACHE` or `GOMODCACHE`, you can override them to a local directory:

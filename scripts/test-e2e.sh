@@ -24,6 +24,7 @@ ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 # ---------------------------------------------------------------------------
 # shellcheck source=test-e2e/harness.sh
 source "$SCRIPT_DIR/test-e2e/harness.sh"
+isolate_test_git
 
 # ---------------------------------------------------------------------------
 # Global environment policy

@@ -15,6 +15,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # the pass/fail/section helpers. Source the full harness.
 # shellcheck source=harness.sh
 source "$SCRIPT_DIR/harness.sh"
+isolate_test_git
 
 # ---------------------------------------------------------------------------
 # Mock curl — simulates GitHub API auth/rate limiting responses.
