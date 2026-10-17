@@ -90,6 +90,14 @@ executables only. It runs in ordinary CI and before the native suite.
 ## Go Tooling & Environment
 Agent Layer uses several light shell wrappers and `make` targets around standard Go commands (`go fmt`, `go test`, etc.). This is intentional to ensure consistent behavior across local development and CI (GitHub Actions). It also keeps tool versions explicit, which makes regressions easier to trace.
 
+Go dependencies and compiler output use Go's standard shared caches on macOS and
+Linux. Inspect the active locations with `go env GOCACHE GOMODCACHE`; environment
+variables and `go env -w` settings are honored by setup and Make targets. Make also
+accepts `GO_CACHE` and `GO_MOD_CACHE` overrides, or `CACHE_ROOT` to place both under
+one directory (`go-build` and `go-mod`). Tools in `.tools/bin`, build output, and
+the `.cache/golangci-lint` cache remain per checkout. `make lint-ci-local` still
+uses fresh temporary caches for each invocation.
+
 ### Git fixtures
 
 Git-using suites call `testutil.IsolateGit()` from a test-only `init`; shell test
@@ -355,9 +363,9 @@ released historical manifests remain unchanged.
   ```
 
 - If `go mod download` fails due to proxy access, ensure your network can reach `proxy.golang.org` or set `GOPROXY=direct` temporarily.
-- If Go reports a cache permission error, the scripts use a repo-local cache by default. To set it manually:
+- If Go reports a cache permission error, select writable absolute cache paths:
   ```bash
-  GOCACHE=.cache/go-build GOMODCACHE=.cache/go-mod go mod tidy
+  GOCACHE="$PWD/.cache/go-build" GOMODCACHE="$PWD/.cache/go-mod" go mod tidy
   ```
 
 General skill authoring lives in `nicholasjconn/skills`: seven development and three tool trees. Agent Layer embeds only the catalog coordinates and `dispatch-agent`, `skill-sync`, and `benchmark` content. Supporting files and script behavioral tests travel inside each external skill; `ship-pr/tests` is a standalone standard-library-only Go module with a test-only CI gate in the destination. Product integration tests use minimal local Git fixtures and inherited Git URL rewriting, without duplicating production scripts.
