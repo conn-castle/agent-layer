@@ -6,12 +6,11 @@ SHELL := $(subst $(space),\ ,$(ROOT_DIR))/scripts/make-shell.sh
 
 .DEFAULT_GOAL := help
 
-GIT_COMMON_DIR := $(shell git rev-parse --path-format=absolute --git-common-dir 2>/dev/null)
-CACHE_ROOT ?= $(if $(GIT_COMMON_DIR),$(abspath $(GIT_COMMON_DIR)/../.cache),$(ROOT_DIR)/.cache)
 TOOL_BIN ?= $(ROOT_DIR)/.tools/bin
 GOLANGCI_LINT_VERSION := v2.14.0
-GO_CACHE ?= $(CACHE_ROOT)/go-build
-GO_MOD_CACHE ?= $(CACHE_ROOT)/go-mod
+# Honor native Go configuration unless a legacy Make cache override is supplied.
+GO_CACHE ?= $(if $(CACHE_ROOT),$(CACHE_ROOT)/go-build,$(shell go env GOCACHE))
+GO_MOD_CACHE ?= $(if $(CACHE_ROOT),$(CACHE_ROOT)/go-mod,$(shell go env GOMODCACHE))
 GOLANGCI_LINT_CACHE ?= $(ROOT_DIR)/.cache/golangci-lint
 # Each test run keeps its complete go test events and console output in a new directory here.
 TEST_LOG_DIR ?= $(ROOT_DIR)/.agent-layer/tmp/test-logs
