@@ -91,12 +91,15 @@ executables only. It runs in ordinary CI and before the native suite.
 Agent Layer uses several light shell wrappers and `make` targets around standard Go commands (`go fmt`, `go test`, etc.). This is intentional to ensure consistent behavior across local development and CI (GitHub Actions). It also keeps tool versions explicit, which makes regressions easier to trace.
 
 Go dependencies and compiler output use Go's standard shared caches on macOS and
-Linux. Inspect the active locations with `go env GOCACHE GOMODCACHE`; environment
-variables and `go env -w` settings are honored by setup and Make targets. Make also
-accepts `GO_CACHE` and `GO_MOD_CACHE` overrides, or `CACHE_ROOT` to place both under
-one directory (`go-build` and `go-mod`). Tools in `.tools/bin`, build output, and
-the `.cache/golangci-lint` cache remain per checkout. `make lint-ci-local` still
-uses fresh temporary caches for each invocation.
+Linux. Inspect the active locations with `go env GOCACHE GOMODCACHE`. Use the native
+`GOCACHE` and `GOMODCACHE` environment variables or `go env -w` to configure caches
+across setup, Make recipes, and direct Go commands. Legacy Make aliases `GO_CACHE`
+and `GO_MOD_CACHE` apply only to recipes that explicitly map them to Go's cache
+variables; `CACHE_ROOT` places both under one directory (`go-build` and `go-mod`)
+for those recipes. Direct Go commands in `test-muse-native` and
+`test-codex-dispatch-wait-live` use native Go configuration. Tools in `.tools/bin`,
+build output, and the `.cache/golangci-lint` cache remain per checkout.
+`make lint-ci-local` still uses fresh temporary caches for each invocation.
 
 ### Git fixtures
 
