@@ -5,10 +5,8 @@ root_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$root_dir"
 
 tool_bin="${AL_TOOL_BIN:-$root_dir/.tools/bin}"
-gocache="${GOCACHE:-$root_dir/.cache/go-build}"
-gomodcache="${GOMODCACHE:-$root_dir/.cache/go-mod}"
 
-mkdir -p "$tool_bin" "$gocache" "$gomodcache"
+mkdir -p "$tool_bin"
 
 if ! command -v go >/dev/null 2>&1; then
   echo "Go is required but was not found in PATH. Install Go 1.27.0+ and retry." >&2
@@ -60,10 +58,10 @@ if ! command -v make >/dev/null 2>&1; then
 fi
 
 echo "Downloading Go module dependencies..."
-GOCACHE="$gocache" GOMODCACHE="$gomodcache" go mod download
+go mod download
 
 echo "Installing pinned Go tools into $tool_bin..."
-make tools TOOL_BIN="$tool_bin" GO_CACHE="$gocache" GO_MOD_CACHE="$gomodcache"
+make tools TOOL_BIN="$tool_bin"
 
 if command -v pre-commit >/dev/null 2>&1; then
   if hooks_path="$(git config --get core.hooksPath)"; then
