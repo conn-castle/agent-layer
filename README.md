@@ -318,6 +318,10 @@ Common memory files include:
 - `docs/agent-layer/COMMANDS.md`
 - `docs/agent-layer/CONTEXT.md`
 
+These are defaults for projects using Agent Layer. Contributions to this
+repository use [GitHub Issues](https://github.com/conn-castle/agent-layer/issues)
+for defects and deferred engineering work instead of a local issue ledger.
+
 ### Generated client files (gitignored by default)
 Generated outputs are written into the repo in client-specific formats (examples):
 

@@ -25,6 +25,17 @@ Notes: <optional constraints or tips>
 
 <!-- ENTRIES START -->
 
+### Issue tracking
+
+- List this repository's open defects and deferred engineering work
+```bash
+gh issue list --repo conn-castle/agent-layer --state open --limit 100
+```
+Run from: repo root
+Prerequisites: GitHub CLI authentication
+Notes: GitHub is the only issue tracker for this repository. Search open and
+closed issues before creating a new one; include issue URLs in task reports.
+
 ### Setup
 
 - Setup a fresh clone (installs pinned tools + pre-commit hooks)

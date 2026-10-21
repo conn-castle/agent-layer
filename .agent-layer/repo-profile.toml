@@ -1,0 +1,33 @@
+# Fresh-clone wizard input; the active configuration is .agent-layer/config.toml.
+# Apply only when config.toml is absent (see docs/DEVELOPMENT.md).
+
+[approvals]
+mode = "all"
+
+[agents.antigravity]
+enabled = false
+
+[agents.claude]
+enabled = true
+
+[agents.claude_vscode]
+enabled = false
+
+[agents.codex]
+enabled = true
+
+[agents.vscode]
+enabled = false
+
+[agents.copilot_cli]
+enabled = false
+
+[agents.grok]
+enabled = false
+
+[agents.muse]
+enabled = false
+
+[[instructions.local]]
+selectors = ["04_conventions.md"]
+order = 40

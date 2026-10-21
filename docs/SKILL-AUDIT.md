@@ -145,6 +145,7 @@ derive status from a count.
 
 ### Step 7: Preserve deferred work
 
-Add unfixed Critical or High findings to `docs/agent-layer/ISSUES.md` using its
-current format. Cite the owning design rule and the audited skill path. Do not
-create an issue for a metric alone.
+Report unfixed Critical or High findings in the repository's configured issue
+tracker. For this repository, search or file a
+[GitHub issue](https://github.com/conn-castle/agent-layer/issues). Cite the owning
+design rule and the audited skill path. Do not create an issue for a metric alone.
