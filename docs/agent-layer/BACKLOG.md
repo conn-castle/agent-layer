@@ -3,7 +3,8 @@
 Note: This is an agent-layer memory file. It is primarily for agent use.
 
 ## Purpose
-Unscheduled user-visible features and tasks (distinct from issues; not refactors). Maintainability refactors belong in ISSUES.md.
+Unscheduled user-visible features and tasks (distinct from issues; not refactors).
+Maintainability refactors belong in [GitHub Issues](https://github.com/conn-castle/agent-layer/issues).
 
 ## Format
 - Insert new entries immediately below `<!-- ENTRIES START -->` (most recent first).

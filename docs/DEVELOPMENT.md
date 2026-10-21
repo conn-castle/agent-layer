@@ -138,35 +138,64 @@ restriction and version negotiation. When you bump
   forward it and delete the frame observer and version table.
 
 ## Run the CLI locally (always uses latest changes)
-Run from source (`go run`):
+
+This checkout tracks its repo-local instructions and `dogfood` skill under
+`.agent-layer/`. On a fresh clone with no `.agent-layer/config.toml`, seed the
+local configuration and instruction ordering with:
+
 ```bash
-# One-time init for a fresh repo (creates bare .agent-layer/ operational scaffold)
-go run ./cmd/al init
-
-# Generate outputs (optional; client commands already sync on run)
-go run ./cmd/al sync
-
-# Launch a client (always runs sync first)
-go run ./cmd/al codex
+go run ./cmd/al wizard --profile .agent-layer/repo-profile.toml --yes
+make al-sync
 ```
 
-Optional: build a local dev binary from the current source (no global install):
+`.agent-layer/config.toml` is the active, gitignored configuration.
+`repo-profile.toml` is a checked-in starting configuration that the wizard uses
+to create it on fresh clones, including this repo's instruction ordering.
+Applying the profile to an existing configuration would replace that configuration.
+Upgrade with `make al-upgrade`: it adds this checkout's tracked sources to the
+gitignored `.agent-layer/upgrade-keep-list` so upgrade does not offer to delete
+them, and removes the unmodified `docs/agent-layer/ISSUES.md` template that
+upgrade restores.
+`al init` is for projects without an existing `.agent-layer/` directory.
+Configuration, credentials, generated client files, and run evidence stay local.
+
+For work on Agent Layer itself, use
+[GitHub Issues](https://github.com/conn-castle/agent-layer/issues) for defects and
+deferred engineering concerns. The local instruction source
+`.agent-layer/instructions/04_conventions.md` redirects shared skills' file-based
+issue-log workflows to GitHub; shared upstream skills are unchanged. The absence
+of `docs/agent-layer/ISSUES.md` is intentional. Product memory templates and their
+tests still support that file in other projects.
+
+Run this checkout through the development launchers:
 ```bash
-go build -o ./tmp/al ./cmd/al
-./tmp/al init
-./tmp/al codex
+# Generate outputs (optional; client commands already sync on run)
+make al-sync
+
+# Launch a client (always runs sync first)
+make al-codex
 ```
 
 ### Run against a scratch repo (recommended for install/sync testing)
+
+Create the target outside this checkout so project discovery cannot select the
+source repository:
+
 ```bash
-mkdir -p tmp/dev-repo
-cd tmp/dev-repo
-go run ../../cmd/al init
-go run ../../cmd/al codex
+make al-dev-build
+candidate="$PWD/.agent-layer/tmp/dev-bin/al"
+scratch_repo="$(mktemp -d /var/tmp/al-dev-repo.XXXXXX)"
+git init "$scratch_repo"
+(
+  cd "$scratch_repo"
+  AL_DEV_BYPASS_VERSION_DISPATCH=1 AL_DEV_EXECUTABLE="$candidate" \
+    AL_DEV_SOURCE_ROOT="$scratch_repo" "$candidate" init --here --no-wizard
+)
 ```
 
 Notes:
-- `init` is required once per repo to seed the bare `.agent-layer/` operational scaffold.
+- `init` seeds fresh target projects that have no `.agent-layer/` directory.
+  This source checkout uses the repo profile described above instead.
 - `init` prompts to run the setup wizard by default; pass `--no-wizard` to skip (non-interactive shells skip automatically). The wizard can seed instruction files, `docs/agent-layer/` memory files/templates, and catalog skills (including Git-backed development skills).
 - `sync` is optional because `al <client>` always syncs before launch.
 - `./scripts/setup.sh` is only for tool + hook setup, not required just to run the CLI.

@@ -101,7 +101,7 @@ jobs:
         if: env.ECR_PUBLIC_ROLE_ARN == ''
         run: echo '::notice::ECR Public pulls are anonymous and use the shared source-IP data quota. Set ECR_PUBLIC_ROLE_ARN to enable authenticated pulls; see docs/BENCHMARK.md.'
       - name: Initialize Agent Layer for benchmark readiness
-        run: AL_NO_NETWORK=1 go run ./cmd/al init --here --no-wizard
+        run: AL_NO_NETWORK=1 go run ./cmd/al wizard --profile .agent-layer/repo-profile.toml --yes
       - name: Certify pinned benchmark catalog shard
         run: |
           unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN AWS_SECURITY_TOKEN
