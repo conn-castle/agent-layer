@@ -22,6 +22,10 @@ command-line calls.
 	`dispatch_output` with artifact `events` for available partial output; cancelled is not
    termination proof.
 
+For complete output, use the same `invocation_id` and artifact, repeating with
+`offset: next_offset` while `next_offset < size_bytes`. Join page `content` in
+order; event records may span pages. `tail: true` returns only the last page.
+
 For parallel work, call `dispatch_start` once per independent conversation and
 retain each handle and invocation_id. Call `dispatch_wait` for those selectors
 in parallel when supported.

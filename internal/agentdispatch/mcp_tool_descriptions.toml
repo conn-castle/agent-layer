@@ -48,11 +48,11 @@ handle = "Conversation handle. Provide exactly one of handle or invocation_id."
 invocation_id = "Exact invocation UUID. Never follows a later continuation."
 
 [tools.dispatch_output]
-description = "Read bounded final or partial output. Use next_offset for pagination or tail for late evidence; failed events are not a successful final answer."
+description = "Read output by page. While next_offset < size_bytes, repeat with offset=next_offset and the returned invocation_id. Event records may span pages; failed events are partial evidence."
 
 [tools.dispatch_output.parameters]
 handle = "Conversation handle. Provide exactly one of handle or invocation_id."
 invocation_id = "Exact invocation UUID. Never follows a later continuation."
 artifact = "Output: final_answer or events."
 offset = "Byte cursor from next_offset; default 0."
-tail = "Read the last bounded page; cannot combine with offset."
+tail = "Read only the last page; cannot combine with offset."

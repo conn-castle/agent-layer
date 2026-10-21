@@ -542,7 +542,12 @@ forward, or `tail: true` (`--tail`) to retrieve the last page of late evidence.
 Offset and tail cannot be combined. `offset`, `next_offset`, and `size_bytes`
 are byte positions; continue while `next_offset < size_bytes`. Pages preserve
 UTF-8 rune boundaries, but JSONL records may span pages and need assembly.
+Use the same exact `invocation_id` and artifact for every page; a conversation
+handle can select a later invocation after continuation. Fetching another page
+does not require continuing the provider conversation.
 `truncated` indicates a remaining suffix, or an omitted prefix on a tail read.
+Tail is a diagnostic excerpt rather than a complete read. Reaching the current
+end of live events does not establish completion; use wait or inspect for state.
 Output also reports invocation `state` and `termination_confirmed`; captured
 answers and provider completion events from a failed run remain partial evidence.
 `final_answer` stays available only for a completed invocation. Missing,
