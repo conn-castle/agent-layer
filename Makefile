@@ -359,9 +359,22 @@ al-dev-build: ## Build source al for development commands that launch child proc
 	GOCACHE=$(call al_shell_quote,$(GO_CACHE)) GOMODCACHE=$(call al_shell_quote,$(GO_MOD_CACHE)) go build -o "$$dev_tmp" ./cmd/al && mv -f "$$dev_tmp" $(call al_shell_quote,$(AL_DEV_BIN))
 	@echo "Running MCP servers keep their code until reconnected; stale servers refuse new dispatch work."
 
+# Tracked repo sources that upgrade would otherwise offer to delete as unknown.
+# This repo tracks issues on GitHub, so al-upgrade drops the unmodified ledger
+# template that upgrade restores.
+AL_REPO_KEEP_PATHS := .agent-layer/repo-profile.toml .agent-layer/skills/dogfood docs/agent-layer/ROADMAP.md
+
 .PHONY: al-upgrade
 al-upgrade: al-dev-build ## Upgrade this repo's .agent-layer using current source
+	@cd $(call al_shell_quote,$(ROOT_DIR)) && keep=.agent-layer/upgrade-keep-list; \
+	if [ -s "$$keep" ] && [ -n "$$(tail -c 1 "$$keep")" ]; then echo >> "$$keep"; fi; \
+	for path in $(AL_REPO_KEEP_PATHS); do \
+	  grep -qxF "$$path" "$$keep" 2>/dev/null || printf '%s\n' "$$path" >> "$$keep"; \
+	done
 	@$(AL_RUN) upgrade
+	@cd $(call al_shell_quote,$(ROOT_DIR)) && if cmp -s docs/agent-layer/ISSUES.md .agent-layer/templates/docs/ISSUES.md; then \
+	  rm -f docs/agent-layer/ISSUES.md; \
+	fi
 
 .PHONY: al-sync
 al-sync: al-dev-build ## Sync this repo's generated agent files using current source

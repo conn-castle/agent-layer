@@ -152,7 +152,10 @@ make al-sync
 `repo-profile.toml` is a checked-in starting configuration that the wizard uses
 to create it on fresh clones, including this repo's instruction ordering.
 Applying the profile to an existing configuration would replace that configuration.
-Existing setups can use `make al-upgrade` as usual.
+Upgrade with `make al-upgrade`: it adds this checkout's tracked sources to the
+gitignored `.agent-layer/upgrade-keep-list` so upgrade does not offer to delete
+them, and removes the unmodified `docs/agent-layer/ISSUES.md` template that
+upgrade restores.
 `al init` is for projects without an existing `.agent-layer/` directory.
 Configuration, credentials, generated client files, and run evidence stay local.
 

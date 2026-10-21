@@ -72,7 +72,9 @@ return evidence without production edits.
 For directed checks, define the expected outcome; for open exploration, state the
 user goal or question and refine checks as you learn. Retain argv, cwd, sanitized
 environment differences, exit status, elapsed time, output, and relevant
-before/after state in separate logs for each attempt. Verify:
+before/after state in separate logs for each attempt. Redact real credentials,
+tokens, and personal data, and omit unrelated file contents before retaining logs
+or publishing issue evidence. Verify:
 
 - File bytes, modes, kinds/link targets, parsed config/locks, and transaction
   status as relevant; preservation after success/refusal, repeat convergence,
@@ -123,7 +125,7 @@ Report candidate identity, workflows passed/failed/blocked, findings and fix/PR
 status, unresolved observations, coverage gaps, evidence paths, and owned-process
 cleanup. Preserve useful reproductions, search/update or file GitHub issues for
 unresolved findings, and include their URLs even for discovery-only runs. Keep
-raw logs in the run directory and durable decision rationale in project memory.
+redacted logs in the run directory and durable decision rationale in project memory.
 Follow the repository's local issue-tracking instructions if filing fails.
 For release-readiness claims, follow `docs/RELEASE.md`;
 scratch or substituted-profile probes do not replace its live-checkout gates.
