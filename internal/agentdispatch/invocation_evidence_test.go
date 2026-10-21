@@ -1009,6 +1009,79 @@ func TestMCPInspectAndOutputUseInvocationID(t *testing.T) {
 	}
 }
 
+// TestMCPOutputReassemblesMultiplePages exercises complete reads through MCP,
+// including an event record larger than a page and UTF-8 characters spanning
+// the byte limit.
+func TestMCPOutputReassemblesMultiplePages(t *testing.T) {
+	for _, artifact := range []string{artifactFinalAnswer, artifactEvents} {
+		t.Run(artifact, func(t *testing.T) {
+			root := writeDispatchRepo(t, dispatchRepoConfig{})
+			run, _ := newWaitTestRun(t, root)
+			now := time.Now().UTC()
+			run.Record.CompletedAt = &now
+			run.Record.State = dispatchStateCompleted
+			run.Record.RecoveryState = recoveryResumeRequired
+			path := run.Record.AnswerPath
+			content := strings.Repeat("€𐀀abc", 18000) + "\nlast answer line\n"
+			if artifact == artifactEvents {
+				run.Record.State = dispatchStateFailed
+				run.Record.TerminalReason = "late failure"
+				run.Record.TerminalExitCode = ExitTargetFailure
+				path = run.Record.EventsPath
+				content = `{"Kind":"answer","Answer":"` + strings.Repeat("€𐀀abc", 18000) + "\"}\n" + `{"Kind":"failure","Reason":"late failure"}` + "\n"
+			}
+			if err := writeRunRecord(run.Dir, &run.Record); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			session := newMCPTestSession(t, newMCPTestTools(root))
+			read := func(input OutputInput) OutputResult {
+				t.Helper()
+				result := callMCPTool(t, session, ToolOutput, input)
+				if result.IsError {
+					t.Fatal(toolResultText(result))
+				}
+				var page OutputResult
+				if err := json.Unmarshal([]byte(toolResultText(result)), &page); err != nil {
+					t.Fatal(err)
+				}
+				return page
+			}
+			var assembled strings.Builder
+			var offset int64
+			for {
+				page := read(OutputInput{InvocationID: run.Record.ID, Artifact: artifact, Offset: offset})
+				if page.InvocationID != run.Record.ID || page.Artifact != artifact || page.State != run.Record.State || page.SizeBytes != int64(len(content)) {
+					t.Fatalf("page metadata = %#v", page)
+				}
+				if page.Offset != offset || page.NextOffset != offset+int64(len(page.Content)) || page.NextOffset <= offset || len(page.Content) > maxOutputReadBytes {
+					t.Fatalf("page cursor = %#v", page)
+				}
+				assembled.WriteString(page.Content)
+				if page.NextOffset == page.SizeBytes {
+					if page.Truncated {
+						t.Fatal("last forward page still reports truncation")
+					}
+					break
+				}
+				if !page.Truncated {
+					t.Fatal("nonfinal page omitted truncation signal")
+				}
+				offset = page.NextOffset
+			}
+			if assembled.String() != content {
+				t.Fatal("MCP pagination lost or duplicated content")
+			}
+			tail := read(OutputInput{InvocationID: run.Record.ID, Artifact: artifact, Tail: true})
+			if !tail.Truncated || tail.Offset == 0 || tail.NextOffset != tail.SizeBytes || tail.Content != content[tail.Offset:] {
+				t.Fatalf("tail did not report its omitted prefix: %#v", tail)
+			}
+		})
+	}
+}
+
 func TestMCPCancelRetriesFailedUnconfirmedOwnedExecution(t *testing.T) {
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	run, _ := newWaitTestRun(t, root)
