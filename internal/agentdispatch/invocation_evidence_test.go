@@ -1009,8 +1009,9 @@ func TestMCPInspectAndOutputUseInvocationID(t *testing.T) {
 	}
 }
 
-// Exercise complete reads through MCP, including an event record
-// larger than a page and UTF-8 characters spanning the byte limit.
+// TestMCPOutputReassemblesMultiplePages exercises complete reads through MCP,
+// including an event record larger than a page and UTF-8 characters spanning
+// the byte limit.
 func TestMCPOutputReassemblesMultiplePages(t *testing.T) {
 	for _, artifact := range []string{artifactFinalAnswer, artifactEvents} {
 		t.Run(artifact, func(t *testing.T) {
