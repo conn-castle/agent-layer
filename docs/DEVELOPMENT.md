@@ -369,7 +369,7 @@ against that base. Generated BEGIN/END markers use the new filenames. None is
 add-only and does not remove content; Rules+Memory still creates memory docs.
 Both tiers recover before install, rollback, projection and version handoff.
 Converted-slot guards prevent older CLIs or snapshots recreating old slots.
-Historical compatibility remains until the planned v1.1.0 cleanup.
+Historical compatibility remains through v1.1.0; retirement is planned for the v1.2.0 fast follow (#428).
 
 Publish the skills repository's new instruction paths before deploying this
 Agent Layer change. Tests use local Git fixtures, independent of unpublished

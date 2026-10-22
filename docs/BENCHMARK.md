@@ -167,6 +167,54 @@ running concurrently; independent runs can overlap. Certification still belongs
 to the exact commit that was checked out, so cancelled or different-commit runs
 cannot satisfy a release gate.
 
+For ordinary pushes and non-forced dispatches, classification first looks for a
+full run created within seven days on this repository's main branch. Only this
+workflow's push, schedule, or manual runs qualify, and all sixteen readiness
+shards must have actually succeeded. Successful jobs from earlier failed-job
+rerun attempts count, but rerunning does not extend the original creation-time
+expiry. The source must be an ancestor with unchanged catalog inputs. A newer
+matching failed or timed-out shard prevents reuse of an older success, as
+does a cancelled shard unless its whole run was cancelled.
+Re-running all jobs always requires full certification so reclassification
+cannot hide that run's own earlier failure. Skipped classification
+runs cannot become proof or extend its lifetime. Missing, expired, malformed,
+or unavailable GitHub evidence requires a fresh full run. The search is bounded
+to the latest 100 completed workflow runs and 100 jobs per run; incomplete job
+responses also require a full run.
+
+The explicit readiness input boundary includes non-test files in
+`internal/benchmark/`, `internal/gitenv/`, `internal/fsutil/`, and
+`internal/root/`, plus the direct launcher, command registration, root
+resolution, and setup command files `cmd/al/benchmark.go`, `cmd/al/main.go`,
+`cmd/al/root.go`, `cmd/al/root_resolve.go`, `cmd/al/getwd.go`, and
+`cmd/al/wizard.go`, plus `go.mod`, `go.sum`, `.agent-layer/repo-profile.toml`,
+this workflow, and both
+`scripts/catalog-certification-scope.*` helpers. Go `*_test.go` files and
+`testdata/` are excluded. Renames, deletions, and executable-mode changes count.
+This explicit boundary focuses on catalog readiness logic and setup inputs;
+it does not fingerprint every transitive application dependency. Weekly full
+runs detect external image and runner drift. The exact candidate
+commit still receives a workflow result whose summary links the original full
+run and reports its age. Release gates continue to require that candidate's
+successful workflow result.
+
+Reuse needs an initial successful full run for the current inputs. To establish
+one without configuring AWS access, dispatch a manual full run on main:
+
+```bash
+gh workflow run release-catalog-certification.yml --ref main -f force=true
+```
+
+Avoid pushing to main during bootstrap: each push can start competing downloads
+until a successful full result exists. Inspect all failed shard logs. If every failed shard is blocked solely by ECR
+quota, use `gh run rerun <run-id> --failed` at most three times, checking the logs
+after each attempt. Successful shards carry forward; use the same manual run,
+whose concurrency group is independent of later pushes. Stop on a real task
+failure or after the retry limit. Quota availability can still prevent initial
+or weekly certification; reuse reduces repeated downloads but does not replenish
+AWS's shared allowance. After a successful full run, a manual dispatch with
+`force=false` on the same commit can verify reuse in the classification summary.
+
 The observed `toomanyrequests: Data limit exceeded` response is a data allowance
 failure, not evidence that a task failed. Anonymous ECR Public downloads share
 an allowance by source IP; slower scheduling cannot replenish an exhausted
