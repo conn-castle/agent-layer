@@ -1,6 +1,8 @@
-# Agent Dispatch compatibility evidence: 2026-10-22
+# Agent Dispatch v1.1.0 compatibility evidence
 
 Probes ran 2026-10-22 UTC on Linux/amd64 at clean commit `8db868b761f67beeea3a6c8f899fee8e27fc225c`, built with Go 1.27.3. The source development executable SHA256 was `c9dfa3108479238efde201be8f2b0245892f975b982658876f5433e71a70939c`.
+
+Subsequent release-preparation changes update documentation and versioned template ownership/migration manifests; dispatch implementation, dependencies, and configured probe targets are unchanged. The final release commit must separately pass the release artifact preflight and exact-commit hosted certification.
 
 ## Setup
 
