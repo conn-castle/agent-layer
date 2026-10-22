@@ -242,6 +242,21 @@ else:
         later["updated_at"] = date(NOW + 1)
         self.assertIn("unavailable", self.check(True))
 
+    def test_cancelled_shards_revoke_unless_run_was_cancelled(self):
+        later = self.proof(2, updated_at=date(NOW - 100))
+        self.data["runs"]["workflow_runs"].append(later)
+        self.data["jobs"]["2"] = self.jobs()
+        self.data["jobs"]["2"]["jobs"][0]["conclusion"] = "cancelled"
+        for conclusion in ("failure", "timed_out", "success"):
+            with self.subTest(conclusion=conclusion):
+                later["conclusion"] = conclusion
+                self.assertIn("failed shard", self.check(True))
+        # A superseded push run without failed shards does not revoke older proof.
+        later["conclusion"] = "cancelled"
+        self.assertIn("/runs/1", self.check(False))
+        self.data["jobs"]["2"]["jobs"][1]["conclusion"] = "failure"
+        self.assertIn("failed shard", self.check(True))
+
     def test_api_errors_fail_closed(self):
         baseline = copy.deepcopy(self.data)
         for change in (dict(error=True), dict(malformed=True), dict(runs={}),

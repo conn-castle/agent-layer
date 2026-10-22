@@ -173,7 +173,8 @@ workflow's push, schedule, or manual runs qualify, and all sixteen readiness
 shards must have actually succeeded. Successful jobs from earlier failed-job
 rerun attempts count, but rerunning does not extend the original creation-time
 expiry. The source must be an ancestor with unchanged catalog inputs. A newer
-matching failed or timed-out shard prevents reuse of an older success.
+matching failed or timed-out shard prevents reuse of an older success, as
+does a cancelled shard unless its whole run was cancelled.
 Re-running all jobs always requires full certification so reclassification
 cannot hide that run's own earlier failure. Skipped classification
 runs cannot become proof or extend its lifetime. Missing, expired, malformed,

@@ -128,8 +128,10 @@ def decide(head_ref, now):
         if not same_inputs(run["head_sha"], head):
             continue
         jobs = shard_jobs(repository, run)
-        if any(job["status"] == "completed"
-               and job["conclusion"] not in ("success", "skipped", "cancelled")
+        # GitHub may report a shard timeout as cancelled; only a cancelled run
+        # (such as a superseded push) leaves cancelled shards non-revoking.
+        allowed = ("success", "skipped") + (("cancelled",) if run["conclusion"] == "cancelled" else ())
+        if any(job["status"] == "completed" and job["conclusion"] not in allowed
                for job in jobs.values()):
             return True, f"Matching catalog run {run['id']} has a failed shard; fresh certification required."
         age = now - timestamp(run["created_at"])
