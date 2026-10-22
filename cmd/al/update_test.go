@@ -502,6 +502,7 @@ func TestUpdateReportsInstalledVersionInsidePinnedRepository(t *testing.T) {
 	Version = "0.22.0"
 	t.Setenv(versiondispatch.EnvDevelopmentBypassVersionDispatch, "")
 	t.Setenv(versiondispatch.EnvNoNetwork, "1")
+	t.Setenv(versiondispatch.EnvDevelopmentSourceRoot, t.TempDir())
 
 	installRoot := t.TempDir()
 	binDir := filepath.Join(installRoot, "bin")

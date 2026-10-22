@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       force:
-        description: Run the full catalog regardless of changed paths
+        description: Run the full catalog regardless of reusable proof
         required: false
         default: false
         type: boolean
@@ -27,6 +27,9 @@ jobs:
   classify:
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
     outputs:
       required: ${{ steps.scope.outputs.required }}
     steps:
@@ -46,19 +49,12 @@ jobs:
         run: test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
       - name: Classify catalog certification scope
         id: scope
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CATALOG_FORCE: ${{ inputs.force || false }}
         run: |
-          if [[ "${GITHUB_EVENT_NAME}" == "schedule" || "${{ inputs.force || false }}" == "true" ]]; then
-            required=true
-            echo "Full catalog certification was explicitly requested." >&2
-          else
-            required="$(./scripts/catalog-certification-scope.sh)"
-          fi
+          required="$(./scripts/catalog-certification-scope.sh)"
           echo "required=${required}" >>"${GITHUB_OUTPUT}"
-          if [[ "${required}" == "true" ]]; then
-            echo "Full catalog certification is required." >>"${GITHUB_STEP_SUMMARY}"
-          else
-            echo "No catalog-critical paths changed since the previous stable release; full catalog certification is skipped." >>"${GITHUB_STEP_SUMMARY}"
-          fi
 
   catalog-readiness:
     needs: classify

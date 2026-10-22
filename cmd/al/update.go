@@ -293,7 +293,11 @@ func readInstalledCLIVersion(ctx context.Context, executable string) (string, er
 	command := exec.CommandContext(ctx, executable, "--version") //nolint:gosec // executable is the running CLI's installation path.
 	// The version probe must inspect the installed binary itself. A normal
 	// `al --version` inside a repository can dispatch to its pinned CLI.
-	command.Env = append(os.Environ(), versiondispatch.EnvDevelopmentBypassVersionDispatch+"=1")
+	// Clear inherited source-root scoping so this probe bypasses every repo pin.
+	command.Env = append(os.Environ(),
+		versiondispatch.EnvDevelopmentSourceRoot+"=",
+		versiondispatch.EnvDevelopmentBypassVersionDispatch+"=1",
+	)
 	output, err := command.Output()
 	if err != nil {
 		var exitErr *exec.ExitError
