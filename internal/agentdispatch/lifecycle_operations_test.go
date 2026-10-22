@@ -109,7 +109,9 @@ func testCancelEscalatesButRetainsClaimUntilOwnedProcessIsReaped(t *testing.T, a
 		t.Fatal(err)
 	}
 	readyPath := filepath.Join(t.TempDir(), "sigterm-handler-ready")
-	cmd := exec.Command("/bin/sh", "-c", `trap '' TERM; touch "$1"; while :; do sleep 1; done`, "sh", readyPath) // #nosec G204 -- test-owned path passed as a positional argument.
+	// Ignored SIGTERM survives exec, keeping escalation deterministic without
+	// orphaned sleep children whose reaping depends on the host's init process.
+	cmd := exec.Command("/bin/sh", "-c", `trap '' TERM; touch "$1"; exec sleep 60`, "sh", readyPath) // #nosec G204 -- test-owned path passed as a positional argument.
 	prepareProviderProcessGroup(cmd)
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
