@@ -15,8 +15,10 @@ WORKFLOW = ".github/workflows/release-catalog-certification.yml"
 MAX_AGE = 7 * 24 * 60 * 60
 SHARDS = {f"catalog-readiness ({shard}/16)" for shard in range(1, 17)}
 INPUTS = (
-    "internal/benchmark/*", "internal/gitenv/*", "internal/fsutil/*",
-    "cmd/al/benchmark.go", "go.mod", "go.sum", WORKFLOW,
+    "internal/benchmark/*", "internal/gitenv/*", "internal/fsutil/*", "internal/root/*",
+    # Direct launch, command registration, root resolution, and setup command.
+    "cmd/al/benchmark.go", "cmd/al/main.go", "cmd/al/root.go", "cmd/al/root_resolve.go",
+    "cmd/al/getwd.go", "cmd/al/wizard.go", "go.mod", "go.sum", WORKFLOW,
     ".agent-layer/repo-profile.toml",
     "scripts/catalog-certification-scope.sh", "scripts/catalog-certification-scope.py",
 )
@@ -64,7 +66,9 @@ def positive_int(value):
 def trusted(run, repository, now):
     if (run["repository"]["full_name"].lower() != repository.lower()
             or run["head_repository"]["full_name"].lower() != repository.lower()
-            or run["head_branch"] != "main" or run["path"] != WORKFLOW
+            or run["head_branch"] != "main"
+            # GitHub's run response documents both bare and ref-qualified paths.
+            or run["path"] not in (WORKFLOW, f"{WORKFLOW}@main")
             or run["event"] not in ("push", "workflow_dispatch", "schedule")
             or run["status"] != "completed"):
         return False

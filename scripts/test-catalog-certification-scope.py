@@ -16,6 +16,8 @@ ROOT = Path(__file__).resolve().parent.parent
 NOW = 1800000000
 REPOSITORY = "example/catalog"
 WORKFLOW = ".github/workflows/release-catalog-certification.yml"
+LAUNCHER = ("cmd/al/benchmark.go", "cmd/al/main.go", "cmd/al/root.go", "cmd/al/root_resolve.go",
+            "cmd/al/getwd.go", "cmd/al/wizard.go")
 
 
 def date(seconds):
@@ -46,9 +48,10 @@ class CatalogScopeTests(unittest.TestCase):
             target.parent.mkdir(exist_ok=True)
             shutil.copy2(ROOT / "scripts" / name, target)
         for name in ("internal/benchmark/readiness.go", "internal/gitenv/env.go",
-                     "internal/fsutil/file.go", "cmd/al/benchmark.go", "go.mod", "go.sum",
+                     "internal/fsutil/file.go", "internal/root/root.go", *LAUNCHER, "go.mod", "go.sum",
                      WORKFLOW, ".agent-layer/repo-profile.toml", "docs/note.md", "internal/benchmark/readiness_test.go",
-                     "internal/benchmark/testdata/task.json"):
+                     "internal/benchmark/testdata/task.json", "internal/root/root_test.go",
+                     "internal/root/testdata/repo.txt", "cmd/al/root_test.go", "cmd/al/update.go"):
             self.write(name)
         self.commit()
         self.source = self.git("rev-parse", "HEAD").strip()
@@ -120,7 +123,8 @@ else:
 
     def test_unrelated_changes_reuse(self):
         for path in ("docs/note.md", "internal/benchmark/readiness_test.go",
-                     "internal/benchmark/testdata/task.json", "cmd/al/update.go"):
+                     "internal/benchmark/testdata/task.json", "internal/root/root_test.go",
+                     "internal/root/testdata/repo.txt", "cmd/al/root_test.go", "cmd/al/update.go"):
             with self.subTest(path=path):
                 self.write(path, "changed\n")
                 self.commit()
@@ -128,7 +132,7 @@ else:
 
     def test_critical_changes_require_full(self):
         for path in ("internal/benchmark/readiness.go", "internal/gitenv/env.go",
-                     "internal/fsutil/file.go", "cmd/al/benchmark.go", "go.mod", "go.sum", WORKFLOW,
+                     "internal/fsutil/file.go", "internal/root/root.go", *LAUNCHER, "go.mod", "go.sum", WORKFLOW,
                      ".agent-layer/repo-profile.toml",
                      "scripts/catalog-certification-scope.sh", "scripts/catalog-certification-scope.py"):
             with self.subTest(path=path):
@@ -156,11 +160,18 @@ else:
                 self.commit()
                 self.check(True)
 
+    def test_main_qualified_workflow_path_reuses(self):
+        self.run["path"] = f"{WORKFLOW}@main"
+        self.assertIn("/runs/1", self.check(False))
+
     def test_untrusted_and_missing_runs(self):
         baseline = copy.deepcopy(self.run)
         changes = [dict(repository={"full_name": "fork/catalog"}),
                    dict(head_repository={"full_name": "fork/catalog"}), dict(head_branch="topic"),
-                   dict(path=".github/workflows/other.yml"), dict(event="pull_request"),
+                   dict(path=".github/workflows/other.yml"), dict(path=f"{WORKFLOW}@topic"),
+                   dict(path=f"{WORKFLOW}@refs/heads/main"), dict(path=f"{WORKFLOW}@main@main"),
+                   dict(path=f"./{WORKFLOW}@main"), dict(path=".github/workflows/other.yml@main"),
+                   dict(head_branch="topic", path=f"{WORKFLOW}@main"), dict(event="pull_request"),
                    dict(status="in_progress"), dict(conclusion="failure"), dict(conclusion="cancelled"),
                    dict(created_at=date(NOW - 8 * 86400)), dict(created_at=date(NOW + 1)),
                    dict(updated_at=date(NOW + 1)), dict(created_at="invalid"), dict(run_attempt=0),

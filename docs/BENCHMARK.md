@@ -183,8 +183,11 @@ to the latest 100 completed workflow runs and 100 jobs per run; incomplete job
 responses also require a full run.
 
 The explicit readiness input boundary includes non-test files in
-`internal/benchmark/`, `internal/gitenv/`, and `internal/fsutil/`, plus
-`cmd/al/benchmark.go`, `go.mod`, `go.sum`, `.agent-layer/repo-profile.toml`,
+`internal/benchmark/`, `internal/gitenv/`, `internal/fsutil/`, and
+`internal/root/`, plus the direct launcher, command registration, root
+resolution, and setup command files `cmd/al/benchmark.go`, `cmd/al/main.go`,
+`cmd/al/root.go`, `cmd/al/root_resolve.go`, `cmd/al/getwd.go`, and
+`cmd/al/wizard.go`, plus `go.mod`, `go.sum`, `.agent-layer/repo-profile.toml`,
 this workflow, and both
 `scripts/catalog-certification-scope.*` helpers. Go `*_test.go` files and
 `testdata/` are excluded. Renames, deletions, and executable-mode changes count.
