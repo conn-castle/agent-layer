@@ -12,6 +12,7 @@ import (
 
 	"github.com/conn-castle/agent-layer/internal/messages"
 	"github.com/conn-castle/agent-layer/internal/root"
+	"github.com/conn-castle/agent-layer/internal/version"
 )
 
 func main() {
@@ -40,8 +41,10 @@ func newRootCmd() *cobra.Command {
 	command.SilenceErrors = true
 	command.Version = "dev"
 	command.SetVersionTemplate("{{.Version}}\n")
-	if info, ok := debug.ReadBuildInfo(); ok && info.Main.Version != "" && info.Main.Version != "(devel)" {
-		command.Version = info.Main.Version
+	if info, ok := debug.ReadBuildInfo(); ok {
+		if normalized, err := version.Normalize(info.Main.Version); err == nil {
+			command.Version = "v" + normalized
+		}
 	}
 	command.PersistentFlags().BoolP("quiet", "q", false, messages.RootQuietFlag)
 	return command

@@ -11,8 +11,11 @@ import (
 )
 
 func TestBenchmarkCompanionHandoff(t *testing.T) {
-	originalExec, originalLookPath := benchmarkExec, benchmarkLookPath
-	t.Cleanup(func() { benchmarkExec, benchmarkLookPath = originalExec, originalLookPath })
+	originalExec, originalLookPath, originalReadVersion := benchmarkExec, benchmarkLookPath, benchmarkReadVersion
+	t.Cleanup(func() {
+		benchmarkExec, benchmarkLookPath, benchmarkReadVersion = originalExec, originalLookPath, originalReadVersion
+	})
+	benchmarkReadVersion = func(context.Context, string) (string, error) { return Version, nil }
 	benchmarkLookPath = func(name string) (string, error) {
 		if name != "al-benchmark" {
 			t.Fatalf("unexpected executable: %s", name)
@@ -37,6 +40,9 @@ func TestBenchmarkCompanionHandoff(t *testing.T) {
 }
 
 func TestBenchmarkMissingCompanionIsActionable(t *testing.T) {
+	originalVersion := Version
+	Version = "v1.1.0"
+	t.Cleanup(func() { Version = originalVersion })
 	original := benchmarkLookPath
 	t.Cleanup(func() { benchmarkLookPath = original })
 	benchmarkLookPath = func(string) (string, error) { return "", exec.ErrNotFound }
@@ -70,7 +76,7 @@ func TestBenchmarkHandoffPreservesProcessIOAndExit(t *testing.T) {
 		os.Exit(0)
 	}
 	bin := t.TempDir()
-	body := "#!/bin/sh\nprintf '%s\\n' \"$PWD\" \"$*\"\ncat\nprintf 'companion diagnostic\\n' >&2\nexit 23\n"
+	body := "#!/bin/sh\nif [ \"$1\" = --version ]; then echo dev; exit 0; fi\nprintf '%s\\n' \"$PWD\" \"$*\"\ncat\nprintf 'companion diagnostic\\n' >&2\nexit 23\n"
 	if err := os.WriteFile(filepath.Join(bin, "al-benchmark"), []byte(body), 0o700); err != nil { // #nosec G306 -- test-owned executable companion stub.
 		t.Fatal(err)
 	}
@@ -91,5 +97,41 @@ func TestBenchmarkHandoffPreservesProcessIOAndExit(t *testing.T) {
 		if !strings.Contains(string(output), want) {
 			t.Fatalf("handoff output %q lacks %q", output, want)
 		}
+	}
+}
+
+func TestBenchmarkRequiresMatchingActiveVersion(t *testing.T) {
+	originalVersion, originalExec, originalLookPath := Version, benchmarkExec, benchmarkLookPath
+	t.Cleanup(func() { Version, benchmarkExec, benchmarkLookPath = originalVersion, originalExec, originalLookPath })
+	Version = "v1.1.0"
+	for _, test := range []struct {
+		name, response string
+		match          bool
+	}{
+		{"matching", "echo v1.1.0", true},
+		{"normalized", "echo 1.1.0", true},
+		{"stale", "echo v1.0.0", false},
+		{"development", "echo dev", false},
+		{"malformed", "echo 'v1.1.0 unexpected text'", false},
+		{"failed probe", "exit 2", false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "al-benchmark")
+			if err := os.WriteFile(path, []byte("#!/bin/sh\n"+test.response+"\n"), 0o700); err != nil { // #nosec G306 -- executable version-only test fixture.
+				t.Fatal(err)
+			}
+			benchmarkLookPath = func(string) (string, error) { return path, nil }
+			called := false
+			benchmarkExec = func(string, []string, []string) error { called = true; return nil }
+			command := newRootCmd()
+			command.SetArgs([]string{"benchmark", "run", "study.toml"})
+			err := command.Execute()
+			if called != test.match || (err == nil) != test.match {
+				t.Fatalf("handoff = %v, error = %v, want match %v", called, err, test.match)
+			}
+			if !test.match && test.name != "failed probe" && !strings.Contains(err.Error(), "@v1.1.0") {
+				t.Fatalf("missing matching-version installation guidance: %v", err)
+			}
+		})
 	}
 }
