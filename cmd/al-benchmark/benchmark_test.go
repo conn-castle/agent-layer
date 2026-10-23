@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 	"strings"
 	"sync"
 	"testing"
@@ -30,6 +31,31 @@ func TestCompanionVersionIsMachineReadable(t *testing.T) {
 	command.SetOut(&output)
 	if err := command.Execute(); err != nil || output.String() != "v1.1.0\n" {
 		t.Fatalf("version output = %q, error = %v", output.String(), err)
+	}
+}
+
+func TestCompanionVersionDistinguishesModuleInstallFromSource(t *testing.T) {
+	sourceVCS := []debug.BuildSetting{{Key: "vcs", Value: "git"}, {Key: "vcs.revision", Value: "44022437edab"}, {Key: "vcs.modified", Value: "false"}}
+	for _, test := range []struct {
+		name string
+		info *debug.BuildInfo
+		ok   bool
+		want string
+	}{
+		{"versioned module install", &debug.BuildInfo{Main: debug.Module{Version: "v1.1.0"}}, true, "v1.1.0"},
+		{"module install normalized", &debug.BuildInfo{Main: debug.Module{Version: " v1.1.0 "}}, true, "v1.1.0"},
+		{"clean tagged checkout", &debug.BuildInfo{Main: debug.Module{Version: "v1.1.0"}, Settings: sourceVCS}, true, "dev"},
+		{"pseudo-version checkout", &debug.BuildInfo{Main: debug.Module{Version: "v1.1.1-0.20261023005519-44022437edab"}, Settings: sourceVCS}, true, "dev"},
+		{"dirty tagged checkout", &debug.BuildInfo{Main: debug.Module{Version: "v1.1.0+dirty"}, Settings: sourceVCS}, true, "dev"},
+		{"unstamped build", &debug.BuildInfo{Main: debug.Module{Version: "(devel)"}}, true, "dev"},
+		{"prerelease module install", &debug.BuildInfo{Main: debug.Module{Version: "v1.1.0-rc.1"}}, true, "dev"},
+		{"build info unavailable", nil, false, "dev"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if got := companionVersion(test.info, test.ok); got != test.want {
+				t.Fatalf("companionVersion() = %q, want %q", got, test.want)
+			}
+		})
 	}
 }
 
