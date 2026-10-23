@@ -1,17 +1,31 @@
 # DeltaSelect Benchmark Guide
 
-Agent Layer can compare a bare coding agent with the same agent using your project's Agent Layer instructions and skills. The CLI handles study scaffolding, task readiness, Docker capacity checks, safe concurrency, image cleanup, resumable execution, and report generation.
+The optional `al-benchmark` companion compares a bare coding agent with the same agent using your project's Agent Layer instructions and skills. It handles study scaffolding, task readiness, Docker capacity checks, safe concurrency, image cleanup, resumable execution, and report generation. Core Agent Layer installation and releases do not require benchmark images or ECR access.
 
 ## Before you start
 
 You need:
 
 - an initialized Agent Layer project;
+- the optional `al-benchmark` executable on `PATH` (installation below);
 - Git, Docker, and `uvx` on `PATH`;
 - the provider CLI and authentication required by the selected model;
 - a `selection.json` exported from [DeltaSelect](https://agent-layer.dev/deltaselect-tool).
 
 Run all commands from the project root.
+
+### Install the companion
+
+With Go 1.27 or newer, install the companion at the same release as your core CLI. For example, after `v1.1.0` is published:
+
+```bash
+go install github.com/conn-castle/agent-layer/cmd/al-benchmark@v1.1.0
+al-benchmark --version
+```
+
+Ensure Go's binary installation directory (`GOBIN`, or `$(go env GOPATH)/bin` when unset) is on `PATH`. For development, run `make benchmark-install` from the Agent Layer source checkout, and rerun it after changing benchmark engine or companion code: rebuilding only the core CLI does not refresh the installed companion. This compiles the companion; it does not download Docker images or start an evaluation. `al update` updates the core CLI; update the companion explicitly with a matching versioned `go install` command.
+
+The existing `al benchmark ...` commands forward to `al-benchmark ...`; both accept the same study arguments and flags. Missing companions produce installation guidance without downloading anything. Before handoff, the core CLI checks `al-benchmark --version` against its active version (including repository version dispatch); mismatches stop with the exact matching install command. Development core builds require a development companion; any build from a source checkout, including a clean tagged checkout, reports `dev`, while a versioned `go install` reports its release. Study schemas, identities, readiness receipts, reports, and retained evidence under `.agent-layer/state/benchmarks/` are unchanged; no data migration is required. Keep the core CLI installed for project setup and Agent Dispatch. Released treatments use the companion's exact release version to select the matching verified core binary.
 
 New experiment model identities may use `<provider>/<model>` (for example,
 `codex/<native-model-id>`), with `reasoning` supplied separately. The provider
@@ -155,84 +169,10 @@ The task line distinguishes a task-specific failure from Docker capacity, regist
 
 Treatment bundles exclude project memory and personal context. Declared benchmark instructions must therefore be self-contained; instructions that reference excluded project-state documents such as `CONTEXT.md`, `DECISIONS.md`, or `MEMORY.md`, or paths beneath `guides/`, fail before provider execution instead of producing treatment-only failed reads.
 
-## Release catalog registry access
+## Registry availability and verification
 
-Push-triggered catalog certification keeps one active run per branch and cancels
-superseded main-commit push runs. Scheduled and manually dispatched runs each use
-a unique run-ID concurrency group, preserving explicit certification requests
-when later pushes or requests arrive. Scheduled runs and dispatches with
-`force=true` still run the full catalog, even if a later push changes no
-catalog-critical paths. Each run retains all sixteen shards with at most four
-running concurrently; independent runs can overlap. Certification still belongs
-to the exact commit that was checked out, so cancelled or different-commit runs
-cannot satisfy a release gate.
+DeepSWE execution still depends on its upstream digest-pinned ECR images. Readiness and execution preflight the selected study tasks; `--task` can narrow an explicit audit. An unfiltered `al-benchmark readiness` audits the full catalog and can download many gigabytes. Run it only deliberately on a host with sufficient Docker disk. Cached receipts do not guarantee that a later cold image pull will succeed.
 
-For ordinary pushes and non-forced dispatches, classification first looks for a
-full run created within seven days on this repository's main branch. Only this
-workflow's push, schedule, or manual runs qualify, and all sixteen readiness
-shards must have actually succeeded. Successful jobs from earlier failed-job
-rerun attempts count, but rerunning does not extend the original creation-time
-expiry. The source must be an ancestor with unchanged catalog inputs. A newer
-matching failed or timed-out shard prevents reuse of an older success, as
-does a cancelled shard unless its whole run was cancelled.
-Re-running all jobs always requires full certification so reclassification
-cannot hide that run's own earlier failure. Skipped classification
-runs cannot become proof or extend its lifetime. Missing, expired, malformed,
-or unavailable GitHub evidence requires a fresh full run. The search is bounded
-to the latest 100 completed workflow runs and 100 jobs per run; incomplete job
-responses also require a full run.
+Registry quota, unavailable images, Docker capacity, and provider authentication are reported as distinct infrastructure failures. Repeated retries do not establish durable availability. Preserve completed cells and receipts, then resolve the reported cause before resuming. Agent Layer does not mirror the catalog, provision AWS credentials, or rotate network addresses automatically.
 
-The explicit readiness input boundary includes non-test files in
-`internal/benchmark/`, `internal/gitenv/`, `internal/fsutil/`, and
-`internal/root/`, plus the direct launcher, command registration, root
-resolution, and setup command files `cmd/al/benchmark.go`, `cmd/al/main.go`,
-`cmd/al/root.go`, `cmd/al/root_resolve.go`, `cmd/al/getwd.go`, and
-`cmd/al/wizard.go`, plus `go.mod`, `go.sum`, `.agent-layer/repo-profile.toml`,
-this workflow, and both
-`scripts/catalog-certification-scope.*` helpers. Go `*_test.go` files and
-`testdata/` are excluded. Renames, deletions, and executable-mode changes count.
-This explicit boundary focuses on catalog readiness logic and setup inputs;
-it does not fingerprint every transitive application dependency. Weekly full
-runs detect external image and runner drift. The exact candidate
-commit still receives a workflow result whose summary links the original full
-run and reports its age. Release gates continue to require that candidate's
-successful workflow result.
-
-Reuse needs an initial successful full run for the current inputs. To establish
-one without configuring AWS access, dispatch a manual full run on main:
-
-```bash
-gh workflow run release-catalog-certification.yml --ref main -f force=true
-```
-
-Avoid pushing to main during bootstrap: each push can start competing downloads
-until a successful full result exists. Inspect all failed shard logs. If every failed shard is blocked solely by ECR
-quota, use `gh run rerun <run-id> --failed` at most three times, checking the logs
-after each attempt. Successful shards carry forward; use the same manual run,
-whose concurrency group is independent of later pushes. Stop on a real task
-failure or after the retry limit. Quota availability can still prevent initial
-or weekly certification; reuse reduces repeated downloads but does not replenish
-AWS's shared allowance. After a successful full run, a manual dispatch with
-`force=false` on the same commit can verify reuse in the classification summary.
-
-The observed `toomanyrequests: Data limit exceeded` response is a data allowance
-failure, not evidence that a task failed. Anonymous ECR Public downloads share
-an allowance by source IP; slower scheduling cannot replenish an exhausted
-allowance. See [AWS's ECR pricing and quota explanation](https://aws.amazon.com/ecr/pricing/).
-
-To use authenticated pulls, configure the repository variable
-`ECR_PUBLIC_ROLE_ARN` with an IAM role trusted for GitHub OIDC from
-`repo:conn-castle/agent-layer:ref:refs/heads/main` and audience `sts.amazonaws.com`.
-Its pull-token permissions are `ecr-public:GetAuthorizationToken` and
-`sts:GetServiceBearerToken` (resource `*`; the latter can be restricted to service
-`ecr-public.amazonaws.com`). The workflow obtains temporary credentials in
-`us-east-1`, logs Docker into ECR Public, and removes the Docker login at job end.
-AWS credential variables are unset before task readiness execution. See
-[AWS's public registry authentication contract](https://docs.aws.amazon.com/AmazonECR/latest/public/public-registry-auth.html).
-
-Without that variable, the workflow explicitly reports anonymous access and its
-source-IP quota. A configured role/authentication failure stops its shard rather
-than silently switching back to anonymous pulls. AWS account quotas and data
-transfer billing still apply; configure the role only for an approved account.
-The PR does not create AWS resources or set repository variables, and cannot
-claim that a shared anonymous quota has been repaired by scheduling alone.
+Core releases require exact-source CI and a signed, version-matched rehearsal, with no live catalog workflow, scheduled catalog sweep, or ECR prerequisite. Mandatory CI checks the core executable's transitive dependencies and runs offline engine/CLI fixtures, including study identity, recovery, readiness failures, and reporting. A separate companion CI job runs the pinned Pier contracts against controlled Python fixtures using `make benchmark-contract-check`; it does not pull images or call providers. These tests protect our integration behavior, while actual study preflight establishes external readiness for that study at execution time.

@@ -39,31 +39,40 @@ run_release_workflow_security_tests() {
     return
   fi
 
-  local catalog_job build_job
-  catalog_job=$(release_workflow_job "$workflow" "catalog-readiness")
+  local readiness_job build_job
+
+  if [[ ! -f "$ROOT_DIR/.github/workflows/release-catalog-certification.yml" ]] &&
+     ! grep -Eq 'release-catalog|benchmark readiness|public\.ecr\.aws|docker pull' "$workflow" "$ROOT_DIR/.github/workflows/ci.yml" &&
+     grep -q 'run: make benchmark-contract-check' "$ROOT_DIR/.github/workflows/ci.yml"; then
+    pass "release-security: core workflows exclude live catalog pulls and retain companion fixture contracts"
+  else
+    fail "release-security: live catalog access returned or companion contracts are missing"
+  fi
+
+  readiness_job=$(release_workflow_job "$workflow" "release-readiness")
   build_job=$(release_workflow_job "$workflow" "build-release")
-  if [[ -z "$catalog_job" || -z "$build_job" ]]; then
-    fail "release-security: catalog-readiness or build-release job is missing"
+  if [[ -z "$readiness_job" || -z "$build_job" ]]; then
+    fail "release-security: release-readiness or build-release job is missing"
     return
   fi
 
-  if grep -q '^    needs: catalog-readiness$' <<<"$build_job"; then
-    pass "release-security: release build requires catalog readiness"
+  if grep -q '^    needs: release-readiness$' <<<"$build_job"; then
+    pass "release-security: release build requires exact-commit CI"
   else
-    fail "release-security: build-release must require catalog-readiness"
+    fail "release-security: build-release must require release-readiness"
   fi
 
-  local catalog_check_step
-  catalog_check_step=$(release_workflow_step "$catalog_job" "Verify exact-commit catalog certification")
-  if grep -Eq '^[[:space:]]+release_commit="\$\(git rev-parse HEAD\)"$' <<<"$catalog_check_step" &&
-     grep -Eq '^[[:space:]]+for workflow in ci.yml release-catalog-certification.yml; do$' <<<"$catalog_check_step" &&
-     grep -Eq '^[[:space:]]+--workflow "\$\{workflow\}" \\$' <<<"$catalog_check_step" &&
-     grep -Eq '^[[:space:]]+--branch main \\$' <<<"$catalog_check_step" &&
-     grep -Eq '^[[:space:]]+--commit "\$\{release_commit\}" \\$' <<<"$catalog_check_step" &&
-     grep -Eq '^[[:space:]]+--status success \\$' <<<"$catalog_check_step"; then
-    pass "release-security: readiness requires successful CI and catalog certification for the exact source commit"
+  local ci_check_step
+  ci_check_step=$(release_workflow_step "$readiness_job" "Verify exact-commit CI")
+  if grep -Eq '^[[:space:]]+release_commit="\$\(git rev-parse HEAD\)"$' <<<"$ci_check_step" &&
+     grep -Eq '^[[:space:]]+for workflow in ci.yml; do$' <<<"$ci_check_step" &&
+     grep -Eq '^[[:space:]]+--workflow "\$\{workflow\}" \\$' <<<"$ci_check_step" &&
+     grep -Eq '^[[:space:]]+--branch main \\$' <<<"$ci_check_step" &&
+     grep -Eq '^[[:space:]]+--commit "\$\{release_commit\}" \\$' <<<"$ci_check_step" &&
+     grep -Eq '^[[:space:]]+--status success \\$' <<<"$ci_check_step"; then
+    pass "release-security: readiness requires successful CI for the exact source commit"
   else
-    fail "release-security: readiness must bind successful CI and catalog certification to the exact source commit"
+    fail "release-security: readiness must bind successful CI to the exact source commit"
   fi
 
   local web_job step
@@ -78,13 +87,13 @@ run_release_workflow_security_tests() {
      [[ "$(grep -c 'ref: \${{ env.RELEASE_REF }}' "$workflow")" -eq 3 ]] &&
      grep -q 'inputs.rehearsal && github.sha || format' "$workflow" &&
      grep -q 'agent-layer-web-rehearsal-{0}' <<<"$web_job" &&
-     grep -q '^  contents: read$' "$workflow" && ! grep -Eq '^[[:space:]]+contents: write$' <<<"$catalog_job$web_job" &&
+     grep -q '^  contents: read$' "$workflow" && ! grep -Eq '^[[:space:]]+contents: write$' <<<"$readiness_job$web_job" &&
      grep -q '^      contents: write$' <<<"$build_job" &&
      [[ "$(grep -c "persist-credentials: \${{ env.REHEARSAL != 'true' }}" <<<"$web_job")" -eq 2 ]]; then
     pass "release-rehearsal: safe default uses dispatched SHA, isolated concurrency, and no persisted external credentials"
   else fail "release-rehearsal: manual default, source, concurrency, or credentials are unsafe"; fi
-  if grep -q -- '--event workflow_dispatch' <<<"$(release_workflow_step "$catalog_job" "Verify exact-commit release rehearsal before publication")" &&
-     grep -q 'Release rehearsal \${RELEASE_TAG}' <<<"$catalog_job" &&
+  if grep -q -- '--event workflow_dispatch' <<<"$(release_workflow_step "$readiness_job" "Verify exact-commit release rehearsal before publication")" &&
+     grep -q 'Release rehearsal \${RELEASE_TAG}' <<<"$readiness_job" &&
      [[ "$(grep -c 'permission-contents: write' <<<"$web_job")" -eq 2 ]] &&
      grep -q 'permission-pull-requests: write' <<<"$web_job" &&
      grep -q 'run: ruby -c homebrew-tap/Formula/agent-layer.rb' <<<"$(release_workflow_step "$web_job" "Validate rendered formula syntax")"; then

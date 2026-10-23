@@ -114,7 +114,7 @@ func TestNoArgsCommandsRejectExtraArgs(t *testing.T) {
 // root command because cobra only applies the legacy unknown-command check to a
 // root, so a parent tested on its own would pass even without the fix.
 func TestParentCommandsRejectUnknownSubcommands(t *testing.T) {
-	for _, parent := range []string{"dispatch", "benchmark", "probe", "hook"} {
+	for _, parent := range []string{"dispatch", "probe", "hook"} {
 		t.Run(parent, func(t *testing.T) {
 			root := newRootCmd()
 			root.SetArgs([]string{parent, "bogus"})

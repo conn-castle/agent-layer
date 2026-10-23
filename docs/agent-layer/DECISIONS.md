@@ -306,3 +306,8 @@ Record otherwise-lost rationale that materially constrains future work. Current 
     Decision: Keep fresh wizard orders at rules=0 and memory=10, retain adopted files' existing orders, and refuse collisions with explicit CLI --order/config guidance.
     Reason: Automatically appending imports after the highest order changes their intended precedence relative to project-specific instructions. The approved instruction-sync plan chose refusal; review suggestions must not silently replace that policy.
     Tradeoffs: A colliding layout needs an explicit `al instructions add --order` invocation or config edit before wizard selection can proceed. The existing offline collision regression verifies that refusal leaves sources and configuration unchanged.
+
+- Decision 2026-10-22 optional-benchmark-release-boundary: Keep upstream benchmark availability outside core release readiness
+    Decision: Preserve the evaluation engine as the optional al-benchmark companion with an al benchmark handoff. Verify our integration with controlled fixtures; certify selected external tasks when an evaluation is requested.
+    Reason: Repeated quota-only retries and expiring catalog proof cannot make anonymous ECR availability reliable. Maintaining 106 mirrored images adds an unwanted registry lifecycle and ownership burden for an optional capability.
+    Tradeoffs: Benchmark users install the companion explicitly and still depend on upstream task images. Core releases retain exact-source CI and signed rehearsal without requiring a mirror or a live catalog sweep.

@@ -185,7 +185,7 @@ dead-code: check-deadcode ## Run dead code analysis across all packages (test-aw
 .PHONY: dead-code-entrypoints
 dead-code-entrypoints: check-deadcode ## Run dead code analysis from CLI entrypoints only; fails on findings
 	@mkdir -p "$(GO_CACHE)" "$(GO_MOD_CACHE)"
-	@rc=0; out="$$(GOCACHE="$(GO_CACHE)" GOMODCACHE="$(GO_MOD_CACHE)" "$(TOOL_BIN)/deadcode" -test ./cmd/al ./cmd/publish-site 2>&1)" || rc=$$?; \
+	@rc=0; out="$$(GOCACHE="$(GO_CACHE)" GOMODCACHE="$(GO_MOD_CACHE)" "$(TOOL_BIN)/deadcode" -test ./cmd/al ./cmd/al-benchmark ./cmd/publish-site 2>&1)" || rc=$$?; \
 	  if [[ $$rc -ne 0 ]]; then echo "$$out" >&2; echo "deadcode failed (exit $$rc); see output above" >&2; exit $$rc; fi; \
 	  if [[ -n "$$out" ]]; then echo "$$out" >&2; echo "dead code detected (deadcode always exits 0; non-empty output fails this target)" >&2; exit 1; fi
 
@@ -302,9 +302,21 @@ release-preflight: ## Run CI, build unsigned release artifacts, and scan them (s
 	  AL_CODESIGN_IDENTITY= AL_REQUIRE_CODESIGN=0 AL_VERSION="$${RELEASE_TAG}" DIST_DIR="$$artifact_dir" ./scripts/build-release.sh; \
 	  $(MAKE) release-vuln-check DIST_DIR="$$artifact_dir"
 
-.PHONY: release-catalog-certify
-release-catalog-certify: ## Certify exact-commit CI, catalog, and signed rehearsal before tagging (set AL_VERSION=vX.Y.Z)
-	@AL_VERSION="$(AL_VERSION)" ./scripts/certify-release-catalog.sh
+.PHONY: release-certify release-catalog-certify
+release-certify: ## Certify exact-commit CI and signed rehearsal before tagging (set AL_VERSION=vX.Y.Z)
+	@AL_VERSION="$(AL_VERSION)" ./scripts/certify-release.sh
+
+release-catalog-certify: release-certify ## Compatibility alias for release-certify; no catalog downloads
+
+.PHONY: benchmark-install benchmark-contract-check benchmark-boundary-check
+benchmark-install: ## Install the optional companion from this checkout into GOBIN (or Go's default bin directory)
+	@go install ./cmd/al-benchmark
+
+benchmark-contract-check: ## Test pinned Pier contracts with Python fixtures; no Docker images or inference
+	@go test -tags benchmark_contract ./internal/benchmark -count=1
+
+benchmark-boundary-check: ## Reject benchmark engine dependencies in the core CLI
+	@bash scripts/check-benchmark-boundary.sh
 
 .PHONY: release-dist
 release-dist: test-release ## Build release artifacts (cross-compile)
@@ -334,7 +346,7 @@ test-e2e-ci: ## Run e2e tests for CI (online downloads, upgrade scenarios requir
 	@AL_E2E_ONLINE=1 AL_E2E_REQUIRE_UPGRADE=1 ./scripts/test-e2e.sh
 
 .PHONY: ci
-ci: tidy-check fmt-check lint shell-syntax-check dead-code coverage test-muse-fixture test-deepswe-planner test-race test-release test-e2e-harness test-e2e-ci docs-cta-check ## Run CI checks locally
+ci: tidy-check fmt-check lint shell-syntax-check benchmark-boundary-check dead-code coverage test-muse-fixture test-deepswe-planner test-race test-release test-e2e-harness test-e2e-ci docs-cta-check ## Run CI checks locally
 
 .PHONY: dev
 dev: ## Fast local formatting and lint loop

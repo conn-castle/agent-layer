@@ -26,7 +26,7 @@ env:
   RELEASE_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.rehearsal && github.sha || format('refs/tags/{0}', inputs.release_tag || github.ref_name) }}
 
 jobs:
-  catalog-readiness:
+  release-readiness:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -41,13 +41,13 @@ jobs:
         with:
           ref: ${{ env.RELEASE_REF }}
           persist-credentials: false
-      - name: Verify exact-commit catalog certification
+      - name: Verify exact-commit CI
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           release_commit="$(git rev-parse HEAD)"
-          for workflow in ci.yml release-catalog-certification.yml; do
+          for workflow in ci.yml; do
             certification_url="$(
               gh run list \
                 --workflow "${workflow}" \
@@ -60,7 +60,7 @@ jobs:
             )"
             if [[ -z "${certification_url}" ]]; then
               echo "::error::No successful ${workflow} exists for exact source commit ${release_commit}."
-              echo "::error::Run make release-catalog-certify AL_VERSION=${RELEASE_TAG} on clean, pushed main before tagging."
+              echo "::error::Run make release-certify AL_VERSION=${RELEASE_TAG} on clean, pushed main before tagging."
               exit 1
             fi
             echo "Using exact-commit ${workflow}: ${certification_url}"
@@ -76,13 +76,13 @@ jobs:
             --branch main --commit "$(git rev-parse HEAD)" --status success --limit 20 \
             --json displayTitle,url --jq "map(select(.displayTitle == \"Release rehearsal ${RELEASE_TAG}\"))[0].url // \"\"")"
           if [[ -z "${rehearsal_url}" ]]; then
-            echo "::error::No successful exact-commit rehearsal exists for ${RELEASE_TAG}. Run make release-catalog-certify AL_VERSION=${RELEASE_TAG} before tagging."
+            echo "::error::No successful exact-commit rehearsal exists for ${RELEASE_TAG}. Run make release-certify AL_VERSION=${RELEASE_TAG} before tagging."
             exit 1
           fi
           echo "Using signed release rehearsal: ${rehearsal_url}"
 
   build-release:
-    needs: catalog-readiness
+    needs: release-readiness
     runs-on: macos-latest
     # Permissions cannot use expressions; only this shared publication job needs write.
     permissions:
@@ -110,13 +110,6 @@ jobs:
           set -euo pipefail
           if ! command -v rg >/dev/null 2>&1; then
             brew install ripgrep
-          fi
-          if ! command -v uvx >/dev/null 2>&1; then
-            brew install uv
-          fi
-          if ! command -v uvx >/dev/null 2>&1; then
-            echo "::error::uvx is required by the pinned benchmark adapter contract but was not found after installing uv."
-            exit 1
           fi
       - name: Validate upgrade contract docs
         run: |

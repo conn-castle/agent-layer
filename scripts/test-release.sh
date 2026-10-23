@@ -55,7 +55,7 @@ section() {
 source "$SCRIPT_DIR/test-release/release_tests.sh"
 source "$SCRIPT_DIR/test-release/tool_tests.sh"
 source "$SCRIPT_DIR/test-release/upgrade_docs_tests.sh"
-source "$SCRIPT_DIR/test-release/catalog_certification_tests.sh"
+source "$SCRIPT_DIR/test-release/release_certification_tests.sh"
 source "$SCRIPT_DIR/test-release/workflow_security_tests.sh"
 
 tmp_dir=$(mktemp -d)
@@ -66,7 +66,7 @@ dist_dir="$tmp_dir/dist"
 expected_version="v0.24.0"
 expected_version_no_v="${expected_version#v}"
 
-run_catalog_certification_script_tests
+run_release_certification_script_tests
 run_release_workflow_security_tests
 run_release_generation_test
 run_missing_migration_manifest_test

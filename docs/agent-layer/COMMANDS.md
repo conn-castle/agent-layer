@@ -330,13 +330,13 @@ Notes: Validates the tag and upgrade-contract docs before running `make ci` once
 
 - Certify the exact pushed `main` commit before creating a release tag
 ```bash
-make release-catalog-certify AL_VERSION=vX.Y.Z
+make release-certify AL_VERSION=vX.Y.Z
 ```
 Run from: repo root on `main`, after committing and pushing the release metadata but before creating the tag
 Prerequisites: Explicit user approval of the exact stable release version, GitHub CLI authentication, a clean working tree, and local `HEAD` equal to `origin/main`
-Notes: Requires AL_VERSION=vX.Y.Z and verifies full CI, catalog certification, and a signed release rehearsal for the exact pushed commit. Reuses successful runs or waits for active runs; dispatches missing catalog certification and the release workflow with rehearsal=true when needed. Every push to main starts ordinary CI and catalog certification, but not the signed rehearsal. Catalog classification can reuse a trusted full sixteen-shard main run created within seven days when its ancestor commit has unchanged catalog inputs and no newer matching shard failure. Reused classifications never renew that original proof; missing or invalid evidence requires all sixteen shards. Weekly scheduled runs and manual force=true dispatches always run the full catalog. The release gate accepts only certification for the exact commit resolved by the tag. This command can dispatch a release rehearsal, so the approval gate above applies.
+Notes: Requires AL_VERSION=vX.Y.Z and verifies full CI plus a signed, version-matched release rehearsal for the exact pushed commit. Reuses successful runs or waits for active runs; dispatches the release workflow with rehearsal=true when needed. Failed or missing CI blocks rehearsal, and CI is never dispatched. Catalog/ECR access is not required. The old release-catalog-certify target remains an alias. This command can dispatch a release rehearsal, so the approval gate above applies.
 
-Release order: prepare and commit the approved version metadata, run `make release-preflight RELEASE_TAG=vX.Y.Z`, push `main`, run `make release-catalog-certify AL_VERSION=vX.Y.Z`, and only then create and push `vX.Y.Z`.
+Release order: prepare and commit the approved version metadata, run `make release-preflight RELEASE_TAG=vX.Y.Z`, push `main`, run `make release-certify AL_VERSION=vX.Y.Z`, and only then create and push `vX.Y.Z`.
 
 - Validate upgrade-contract docs for a target release tag
 ```bash

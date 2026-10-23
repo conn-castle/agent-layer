@@ -6,7 +6,6 @@ import (
 	"encoding/base64"
 	"errors"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -310,37 +309,6 @@ func TestBareCustomProviderStagesEmbeddedPierAdapter(t *testing.T) {
 		if !bytes.Equal(actual, expected) {
 			t.Fatalf("bare %s adapter differs from embedded release asset", adapter)
 		}
-	}
-}
-
-func TestBareCustomProviderLoadsThroughPinnedPierFactory(t *testing.T) {
-	stage := t.TempDir()
-	path, err := stagePierAgentLayerAdapter(ExecutionRequest{
-		Arm: ArmBaseline, Model: Model{Adapter: adapterGrok},
-	}, stage)
-	if err != nil {
-		t.Fatal(err)
-	}
-	script := `
-from pathlib import Path
-from pier.agents.factory import AgentFactory
-
-agent = AgentFactory.create_agent_from_import_path(
-    "pier_agent_layer:AgentLayerGrok",
-    logs_dir=Path("/tmp/agent-layer-pier-factory-test"),
-    model_name="grok-4.5",
-    version="1.0.5",
-    treatment_agent="grok",
-    treatment_model="grok-4.5",
-    treatment_reasoning_effort="low",
-    treatment_mode="bare",
-)
-assert agent.name() == "grok"
-`
-	command := exec.CommandContext(t.Context(), "uvx", "--from", "datacurve-pier=="+PierVersion, "python", "-c", script) // #nosec G204 -- pinned Pier constructs the embedded benchmark adapter.
-	command.Env = replaceEnvValue(os.Environ(), "PYTHONPATH", path)
-	if output, err := command.CombinedOutput(); err != nil {
-		t.Fatalf("pinned Pier failed to construct staged bare adapter: %v\n%s", err, output)
 	}
 }
 

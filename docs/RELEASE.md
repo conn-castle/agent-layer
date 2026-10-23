@@ -21,12 +21,12 @@ git fetch origin
 git pull --ff-only origin main
 git status --porcelain
 
-# Push and certify exact-commit CI, catalog, and signed nonpublishing rehearsal
+# Push and certify exact-commit CI and signed nonpublishing rehearsal
 git push origin main
 RELEASE_COMMIT="$(git rev-parse HEAD)"
-make release-catalog-certify AL_VERSION="$VERSION"
+make release-certify AL_VERSION="$VERSION"
 
-# Tag only the unchanged certified commit after all three gates succeed
+# Tag only the unchanged certified commit after both gates succeed
 git tag -a "$VERSION" "$RELEASE_COMMIT" -m "$VERSION"
 git push origin "$VERSION"
 
@@ -61,9 +61,9 @@ CI validates both manifests exist via `make docs-upgrade-check RELEASE_TAG=<tag>
 
 The vulnerability database is network-backed and can change before tagging. Hosted signing, notarization, and its release scan remain the final publication gate, so they can still fail after a local preflight passes.
 
-After pushing the release commit to `main`, run `make release-catalog-certify AL_VERSION="$VERSION"` before tagging. The explicit stable version is required; the helper rejects missing versions and the Makefile's default `dev` value. On clean, pushed current `main`, it first requires successful exact-commit full CI (`ci.yml`), including both Linux/macOS verification jobs, both native Muse jobs, and the website build. It awaits active CI and allows up to 60 seconds for a missing push run to appear. Failed or missing CI stops without dispatching certification; CI is never dispatched by the helper.
+After pushing the release commit to `main`, run `make release-certify AL_VERSION="$VERSION"` before tagging. The explicit stable version is required; the helper rejects missing versions and the Makefile's default `dev` value. On clean, pushed current `main`, it first requires successful exact-commit full CI (`ci.yml`), including both Linux/macOS verification jobs, both native Muse jobs, the website build, and companion fixture contracts. It awaits active CI and allows up to 60 seconds for a missing push run to appear. Failed or missing CI stops without dispatching certification; CI is never dispatched by the helper.
 
-Next it reuses, awaits, or dispatches exact-commit catalog certification, preserving its existing 60-second push-run appearance wait. The catalog workflow can reuse a trusted main-branch full run created within the last seven days when its source commit is an ancestor and catalog inputs are unchanged. It verifies successful execution of all sixteen shards, including successful jobs retained across failed-job reruns; skipped classification runs cannot seed or renew proof. A newer matching failed shard prevents reuse of an older success. Otherwise the full pinned catalog runs in sixteen bounded-disk shards. Each candidate still receives exact-commit classification with the source proof URL and age in its step summary. Weekly scheduled runs and manual `force=true` dispatches always run the full catalog for external drift. See [catalog certification and registry access](BENCHMARK.md#release-catalog-registry-access) for the input boundary and quota-blocked retry procedure.
+Benchmarking ships as an optional companion and is verified through offline fixtures plus a separate pinned Pier contract CI job. Core certification never queries or dispatches a live catalog run and requires no Docker images or ECR access. Actual evaluations preflight only their selected tasks. See [benchmark setup and registry availability](BENCHMARK.md#registry-availability-and-verification).
 
 Finally the helper reuses, awaits, or dispatches `release.yml` with `release_tag="$VERSION"` and `rehearsal=true`. Rehearsal evidence must have the same main SHA and the exact run title `Release rehearsal vX.Y.Z`; publication runs and other versions cannot satisfy this gate. The helper waits for the entire workflow to succeed and rechecks that local and remote main have not changed. It fails if the dispatched run of that exact SHA does not appear within 30 seconds. No source changes may follow successful certification: if main, manifests, or release sources change, push and certify the new commit again before tagging. Record the certified SHA, intended version, and rehearsal run URL with the release evidence.
 
@@ -77,7 +77,7 @@ gh workflow run release.yml --ref main -f release_tag="$VERSION" -f rehearsal=tr
 
 Use the helper above to bind, wait for, and verify the successful exact-SHA run. The workflow checks out the dispatched `github.sha` in rehearsal; publication checks out the release tag. Both modes use the same signing, vulnerability scanning, notarization, artifact transfer, app-token issuance with publication permissions, local website build/asset validation, formula generation, and Ruby syntax checks. Rehearsal skips release publication, website commit/push, public release-asset URL checks, and tap PR creation. External checkout credentials are not persisted, and rehearsal uses a separate concurrency group. Tag pushes still publish; manual publication requires explicitly selecting `rehearsal=false` and the existing version/publication approval.
 
-The release workflow itself requires successful exact-commit CI and catalog certification in both modes, plus a successful matching rehearsal before publication. GitHub token permissions are static, so the shared build/publication job retains `contents: write` with its release action guarded off during rehearsal; the other jobs use `contents: read`. App tokens deliberately request normal publication permissions to verify issuance, but rehearsal never uses them to push or create a PR. Rehearsal validates the local publication payloads and credentials, not actual external writes or the tap repository's post-publication test/auto-merge result. External service state can also change after certification; preserve the existing publication approvals and post-publication checks.
+The release workflow itself requires successful exact-commit CI in both modes, plus a successful matching rehearsal before publication. GitHub token permissions are static, so the shared build/publication job retains `contents: write` with its release action guarded off during rehearsal; the other jobs use `contents: read`. App tokens deliberately request normal publication permissions to verify issuance, but rehearsal never uses them to push or create a PR. Rehearsal validates the local publication payloads and credentials, not actual external writes or the tap repository's post-publication test/auto-merge result. External service state can also change after certification; preserve the existing publication approvals and post-publication checks.
 
 ## Agent Dispatch compatibility evidence
 
