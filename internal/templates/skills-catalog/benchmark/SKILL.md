@@ -5,6 +5,8 @@ description: Run A/B tests of skills, instructions, agents, harnesses, and other
 
 # Benchmark
 
+Benchmarking requires the optional `al-benchmark` executable on `PATH`. Check `al-benchmark --version`; if absent, install the matching published Agent Layer release with `go install github.com/conn-castle/agent-layer/cmd/al-benchmark@<version>` (Go 1.27+), ensuring Go's bin directory is on `PATH`. In the Agent Layer source checkout, use `make benchmark-install` instead. `al benchmark` forwards to this companion. Installation does not pull task images, and existing study data and reports need no migration. See `docs/BENCHMARK.md` for setup and external registry limitations.
+
 Help the user A/B test a change to an agent system—typically a skill, instructions, agent configuration, or harness behavior, but potentially any deliberate system change. One arm is the baseline and the other contains the change being evaluated. Match the amount of analysis and rigor the user wants; this skill does not prescribe an experimentation method.
 
 A score or cost difference always has a cause. Reporting the difference is not enough: investigate why it changed relative to the baseline and explain the root cause in simple language. Consider the whole system, including the agent, task, verifier, benchmark implementation, dependencies, environment, configuration, and cost accounting. Do not assume the benchmark is correct or stop at a symptom such as “the task failed.” Follow the evidence until the underlying cause is clear. If retained evidence cannot establish it, identify the missing evidence and gather it when possible rather than guessing.
