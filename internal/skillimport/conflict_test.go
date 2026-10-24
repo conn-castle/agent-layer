@@ -574,3 +574,47 @@ func TestResolveRejectsPullWorkspaceAfterClearingPinnedTracking(t *testing.T) {
 		t.Fatalf("cleared-tracking workspace error = %v", err)
 	}
 }
+
+func TestPushConflictMatchesLiteralUnicodeBranch(t *testing.T) {
+	branch := "review/castle\u00a0"
+	source := newGitRepo(t, "main")
+	source.WriteSkill("skills/alpha", "alpha", "Alpha body")
+	source.WriteFile("skills/alpha/notes.md", "shared\n", 0o644)
+	source.Commit("add alpha")
+	proj := newProject(t)
+	proj.AppendConfig(importBlock(source.URL(), []string{"skills/alpha"},
+		`write_policy = "branch"`, `push_branch = "`+branch+`"`))
+	if _, err := proj.Service().Pull(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	source.Checkout(branch, true)
+	source.WriteFile("skills/alpha/notes.md", "destination change\n", 0o644)
+	source.Commit("destination change")
+	source.Checkout("main", false)
+	proj.WriteImportedFile("alpha", "notes.md", "local change\n")
+	report, err := proj.Service().Push(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	requireOutcome(t, report, "alpha", OutcomeFailed)
+	st, err := loadState(proj.root, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	entry, _ := st.lock.Entry("alpha")
+	metadata, _, err := readConflictMetadata(st, "alpha")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if metadata.DestinationBranch != branch || !conflictMatches(st, entry, metadata) {
+		t.Fatalf("literal branch did not match its conflict workspace: %+v", metadata)
+	}
+	proj.ReplaceInConfig(`push_branch = "`+branch+`"`, `push_branch = "review/castle"`)
+	st, err = loadState(proj.root, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if conflictMatches(st, entry, metadata) {
+		t.Fatal("trimmed sibling matched the literal branch workspace")
+	}
+}

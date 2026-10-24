@@ -392,25 +392,43 @@ func allowsLiteralUsername(scheme string) bool {
 	return ok
 }
 
-func validateEntry(entry Entry, instructions bool) error {
-	required := []struct {
-		field string
-		value string
-	}{
-		{"name", entry.Name},
-		{"repository", entry.Repository},
-		{"selector", entry.Selector},
-		{"selected_path", entry.SelectedPath},
-		{"resolved_ref", entry.ResolvedRef},
-		{"ref_kind", entry.RefKind},
-		{"tracking", entry.Tracking},
-		{"commit", entry.Commit},
-		{treeHashField, entry.TreeHash},
-	}
-	for _, field := range required {
-		if strings.TrimSpace(field.value) == "" {
+// TrimRefPadding removes incidental ASCII whitespace around a configured Git
+// ref or branch name. Git rejects ASCII space and control characters in ref
+// names, so this never changes a valid ref, while Unicode whitespace, which Git
+// accepts inside names, is preserved.
+func TrimRefPadding(ref string) string { return strings.Trim(ref, " \t\n\v\f\r") }
+
+// requiredField is one lock field that must be non-empty after trim. Native Git
+// refs use TrimRefPadding so a Unicode-whitespace name still counts as present.
+type requiredField struct {
+	field string
+	value string
+	trim  func(string) string
+}
+
+func checkRequired(fields []requiredField) error {
+	for _, field := range fields {
+		if field.trim(field.value) == "" {
 			return fmt.Errorf("%s is required", field.field)
 		}
+	}
+	return nil
+}
+
+func validateEntry(entry Entry, instructions bool) error {
+	required := []requiredField{
+		{"name", entry.Name, strings.TrimSpace},
+		{"repository", entry.Repository, strings.TrimSpace},
+		{"selector", entry.Selector, strings.TrimSpace},
+		{"selected_path", entry.SelectedPath, strings.TrimSpace},
+		{"resolved_ref", entry.ResolvedRef, TrimRefPadding},
+		{"ref_kind", entry.RefKind, strings.TrimSpace},
+		{"tracking", entry.Tracking, strings.TrimSpace},
+		{"commit", entry.Commit, strings.TrimSpace},
+		{treeHashField, entry.TreeHash, strings.TrimSpace},
+	}
+	if err := checkRequired(required); err != nil {
+		return err
 	}
 
 	validateName := validateSkillName
@@ -478,19 +496,14 @@ func validateEntry(entry Entry, instructions bool) error {
 }
 
 func validatePublication(publication Publication) error {
-	required := []struct {
-		field string
-		value string
-	}{
-		{"repository", publication.Repository},
-		{"branch", publication.Branch},
-		{"commit", publication.Commit},
-		{treeHashField, publication.TreeHash},
+	required := []requiredField{
+		{"repository", publication.Repository, strings.TrimSpace},
+		{"branch", publication.Branch, TrimRefPadding},
+		{"commit", publication.Commit, strings.TrimSpace},
+		{treeHashField, publication.TreeHash, strings.TrimSpace},
 	}
-	for _, field := range required {
-		if strings.TrimSpace(field.value) == "" {
-			return fmt.Errorf("%s is required", field.field)
-		}
+	if err := checkRequired(required); err != nil {
+		return err
 	}
 	if publication.Repository != strings.TrimSpace(publication.Repository) || strings.HasSuffix(publication.Repository, "/") {
 		return fmt.Errorf("repository %q is not normalized", publication.Repository)
@@ -498,7 +511,7 @@ func validatePublication(publication Publication) error {
 	if err := ValidateRepository(publication.Repository); err != nil {
 		return fmt.Errorf("repository is invalid: %w", err)
 	}
-	if publication.Branch != strings.TrimSpace(publication.Branch) {
+	if publication.Branch != TrimRefPadding(publication.Branch) {
 		return fmt.Errorf("branch %q is not normalized", publication.Branch)
 	}
 	if err := validateCommitID(publication.Commit); err != nil {

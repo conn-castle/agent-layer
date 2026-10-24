@@ -239,7 +239,7 @@ func validateDesiredSet(desired []desiredSkill) error {
 		if !skill.Block.WriteEnabled() {
 			continue
 		}
-		key := skill.Block.EffectivePushRepository() + "\x00" + strings.TrimSpace(skill.Block.PushBranch)
+		key := skill.Block.EffectivePushRepository() + "\x00" + skilllock.TrimRefPadding(skill.Block.PushBranch)
 		byPushGroup[key] = append(byPushGroup[key], skill)
 	}
 	for key, skills := range byPushGroup {

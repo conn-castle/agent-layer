@@ -680,12 +680,13 @@ func TestIsCommitIDAcceptsOnlyFullObjectIDs(t *testing.T) {
 	for _, value := range []string{
 		"0123456789abcdef0123456789abcdef01234567",
 		strings.Repeat("ab", 32),
+		" \t" + strings.Repeat("ab", 20) + "\r\n",
 	} {
 		if !IsCommitID(value) {
 			t.Fatalf("%d-character object id was rejected", len(value))
 		}
 	}
-	for _, value := range []string{"0123456", "main", "v1.0.0", strings.Repeat("g", 40), strings.Repeat("a", 41), strings.Repeat("a", 63)} {
+	for _, value := range []string{"0123456", "main", "v1.0.0", strings.Repeat("g", 40), strings.Repeat("a", 41), strings.Repeat("a", 63), "\u00a0" + strings.Repeat("a", 40), strings.Repeat("a", 64) + "\u00a0"} {
 		if IsCommitID(value) {
 			t.Fatalf("%q was treated as a commit id", value)
 		}
@@ -1185,5 +1186,138 @@ func TestPublishRefusesAnUnknownBase(t *testing.T) {
 	}
 	if repo.git("rev-parse", "main") != head {
 		t.Fatal("a failed publish moved the destination branch")
+	}
+}
+
+// TestResolveDefaultBranchKeepsNativeIdentity proves remote HEAD selects a
+// branch without applying explicit tag or object-id selection rules.
+func TestResolveDefaultBranchKeepsNativeIdentity(t *testing.T) {
+	for _, branch := range []string{"release/城門\u00a0next", "release/castle", strings.Repeat("a", 40)} {
+		t.Run(branch, func(t *testing.T) {
+			repo := newTestRepo(t, branch)
+			tagCommit := repo.git("rev-parse", "HEAD")
+			repo.git("tag", branch)
+			branchCommit := repo.commit("advance branch beyond tag")
+			_, source := newTestSource(t, repo)
+			ctx := context.Background()
+			got, err := source.Resolve(ctx, "")
+			if err != nil || got != (Resolution{Ref: branch, Kind: skilllock.RefKindBranch, Commit: branchCommit}) {
+				t.Fatalf("default resolution = %+v, %v; want branch %q at %s", got, err, branch, branchCommit)
+			}
+			if err := source.Fetch(ctx, got.Commit); err != nil {
+				t.Fatalf("fetch default branch commit: %v", err)
+			}
+			if !IsCommitID(branch) {
+				if _, err := source.Resolve(ctx, branch); err == nil || !strings.Contains(err.Error(), "both a branch and a tag") {
+					t.Fatalf("explicit ambiguous ref error = %v", err)
+				}
+			}
+			got, err = source.Resolve(ctx, tagCommit)
+			if err != nil || got.Kind != skilllock.RefKindCommit || got.Commit != tagCommit {
+				t.Fatalf("explicit object id resolution = %+v, %v", got, err)
+			}
+		})
+	}
+}
+
+// TestResolvePreservesLiteralUnicodeRefs gives each literal ref a different
+// commit from the name Unicode trimming would select.
+func TestResolvePreservesLiteralUnicodeRefs(t *testing.T) {
+	repo := newTestRepo(t, "main")
+	siblingCommit := repo.git("rev-parse", "HEAD")
+	repo.git("branch", "feature")
+	repo.git("tag", "v1")
+	literalCommit := repo.commit("literal refs")
+	for _, branch := range []string{"feature\u00a0next", "\u00a0feature", "feature\u00a0", "\u00a0", "\u00a0" + siblingCommit} {
+		repo.git("branch", branch)
+	}
+	repo.git("tag", "castle\u2003v1")
+	repo.git("tag", "-a", "\u2003v1", "-m", "literal annotated tag")
+	repo.git("reset", "--hard", siblingCommit)
+
+	_, source := newTestSource(t, repo)
+	for _, tt := range []struct {
+		ref    string
+		kind   string
+		commit string
+	}{
+		{"feature\u00a0next", skilllock.RefKindBranch, literalCommit},
+		{"\u00a0feature", skilllock.RefKindBranch, literalCommit},
+		{"feature\u00a0", skilllock.RefKindBranch, literalCommit},
+		{"\u00a0", skilllock.RefKindBranch, literalCommit},
+		{"\u00a0" + siblingCommit, skilllock.RefKindBranch, literalCommit},
+		{"castle\u2003v1", skilllock.RefKindTag, literalCommit},
+		{"\u2003v1", skilllock.RefKindTag, literalCommit},
+		{" \tfeature\r\n\v\f", skilllock.RefKindBranch, siblingCommit},
+	} {
+		t.Run(tt.ref, func(t *testing.T) {
+			got, err := source.Resolve(context.Background(), tt.ref)
+			want := Resolution{Ref: strings.Trim(tt.ref, " \t\r\n\v\f"), Kind: tt.kind, Commit: tt.commit}
+			if err != nil || got != want {
+				t.Fatalf("Resolve(%q) = %+v, %v; want %+v", tt.ref, got, err, want)
+			}
+		})
+	}
+}
+
+func TestDestinationHeadPreservesLiteralUnicodeBranch(t *testing.T) {
+	repo := newTestRepo(t, "main")
+	siblingCommit := repo.git("rev-parse", "HEAD")
+	repo.git("branch", "review/castle")
+	literalCommit := repo.commit("literal branch")
+	branch := "review/castle\u00a0"
+	repo.git("branch", branch)
+	runner, _ := newTestSource(t, repo)
+	destination, err := OpenDestination(context.Background(), runner, t.TempDir(), literalRepository(repo.dir))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tt := range []struct{ branch, commit string }{{branch, literalCommit}, {"review/castle", siblingCommit}} {
+		got, exists, err := destination.Head(context.Background(), tt.branch)
+		if err != nil || !exists || got != tt.commit {
+			t.Fatalf("Head(%q) = %q, %v, %v; want %s", tt.branch, got, exists, err, tt.commit)
+		}
+	}
+	repo.git("branch", "-D", branch)
+	if got, exists, err := destination.Head(context.Background(), branch); err != nil || exists || got != "" {
+		t.Fatalf("missing literal branch matched its sibling: %q, %v, %v", got, exists, err)
+	}
+}
+
+func TestDefaultBranchRejectsNonBranchSymref(t *testing.T) {
+	repo := newTestRepo(t, "main")
+	repo.git("tag", "release")
+	repo.git("symbolic-ref", "HEAD", "refs/tags/release")
+	_, source := newTestSource(t, repo)
+	if _, err := source.DefaultBranch(context.Background()); err == nil || !strings.Contains(err.Error(), "could not determine the default branch") {
+		t.Fatalf("non-branch HEAD error = %v", err)
+	}
+}
+
+func TestRemoteDefaultBranchRequiresNonEmptyBranchWithCRLF(t *testing.T) {
+	for _, tt := range []struct{ target, branch string }{
+		{"refs/heads/", ""}, {"refs/heads/\u00a0main\u2003", "\u00a0main\u2003"},
+	} {
+		t.Run(tt.target, func(t *testing.T) {
+			runner, err := NewRunner(nil)
+			if err != nil {
+				t.Skipf("git runner unavailable: %v", err)
+			}
+			dir := t.TempDir()
+			runner.path = filepath.Join(dir, "git")
+			script := "#!/bin/sh\nprintf '%s\\tHEAD\\r\\n' \"$AL_TEST_SYMREF\"\n"
+			if err := os.WriteFile(runner.path, []byte(script), 0o700); err != nil { // #nosec G306 -- private executable fixture supplies ls-remote output.
+				t.Fatal(err)
+			}
+			runner.env = append(runner.env, "AL_TEST_SYMREF=ref: "+tt.target)
+			branch, err := runner.remoteDefaultBranch(context.Background(), dir, literalRepository("https://example.test/skills.git"), "")
+			if tt.branch == "" {
+				if err == nil || !strings.Contains(err.Error(), "could not determine the default branch") {
+					t.Fatalf("empty branch target = %q, %v", branch, err)
+				}
+			} else if err != nil || branch != tt.branch {
+				t.Fatalf("CRLF default branch = %q, %v; want %q", branch, err, tt.branch)
+			}
+		})
 	}
 }

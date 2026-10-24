@@ -187,7 +187,7 @@ func (r *Report) Render(operation string) string {
 	var builder strings.Builder
 	for _, source := range r.Sources {
 		ref := source.Ref
-		if ref == "" {
+		if skilllock.TrimRefPadding(ref) == "" {
 			ref = "(default branch)"
 		}
 		fmt.Fprintf(&builder, "source %s @ %s failed: %v\n", source.Repository, ref, source.Err)

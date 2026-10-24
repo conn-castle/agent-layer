@@ -251,7 +251,7 @@ func conflictMatches(st *state, entry skilllock.Entry, state conflictState) bool
 			return false
 		}
 		if state.DestinationWritePolicy == config.SkillWritePolicyBranch {
-			return strings.TrimSpace(block.PushBranch) == state.DestinationBranch
+			return skilllock.TrimRefPadding(block.PushBranch) == state.DestinationBranch
 		}
 		// Direct writes follow the live default branch, which cannot be rechecked
 		// by this deliberately offline workspace validation.

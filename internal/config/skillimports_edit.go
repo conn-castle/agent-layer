@@ -252,7 +252,9 @@ func renderSkillImportBlock(identity SkillImportBlockIdentity, selectors []strin
 	}
 	lines = append(lines, renderedSelectors...)
 	appendOptional := func(key string, value string) error {
-		if strings.TrimSpace(value) == "" {
+		// Identity values are already normalized; a Unicode-whitespace ref or
+		// branch is a real Git name and must still be written.
+		if value == "" {
 			return nil
 		}
 		literal, err := tomlpatch.FormatString(value)

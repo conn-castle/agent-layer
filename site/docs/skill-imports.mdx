@@ -63,7 +63,7 @@ al skills add https://github.com/example/agent-skills.git \
   --ref v1.4.0
 ```
 
-Without `--ref`, the import tracks the repository's default branch. Use [`al skills status --all`](./reference.mdx#skill-import-commands) to see resolved source and local state.
+Without `--ref`, the import tracks the repository's default branch, even if a tag has the same name. Use [`al skills status --all`](./reference.mdx#skill-import-commands) to see resolved source and local state.
 
 ## Edit imported skills safely
 
@@ -97,6 +97,8 @@ al skills add https://github.com/example/agent-skills.git \
 
 al skills push
 ```
+
+Ref and branch names (`--ref` and `--push-branch`) are used exactly as Git spells them; only surrounding ASCII whitespace is ignored.
 
 Use `--push-repository` when the contribution should go to a fork. Agent Layer reconciles destination-side changes before pushing, records a separate publication checkpoint, and can add later commits to the same branch. It never force-pushes, invents a branch, opens a pull request, or pulls source updates as a side effect of push.
 
