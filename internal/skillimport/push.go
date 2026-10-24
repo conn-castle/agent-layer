@@ -294,7 +294,7 @@ func resolvePushBranch(ctx context.Context, branches *defaultBranchCache, block 
 // pushBranchForDefault applies write-policy branch selection against an already
 // resolved destination default branch. Branch policy may not target that default.
 func pushBranchForDefault(block config.SkillImport, destination gitrepo.Repository, defaultBranch string) (branch string, configured bool, err error) {
-	configuredBranch := strings.TrimSpace(block.PushBranch)
+	configuredBranch := skilllock.TrimRefPadding(block.PushBranch)
 	if configuredBranch == "" {
 		return defaultBranch, false, nil
 	}

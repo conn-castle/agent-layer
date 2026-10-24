@@ -76,12 +76,34 @@ func (r *Runner) remoteDefaultBranch(ctx context.Context, dir string, repository
 		return "", err
 	}
 	for _, line := range strings.Split(string(output), "\n") {
-		fields := strings.Fields(line)
-		if len(fields) >= 3 && fields[0] == "ref:" && fields[2] == "HEAD" {
-			return strings.TrimPrefix(fields[1], "refs/heads/"), nil
+		left, right, ok := parseRemoteLine(line)
+		if !ok || right != "HEAD" || !strings.HasPrefix(left, "ref: refs/heads/") {
+			continue
+		}
+		if branch := strings.TrimPrefix(left, "ref: refs/heads/"); branch != "" {
+			return branch, nil
 		}
 	}
 	return "", fmt.Errorf("could not determine the default branch of %s%s", repository, hint)
+}
+
+// parseRemoteLine preserves ref names in Git's tab-delimited ls-remote output.
+func parseRemoteLine(line string) (left, right string, ok bool) {
+	return strings.Cut(strings.TrimSuffix(line, "\r"), "\t")
+}
+
+func (r *Runner) remoteBranchCommit(ctx context.Context, dir string, repository Repository, branch string) (commit string, exists bool, err error) {
+	output, err := r.run(ctx, dir, "ls-remote", "--", repository.git, "refs/heads/"+branch)
+	if err != nil {
+		return "", false, err
+	}
+	for _, line := range strings.Split(string(output), "\n") {
+		left, right, ok := parseRemoteLine(line)
+		if ok && right == "refs/heads/"+branch {
+			return left, true, nil
+		}
+	}
+	return "", false, nil
 }
 
 // Resolve determines what a configured ref names and which commit it points at.
@@ -91,13 +113,20 @@ func (r *Runner) remoteDefaultBranch(ctx context.Context, dir string, repository
 // or a tag; an ambiguous name is an actionable error rather than a silent
 // preference.
 func (s *Source) Resolve(ctx context.Context, ref string) (Resolution, error) {
-	configured := strings.TrimSpace(ref)
+	configured := skilllock.TrimRefPadding(ref)
 	if configured == "" {
 		branch, err := s.DefaultBranch(ctx)
 		if err != nil {
 			return Resolution{}, err
 		}
-		configured = branch
+		commit, exists, err := s.runner.remoteBranchCommit(ctx, s.dir, s.repository, branch)
+		if err != nil {
+			return Resolution{}, err
+		}
+		if !exists {
+			return Resolution{}, fmt.Errorf("default branch %q of %s does not exist", branch, s.repository)
+		}
+		return Resolution{Ref: branch, Kind: skilllock.RefKindBranch, Commit: commit}, nil
 	}
 
 	if IsCommitID(configured) {
@@ -120,17 +149,17 @@ func (s *Source) Resolve(ctx context.Context, ref string) (Resolution, error) {
 
 	var branchCommit, tagCommit, tagPeeled string
 	for _, line := range strings.Split(string(output), "\n") {
-		fields := strings.Fields(line)
-		if len(fields) != 2 {
+		left, right, ok := parseRemoteLine(line)
+		if !ok {
 			continue
 		}
-		switch fields[1] {
+		switch right {
 		case "refs/heads/" + configured:
-			branchCommit = fields[0]
+			branchCommit = left
 		case "refs/tags/" + configured:
-			tagCommit = fields[0]
+			tagCommit = left
 		case "refs/tags/" + configured + "^{}":
-			tagPeeled = fields[0]
+			tagPeeled = left
 		}
 	}
 

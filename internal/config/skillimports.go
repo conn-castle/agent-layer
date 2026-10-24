@@ -182,11 +182,11 @@ func (imp SkillImport) Identity() SkillImportBlockIdentity {
 	return SkillImportBlockIdentity{
 		FileSelector:   fileSelector,
 		Repository:     NormalizeSkillRepository(imp.Repository),
-		Ref:            strings.TrimSpace(imp.Ref),
+		Ref:            skilllock.TrimRefPadding(imp.Ref),
 		Tracking:       strings.TrimSpace(imp.Tracking),
 		WritePolicy:    imp.EffectiveWritePolicy(),
 		PushRepository: NormalizeSkillRepository(imp.EffectivePushRepository()),
-		PushBranch:     strings.TrimSpace(imp.PushBranch),
+		PushBranch:     skilllock.TrimRefPadding(imp.PushBranch),
 	}
 }
 
@@ -290,7 +290,7 @@ func validateSkillImportBlock(configPath string, index int, imp SkillImport) err
 		return fmt.Errorf(messages.ConfigSkillImportWritePolicyInvalidFmt, configPath, index, imp.WritePolicy)
 	}
 
-	pushBranch := strings.TrimSpace(imp.PushBranch)
+	pushBranch := skilllock.TrimRefPadding(imp.PushBranch)
 	if policy == SkillWritePolicyBranch {
 		if pushBranch == "" {
 			return fmt.Errorf(messages.ConfigSkillImportPushBranchRequiredFmt, configPath, index)

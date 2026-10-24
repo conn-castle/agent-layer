@@ -61,17 +61,7 @@ func (d *Destination) DefaultBranch(ctx context.Context) (string, error) {
 // false when the branch does not exist yet, which `branch` write policy handles
 // by creating it from the destination's default-branch commit.
 func (d *Destination) Head(ctx context.Context, branch string) (commit string, exists bool, err error) {
-	output, err := d.runner.run(ctx, d.dir, "ls-remote", "--", d.repository.git, "refs/heads/"+branch)
-	if err != nil {
-		return "", false, err
-	}
-	for _, line := range strings.Split(string(output), "\n") {
-		fields := strings.Fields(line)
-		if len(fields) == 2 && fields[1] == "refs/heads/"+branch {
-			return fields[0], true, nil
-		}
-	}
-	return "", false, nil
+	return d.runner.remoteBranchCommit(ctx, d.dir, d.repository, branch)
 }
 
 // FetchCommit makes a commit from repository available in the destination

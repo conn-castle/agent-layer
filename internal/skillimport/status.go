@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/conn-castle/agent-layer/internal/config"
+	"github.com/conn-castle/agent-layer/internal/skilllock"
 )
 
 // StatusEntry is one resolved skill's local, network-free status.
@@ -67,7 +68,7 @@ func buildStatus(st *state) (*Status, error) {
 		}
 		if len(st.entriesForBlock(st.lock.Skills, block)) == 0 {
 			ref := block.Ref
-			if ref == "" {
+			if skilllock.TrimRefPadding(ref) == "" {
 				ref = "(default branch)"
 			}
 			status.MissingRefEvidence = append(status.MissingRefEvidence,

@@ -19,6 +19,8 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+
+	"github.com/conn-castle/agent-layer/internal/skilllock"
 )
 
 // commitIDPattern matches a full object id in either width Git uses: 40
@@ -286,7 +288,7 @@ func (r *Runner) commandError(args []string, stderr string, err error) *CommandE
 // IsCommitID reports whether value is a full object id rather than a symbolic
 // ref name.
 func IsCommitID(value string) bool {
-	return commitIDPattern.MatchString(strings.ToLower(strings.TrimSpace(value)))
+	return commitIDPattern.MatchString(strings.ToLower(skilllock.TrimRefPadding(value)))
 }
 
 // IgnoredWorktreePath reports whether path is untracked and ignored in dir's

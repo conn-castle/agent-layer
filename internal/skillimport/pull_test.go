@@ -1309,3 +1309,31 @@ func TestRetireUnconfiguredIgnoresRepositorySpelling(t *testing.T) {
 		})
 	}
 }
+
+// TestPullImportsLiteralUnicodeRef proves an explicit ref with Unicode padding
+// imports its own branch, not the trimmed sibling with different content.
+func TestPullImportsLiteralUnicodeRef(t *testing.T) {
+	source := newGitRepo(t, "main")
+	source.WriteSkill("skills/alpha", "alpha", "Sibling body")
+	sibling := source.Commit("sibling")
+	source.run("branch", "feature", sibling)
+	source.WriteSkill("skills/alpha", "alpha", "Literal body")
+	literal := source.Commit("literal")
+	ref := " feature"
+	source.run("branch", ref, literal)
+
+	proj := newProject(t)
+	proj.AppendConfig(importBlock(source.URL(), []string{"skills/alpha"}, `ref = "`+ref+`"`))
+	report, err := proj.Service().Pull(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	requireOutcome(t, report, "alpha", OutcomeImported)
+	if got := proj.ImportedFile("alpha", "SKILL.md"); !strings.Contains(got, "Literal body") {
+		t.Fatalf("imported the trimmed sibling:\n%s", got)
+	}
+	entry, _ := proj.Lock().Entry("alpha")
+	if entry.ConfiguredRef != ref || entry.ResolvedRef != ref || entry.Commit != literal {
+		t.Fatalf("lock = %+v, want literal ref %q at %s", entry, ref, literal)
+	}
+}

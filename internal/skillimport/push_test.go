@@ -9,7 +9,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/gitenv"
+	"github.com/conn-castle/agent-layer/internal/gitrepo"
 	"github.com/conn-castle/agent-layer/internal/skilllock"
 	"github.com/conn-castle/agent-layer/internal/skilltree"
 )
@@ -1612,5 +1614,136 @@ func TestPushDoesNotAdvanceUnchangedSiblingsOnAnotherBranch(t *testing.T) {
 	}
 	if after.Commit != locked.Commit {
 		t.Fatalf("lock commit = %s, want the untouched %s", after.Commit, locked.Commit)
+	}
+}
+
+// TestPushBranchPreservesLiteralUnicodeDestination proves publication cannot
+// silently update the Unicode-trimmed sibling of a configured branch.
+func TestPushBranchPreservesLiteralUnicodeDestination(t *testing.T) {
+	source := newGitRepo(t, "main")
+	siblingHead := source.Head("main")
+	source.WriteSkill("skills/alpha", "alpha", "Alpha body")
+	base := source.Commit("add alpha")
+	branch := "review/castle\u00a0"
+	source.run("branch", "review/castle", siblingHead)
+	source.run("branch", branch, base)
+	destination := &gitRepo{t: t, dir: t.TempDir()}
+	source.run("clone", "--bare", "--quiet", source.URL(), destination.URL())
+
+	proj := newProject(t)
+	proj.AppendConfig(importBlock(source.URL(), []string{"skills/alpha"},
+		`write_policy = "branch"`, `push_branch = "`+branch+`"`, `push_repository = "`+destination.URL()+`"`))
+	report, err := proj.Service().Pull(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	requireOutcome(t, report, "alpha", OutcomeImported)
+	proj.WriteImportedFile("alpha", "notes.md", "literal branch note\n")
+	report, err = proj.Service().Push(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	requireOutcome(t, report, "alpha", OutcomePushed)
+	if destination.Head("review/castle") != siblingHead {
+		t.Fatal("push changed the trimmed sibling")
+	}
+	head := destination.Head("refs/heads/" + branch)
+	if head == base || destination.FileAt("refs/heads/"+branch, "skills/alpha/notes.md") != "literal branch note" {
+		t.Fatal("push did not update the literal branch")
+	}
+	entry, _ := proj.Lock().Entry("alpha")
+	if entry.Publication == nil || entry.Publication.Branch != branch || entry.Publication.Commit != head {
+		t.Fatalf("publication = %+v, want literal branch %q at %s", entry.Publication, branch, head)
+	}
+}
+
+func TestPushDirectRecordsUnicodeDefaultBranchPublication(t *testing.T) {
+	for _, branch := range []string{"\u00a0main", "main\u00a0"} {
+		t.Run(branch, func(t *testing.T) {
+			seed := newGitRepo(t, branch)
+			seed.WriteSkill("skills/alpha", "alpha", "Alpha body")
+			before := seed.Commit("add alpha")
+			remote := &gitRepo{t: t, dir: t.TempDir()}
+			seed.run("clone", "--bare", "--quiet", seed.URL(), remote.URL())
+			source := newGitRepo(t, "main")
+			source.WriteSkill("skills/alpha", "alpha", "Alpha body")
+			sourceCommit := source.Commit("add source alpha")
+			proj := newProject(t)
+			proj.AppendConfig(importBlock(source.URL(), []string{"skills/alpha"},
+				`write_policy = "direct"`, `push_repository = "`+remote.URL()+`"`))
+			report, err := proj.Service().Pull(context.Background())
+			if err != nil {
+				t.Fatal(err)
+			}
+			requireOutcome(t, report, "alpha", OutcomeImported)
+			proj.WriteImportedFile("alpha", "notes.md", "published note\n")
+			report, err = proj.Service().Push(context.Background())
+			if err != nil {
+				t.Fatal(err)
+			}
+			requireOutcome(t, report, "alpha", OutcomePushed)
+			head := remote.Head("refs/heads/" + branch)
+			if head == before || remote.FileAt("refs/heads/"+branch, "skills/alpha/notes.md") != "published note" {
+				t.Fatal("direct push did not publish the local change")
+			}
+			entry, _ := proj.Lock().Entry("alpha")
+			if entry.Commit != sourceCommit || entry.Publication == nil || entry.Publication.Branch != branch || entry.Publication.Commit != head || entry.Publication.TreeHash == "" {
+				t.Fatalf("publication checkpoint = %+v, want branch %q at %s", entry, branch, head)
+			}
+		})
+	}
+}
+
+func TestDesiredSetGroupsByLiteralPushBranch(t *testing.T) {
+	t.Parallel()
+	for _, tt := range []struct {
+		branch  string
+		overlap bool
+	}{
+		{"review/castle\u00a0", false}, {" \treview/castle\r\n", true},
+	} {
+		t.Run(tt.branch, func(t *testing.T) {
+			desired := []desiredSkill{
+				{Name: "skills", SelectedPath: "skills", Block: config.SkillImport{
+					Repository: "https://example.test/outer.git", WritePolicy: config.SkillWritePolicyBranch,
+					PushRepository: "https://example.test/destination.git", PushBranch: "review/castle",
+				}},
+				{Name: "alpha", SelectedPath: "skills/alpha", Block: config.SkillImport{
+					Repository: "https://example.test/inner.git", WritePolicy: config.SkillWritePolicyBranch,
+					PushRepository: "https://example.test/destination.git", PushBranch: tt.branch,
+				}},
+			}
+			err := validateDesiredSet(desired)
+			if tt.overlap {
+				if err == nil || !strings.Contains(err.Error(), "overlap") {
+					t.Fatalf("shared push branch error = %v", err)
+				}
+			} else if err != nil {
+				t.Fatalf("distinct push branches were grouped: %v", err)
+			}
+		})
+	}
+}
+
+func TestPushBranchForDefaultPreservesUnicodeIdentity(t *testing.T) {
+	t.Parallel()
+	destination, err := gitrepo.NewSecrets(nil).Resolve("https://example.test/destination.git")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tt := range []struct {
+		branch, defaultBranch string
+		rejected              bool
+	}{
+		{"main\u00a0", "main\u00a0", true}, {"review/castle\u00a0", "main", false},
+	} {
+		branch, configured, err := pushBranchForDefault(config.SkillImport{WritePolicy: config.SkillWritePolicyBranch, PushBranch: tt.branch}, destination, tt.defaultBranch)
+		if tt.rejected {
+			if err == nil || !strings.Contains(err.Error(), "is the default branch") {
+				t.Fatalf("primary protection error = %v", err)
+			}
+		} else if err != nil || !configured || branch != tt.branch {
+			t.Fatalf("selected branch = %q, %v, %v; want %q", branch, configured, err, tt.branch)
+		}
 	}
 }

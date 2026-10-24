@@ -158,9 +158,11 @@ func isRetarget(block config.SkillImport, locked skilllock.Entry, resolution git
 	if locked.ConfiguredRef != block.Ref {
 		return true
 	}
-	// With an omitted ref the repository's default branch is re-resolved on
-	// every pull; a changed default-branch name is a retarget.
-	return block.Ref == "" && locked.ResolvedRef != resolution.Ref
+	// An omitted ref re-resolves the default branch on every pull, so a renamed
+	// default branch is a retarget. An explicit ref always resolves to the same
+	// name, unless the lock was written when Unicode padding was trimmed away
+	// and recorded a sibling ref; selecting the literal ref retargets that too.
+	return locked.ResolvedRef != resolution.Ref
 }
 
 // targetCommitForEntry chooses one existing skill's target independently. A

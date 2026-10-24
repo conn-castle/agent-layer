@@ -648,3 +648,20 @@ func TestTierReadersAllowOnlyRegularCasePairs(t *testing.T) {
 		})
 	}
 }
+
+func TestStatusAndReportRecognizeASCIIPaddedOmittedRef(t *testing.T) {
+	proj := newProject(t)
+	proj.AppendConfig(importBlock("https://example.test/skills.git", []string{"skills/alpha"}, `ref = "  "`))
+	status, err := proj.Service().Status()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(status.MissingRefEvidence) != 1 || !strings.Contains(status.MissingRefEvidence[0], "@ (default branch) has no recorded source state") {
+		t.Fatalf("missing ref evidence = %+v", status.MissingRefEvidence)
+	}
+	report := &Report{}
+	report.AddSourceFailure("repo", " \t", errors.New("unreachable"))
+	if !strings.Contains(report.Render("pull"), "@ (default branch) failed") {
+		t.Fatalf("report = %q", report.Render("pull"))
+	}
+}

@@ -426,3 +426,36 @@ func TestSkillImportValidationRejectsCredentialBearingRepositories(t *testing.T)
 		})
 	}
 }
+
+func TestSkillImportIdentityPreservesUnicodeRefs(t *testing.T) {
+	t.Parallel()
+	for _, tt := range []struct{ value, want string }{
+		{"\u00a0main\u00a0", "\u00a0main\u00a0"}, {"\u2003", "\u2003"}, {"\u00a0", "\u00a0"},
+		{" \t\n\v\f\rmain \t\n\v\f\r", "main"}, {" \t", ""},
+	} {
+		identity := (SkillImport{Ref: tt.value, PushBranch: tt.value}).Identity()
+		if identity.Ref != tt.want || identity.PushBranch != tt.want {
+			t.Fatalf("Identity(%q) = ref %q, push branch %q; want %q", tt.value, identity.Ref, identity.PushBranch, tt.want)
+		}
+	}
+}
+
+func TestSkillImportValidationUsesASCIIRefPadding(t *testing.T) {
+	t.Parallel()
+	for _, tt := range []struct{ branch, policy, wantError string }{
+		{"main\u00a0", "branch", ""}, {"\u00a0", "branch", ""},
+		{"  main  ", "branch", "primary"}, {"  ", "branch", "push_branch is required"},
+		{"\u00a0", "direct", "push_branch"},
+	} {
+		t.Run(tt.branch+tt.policy, func(t *testing.T) {
+			_, err := parseWithImports(t, "\n[[skills.imports]]\nrepository = \"r\"\nselectors = [\"skills/a\"]\nwrite_policy = \""+tt.policy+"\"\npush_branch = \""+tt.branch+"\"\n")
+			if tt.wantError == "" {
+				if err != nil {
+					t.Fatal(err)
+				}
+			} else if err == nil || !strings.Contains(err.Error(), tt.wantError) {
+				t.Fatalf("validation error = %v, want %q", err, tt.wantError)
+			}
+		})
+	}
+}

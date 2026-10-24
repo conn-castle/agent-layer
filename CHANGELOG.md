@@ -3,6 +3,9 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+### Fixed
+- Skill imports preserve native Git ref names, resolve omitted refs as the default branch even when names collide with tags or resemble object IDs, and retain Unicode whitespace through import, push, and lock validation (#467, #468, #473, #474).
+
 ## v1.1.0 - 2026-10-22
 
 ### Added

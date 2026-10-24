@@ -624,3 +624,82 @@ func TestFindOverlap(t *testing.T) {
 		})
 	}
 }
+
+func TestResolvedRefRequiresOnlyASCIIAwareNonEmptyValue(t *testing.T) {
+	t.Parallel()
+	for _, ref := range []string{"\u00a0", "\u2003", "", "  ", "\t"} {
+		t.Run(ref, func(t *testing.T) {
+			entry := validEntry("alpha")
+			entry.ResolvedRef = ref
+			file := New()
+			file.Upsert(entry)
+			data, err := file.Marshal()
+			if ref == "" || ref == "  " || ref == "\t" {
+				if err == nil || !strings.Contains(err.Error(), "resolved_ref is required") {
+					t.Fatalf("Marshal ref %q error = %v", ref, err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			parsed, err := Parse(data, "skills.lock.json")
+			if err != nil || parsed.Skills[0].ResolvedRef != ref {
+				t.Fatalf("round-trip ref %q = %+v, %v", ref, parsed, err)
+			}
+		})
+	}
+}
+
+func TestPublicationPreservesUnicodeBranchPadding(t *testing.T) {
+	t.Parallel()
+	for _, tt := range []struct{ branch, wantError string }{
+		{"\u00a0main", ""}, {"main\u00a0", ""}, {"\u2003main\u2003", ""}, {"\u00a0", ""},
+		{"", "branch is required"}, {"  ", "branch is required"},
+		{" main", "is not normalized"}, {"main\t", "is not normalized"},
+	} {
+		t.Run(tt.branch, func(t *testing.T) {
+			entry := validEntry("alpha")
+			entry.Publication = &Publication{Repository: entry.Repository, Branch: tt.branch, Commit: entry.Commit, TreeHash: entry.TreeHash}
+			file := New()
+			file.Upsert(entry)
+			data, err := file.Marshal()
+			if tt.wantError != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.wantError) {
+					t.Fatalf("Marshal branch %q error = %v, want %q", tt.branch, err, tt.wantError)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			parsed, err := Parse(data, "skills.lock.json")
+			if err != nil || parsed.Skills[0].Publication.Branch != tt.branch {
+				t.Fatalf("round-trip branch %q = %+v, %v", tt.branch, parsed, err)
+			}
+		})
+	}
+}
+
+func TestInstructionLockPreservesUnicodeRefs(t *testing.T) {
+	t.Parallel()
+	entry := validEntry("rules.md")
+	entry.Selector = "instructions/rules.md"
+	entry.SelectedPath = entry.Selector
+	entry.ResolvedRef = "\u00a0"
+	entry.Publication = &Publication{Repository: entry.Repository, Branch: "main\u00a0", Commit: entry.Commit, TreeHash: entry.TreeHash}
+	file := NewInstructions()
+	file.Upsert(entry)
+	data, err := file.Marshal()
+	if err != nil {
+		t.Fatal(err)
+	}
+	parsed, err := ParseInstructions(data, "instructions.lock.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, ok := parsed.Entry(entry.Name)
+	if !ok || !got.Equal(entry) {
+		t.Fatalf("round-trip entry = %+v, want %+v", got, entry)
+	}
+}

@@ -480,3 +480,23 @@ func TestSetSkillImportSelectorsRecordsAnExplicitPushDestination(t *testing.T) {
 		t.Fatalf("append omitted the distinct push destination:\n%s", added)
 	}
 }
+
+func TestSetSkillImportSelectorsWritesUnicodeOnlyRefs(t *testing.T) {
+	t.Parallel()
+	identity := (SkillImport{
+		Repository: "https://example.test/skills.git", Ref: "\u00a0",
+		WritePolicy: SkillWritePolicyBranch, PushBranch: "\u00a0",
+	}).Identity()
+	updated, err := SetSkillImportSelectors(baseConfigTOML, identity, []string{"skills/alpha"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := ParseConfig([]byte(updated), "config.toml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	block := cfg.Skills.Imports[0]
+	if block.Ref != "\u00a0" || block.PushBranch != "\u00a0" {
+		t.Fatalf("rendered block lost Unicode-only refs: %+v\n%s", block, updated)
+	}
+}
