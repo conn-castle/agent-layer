@@ -368,8 +368,10 @@ func TestRunProfile_BackupAndWriteErrors(t *testing.T) {
 		require.ErrorContains(t, err, "failed to backup config")
 	})
 
-	t.Run("write config failure", func(t *testing.T) {
+	t.Run("write config failure restores previous backup", func(t *testing.T) {
 		require.NoError(t, os.RemoveAll(backupPath(root, "config.toml.bak")))
+		_, err := writeBackup(root, configBackupName, []byte("previous"), 0o600)
+		require.NoError(t, err)
 		origWrite := writeFileAtomic
 		t.Cleanup(func() { writeFileAtomic = origWrite })
 		writeFileAtomic = func(path string, data []byte, perm os.FileMode) error {
@@ -379,8 +381,11 @@ func TestRunProfile_BackupAndWriteErrors(t *testing.T) {
 			return origWrite(path, data, perm)
 		}
 
-		err := RunProfile(root, func(string) (*alsync.Result, error) { return &alsync.Result{}, nil }, "", profilePath, true, nil)
+		err = RunProfile(root, func(string) (*alsync.Result, error) { return &alsync.Result{}, nil }, "", profilePath, true, nil)
 		require.ErrorContains(t, err, "failed to write config")
+		backup, err := os.ReadFile(backupPath(root, configBackupName))
+		require.NoError(t, err)
+		require.Equal(t, "previous", string(backup))
 	})
 }
 

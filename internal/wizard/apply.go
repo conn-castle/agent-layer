@@ -1,6 +1,8 @@
 package wizard
 
 import (
+	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -120,38 +122,45 @@ func writeConfigEnv(root, configPath, envPath string, c *Choices) error {
 
 	// Back up and write only documents whose bytes change, so an unchanged
 	// document keeps its previous recovery backup. A missing .env is created.
+	// An aborted apply restores the previous backups of unchanged documents.
 	configChanged := newConfig != string(rawConfig)
 	envChanged := !envExists || newEnv != string(rawEnv)
-	configBackupCreated := false
+	var restores []func() error
+	abort := func(err error) error {
+		for _, restore := range restores {
+			err = errors.Join(err, restore())
+		}
+		return err
+	}
 	if configChanged {
-		configBackupCreated, err = writeBackup(root, configBackupName, rawConfig, configPerm)
+		restore, err := backupDocument(root, configBackupName, configPath, rawConfig, configPerm)
 		if err != nil {
 			return fmt.Errorf(messages.WizardBackupConfigFailedFmt, err)
 		}
+		restores = append(restores, restore)
 	}
 	if envExists && envChanged {
-		if _, err := writeBackup(root, envBackupName, rawEnv, envPerm); err != nil {
-			if configBackupCreated {
-				_ = os.Remove(backupPath(root, configBackupName))
-			}
-			return fmt.Errorf(messages.WizardBackupEnvFailedFmt, err)
+		restore, err := backupDocument(root, envBackupName, envPath, rawEnv, envPerm)
+		if err != nil {
+			return abort(fmt.Errorf(messages.WizardBackupEnvFailedFmt, err))
 		}
+		restores = append(restores, restore)
 	}
 	// Patch
 	if configChanged {
 		if err := writeFileAtomic(configPath, []byte(newConfig), configPerm); err != nil {
-			return fmt.Errorf(messages.WizardWriteConfigFailedFmt, err)
+			return abort(fmt.Errorf(messages.WizardWriteConfigFailedFmt, err))
 		}
 	}
 	if envChanged {
 		if err := writeFileAtomic(envPath, []byte(newEnv), envPerm); err != nil {
 			if !configChanged {
-				return fmt.Errorf(messages.WizardWriteEnvFailedFmt, err)
+				return abort(fmt.Errorf(messages.WizardWriteEnvFailedFmt, err))
 			}
 			if rollbackErr := writeFileAtomic(configPath, rawConfig, configPerm); rollbackErr != nil {
-				return fmt.Errorf(messages.WizardWriteEnvRollbackConfigFailedFmt, err, rollbackErr)
+				return abort(fmt.Errorf(messages.WizardWriteEnvRollbackConfigFailedFmt, err, rollbackErr))
 			}
-			return fmt.Errorf(messages.WizardWriteEnvFailedFmt, err)
+			return abort(fmt.Errorf(messages.WizardWriteEnvFailedFmt, err))
 		}
 	}
 
@@ -171,23 +180,62 @@ func filePermOr(path string, fallback os.FileMode) (os.FileMode, error) {
 	return info.Mode().Perm(), nil
 }
 
-// writeBackup writes the named wizard backup and reports whether a new backup was created.
+// writeBackup replaces the named wizard backup and returns a function that
+// restores its previous state: the earlier regular file, or no backup.
 // root is the repo root; name is the backup file name; data is the source content; perm is the file mode to apply.
-func writeBackup(root, name string, data []byte, perm os.FileMode) (bool, error) {
+func writeBackup(root, name string, data []byte, perm os.FileMode) (func() error, error) {
 	if err := validateBackupStorage(root); err != nil {
-		return false, err
+		return nil, err
 	}
 	path := backupPath(root, name)
 	if err := fsutil.EnsurePrivateDir(filepath.Dir(path)); err != nil {
-		return false, err
+		return nil, err
 	}
-	_, err := os.Stat(path)
-	backupExists := err == nil
-	if err != nil && !os.IsNotExist(err) {
-		return false, err
+	restore := func() error {
+		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+			return err
+		}
+		return nil
 	}
-	if err := fsutil.WriteFileAtomic(path, data, perm); err != nil {
-		return false, err
+	info, err := os.Lstat(path)
+	if err == nil {
+		if !info.Mode().IsRegular() {
+			return nil, fmt.Errorf("wizard backup %s must be a regular file", path)
+		}
+		previous, err := os.ReadFile(path) // #nosec G304 -- path is a fixed wizard backup path within validated backup storage.
+		if err != nil {
+			return nil, fmt.Errorf("read wizard backup %s: %w", path, err)
+		}
+		restore = func() error { return writeFileAtomic(path, previous, info.Mode().Perm()) }
+	} else if !os.IsNotExist(err) {
+		return nil, err
 	}
-	return !backupExists, nil
+	restoreBackup := func() error {
+		if err := restore(); err != nil {
+			return fmt.Errorf("restore wizard backup %s: %w", path, err)
+		}
+		return nil
+	}
+	// A write can fail after its rename replaced the backup, so restore it.
+	if err := writeFileAtomic(path, data, perm); err != nil {
+		return nil, errors.Join(err, restoreBackup())
+	}
+	return restoreBackup, nil
+}
+
+// backupDocument backs up documentPath's original bytes and returns a function
+// that restores the previous backup only while the document still holds those
+// bytes; a document that may have changed keeps the backup of its original.
+func backupDocument(root, name, documentPath string, original []byte, perm os.FileMode) (func() error, error) {
+	restore, err := writeBackup(root, name, original, perm)
+	if err != nil {
+		return nil, err
+	}
+	return func() error {
+		current, err := os.ReadFile(documentPath) // #nosec G304 -- documentPath is the caller-resolved wizard document being restored.
+		if err == nil && bytes.Equal(current, original) {
+			return restore()
+		}
+		return nil
+	}, nil
 }
