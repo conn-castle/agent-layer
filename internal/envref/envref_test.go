@@ -181,6 +181,25 @@ func TestRedactReplacesResolvedValuesWithPlaceholders(t *testing.T) {
 	}
 }
 
+// TestRedactDoesNotRewriteInsertedPlaceholders proves a decoded spelling that
+// matches part of a placeholder only replaces occurrences in the original text.
+func TestRedactDoesNotRewriteInsertedPlaceholders(t *testing.T) {
+	t.Parallel()
+	placeholders := make(map[string]string)
+	for value, placeholder := range map[string]string{
+		"long-secret": "${AL_TOKEN}",
+		"%41L":        "${AL_SHORT}",
+	} {
+		for _, form := range RedactionForms(value) {
+			placeholders[form] = placeholder
+		}
+	}
+	got := Redact("long=long-secret raw=%41L decoded=AL", placeholders)
+	if want := "long=${AL_TOKEN} raw=${AL_SHORT} decoded=${AL_SHORT}"; got != want {
+		t.Fatalf("Redact = %q, want %q", got, want)
+	}
+}
+
 // TestRedactionFormsCoverEchoedSpellings proves every spelling a diagnostic
 // may echo is listed once, and that no empty spelling can redact everything.
 func TestRedactionFormsCoverEchoedSpellings(t *testing.T) {

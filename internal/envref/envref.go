@@ -71,8 +71,9 @@ func BearerPlaceholder(value string) (string, bool) {
 // shows `${AL_TOKEN}` rather than the secret. placeholders maps a resolved
 // value to its placeholder; empty values are ignored.
 //
-// Longer values are replaced first so a value that contains another cannot be
-// left partly exposed by an earlier replacement.
+// Longer values take priority so a value that contains another cannot be left
+// partly exposed. Replacements only match original text, never inserted
+// placeholders.
 func Redact(text string, placeholders map[string]string) string {
 	if text == "" || len(placeholders) == 0 {
 		return text
@@ -89,10 +90,11 @@ func Redact(text string, placeholders map[string]string) string {
 		}
 		return values[i] < values[j]
 	})
+	pairs := make([]string, 0, 2*len(values))
 	for _, value := range values {
-		text = strings.ReplaceAll(text, value, placeholders[value])
+		pairs = append(pairs, value, placeholders[value])
 	}
-	return text
+	return strings.NewReplacer(pairs...).Replace(text)
 }
 
 // RedactionForms returns the spellings under which a diagnostic may echo a
