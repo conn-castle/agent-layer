@@ -8,6 +8,7 @@ All notable changes to this project will be documented in this file.
 - Skill imports preserve native Git ref names, resolve omitted refs as the default branch even when names collide with tags or resemble object IDs, and retain Unicode whitespace through import, push, and lock validation (#467, #468, #473, #474).
 - `al vscode` opens the project when given separate `--user-data-dir`, `--extensions-dir`, `--profile`, or `--locale` values, and a trailing bare `--` no longer suppresses the project target. Launch preflight and sync recognize only root-level managed marker lines, so marker text in setting values, comments, or nested profiles no longer blocks launch or receives generated settings. Sync now adds a root block beside settings that earlier releases wrote into a nested profile; remove that stale nested block by hand. Generated VS Code launchers open project directories whose names end in newlines instead of a trimmed sibling (#458, #463, #465).
 - `al doctor` version checks stop the descendants they launch, including children that keep output open after the version command exits. The first interrupt cancels the running check, skips later client checks, and returns without starting MCP warning discovery (#448, #453).
+- Agent Dispatch accepts provider output that encodes supplementary characters such as emoji as escaped JSON surrogate pairs, instead of failing the run and losing its final answer. A truncated answer never ends in half of such a character (#443).
 
 ## v1.1.0 - 2026-10-22
 
