@@ -11,6 +11,7 @@ import (
 	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/run"
 	"github.com/conn-castle/agent-layer/internal/testutil"
+	"github.com/conn-castle/agent-layer/internal/vscodesettings"
 )
 
 func TestLaunchVSCode(t *testing.T) {
@@ -178,6 +179,59 @@ func TestCheckManagedSettingsConflict_ValidManagedBlock(t *testing.T) {
 	}
 }
 
+func writeSettings(t *testing.T, content string) string {
+	t.Helper()
+	root := t.TempDir()
+	path := filepath.Join(root, ".vscode", "settings.json")
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return root
+}
+
+func TestCheckManagedSettingsConflict_IgnoresMarkerTextOutsideBoundaries(t *testing.T) {
+	block := "{\n  // >>> agent-layer\n  // <<< agent-layer\n"
+	tests := map[string]string{
+		"block comment":  block + "  /* Example only:\n  // >>> agent-layer\n  // <<< agent-layer\n  */\n  \"editor.wordWrap\": \"on\"\n}\n",
+		"nested profile": block + "  \"[python]\": {\n    // >>> agent-layer\n    // <<< agent-layer\n    \"editor.formatOnSave\": true\n  }\n}\n",
+		"header comment": "// >>> agent-layer\n// <<< agent-layer\n" + block + "}\n",
+	}
+	for _, newline := range []string{"\n", "\r\n", "\r"} {
+		tests[fmt.Sprintf("value and line comment %q", newline)] = strings.Join([]string{
+			"\ufeff{",
+			"  // >>> agent-layer",
+			"  // <<< agent-layer",
+			`  "fixture.note": "Documentation: // >>> agent-layer and // <<< agent-layer",`,
+			"  // Keep // >>> agent-layer text in this documentation comment.",
+			`  "editor.wordWrap": "on"`,
+			"}",
+		}, newline)
+	}
+	for name, content := range tests {
+		t.Run(name, func(t *testing.T) {
+			if err := checkManagedSettingsConflict(writeSettings(t, content)); err != nil {
+				t.Fatalf("marker text outside root boundaries must not conflict: %v", err)
+			}
+		})
+	}
+}
+
+func TestCheckManagedSettingsConflict_DuplicateBoundaries(t *testing.T) {
+	for _, marker := range []string{vscodesettings.ManagedBlockStart, vscodesettings.ManagedBlockEnd} {
+		for _, newline := range []string{"\n", "\r\n", "\r"} {
+			t.Run(fmt.Sprintf("%s %q", marker, newline), func(t *testing.T) {
+				lines := []string{"{", "  " + vscodesettings.ManagedBlockStart, "  " + marker, "  " + vscodesettings.ManagedBlockEnd, "}"}
+				if err := checkManagedSettingsConflict(writeSettings(t, strings.Join(lines, newline))); err == nil {
+					t.Fatal("duplicate complete marker line must still fail preflight")
+				}
+			})
+		}
+	}
+}
+
 func TestHasPositionalArg(t *testing.T) {
 	tests := []struct {
 		name string
@@ -192,7 +246,16 @@ func TestHasPositionalArg(t *testing.T) {
 		{"positional path", []string{"/path/to/project"}, true},
 		{"flag then positional", []string{"--new-window", "/path/to/project.code-workspace"}, true},
 		{"short flag then positional", []string{"-n", "/path/to/project.code-workspace"}, true},
-		{"bare double dash", []string{"--new-window", "--"}, true},
+		{"bare double dash", []string{"--new-window", "--"}, false},
+		{"path after separator", []string{"--", "-folder"}, true},
+		{"isolated profile", []string{"--user-data-dir", "/tmp/editor data", "--extensions-dir", "/tmp/extensions", "--profile", "Web Development"}, false},
+		{"locale", []string{"--locale", "en-US"}, false},
+		{"profile and workspace", []string{"--profile", "Web Development", "project.code-workspace"}, true},
+		{"joined profile", []string{"--profile=Web Development"}, false},
+		{"option-like profile value", []string{"--profile", "--user-data-dir", "/tmp/data"}, false},
+		{"stdin profile value", []string{"--profile", "-"}, false},
+		{"unknown flag value", []string{"--future-option", "value"}, true},
+		{"stdin", []string{"-"}, true},
 		{"relative path", []string{"."}, true},
 		{"positional then flag", []string{"mydir", "--reuse-window"}, true},
 	}

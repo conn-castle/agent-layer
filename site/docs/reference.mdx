@@ -903,6 +903,10 @@ If you need to use Agent Layer flags as well, place `--` before the client argum
 - `code` is missing on `PATH`
 - `.vscode/settings.json` has a malformed managed block marker state
 
+Only complete marker comment lines directly in the root settings object count as the managed block; marker text in values, block comments, header comments, and nested profiles is ignored.
+
+`al vscode` opens the project (`.`) unless you pass a file, folder, workspace, or stdin (`-`) target. Separate values of `--user-data-dir`, `--extensions-dir`, `--profile`, and `--locale` are not targets, so `al vscode -- --profile "Web Development"` still opens the project.
+
 Examples:
 
 ```bash

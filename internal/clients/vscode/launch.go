@@ -12,11 +12,7 @@ import (
 	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/messages"
 	"github.com/conn-castle/agent-layer/internal/run"
-)
-
-const (
-	vscodeSettingsManagedStart = "// >>> agent-layer"
-	vscodeSettingsManagedEnd   = "// <<< agent-layer"
+	"github.com/conn-castle/agent-layer/internal/vscodesettings"
 )
 
 var (
@@ -76,24 +72,28 @@ func Launch(cfg *config.ProjectConfig, runInfo *run.Info, env []string, passArgs
 	return nil
 }
 
-// hasPositionalArg returns true when passArgs contains at least one argument
-// that is not a flag (i.e., does not start with "-"). This lets callers pass
-// workspace files or folder paths without an extra "." being appended.
-//
-// Limitation: flags that accept a separate value argument (e.g.,
-// "--user-data-dir /tmp/data") will cause the value to be misclassified as
-// positional. In practice this is unlikely for passthrough args — most
-// VS Code flags passed through al are boolean (--new-window, -n, -r).
+// hasPositionalArg reports whether passArgs already names a target: a file or
+// folder path, stdin ("-"), or an operand after a bare "--". Separate values of
+// the documented profile and storage options are not targets. Values of other
+// options remain conservative and count as possible paths.
 func hasPositionalArg(args []string) bool {
-	for _, a := range args {
-		if a == "--" {
+	for i := 0; i < len(args); i++ {
+		switch a := args[i]; a {
+		case "--":
 			// Everything after bare "--" is positional.
+			return i+1 < len(args)
+		case "-":
 			return true
+		case "--user-data-dir", "--extensions-dir", "--profile", "--locale":
+			// Like VS Code's parser, consume the next argument unless it looks like an option.
+			if i+1 < len(args) && (args[i+1] == "-" || !strings.HasPrefix(args[i+1], "-")) {
+				i++
+			}
+		default:
+			if !strings.HasPrefix(a, "-") {
+				return true
+			}
 		}
-		if strings.HasPrefix(a, "-") {
-			continue
-		}
-		return true
 	}
 	return false
 }
@@ -118,9 +118,10 @@ func checkManagedSettingsConflict(root string) error {
 		return err
 	}
 
-	text := string(content)
-	startCount := strings.Count(text, vscodeSettingsManagedStart)
-	endCount := strings.Count(text, vscodeSettingsManagedEnd)
+	// Recognize boundaries the same way sync does: complete root-level lines.
+	text := strings.ReplaceAll(strings.ReplaceAll(string(content), "\r\n", "\n"), "\r", "\n")
+	starts, ends := vscodesettings.ManagedMarkerLines(strings.Split(text, "\n"))
+	startCount, endCount := len(starts), len(ends)
 	if startCount == 0 && endCount == 0 {
 		return nil
 	}
@@ -130,9 +131,7 @@ func checkManagedSettingsConflict(root string) error {
 		return fmt.Errorf(messages.ClientsVSCodeManagedBlockConflictFmt, settingsPath, reason)
 	}
 
-	startIndex := strings.Index(text, vscodeSettingsManagedStart)
-	endIndex := strings.Index(text, vscodeSettingsManagedEnd)
-	if startIndex > endIndex {
+	if starts[0] > ends[0] {
 		return fmt.Errorf(messages.ClientsVSCodeManagedBlockConflictFmt, settingsPath, "start marker appears after end marker")
 	}
 
