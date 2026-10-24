@@ -415,6 +415,9 @@ func (p *selectiveJSONReader) readString(limit int) (string, bool, error) {
 		encoded.WriteByte('"')
 	}
 	safeLength := encoded.Len()
+	// A retained prefix may end with the high half of a surrogate pair whose
+	// low half did not fit; these offsets let truncation drop that half.
+	highSurrogateStart, highSurrogateEnd := -1, -1
 	escaped := false
 	for {
 		value, err := p.reader.ReadByte()
@@ -429,12 +432,17 @@ func (p *selectiveJSONReader) readString(limit int) (string, bool, error) {
 				return "", false, nil
 			}
 			if !complete {
+				if safeLength == highSurrogateEnd {
+					safeLength = highSurrogateStart
+				}
 				safeLength = 1 + validUTF8PrefixLength(encoded.Bytes()[1:safeLength])
 				encoded.Truncate(safeLength)
 			}
 			encoded.WriteByte('"')
-			decoded, decodeErr := strconv.Unquote(encoded.String())
-			if decodeErr != nil {
+			// JSON string semantics, unlike Go literal unquoting, accept
+			// escaped surrogate pairs for supplementary characters.
+			var decoded string
+			if decodeErr := json.Unmarshal(encoded.Bytes(), &decoded); decodeErr != nil {
 				return "", false, fmt.Errorf("decode structured event string: %w", decodeErr)
 			}
 			return decoded, complete, nil
@@ -449,7 +457,8 @@ func (p *selectiveJSONReader) readString(limit int) (string, bool, error) {
 		if escaped {
 			switch {
 			case value == 'u':
-				for range 4 {
+				var digits [4]byte
+				for i := range digits {
 					hex, readErr := p.reader.ReadByte()
 					if readErr != nil {
 						return "", false, unexpectedJSONEnd(readErr)
@@ -457,6 +466,7 @@ func (p *selectiveJSONReader) readString(limit int) (string, bool, error) {
 					if !isHex(hex) {
 						return "", false, fmt.Errorf("structured event string contains an invalid unicode escape")
 					}
+					digits[i] = hex
 					if complete {
 						if encoded.Len()-1 < limit {
 							encoded.WriteByte(hex)
@@ -464,6 +474,10 @@ func (p *selectiveJSONReader) readString(limit int) (string, bool, error) {
 							complete = false
 						}
 					}
+				}
+				code, _ := strconv.ParseUint(string(digits[:]), 16, 16)
+				if complete && code >= 0xD800 && code <= 0xDBFF {
+					highSurrogateStart, highSurrogateEnd = safeLength, encoded.Len()
 				}
 			case value == '/' && complete:
 				encoded.Truncate(encoded.Len() - 2)

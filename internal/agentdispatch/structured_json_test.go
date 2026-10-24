@@ -90,6 +90,11 @@ func TestStructuredEventsAcceptFullJSONValueGrammar(t *testing.T) {
 		{"literal multi-byte UTF-8", `{"type":"agent_message","message":"café ✓"}`, "café ✓"},
 		{"unicode escapes", `{"type":"agent_message","message":"caf\u00e9 \u2713"}`, "café ✓"},
 		{"uppercase unicode escape digits", `{"type":"agent_message","message":"caf\u00E9"}`, "café"},
+		{"literal supplementary character", `{"type":"agent_message","message":"castle: 🏰"}`, "castle: 🏰"},
+		{"escaped surrogate pair", `{"type":"agent_message","message":"castle: \ud83c\udff0"}`, "castle: 🏰"},
+		{"uppercase escaped surrogate pair", `{"type":"agent_message","message":"castle: \uD83C\uDFF0"}`, "castle: 🏰"},
+		{"unpaired surrogate escape", `{"type":"agent_message","message":"half \ud83c"}`, "half \ufffd"},
+		{"escaped solidus", `{"type":"agent_message","message":"a\/b"}`, "a/b"},
 		{"control escapes", `{"type":"agent_message","message":"line\nbreak\ttab\\slash\"quote\""}`, "line\nbreak\ttab\\slash\"quote\""},
 		{"insignificant whitespace", "{ \"type\" : \"agent_message\" ,\t\"message\" :\r \"whitespace parsed\" }", "whitespace parsed"},
 	}
@@ -169,6 +174,65 @@ func TestStructuredEventMetadataFailsRatherThanTruncatingSilently(t *testing.T) 
 	answer, ok := record.Fields[jsonResultKey].(string)
 	if !ok || answer != "abcd"+truncatedAnswerNotice {
 		t.Fatalf("truncated answer = %#v", record.Fields[jsonResultKey])
+	}
+}
+
+// TestTruncatedAnswerNeverSplitsSupplementaryCharacter cuts an answer at every
+// retained byte limit. Whether the provider sends literal UTF-8 or an escaped
+// surrogate pair, the kept prefix holds every whole character that fits and
+// never ends in half of one.
+func TestTruncatedAnswerNeverSplitsSupplementaryCharacter(t *testing.T) {
+	const want = "castle: 🏰🏰!"
+	for name, units := range map[string][]string{
+		"literal": {"castle: ", "🏰", "🏰", "!"},
+		"escaped": {"castle: ", `\ud83c\udff0`, `\uD83C\uDFF0`, "!"},
+	} {
+		encoded := strings.Join(units, "")
+		for limit := 1; limit <= len(encoded); limit++ {
+			parser := newSelectiveJSONReader()
+			parser.retainedStringBytes = limit
+			parser.reset(strings.NewReader(`{"result":"` + encoded + `"}`))
+			record, err := parser.next()
+			if err != nil {
+				t.Fatalf("%s limit %d: %v", name, limit, err)
+			}
+			expected := want
+			if limit < len(encoded) {
+				// Keep every leading byte of the ASCII run, then only the
+				// characters whose whole encoding fits within the limit.
+				expected = units[0][:min(limit, len(units[0]))]
+				used := len(units[0])
+				for _, unit := range units[1:] {
+					if used += len(unit); used > limit {
+						break
+					}
+					decoded := unit
+					if strings.HasPrefix(unit, `\u`) {
+						decoded = "🏰"
+					}
+					expected += decoded
+				}
+				expected += truncatedAnswerNotice
+			}
+			if answer := record.Fields[jsonResultKey]; answer != expected {
+				t.Fatalf("%s limit %d answer = %q, want %q", name, limit, answer, expected)
+			}
+		}
+	}
+}
+
+// TestEscapedSolidusCountsAsOneRetainedByte keeps the budget of retained
+// fields in decoded bytes for "\/", which providers commonly emit in URLs.
+func TestEscapedSolidusCountsAsOneRetainedByte(t *testing.T) {
+	// The escaped form exceeds the metadata budget; the decoded form does not.
+	repeats := structuredJSONKeyBytes/2 - 1
+	value := strings.Repeat(`a\/`, repeats)
+	record, err := parseStructuredEvent(t, `{"session_id":"`+value+`"}`)
+	if err != nil {
+		t.Fatalf("metadata within the decoded byte budget was rejected: %v", err)
+	}
+	if want := strings.Repeat("a/", repeats); record.Fields["session_id"] != want {
+		t.Fatalf("session_id = %#v, want %q", record.Fields["session_id"], want)
 	}
 }
 
