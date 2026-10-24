@@ -1027,7 +1027,8 @@ func newToolServer(pageSize int, names ...string) *mcp.Server {
 }
 
 // discoverFromServer runs discoverMCPTools against server over in-memory
-// transports and requires discovery to close its client session.
+// transports and requires discovery to close its client session. Discovery
+// gets a deadline so a pagination loop fails the test instead of hanging it.
 func discoverFromServer(t *testing.T, server *mcp.Server) DiscoveryResult {
 	t.Helper()
 	ctx := context.Background()
@@ -1035,7 +1036,9 @@ func discoverFromServer(t *testing.T, server *mcp.Server) DiscoveryResult {
 	serverSession, err := server.Connect(ctx, serverTransport, nil)
 	require.NoError(t, err)
 
-	result := discoverMCPTools(ctx, "test-server", clientTransport)
+	discoveryCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	result := discoverMCPTools(discoveryCtx, "test-server", clientTransport)
 
 	closed := make(chan struct{})
 	go func() {
@@ -1105,6 +1108,76 @@ func TestDiscoverMCPTools_TooManyToolsGuard(t *testing.T) {
 	result := discoverFromServer(t, newToolServer(maxToolsToDiscover+1, names...))
 	require.Error(t, result.Error)
 	assert.Contains(t, result.Error.Error(), "too many tools or infinite loop")
+}
+
+// newCursorServer answers tools/list from pages keyed by request cursor and
+// counts the requests it receives.
+func newCursorServer(pages map[string]*mcp.ListToolsResult, calls *atomic.Int32) *mcp.Server {
+	server := newToolServer(0)
+	server.AddReceivingMiddleware(func(next mcp.MethodHandler) mcp.MethodHandler {
+		return func(ctx context.Context, method string, req mcp.Request) (mcp.Result, error) {
+			if method != "tools/list" {
+				return next(ctx, method, req)
+			}
+			calls.Add(1)
+			page, ok := pages[req.GetParams().(*mcp.ListToolsParams).Cursor]
+			if !ok {
+				return nil, fmt.Errorf("unexpected cursor")
+			}
+			return page, nil
+		}
+	})
+	return server
+}
+
+func TestDiscoverMCPTools_RepeatedCursorGuard(t *testing.T) {
+	tests := []struct {
+		name  string
+		pages map[string]*mcp.ListToolsResult
+		calls int32
+	}{
+		{
+			name: "empty page repeats its cursor",
+			pages: map[string]*mcp.ListToolsResult{
+				"":                {Tools: []*mcp.Tool{}, NextCursor: "secret-cursor-a"},
+				"secret-cursor-a": {Tools: []*mcp.Tool{}, NextCursor: "secret-cursor-a"},
+			},
+			calls: 2,
+		},
+		{
+			name: "two cursors cycle",
+			pages: map[string]*mcp.ListToolsResult{
+				"":                {Tools: []*mcp.Tool{}, NextCursor: "secret-cursor-a"},
+				"secret-cursor-a": {Tools: []*mcp.Tool{}, NextCursor: "secret-cursor-b"},
+				"secret-cursor-b": {Tools: []*mcp.Tool{}, NextCursor: "secret-cursor-a"},
+			},
+			calls: 3,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var calls atomic.Int32
+			result := discoverFromServer(t, newCursorServer(tt.pages, &calls))
+			require.Error(t, result.Error)
+			assert.Equal(t, "tools/list repeated a pagination cursor", result.Error.Error())
+			assert.NotContains(t, result.Error.Error(), "secret-cursor")
+			assert.Equal(t, tt.calls, calls.Load())
+		})
+	}
+}
+
+func TestDiscoverMCPTools_FollowsAdvancingEmptyPages(t *testing.T) {
+	tool := &mcp.Tool{Name: "tool1", InputSchema: map[string]any{"type": "object"}}
+	var calls atomic.Int32
+	result := discoverFromServer(t, newCursorServer(map[string]*mcp.ListToolsResult{
+		"":  {Tools: []*mcp.Tool{}, NextCursor: "a"},
+		"a": {Tools: []*mcp.Tool{}, NextCursor: "b"},
+		"b": {Tools: []*mcp.Tool{tool}},
+	}, &calls))
+	require.NoError(t, result.Error)
+	require.Len(t, result.Tools, 1)
+	assert.Equal(t, "tool1", result.Tools[0].Name)
+	assert.Equal(t, int32(3), calls.Load())
 }
 
 func TestRealConnector_OAuthNotVerifiable(t *testing.T) {
