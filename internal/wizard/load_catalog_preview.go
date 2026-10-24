@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/conn-castle/agent-layer/internal/config"
+	"github.com/conn-castle/agent-layer/internal/fsutil"
 	"github.com/conn-castle/agent-layer/internal/skilltree"
 	"github.com/conn-castle/agent-layer/internal/templates"
 )
@@ -15,7 +16,7 @@ import (
 // project loading would reject malformed local candidates before that preview.
 // Keep all other project inputs strict; sync remains the authoritative loader.
 func loadWizardProjectConfig(root string) (*config.ProjectConfig, error) {
-	raw, err := os.ReadFile(config.DefaultPaths(root).ConfigPath)
+	raw, err := fsutil.ReadRegularFile(config.DefaultPaths(root).ConfigPath)
 	if err != nil {
 		return nil, err
 	}

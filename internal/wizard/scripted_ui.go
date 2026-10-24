@@ -12,6 +12,8 @@ import (
 	"slices"
 	"sort"
 	"strings"
+
+	"github.com/conn-castle/agent-layer/internal/fsutil"
 )
 
 // ScriptedUI implements UI from a strict JSON answer file.
@@ -31,7 +33,7 @@ type scriptedAnswers struct {
 
 // NewScriptedUIFromFile loads a scripted wizard UI from a JSON answer file.
 func NewScriptedUIFromFile(path string) (*ScriptedUI, error) {
-	data, err := os.ReadFile(path) // #nosec G304 -- path is an explicit user-provided wizard answer file.
+	data, err := fsutil.ReadRegularFile(path)
 	if err != nil {
 		return nil, err
 	}
