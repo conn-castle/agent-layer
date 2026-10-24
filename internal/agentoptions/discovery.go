@@ -19,6 +19,7 @@ import (
 	"github.com/conn-castle/agent-layer/internal/clients/claude"
 	"github.com/conn-castle/agent-layer/internal/clients/codex"
 	"github.com/conn-castle/agent-layer/internal/clients/grok"
+	"github.com/conn-castle/agent-layer/internal/ownedprocess"
 	"github.com/conn-castle/agent-layer/internal/versiondispatch"
 )
 
@@ -33,6 +34,8 @@ const paramsKey = "params"
 const jsonRPCKey = "jsonrpc"
 const initializedMethod = "initialized"
 const clientNameKey = "name"
+
+var startOwnedProcess = ownedprocess.Start
 
 var errGrokUnauthenticated = errors.New("harness is not authenticated; sign in using al grok")
 
@@ -78,7 +81,7 @@ func DiscoverModels(agent string, req DiscoveryRequest) ([]string, error) {
 	} else {
 		models, err = discoverCommandModels(agent, req, nil)
 	}
-	if errors.Is(err, errGrokUnauthenticated) {
+	if errors.Is(err, errGrokUnauthenticated) && ownedCleanupError(err) == nil {
 		// Grok prints its authentication status before it silently refreshes an
 		// expired session, so a second run reports the refresh the first persisted.
 		models, err = discoverCommandModels(agent, req, nil)
@@ -86,7 +89,11 @@ func DiscoverModels(agent string, req DiscoveryRequest) ([]string, error) {
 	// Claude captures the lookup deadline at its reply, then preserves native
 	// shutdown errors even if graceful cleanup outlasts that deadline.
 	if ctx.Err() != nil && agent != agentClaude {
-		return nil, fmt.Errorf("%s model discovery: %w", agent, ctx.Err())
+		ctxErr := ctx.Err()
+		if cleanupErr := ownedCleanupError(err); cleanupErr != nil {
+			ctxErr = errors.Join(ctxErr, cleanupErr)
+		}
+		return nil, fmt.Errorf("%s model discovery: %w", agent, ctxErr)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("%s model discovery: %w", agent, err)
@@ -241,19 +248,23 @@ func discoveryCommand(agent string, req DiscoveryRequest) (*exec.Cmd, error) {
 	case agentMuse:
 		args = []string{"serve", "--no-session-log"}
 	}
-	// #nosec G204 -- PATH-resolved harness; fixed discovery arguments, no prompt.
-	cmd := exec.CommandContext(req.Context, path, args...)
+	var cmd *exec.Cmd
+	if agent == agentClaude {
+		cmd = exec.CommandContext(req.Context, path, args...) // #nosec G204 -- PATH-resolved harness; fixed discovery arguments, no prompt.
+	} else {
+		//nolint:noctx // ownedprocess.Start owns cancellation while retaining the leader until cleanup.
+		cmd = exec.Command(path, args...) // #nosec G204 -- PATH-resolved harness; fixed discovery arguments, no prompt.
+	}
 	cmd.Env = env
-	cmd.WaitDelay = time.Second
 	if req.Project != nil {
 		cmd.Dir = req.Project.Root
 	}
 	return cmd, nil
 }
 
-func discoverCommandModels(agent string, req DiscoveryRequest, observer *claudeProbeObserver) ([]string, error) {
-	// Long-lived protocol servers are cancelled after their reply. Claude uses
-	// EOF instead and waits for its credential-safe shutdown.
+func discoverCommandModels(agent string, req DiscoveryRequest, observer *claudeProbeObserver) (models []string, resultErr error) {
+	// Long-lived protocol servers have their owned group stopped and joined after
+	// their reply. Claude uses EOF and waits for its credential-safe shutdown.
 	ctx, cancel := context.WithCancel(req.Context)
 	defer cancel()
 	req.Context = ctx
@@ -261,33 +272,22 @@ func discoverCommandModels(agent string, req DiscoveryRequest, observer *claudeP
 	if err != nil {
 		return nil, err
 	}
-	var stdout io.ReadCloser
-	var stdoutWriter *os.File
-	if agent == agentClaude {
-		// Own this pipe: Wait must observe native exit independently of any
-		// descendant that inherited stdout and keeps its write end open.
-		stdout, stdoutWriter, err = os.Pipe()
-		cmd.Stdout = stdoutWriter
-	} else {
-		stdout, err = cmd.StdoutPipe()
-	}
+	// Own this pipe: Claude's Wait must observe native exit independently of any
+	// descendant that inherited stdout, and an owned reap must not discard
+	// buffered replies by closing the reader.
+	stdout, stdoutWriter, err := os.Pipe()
 	if err != nil {
 		return nil, err
 	}
-	defer func() {
-		_ = stdout.Close()
-		if stdoutWriter != nil {
-			_ = stdoutWriter.Close()
-		}
-	}()
+	defer func() { _ = stdout.Close(); _ = stdoutWriter.Close() }()
+	cmd.Stdout = stdoutWriter
 	// agy models takes no input, so it keeps the null-device stdin of a nil cmd.Stdin.
 	var stdin io.WriteCloser
-	if agent != agentAntigravity {
+	var stdinReader *os.File
+	if agent == agentClaude {
 		if stdin, err = cmd.StdinPipe(); err != nil {
 			return nil, err
 		}
-	}
-	if agent == agentClaude {
 		// EOF enters Claude's graceful shutdown, which waits for a held OAuth
 		// refresh before exiting. SIGKILL can spend the refresh token before its
 		// replacement is saved. Use EOF on cancellation too, without a later kill.
@@ -298,22 +298,36 @@ func discoverCommandModels(agent string, req DiscoveryRequest, observer *claudeP
 				return err
 			}
 		}
-		cmd.WaitDelay = 0
+	} else if agent != agentAntigravity {
+		var writer *os.File
+		stdinReader, writer, err = os.Pipe()
+		if err != nil {
+			return nil, err
+		}
+		defer func() { _ = stdinReader.Close(); _ = writer.Close() }()
+		cmd.Stdin, stdin = stdinReader, writer
 	}
 	closeStdin := func() {
 		if stdin != nil {
 			_ = stdin.Close()
 		}
 	}
-	if err := cmd.Start(); err != nil {
-		return nil, err
-	}
-	if stdoutWriter != nil {
-		_ = stdoutWriter.Close()
-	}
-	waitProcess := cmd.Wait
+	var waitProcess func() error
 	if agent == agentClaude {
+		if err := cmd.Start(); err != nil {
+			return nil, err
+		}
+		_ = stdoutWriter.Close()
 		waitProcess = claudeProcessWait(ctx, cmd, stdout)
+	} else {
+		waitProcess, err = startOwnedProcess(ctx, cmd)
+		_ = stdoutWriter.Close()
+		if stdinReader != nil {
+			_ = stdinReader.Close()
+		}
+		if err != nil {
+			return nil, err
+		}
 	}
 	stopClose := context.AfterFunc(ctx, func() {
 		closeStdin()
@@ -327,7 +341,10 @@ func discoverCommandModels(agent string, req DiscoveryRequest, observer *claudeP
 		closeStdin()
 		cancel()
 		if !waited {
-			_ = waitProcess()
+			// Discovery cancelled the server itself, so only a failed stop is reported.
+			if cleanupErr := ownedCleanupError(waitProcess()); cleanupErr != nil {
+				models, resultErr = nil, errors.Join(resultErr, cleanupErr)
+			}
 		}
 	}()
 	reader := &io.LimitedReader{R: stdout, N: maxDiscoveryBytes + 1}
@@ -365,8 +382,8 @@ func discoverCommandModels(agent string, req DiscoveryRequest, observer *claudeP
 			return nil, errors.New("model discovery output exceeded size limit")
 		}
 		waited = true
-		if waitErr := waitProcess(); waitErr != nil && err == nil {
-			return nil, waitErr
+		if waitErr := waitProcess(); waitErr != nil && (err == nil || ownedCleanupError(waitErr) != nil) {
+			return nil, errors.Join(err, waitErr)
 		}
 		return models, err
 	}
@@ -409,6 +426,15 @@ func discoverCommandModels(agent string, req DiscoveryRequest, observer *claudeP
 		return models, nil
 	}
 	return readCodexModels(decoder, encoder)
+}
+
+// ownedCleanupError returns a failed stop proof from an owned wait result, if any.
+func ownedCleanupError(err error) error {
+	var cleanupErr *ownedprocess.CleanupError
+	if errors.As(err, &cleanupErr) {
+		return cleanupErr
+	}
+	return nil
 }
 
 func claudeProcessWait(ctx context.Context, cmd *exec.Cmd, stdout io.ReadCloser) func() error {

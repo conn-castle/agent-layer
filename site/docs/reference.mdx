@@ -223,7 +223,9 @@ Each agent has an `enabled` flag and an optional `model` value. Omit `model` and
 Wizard, Doctor, and Dispatch options share live model discovery for Claude,
 Codex, Grok, Muse, Antigravity, and Copilot CLI. Discovery uses the project's normal provider
 configuration without sync or inference, runs concurrently across harnesses,
-and allows ten seconds per lookup. Wizard starts queries before its first configuration screen; disabled Muse waits until you enable it and open its model picker, waits only when
+and allows ten seconds per lookup. Discovery stops each harness and any child
+processes that remain in its process group before returning, including on interrupt;
+Claude instead receives end of input so it can finish saving refreshed credentials. Wizard starts queries before its first configuration screen; disabled Muse waits until you enable it and open its model picker, waits only when
 a model picker needs its result, and reuses results during navigation. Failed
 discovery displays an error and keeps the client default and custom model choices
 available; it supplies no model suggestions. Scripted answers do not trigger
