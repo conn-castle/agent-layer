@@ -131,6 +131,7 @@ const (
 	WarningsConnectionFailedFmt         = "connection failed: %w"
 	WarningsListToolsFailedFmt          = "list tools failed: %w"
 	WarningsTooManyTools                = "too many tools or infinite loop"
+	WarningsRepeatedToolsCursor         = "tools/list repeated a pagination cursor"
 
 	// CoverReportProfileFlagUsage describes the profile flag.
 	CoverReportProfileFlagUsage      = "path to coverage profile"

@@ -140,6 +140,7 @@ func discoverMCPTools(ctx context.Context, serverID string, transport mcp.Transp
 	// List tools (paginated)
 	var allTools []*mcp.Tool
 	var cursor string
+	seenCursors := map[string]bool{}
 
 	for {
 		listRes, err := session.ListTools(ctx, &mcp.ListToolsParams{
@@ -158,7 +159,13 @@ func discoverMCPTools(ctx context.Context, serverID string, transport mcp.Transp
 		}
 		cursor = listRes.NextCursor
 
-		// Guard against infinite loops
+		// Guard against infinite loops: a revisited cursor would replay the
+		// same pages forever, even when they contain no tools.
+		if seenCursors[cursor] {
+			res.Error = errors.New(messages.WarningsRepeatedToolsCursor)
+			return res
+		}
+		seenCursors[cursor] = true
 		if len(allTools) > maxToolsToDiscover {
 			res.Error = fmt.Errorf(messages.WarningsTooManyTools)
 			return res
