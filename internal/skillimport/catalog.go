@@ -63,7 +63,7 @@ func requireCatalogPolicy(st *state) error {
 // local config, lock, and content for wizard edits. It never fetches. Missing
 // config is allowed for install previews; malformed lock evidence is fatal.
 func CatalogState(root string, entry templates.CLISkillCatalogEntry) ([]CatalogMember, error) {
-	return catalogState(root, entry, true)
+	return catalogState(context.Background(), root, entry, true)
 }
 
 // ErrPendingRecovery prevents diagnostics from reading a transitional generation.
@@ -71,18 +71,19 @@ var ErrPendingRecovery = errors.New("skill import pending recovery")
 
 // InspectCatalogState reads stable local evidence without fetching or recovering.
 // Any staging node requires an explicit sync before diagnostic inspection.
-func InspectCatalogState(root string, entry templates.CLISkillCatalogEntry) ([]CatalogMember, error) {
-	return catalogState(root, entry, false)
+// Cancelling ctx stops a wait for the project lock.
+func InspectCatalogState(ctx context.Context, root string, entry templates.CLISkillCatalogEntry) ([]CatalogMember, error) {
+	return catalogState(ctx, root, entry, false)
 }
 
-func catalogState(root string, entry templates.CLISkillCatalogEntry, recoverImports bool) ([]CatalogMember, error) {
+func catalogState(ctx context.Context, root string, entry templates.CLISkillCatalogEntry, recoverImports bool) ([]CatalogMember, error) {
 	if _, err := os.Lstat(filepath.Join(root, ".agent-layer")); errors.Is(err, os.ErrNotExist) {
 		return readCatalogState(root, entry)
 	} else if err != nil {
 		return nil, err
 	}
 	var members []CatalogMember
-	err := projectlock.With(sync.RealSystem{}, root, func() error {
+	err := projectlock.WithContext(ctx, sync.RealSystem{}, root, func() error {
 		paths := config.DefaultPaths(root)
 		if err := validateTierRoots(paths); err != nil {
 			// Wizard previews diagnose bad roots per member without recovery.

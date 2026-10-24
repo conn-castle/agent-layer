@@ -18,7 +18,7 @@ func commandContext(cmd *cobra.Command) context.Context {
 	return context.Background()
 }
 
-// contextInput checks terminal/pipe readability so canceled upgrade prompts do not
+// contextInput checks terminal/pipe readability so canceled prompts do not
 // need another line of stdin. It never closes or changes the caller's descriptor.
 type contextInput struct {
 	ctx context.Context
@@ -69,10 +69,18 @@ func (r contextInput) Read(p []byte) (int, error) {
 }
 
 // contextPromptReader checks cancellation even when later answers are already
-// buffered, while retaining one read-ahead buffer for the whole upgrade.
+// buffered, while retaining one read-ahead buffer for a prompt sequence.
 type contextPromptReader struct {
 	*bufio.Reader
 	ctx context.Context
+}
+
+// newCommandPromptReader returns a cancellation-aware reader over the
+// command's stdin. Share one reader across a prompt sequence so buffered
+// answers are not lost between prompts.
+func newCommandPromptReader(cmd *cobra.Command) *contextPromptReader {
+	ctx := commandContext(cmd)
+	return &contextPromptReader{Reader: bufio.NewReader(contextInput{ctx: ctx, in: cmd.InOrStdin()}), ctx: ctx}
 }
 
 func (r *contextPromptReader) ReadString(delim byte) (string, error) {

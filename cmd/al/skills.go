@@ -259,7 +259,7 @@ func confirmSkillsMutation(cmd *cobra.Command, operation string, prompt string, 
 	if !isTerminal() {
 		return fmt.Errorf("%s", fmt.Sprintf(importOutput(cmd, messages.SkillsNonInteractiveRequiresYesFmt), operation))
 	}
-	confirmed, err := promptYesNo(cmd.InOrStdin(), cmd.OutOrStdout(), prompt, false)
+	confirmed, err := promptYesNo(newCommandPromptReader(cmd), cmd.OutOrStdout(), prompt, false)
 	if err != nil {
 		return fmt.Errorf("read al %s %s confirmation: %w", importCommandName(cmd), operation, err)
 	}

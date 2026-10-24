@@ -2,12 +2,15 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"errors"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -329,6 +332,59 @@ func TestSkillsMutationsRequireExplicitConfirmation(t *testing.T) {
 	}
 	if _, _, err := runSkillsCommandWithInput(t, "yes\n", "push"); err != nil {
 		t.Fatalf("confirmed al skills push: %v", err)
+	}
+}
+
+func TestConfirmSkillsMutationStopsOnCancellation(t *testing.T) {
+	originalIsTerminal := isTerminal
+	t.Cleanup(func() { isTerminal = originalIsTerminal })
+	isTerminal = func() bool { return true }
+
+	const prompt = "Apply import change?"
+	for _, newCmd := range []func() *cobra.Command{newSkillsCmd, newInstructionsCmd} {
+		for _, buffered := range []bool{false, true} {
+			ctx, cancel := context.WithCancel(context.Background())
+			cmd := newCmd()
+			cmd.SetContext(ctx)
+			prompted := make(chan struct{}, 1)
+			var input io.Reader = strings.NewReader("yes\n")
+			if buffered {
+				// The approval is already readable when the interrupt arrives.
+				cmd.SetOut(promptCancelWriter{prompt: prompt, cancel: cancel})
+			} else {
+				// The open pipe writer means only cancellation can end the prompt.
+				reader, writer, err := os.Pipe()
+				if err != nil {
+					t.Fatal(err)
+				}
+				input = reader
+				t.Cleanup(func() { _ = reader.Close(); _ = writer.Close() })
+				cmd.SetOut(promptCancelWriter{prompt: prompt, prompted: prompted})
+			}
+			cmd.SetIn(input)
+
+			done := make(chan error, 1)
+			go func() { done <- confirmSkillsMutation(cmd, "add", prompt, false) }()
+			if !buffered {
+				select {
+				case <-prompted:
+				case <-time.After(3 * time.Second):
+					t.Fatalf("%s confirmation never prompted", cmd.Name())
+				}
+				// Let the prompt block on stdin before interrupting it.
+				time.Sleep(100 * time.Millisecond)
+				cancel()
+			}
+			select {
+			case err := <-done:
+				if !errors.Is(err, context.Canceled) {
+					t.Fatalf("%s confirmation (buffered=%v) error = %v, want context.Canceled", cmd.Name(), buffered, err)
+				}
+			case <-time.After(5 * time.Second):
+				t.Fatalf("%s confirmation (buffered=%v) kept waiting for stdin after cancellation", cmd.Name(), buffered)
+			}
+			cancel()
+		}
 	}
 }
 
