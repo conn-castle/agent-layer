@@ -333,6 +333,6 @@ func TestFieldOptionsRejectUnknownTarget(t *testing.T) {
 	if option.OverrideSupported || option.AllowCustom || len(option.Suggestions) != 0 {
 		t.Fatalf("unknown target option = %#v", option)
 	}
-	_, err := BuildOptions(OptionsRequest{Root: " "})
+	_, err := BuildOptions(OptionsRequest{Root: ""})
 	requireDispatchExitCode(t, err, ExitConfig)
 }

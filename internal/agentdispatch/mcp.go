@@ -144,7 +144,7 @@ func newDispatchMCPServer(opts MCPServerOptions) (*mcp.Server, error) {
 // It fails before any tool is served when the project config, benchmark policy,
 // or root cannot be resolved.
 func newDispatchToolServer(opts MCPServerOptions) (*dispatchToolServer, error) {
-	root := strings.TrimSpace(opts.Root)
+	root := opts.Root
 	if root == "" {
 		return nil, exitError(ExitConfig, "repository root is required")
 	}
@@ -164,7 +164,7 @@ func newDispatchToolServer(opts MCPServerOptions) (*dispatchToolServer, error) {
 		root: root,
 		// MCP initialization includes display metadata; CLI selection uses the version alone.
 		version:          strings.SplitN(opts.Version, " ", 2)[0],
-		workDir:          strings.TrimSpace(opts.WorkDir),
+		workDir:          opts.WorkDir,
 		env:              env,
 		waitTimeout:      config.DispatchMCPWaitTimeout(project.Config),
 		toolTimeout:      config.DispatchMCPToolTimeout(project.Config),
@@ -308,7 +308,7 @@ func (s *dispatchToolServer) handleStart(ctx context.Context, _ *mcp.CallToolReq
 	err := Start(StartOptions{
 		Context: ctx, Root: s.root, WorkDir: s.workDir, Agent: agent, Model: model,
 		ReasoningEffort: effort, Role: strings.TrimSpace(input.Role), Skill: strings.TrimSpace(input.Skill),
-		Prompt: input.Prompt, PromptFile: strings.TrimSpace(input.PromptFile),
+		Prompt: input.Prompt, PromptFile: input.PromptFile,
 		Stdout: &out, Stderr: io.Discard, Env: s.env,
 		beforeProvider: s.acquireProvider,
 	})
@@ -334,7 +334,7 @@ func (s *dispatchToolServer) handleContinue(ctx context.Context, _ *mcp.CallTool
 	var out bytes.Buffer
 	err := Continue(ContinueOptions{
 		Context: ctx, Root: s.root, WorkDir: s.workDir, Handle: strings.TrimSpace(input.Handle),
-		Prompt: input.Prompt, PromptFile: strings.TrimSpace(input.PromptFile),
+		Prompt: input.Prompt, PromptFile: input.PromptFile,
 		Stdout: &out, Stderr: io.Discard, Env: s.env,
 		beforeProvider: s.acquireProvider,
 	})

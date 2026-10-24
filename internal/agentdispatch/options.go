@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"os"
 	"os/exec"
-	"strings"
 	"sync"
 
 	"github.com/conn-castle/agent-layer/internal/agentoptions"
@@ -38,7 +37,7 @@ type FieldOption struct {
 
 // BuildOptions loads strict project config and reports valid start selections.
 func BuildOptions(req OptionsRequest) (*OptionsResponse, error) {
-	root := strings.TrimSpace(req.Root)
+	root := req.Root
 	if root == "" {
 		return nil, exitError(ExitConfig, "repository root is required")
 	}

@@ -161,6 +161,23 @@ func TestResolvePromptSourceNormalizesPathButRejectsWhitespaceOnlySources(t *tes
 	requireDispatchExitCode(t, err, ExitUsage)
 }
 
+func TestResolvePromptSourcePrefersExistingLiteralPath(t *testing.T) {
+	dir := t.TempDir()
+	literal := filepath.Join(dir, "question.txt ")
+	for path, content := range map[string]string{literal: "WANTED", filepath.Join(dir, "question.txt"): "WRONG"} {
+		if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	prompt, err := resolvePromptSource("", literal)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if prompt != "WANTED" {
+		t.Fatalf("prompt = %q, want the selected literal file", prompt)
+	}
+}
+
 func TestResolvePromptSourceMissingFileReportsCause(t *testing.T) {
 	promptPath := filepath.Join(t.TempDir(), "missing.md")
 	_, err := resolvePromptSource("", promptPath)
