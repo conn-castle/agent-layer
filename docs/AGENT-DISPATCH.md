@@ -185,9 +185,9 @@ Doctor checks only enabled
 harnesses with configured model overrides and reports discovery
 failures or configured models absent from their lists as warnings. Neither
 operation syncs as part of model discovery. Discovery may create the normal
-repo-local `.agy` and `.grok-config`
-directories when absent; it does not sync
-configuration or create dispatch runs.
+repo-local `.agy` and `.grok-config` directories when absent, and an empty
+owner-only `.codex` home when `agents.codex.local_config_dir = true` selects
+it; it does not sync configuration or create dispatch runs.
 
 Each explicit dispatch-options request obtains fresh results; no persistent
 model cache is used. Provider-version queries also run concurrently. Launch,

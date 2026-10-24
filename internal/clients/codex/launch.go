@@ -1,8 +1,10 @@
 package codex
 
 import (
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -56,4 +58,33 @@ func ConfigureEnvironment(root string, env []string, cfg config.CodexConfig, war
 		_, _ = fmt.Fprintf(warning, messages.ClientsCodexHomeWarningFmt, current, expected)
 	}
 	return env
+}
+
+// EnsureSelectedHome creates the repo-local CODEX_HOME when local config is
+// enabled and env selects it, because native Codex refuses to start with a
+// missing home. Existing homes, including symlinked directories, are left
+// unchanged; inherited homes elsewhere are never created.
+func EnsureSelectedHome(root string, env []string, cfg config.CodexConfig) error {
+	home := filepath.Join(root, ".codex")
+	// Compare parents: symlink resolution cannot match aliases of a missing leaf.
+	current, ok := clients.GetEnv(env, "CODEX_HOME")
+	if !config.CodexLocalConfigDirEnabled(cfg) || !ok || filepath.Base(current) != ".codex" || !clients.SamePath(filepath.Dir(current), root) {
+		return nil
+	}
+	err := os.Mkdir(home, 0o700)
+	if err == nil {
+		return nil
+	}
+	if !errors.Is(err, fs.ErrExist) {
+		return fmt.Errorf(messages.ClientsCodexHomeEnsureFailedFmt, home, err)
+	}
+	info, err := os.Stat(home)
+	if err == nil && info.IsDir() {
+		return nil
+	}
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return fmt.Errorf(messages.ClientsCodexHomeEnsureFailedFmt, home, err)
+	}
+	// A non-directory or a dangling symlink occupies the home path.
+	return fmt.Errorf(messages.ClientsCodexHomeNotDirectoryFmt, home)
 }
