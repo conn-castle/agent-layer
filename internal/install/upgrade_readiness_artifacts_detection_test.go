@@ -1,12 +1,15 @@
 package install
 
 import (
+	"bytes"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/conn-castle/agent-layer/internal/chime"
 	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/templates"
 	"github.com/conn-castle/agent-layer/internal/testutil"
@@ -397,7 +400,12 @@ func TestDetectDisabledAgentArtifacts_FlagsGeneratedGrokConfig(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(hookPath), 0o700); err != nil {
 		t.Fatalf("mkdir grok hooks: %v", err)
 	}
-	if err := os.WriteFile(hookPath, []byte(`{"command":"al hook chime grok # agent-layer-chime"}`+"\n"), 0o600); err != nil {
+	// Sync also owns a whitespace-reformatted managed document.
+	var reformatted bytes.Buffer
+	if err := json.Compact(&reformatted, chime.GrokHookDocument()); err != nil {
+		t.Fatalf("compact managed hook: %v", err)
+	}
+	if err := os.WriteFile(hookPath, reformatted.Bytes(), 0o600); err != nil {
 		t.Fatalf("write grok chime hook: %v", err)
 	}
 
@@ -435,6 +443,15 @@ func TestDetectDisabledAgentArtifacts_IgnoresUserOwnedGrokConfig(t *testing.T) {
 	}
 	if err := os.WriteFile(grokPath, []byte("model = \"grok-4.6\"\n"), 0o600); err != nil {
 		t.Fatalf("write user grok config: %v", err)
+	}
+	hookPath := filepath.Join(root, ".grok", "hooks", "agent-layer-chime.json")
+	if err := os.MkdirAll(filepath.Dir(hookPath), 0o700); err != nil {
+		t.Fatalf("mkdir grok hooks: %v", err)
+	}
+	userHook := `{"description":"User hook; documentation mentions al hook chime grok and agent-layer-chime",` +
+		`"hooks":{"Stop":[{"hooks":[{"type":"command","command":"./notify.sh","timeout":5}]}]}}` + "\n"
+	if err := os.WriteFile(hookPath, []byte(userHook), 0o600); err != nil {
+		t.Fatalf("write user grok chime hook: %v", err)
 	}
 
 	inst := &installer{root: root, sys: RealSystem{}}

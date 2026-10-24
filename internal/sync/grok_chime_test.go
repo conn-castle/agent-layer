@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/conn-castle/agent-layer/internal/chime"
 	"github.com/conn-castle/agent-layer/internal/config"
 )
 
@@ -75,7 +76,7 @@ func TestGrokChimeHookRejectsUnsafePathsAndCleanupConflicts(t *testing.T) {
 		root := t.TempDir()
 		outside := t.TempDir()
 		outsideHook := filepath.Join(outside, grokChimeHookFileName)
-		if err := os.WriteFile(outsideHook, grokChimeHookContents(), 0o600); err != nil {
+		if err := os.WriteFile(outsideHook, chime.GrokHookDocument(), 0o600); err != nil {
 			t.Fatal(err)
 		}
 		if err := os.MkdirAll(filepath.Join(root, ".grok"), 0o700); err != nil {
@@ -142,7 +143,7 @@ func TestCleanGrokChimeHookSurfacesFilesystemFailures(t *testing.T) {
 		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.WriteFile(path, grokChimeHookContents(), 0o600); err != nil {
+		if err := os.WriteFile(path, chime.GrokHookDocument(), 0o600); err != nil {
 			t.Fatal(err)
 		}
 		return root, path
@@ -250,7 +251,7 @@ func TestWriteGrokChimeHookOwnsReformattedManagedContents(t *testing.T) {
 		t.Fatalf("mkdir hooks: %v", err)
 	}
 	var reformatted bytes.Buffer
-	if err := json.Compact(&reformatted, grokChimeHookContents()); err != nil {
+	if err := json.Compact(&reformatted, chime.GrokHookDocument()); err != nil {
 		t.Fatalf("compact managed hook: %v", err)
 	}
 	if err := os.WriteFile(path, reformatted.Bytes(), 0o600); err != nil {
@@ -269,7 +270,7 @@ func TestWriteGrokChimeHookOwnsReformattedManagedContents(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read hook: %v", err)
 	}
-	if !bytes.Equal(data, grokChimeHookContents()) {
+	if !bytes.Equal(data, chime.GrokHookDocument()) {
 		t.Fatalf("expected current managed hook contents, got:\n%s", data)
 	}
 
@@ -288,7 +289,7 @@ func TestWriteGrokChimeHookOwnsReformattedManagedContents(t *testing.T) {
 
 func TestGrokChimeHookPreservesUserOwnedFiles(t *testing.T) {
 	t.Parallel()
-	managed := strings.TrimSuffix(string(grokChimeHookContents()), "\n")
+	managed := strings.TrimSuffix(string(chime.GrokHookDocument()), "\n")
 	cases := map[string]string{
 		"empty hooks": `{"hooks":{}}` + "\n",
 		"marker words in description": `{"description":"User hook; documentation mentions al hook chime grok and agent-layer-chime",` +
@@ -302,8 +303,8 @@ func TestGrokChimeHookPreservesUserOwnedFiles(t *testing.T) {
 		"malformed":                     managed[:len(managed)-1],
 	}
 	for name, contents := range cases {
-		for _, chime := range []bool{true, false} {
-			t.Run(fmt.Sprintf("%s/chime=%t", name, chime), func(t *testing.T) {
+		for _, chimeEnabled := range []bool{true, false} {
+			t.Run(fmt.Sprintf("%s/chime=%t", name, chimeEnabled), func(t *testing.T) {
 				t.Parallel()
 				root := t.TempDir()
 				path := grokChimeHookPath(root)
@@ -314,7 +315,7 @@ func TestGrokChimeHookPreservesUserOwnedFiles(t *testing.T) {
 					t.Fatalf("write user hook: %v", err)
 				}
 				project := &config.ProjectConfig{
-					Config: config.Config{Notifications: config.NotificationsConfig{Chime: &chime}},
+					Config: config.Config{Notifications: config.NotificationsConfig{Chime: &chimeEnabled}},
 				}
 				err := writeGrokChimeHook(RealSystem{}, root, project)
 				if err == nil || !strings.Contains(err.Error(), "not the Agent Layer-managed Grok chime hook") {
