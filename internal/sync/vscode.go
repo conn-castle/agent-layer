@@ -19,11 +19,6 @@ type vscodeSettings struct {
 	ClaudeCodeAllowDangerouslySkipPerms *bool           `json:"claudeCode.allowDangerouslySkipPermissions,omitempty"`
 }
 
-const (
-	vscodeSettingsManagedStart = "// >>> agent-layer"
-	vscodeSettingsManagedEnd   = "// <<< agent-layer"
-)
-
 // vscodeRetiredManagedKeys lists settings that earlier releases wrote inside the managed block.
 // Sync drops them from the block instead of preserving them as user settings.
 var vscodeRetiredManagedKeys = []string{

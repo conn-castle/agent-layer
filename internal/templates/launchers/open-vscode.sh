@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -e
-PARENT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
-cd "$PARENT_ROOT"
+# Capturing pwd output would strip newlines from the project directory name.
+cd -P -- "$(dirname "${BASH_SOURCE[0]}")/.."
 
 if ! command -v al >/dev/null 2>&1; then
   echo "Error: 'al' command not found."

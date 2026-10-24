@@ -21,6 +21,8 @@ User-facing launch entry points:
 - `.agent-layer/open-vscode.command`, `.agent-layer/open-vscode.sh`, `.agent-layer/open-vscode.app` (templates in `internal/templates/launchers/`)
 
 Launcher scripts call `al vscode --no-sync` after checking that `al` and `code` are available on `PATH`.
+They resolve the project's physical directory with `cd -P`, preserving literal
+directory names (including trailing newlines) when locating the project.
 
 ## End-to-end flow
 
@@ -31,12 +33,19 @@ Launcher scripts call `al vscode --no-sync` after checking that `al` and `code` 
    - no-sync mode: `clients.RunNoSyncWithStderr(...)` performs config load and launch only
 4. `internal/clients/vscode/launch.go` runs preflight checks:
    - `code` command exists on `PATH`
-   - `.vscode/settings.json` managed markers are not malformed/duplicated
+   - `.vscode/settings.json` root-level managed marker line comments are not malformed/duplicated; sync and launch share lexical recognition that excludes values, block/header comments, and nested profiles
 5. Launch sets environment variables based on enabled agents:
    - `CODEX_HOME=<repo>/.codex` only when `agents.vscode` is enabled and `agents.codex.local_config_dir` is `true` (otherwise inherited `CODEX_HOME` is preserved)
    - `GROK_HOME=<repo>/.grok-config` when `agents.grok` is enabled (when disabled, clears only stale repo-local values)
    - `CLAUDE_CONFIG_DIR=<repo>/.claude-config` when **both** `agents.claude_vscode` is enabled **and** `agents.claude.local_config_dir` is `true` (when disabled, clears only stale repo-local values and preserves user-defined values that point outside the repository)
 6. Executes `code ...` with pass-through args, appending `.` only when no positional path/file arg is provided.
+
+For example, `al vscode -- --user-data-dir "/tmp/editor data" --profile "Web Development"`
+opens the project with an isolated data directory and named profile. Separate values
+for `--user-data-dir`, `--extensions-dir`, `--profile`, and `--locale` do not count as
+project targets. Explicit workspace/folder paths and stdin `-` suppress the default
+`.`; a trailing native `--` alone does not. Other native arguments pass through
+unchanged, with unknown option values conservatively treated as possible paths.
 
 ## Managed settings architecture
 

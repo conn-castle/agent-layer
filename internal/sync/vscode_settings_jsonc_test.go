@@ -4,7 +4,34 @@ import (
 	"errors"
 	"strings"
 	"testing"
+
+	"github.com/conn-castle/agent-layer/internal/vscodesettings"
 )
+
+func TestRenderVSCodeSettingsIgnoresMarkerExamples(t *testing.T) {
+	t.Parallel()
+	for _, test := range []struct{ name, prefix, body string }{
+		{"block comment", "", "  /* Example only:\n  // >>> agent-layer\n  // <<< agent-layer\n  */\n"},
+		{"nested profile", "", "  \"[python]\": {\n    // >>> agent-layer\n    // <<< agent-layer\n    \"editor.formatOnSave\": true\n  },\n"},
+		{"header comment", "// >>> agent-layer\n// <<< agent-layer\n", ""},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			existing := test.prefix + "{\n" + test.body + "  \"editor.wordWrap\": \"on\"\n}\n"
+			settings := &vscodeSettings{ChatAgentSkillsLocations: map[string]bool{".agents/skills": true}}
+			updated, err := renderVSCodeSettingsContent(RealSystem{}, existing, settings)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !strings.HasPrefix(updated, test.prefix+"{\n  // >>> agent-layer\n") || !strings.Contains(updated, test.body) {
+				t.Fatalf("root settings must precede preserved user examples:\n%s", updated)
+			}
+			repeated, err := renderVSCodeSettingsContent(RealSystem{}, updated, settings)
+			if err != nil || repeated != updated {
+				t.Fatalf("repeated render changed preserved settings: %v", err)
+			}
+		})
+	}
+}
 
 func TestRenderVSCodeSettingsContentPreservesBOMAndNewlines(t *testing.T) {
 	t.Parallel()
@@ -37,7 +64,7 @@ func TestRenderVSCodeSettingsContentEmpty(t *testing.T) {
 	if !strings.HasPrefix(updated, "{") {
 		t.Fatalf("expected output to start with root object")
 	}
-	if !strings.Contains(updated, vscodeSettingsManagedStart) {
+	if !strings.Contains(updated, vscodesettings.ManagedBlockStart) {
 		t.Fatalf("expected managed block markers")
 	}
 	if strings.Contains(updated, "chat.tools.terminal.autoApprove") {
@@ -75,7 +102,7 @@ func TestRenderVSCodeSettingsContentInsertBlockComplexJSONC(t *testing.T) {
 	if err != nil {
 		t.Fatalf("renderVSCodeSettingsContent error: %v", err)
 	}
-	idxBlock := strings.Index(updated, vscodeSettingsManagedStart)
+	idxBlock := strings.Index(updated, vscodesettings.ManagedBlockStart)
 	idxPath := strings.Index(updated, "\"path\":")
 	if idxBlock == -1 || idxPath == -1 || idxBlock > idxPath {
 		t.Fatalf("expected managed block to be inserted before existing fields")
@@ -183,41 +210,51 @@ func TestIndexToLineColSingleLine(t *testing.T) {
 func TestFindVSCodeManagedBlockErrors(t *testing.T) {
 	t.Parallel()
 	lines := []string{
+		"{",
 		"// >>> agent-layer",
 		"// >>> agent-layer",
 		"// <<< agent-layer",
+		"}",
 	}
 	if _, _, _, _, err := findVSCodeManagedBlock(lines, 0, len(lines)-1); err == nil {
 		t.Fatalf("expected duplicate start error")
 	}
 
 	lines = []string{
+		"{",
 		"// >>> agent-layer",
 		"// <<< agent-layer",
 		"// <<< agent-layer",
+		"}",
 	}
 	if _, _, _, _, err := findVSCodeManagedBlock(lines, 0, len(lines)-1); err == nil {
 		t.Fatalf("expected duplicate end error")
 	}
 
 	lines = []string{
+		"{",
 		"// >>> agent-layer",
+		"}",
 	}
 	if _, _, _, _, err := findVSCodeManagedBlock(lines, 0, len(lines)-1); err == nil {
 		t.Fatalf("expected incomplete markers error")
 	}
 
 	lines = []string{
+		"{",
 		"// <<< agent-layer",
 		"// >>> agent-layer",
+		"}",
 	}
 	if _, _, _, _, err := findVSCodeManagedBlock(lines, 0, len(lines)-1); err == nil {
 		t.Fatalf("expected end-before-start error")
 	}
 
 	lines = []string{
+		"{",
 		"// >>> agent-layer",
 		"// <<< agent-layer",
+		"}",
 	}
 	if _, _, _, _, err := findVSCodeManagedBlock(lines, 1, 1); err == nil {
 		t.Fatalf("expected outside scan range error")

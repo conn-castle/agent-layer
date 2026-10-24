@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/conn-castle/agent-layer/internal/messages"
+	"github.com/conn-castle/agent-layer/internal/vscodesettings"
 )
 
 // renderVSCodeSettingsContent merges the managed settings block into existing JSONC content.
@@ -219,33 +220,20 @@ func indexToLineCol(content string, idx int) (int, int) {
 // Args: lines are normalized content lines, startLine/endLine bound the scan range.
 // Returns: block start/end line indices, indent, found flag, or error if malformed.
 func findVSCodeManagedBlock(lines []string, startLine, endLine int) (int, int, string, bool, error) {
-	start := -1
-	end := -1
-	indent := ""
-
-	for i, line := range lines {
-		trimmed := strings.TrimSpace(line)
-		if trimmed == vscodeSettingsManagedStart {
-			if start != -1 {
-				return -1, -1, "", false, fmt.Errorf("duplicate managed block start")
-			}
-			start = i
-			indent = leadingWhitespace(line)
-		}
-		if trimmed == vscodeSettingsManagedEnd {
-			if end != -1 {
-				return -1, -1, "", false, fmt.Errorf("duplicate managed block end")
-			}
-			end = i
-		}
+	starts, ends := vscodesettings.ManagedMarkerLines(lines)
+	if len(starts) > 1 {
+		return -1, -1, "", false, fmt.Errorf("duplicate managed block start")
 	}
-
-	if start == -1 && end == -1 {
+	if len(ends) > 1 {
+		return -1, -1, "", false, fmt.Errorf("duplicate managed block end")
+	}
+	if len(starts) == 0 && len(ends) == 0 {
 		return -1, -1, "", false, nil
 	}
-	if start == -1 || end == -1 {
+	if len(starts) == 0 || len(ends) == 0 {
 		return -1, -1, "", false, fmt.Errorf("managed block markers are incomplete")
 	}
+	start, end := starts[0], ends[0]
 	if end < start {
 		return -1, -1, "", false, fmt.Errorf("managed block end appears before start")
 	}
@@ -253,7 +241,7 @@ func findVSCodeManagedBlock(lines []string, startLine, endLine int) (int, int, s
 		return -1, -1, "", false, fmt.Errorf("managed block is outside scan range")
 	}
 
-	return start, end, indent, true, nil
+	return start, end, leadingWhitespace(lines[start]), true, nil
 }
 
 // detectVSCodeIndent finds the indentation used for root-level properties.
@@ -361,7 +349,7 @@ func buildVSCodeManagedBlock(sys System, settings *vscodeSettings, indentBase, i
 		innerLines = lines[1 : len(lines)-1]
 	}
 
-	block := []string{indentBase + vscodeSettingsManagedStart}
+	block := []string{indentBase + vscodesettings.ManagedBlockStart}
 	for _, line := range vscodeSettingsManagedHeader {
 		block = append(block, indentBase+line)
 	}
@@ -380,7 +368,7 @@ func buildVSCodeManagedBlock(sys System, settings *vscodeSettings, indentBase, i
 		}
 		block = append(block, managed...)
 	}
-	block = append(block, indentBase+vscodeSettingsManagedEnd)
+	block = append(block, indentBase+vscodesettings.ManagedBlockEnd)
 
 	return block, nil
 }
