@@ -1,6 +1,7 @@
 package doctor
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -86,7 +87,7 @@ enabled = false
 	}
 
 	// Downstream checks should work with the lenient config.
-	agentResults := CheckAgents(cfg)
+	agentResults := CheckAgents(context.Background(), cfg)
 	if len(agentResults) == 0 {
 		t.Fatal("expected agent results from lenient config")
 	}

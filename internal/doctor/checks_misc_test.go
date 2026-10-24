@@ -7,7 +7,9 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -234,7 +236,9 @@ func TestCheckAgents(t *testing.T) {
 	lookPathFunc = func(file string) (string, error) { return "/test/bin/" + file, nil }
 	// Match the real `agy --version` output shape so the tightened
 	// agyVersionRE (anchored on `^agy <version>`) finds the version.
-	commandOutputFunc = func(name string, args ...string) ([]byte, error) { return []byte("agy 1.0.0\n"), nil }
+	commandOutputFunc = func(_ context.Context, name string, args ...string) ([]byte, error) {
+		return []byte("agy 1.0.0\n"), nil
+	}
 	t.Cleanup(func() {
 		lookPathFunc = originalLookPath
 		commandOutputFunc = originalCommandOutput
@@ -255,7 +259,7 @@ func TestCheckAgents(t *testing.T) {
 		},
 	}
 
-	results := CheckAgents(cfg)
+	results := CheckAgents(context.Background(), cfg)
 
 	statusMap := make(map[string]Status)
 	for _, r := range results {
@@ -279,52 +283,127 @@ func TestCheckAgents(t *testing.T) {
 	}
 }
 
-func TestCommandOutputWithTimeoutStopsHungCommand(t *testing.T) {
-	t.Run("deadline exceeded", func(t *testing.T) {
-		scriptPath := filepath.Join(t.TempDir(), "hang.sh")
-		script := "#!/bin/sh\nsleep 5\n"
+func TestCommandOutputWithTimeoutStopsOwnedProcesses(t *testing.T) {
+	// The leader records its child, which retains output after the leader is done.
+	writeScript := func(t *testing.T, leaderTail string) (string, string) {
+		t.Helper()
+		dir := t.TempDir()
+		pidFile := filepath.Join(dir, "child")
+		scriptPath := filepath.Join(dir, "version.sh")
+		script := "#!/bin/sh\ntrap '' TERM\n/bin/sleep 30 &\necho $! > \"" + pidFile + "\"\necho agy 1.0.0\n" + leaderTail
 		if err := os.WriteFile(scriptPath, []byte(script), 0o600); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.Chmod(scriptPath, 0o700); err != nil { // #nosec G302 -- test needs an executable shell stub for subprocess timeout coverage.
+		if err := os.Chmod(scriptPath, 0o700); err != nil { // #nosec G302 -- test needs an executable shell stub for subprocess cleanup coverage.
 			t.Fatal(err)
 		}
-
-		startedAt := time.Now()
-		_, err := commandOutputWithTimeout(20*time.Millisecond, scriptPath)
-		if err == nil {
-			t.Fatal("expected timeout error from hung command")
+		return scriptPath, pidFile
+	}
+	assertChildStopped := func(t *testing.T, pidFile string) {
+		t.Helper()
+		data, err := os.ReadFile(pidFile) // #nosec G304 -- owned fixture PID path.
+		if err != nil {
+			t.Fatal(err)
 		}
-		if !errors.Is(err, context.DeadlineExceeded) {
+		pid, err := strconv.Atoi(strings.TrimSpace(string(data)))
+		if err != nil || pid <= 0 {
+			t.Fatalf("child pid = %q: %v", data, err)
+		}
+		state, psErr := exec.Command("/bin/ps", "-o", "stat=", "-p", strconv.Itoa(pid)).Output() // #nosec G204 -- test-owned PID.
+		var exit *exec.ExitError
+		if (psErr != nil && (!errors.As(psErr, &exit) || exit.ExitCode() != 1)) || (psErr == nil && !strings.HasPrefix(strings.TrimSpace(string(state)), "Z")) {
+			_ = syscall.Kill(pid, syscall.SIGKILL)
+			t.Fatalf("child %d still running after return: state=%q ps=%v", pid, state, psErr)
+		}
+	}
+
+	t.Run("leader exits", func(t *testing.T) {
+		scriptPath, pidFile := writeScript(t, "")
+		startedAt := time.Now()
+		output, err := commandOutputWithTimeout(context.Background(), 5*time.Second, scriptPath)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if string(output) != "agy 1.0.0\n" {
+			t.Fatalf("output = %q", output)
+		}
+		if elapsed := time.Since(startedAt); elapsed > 3*time.Second {
+			t.Fatalf("command took too long: %s", elapsed)
+		}
+		assertChildStopped(t, pidFile)
+	})
+
+	t.Run("deadline exceeded", func(t *testing.T) {
+		scriptPath, pidFile := writeScript(t, "/bin/sleep 30\n")
+		startedAt := time.Now()
+		_, err := commandOutputWithTimeout(context.Background(), 200*time.Millisecond, scriptPath)
+		if !errors.Is(err, context.DeadlineExceeded) || err.Error() != "command timed out after 200ms: context deadline exceeded" {
 			t.Fatalf("expected classified deadline error, got: %v", err)
 		}
-		if elapsed := time.Since(startedAt); elapsed > time.Second {
+		if elapsed := time.Since(startedAt); elapsed > 3*time.Second {
 			t.Fatalf("command timeout took too long: %s", elapsed)
 		}
+		assertChildStopped(t, pidFile)
 	})
 
-	t.Run("orphaned output pipe", func(t *testing.T) {
-		scriptPath := filepath.Join(t.TempDir(), "pipe.sh")
-		script := "#!/bin/sh\necho started\nsleep 5 &\n"
-		if err := os.WriteFile(scriptPath, []byte(script), 0o600); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.Chmod(scriptPath, 0o700); err != nil { // #nosec G302 -- test needs an executable shell stub for subprocess timeout coverage.
-			t.Fatal(err)
-		}
-
+	t.Run("caller cancelled", func(t *testing.T) {
+		scriptPath, pidFile := writeScript(t, "/bin/sleep 30\n")
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		go func() {
+			for ctx.Err() == nil {
+				if data, err := os.ReadFile(pidFile); err == nil && len(data) > 0 { // #nosec G304 -- owned fixture PID path.
+					cancel()
+					return
+				}
+				time.Sleep(10 * time.Millisecond)
+			}
+		}()
 		startedAt := time.Now()
-		_, err := commandOutputWithTimeout(200*time.Millisecond, scriptPath)
-		if err == nil {
-			t.Fatal("expected timeout error from inherited output pipe")
+		_, err := commandOutputWithTimeout(ctx, 5*time.Second, scriptPath)
+		if !errors.Is(err, context.Canceled) || strings.Contains(err.Error(), "timed out") {
+			t.Fatalf("expected cancellation error, got: %v", err)
 		}
-		if !errors.Is(err, context.DeadlineExceeded) && !errors.Is(err, exec.ErrWaitDelay) {
-			t.Fatalf("expected classified timeout error, got: %v", err)
+		if elapsed := time.Since(startedAt); elapsed > 3*time.Second {
+			t.Fatalf("cancellation took too long: %s", elapsed)
 		}
-		if elapsed := time.Since(startedAt); elapsed > time.Second {
-			t.Fatalf("command wait delay took too long: %s", elapsed)
-		}
+		assertChildStopped(t, pidFile)
 	})
+}
+
+func TestCheckAgentsCancellationSkipsLaterVersionChecks(t *testing.T) {
+	originalLookPath := lookPathFunc
+	originalCommandOutput := commandOutputFunc
+	t.Cleanup(func() {
+		lookPathFunc = originalLookPath
+		commandOutputFunc = originalCommandOutput
+	})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	var calls []string
+	lookPathFunc = func(file string) (string, error) { return "/test/bin/" + file, nil }
+	commandOutputFunc = func(ctx context.Context, name string, args ...string) ([]byte, error) {
+		calls = append(calls, name)
+		cancel()
+		return nil, ctx.Err()
+	}
+	enabled := true
+	cfg := &config.ProjectConfig{Config: config.Config{Agents: config.AgentsConfig{
+		Antigravity: config.AntigravityConfig{Enabled: &enabled},
+		Grok:        config.GrokConfig{Enabled: &enabled},
+		Muse:        config.AgentConfig{Enabled: &enabled},
+	}}}
+
+	results := CheckAgents(ctx, cfg)
+	if len(calls) != 1 || calls[0] != "/test/bin/agy" {
+		t.Fatalf("version calls = %v, want only agy", calls)
+	}
+	for _, r := range results {
+		if strings.Contains(r.Message, "version") || strings.Contains(r.Message, context.Canceled.Error()) {
+			t.Fatalf("cancelled check reported a binary result: %#v", r)
+		}
+	}
 }
 
 func TestCheckAntigravityBinary(t *testing.T) {
@@ -337,7 +416,7 @@ func TestCheckAntigravityBinary(t *testing.T) {
 
 	t.Run("missing", func(t *testing.T) {
 		lookPathFunc = func(file string) (string, error) { return "", os.ErrNotExist }
-		results := CheckAntigravityBinary()
+		results := CheckAntigravityBinary(context.Background())
 		if len(results) != 1 || results[0].Status != StatusFail || results[0].Message != messages.DoctorAntigravityNotFound {
 			t.Fatalf("unexpected result: %#v", results)
 		}
@@ -345,8 +424,10 @@ func TestCheckAntigravityBinary(t *testing.T) {
 
 	t.Run("too old", func(t *testing.T) {
 		lookPathFunc = func(file string) (string, error) { return "/test/bin/agy", nil }
-		commandOutputFunc = func(name string, args ...string) ([]byte, error) { return []byte("agy 0.9.9\n"), nil }
-		results := CheckAntigravityBinary()
+		commandOutputFunc = func(_ context.Context, name string, args ...string) ([]byte, error) {
+			return []byte("agy 0.9.9\n"), nil
+		}
+		results := CheckAntigravityBinary(context.Background())
 		if len(results) != 1 || results[0].Status != StatusFail || !strings.Contains(results[0].Message, "below required") {
 			t.Fatalf("unexpected result: %#v", results)
 		}
@@ -354,8 +435,10 @@ func TestCheckAntigravityBinary(t *testing.T) {
 
 	t.Run("ok", func(t *testing.T) {
 		lookPathFunc = func(file string) (string, error) { return "/test/bin/agy", nil }
-		commandOutputFunc = func(name string, args ...string) ([]byte, error) { return []byte("agy 1.0.1\n"), nil }
-		results := CheckAntigravityBinary()
+		commandOutputFunc = func(_ context.Context, name string, args ...string) ([]byte, error) {
+			return []byte("agy 1.0.1\n"), nil
+		}
+		results := CheckAntigravityBinary(context.Background())
 		if len(results) != 1 || results[0].Status != StatusOK || results[0].Message != "Antigravity version OK: 1.0.1" {
 			t.Fatalf("unexpected result: %#v", results)
 		}
@@ -363,8 +446,10 @@ func TestCheckAntigravityBinary(t *testing.T) {
 
 	t.Run("ok at boundary 1.0.0", func(t *testing.T) {
 		lookPathFunc = func(file string) (string, error) { return "/test/bin/agy", nil }
-		commandOutputFunc = func(name string, args ...string) ([]byte, error) { return []byte("agy 1.0.0\n"), nil }
-		results := CheckAntigravityBinary()
+		commandOutputFunc = func(_ context.Context, name string, args ...string) ([]byte, error) {
+			return []byte("agy 1.0.0\n"), nil
+		}
+		results := CheckAntigravityBinary(context.Background())
 		if len(results) != 1 || results[0].Status != StatusOK {
 			t.Fatalf("expected OK at boundary, got: %#v", results)
 		}
@@ -372,8 +457,10 @@ func TestCheckAntigravityBinary(t *testing.T) {
 
 	t.Run("ok at large major", func(t *testing.T) {
 		lookPathFunc = func(file string) (string, error) { return "/test/bin/agy", nil }
-		commandOutputFunc = func(name string, args ...string) ([]byte, error) { return []byte("agy 12.0.0\n"), nil }
-		results := CheckAntigravityBinary()
+		commandOutputFunc = func(_ context.Context, name string, args ...string) ([]byte, error) {
+			return []byte("agy 12.0.0\n"), nil
+		}
+		results := CheckAntigravityBinary(context.Background())
 		if len(results) != 1 || results[0].Status != StatusOK {
 			t.Fatalf("expected OK at large major, got: %#v", results)
 		}
@@ -384,8 +471,8 @@ func TestCheckAntigravityBinary(t *testing.T) {
 		// (e.g. `1.0.2`) with no `agy` prefix. The parser must accept it
 		// rather than reporting "could not parse".
 		lookPathFunc = func(file string) (string, error) { return "/test/bin/agy", nil }
-		commandOutputFunc = func(name string, args ...string) ([]byte, error) { return []byte("1.0.2\n"), nil }
-		results := CheckAntigravityBinary()
+		commandOutputFunc = func(_ context.Context, name string, args ...string) ([]byte, error) { return []byte("1.0.2\n"), nil }
+		results := CheckAntigravityBinary(context.Background())
 		if len(results) != 1 || results[0].Status != StatusOK || results[0].Message != "Antigravity version OK: 1.0.2" {
 			t.Fatalf("expected OK for bare `1.0.2`, got: %#v", results)
 		}
@@ -393,8 +480,8 @@ func TestCheckAntigravityBinary(t *testing.T) {
 
 	t.Run("ok with bare v-prefixed version output", func(t *testing.T) {
 		lookPathFunc = func(file string) (string, error) { return "/test/bin/agy", nil }
-		commandOutputFunc = func(name string, args ...string) ([]byte, error) { return []byte("v1.0.2\n"), nil }
-		results := CheckAntigravityBinary()
+		commandOutputFunc = func(_ context.Context, name string, args ...string) ([]byte, error) { return []byte("v1.0.2\n"), nil }
+		results := CheckAntigravityBinary(context.Background())
 		if len(results) != 1 || results[0].Status != StatusOK || results[0].Message != "Antigravity version OK: 1.0.2" {
 			t.Fatalf("expected OK for bare `v1.0.2`, got: %#v", results)
 		}
@@ -402,8 +489,8 @@ func TestCheckAntigravityBinary(t *testing.T) {
 
 	t.Run("too old with bare version output", func(t *testing.T) {
 		lookPathFunc = func(file string) (string, error) { return "/test/bin/agy", nil }
-		commandOutputFunc = func(name string, args ...string) ([]byte, error) { return []byte("0.9.9\n"), nil }
-		results := CheckAntigravityBinary()
+		commandOutputFunc = func(_ context.Context, name string, args ...string) ([]byte, error) { return []byte("0.9.9\n"), nil }
+		results := CheckAntigravityBinary(context.Background())
 		if len(results) != 1 || results[0].Status != StatusFail || !strings.Contains(results[0].Message, "below required") {
 			t.Fatalf("expected FAIL below required for bare `0.9.9`, got: %#v", results)
 		}
@@ -415,8 +502,10 @@ func TestCheckAntigravityBinary(t *testing.T) {
 		// trailing content, so it must NOT be silently accepted — it falls
 		// through to "could not parse".
 		lookPathFunc = func(file string) (string, error) { return "/test/bin/agy", nil }
-		commandOutputFunc = func(name string, args ...string) ([]byte, error) { return []byte("1.0.2 (build 99)\n"), nil }
-		results := CheckAntigravityBinary()
+		commandOutputFunc = func(_ context.Context, name string, args ...string) ([]byte, error) {
+			return []byte("1.0.2 (build 99)\n"), nil
+		}
+		results := CheckAntigravityBinary(context.Background())
 		if len(results) != 1 || results[0].Status != StatusFail {
 			t.Fatalf("expected FAIL on bare version with trailing content, got: %#v", results)
 		}
@@ -427,10 +516,10 @@ func TestCheckAntigravityBinary(t *testing.T) {
 
 	t.Run("version command failed", func(t *testing.T) {
 		lookPathFunc = func(file string) (string, error) { return "/test/bin/agy", nil }
-		commandOutputFunc = func(name string, args ...string) ([]byte, error) {
+		commandOutputFunc = func(_ context.Context, name string, args ...string) ([]byte, error) {
 			return []byte("agy"), fmt.Errorf("boom")
 		}
-		results := CheckAntigravityBinary()
+		results := CheckAntigravityBinary(context.Background())
 		if len(results) != 1 || results[0].Status != StatusFail {
 			t.Fatalf("expected FAIL when --version errors, got: %#v", results)
 		}
@@ -444,10 +533,10 @@ func TestCheckAntigravityBinary(t *testing.T) {
 
 	t.Run("unparseable version output", func(t *testing.T) {
 		lookPathFunc = func(file string) (string, error) { return "/test/bin/agy", nil }
-		commandOutputFunc = func(name string, args ...string) ([]byte, error) {
+		commandOutputFunc = func(_ context.Context, name string, args ...string) ([]byte, error) {
 			return []byte("agy custom-build\n"), nil
 		}
-		results := CheckAntigravityBinary()
+		results := CheckAntigravityBinary(context.Background())
 		if len(results) != 1 || results[0].Status != StatusFail {
 			t.Fatalf("expected FAIL on unparseable output, got: %#v", results)
 		}
@@ -465,10 +554,10 @@ func TestCheckAntigravityBinary(t *testing.T) {
 		// if a future tightening makes calendar versions invalid, this
 		// test will fail loudly so the maintainer makes a conscious choice.
 		lookPathFunc = func(file string) (string, error) { return "/test/bin/agy", nil }
-		commandOutputFunc = func(name string, args ...string) ([]byte, error) {
+		commandOutputFunc = func(_ context.Context, name string, args ...string) ([]byte, error) {
 			return []byte("agy 2026.05.21\n"), nil
 		}
-		results := CheckAntigravityBinary()
+		results := CheckAntigravityBinary(context.Background())
 		if len(results) != 1 || results[0].Status != StatusOK {
 			t.Fatalf("expected OK for `agy 2026.05.21`, got: %#v", results)
 		}
@@ -483,10 +572,10 @@ func TestCheckAntigravityBinary(t *testing.T) {
 		// build timestamps would flip the message to "below required" and
 		// break this assertion.
 		lookPathFunc = func(file string) (string, error) { return "/test/bin/agy", nil }
-		commandOutputFunc = func(name string, args ...string) ([]byte, error) {
+		commandOutputFunc = func(_ context.Context, name string, args ...string) ([]byte, error) {
 			return []byte("agy build 2026.05.21\n"), nil
 		}
-		results := CheckAntigravityBinary()
+		results := CheckAntigravityBinary(context.Background())
 		if len(results) != 1 || results[0].Status != StatusFail {
 			t.Fatalf("expected FAIL when version line is missing, got: %#v", results)
 		}
@@ -506,7 +595,7 @@ func TestCheckGrokBinary(t *testing.T) {
 
 	t.Run("missing is a warning", func(t *testing.T) {
 		lookPathFunc = func(file string) (string, error) { return "", os.ErrNotExist }
-		results := CheckGrokBinary()
+		results := CheckGrokBinary(context.Background())
 		if len(results) != 1 || results[0].Status != StatusWarn || results[0].Message != messages.DoctorGrokNotFound {
 			t.Fatalf("unexpected result: %#v", results)
 		}
@@ -514,10 +603,10 @@ func TestCheckGrokBinary(t *testing.T) {
 
 	t.Run("too old is a warning", func(t *testing.T) {
 		lookPathFunc = func(file string) (string, error) { return "/test/bin/grok", nil }
-		commandOutputFunc = func(name string, args ...string) ([]byte, error) {
+		commandOutputFunc = func(_ context.Context, name string, args ...string) ([]byte, error) {
 			return []byte("grok 1.0.2 (deadbeef) [stable]\n"), nil
 		}
-		results := CheckGrokBinary()
+		results := CheckGrokBinary(context.Background())
 		if len(results) != 1 || results[0].Status != StatusWarn || !strings.Contains(results[0].Message, "below tested") {
 			t.Fatalf("unexpected result: %#v", results)
 		}
@@ -525,10 +614,10 @@ func TestCheckGrokBinary(t *testing.T) {
 
 	t.Run("version command failure is a warning", func(t *testing.T) {
 		lookPathFunc = func(file string) (string, error) { return "/test/bin/grok", nil }
-		commandOutputFunc = func(name string, args ...string) ([]byte, error) {
+		commandOutputFunc = func(_ context.Context, name string, args ...string) ([]byte, error) {
 			return nil, errors.New("version failed")
 		}
-		results := CheckGrokBinary()
+		results := CheckGrokBinary(context.Background())
 		if len(results) != 1 || results[0].Status != StatusWarn || !strings.Contains(results[0].Message, "Failed to read Grok version") {
 			t.Fatalf("unexpected result: %#v", results)
 		}
@@ -536,10 +625,10 @@ func TestCheckGrokBinary(t *testing.T) {
 
 	t.Run("unparseable version is a warning", func(t *testing.T) {
 		lookPathFunc = func(file string) (string, error) { return "/test/bin/grok", nil }
-		commandOutputFunc = func(name string, args ...string) ([]byte, error) {
+		commandOutputFunc = func(_ context.Context, name string, args ...string) ([]byte, error) {
 			return []byte("grok development build"), nil
 		}
-		results := CheckGrokBinary()
+		results := CheckGrokBinary(context.Background())
 		if len(results) != 1 || results[0].Status != StatusWarn || !strings.Contains(results[0].Message, "Could not parse") {
 			t.Fatalf("unexpected result: %#v", results)
 		}
@@ -547,10 +636,10 @@ func TestCheckGrokBinary(t *testing.T) {
 
 	t.Run("ok at tested pin", func(t *testing.T) {
 		lookPathFunc = func(file string) (string, error) { return "/test/bin/grok", nil }
-		commandOutputFunc = func(name string, args ...string) ([]byte, error) {
+		commandOutputFunc = func(_ context.Context, name string, args ...string) ([]byte, error) {
 			return []byte("grok 1.0.5 (deadbeef) [stable]\n"), nil
 		}
-		results := CheckGrokBinary()
+		results := CheckGrokBinary(context.Background())
 		if len(results) != 1 || results[0].Status != StatusOK || results[0].Message != "Grok version OK: 1.0.5" {
 			t.Fatalf("unexpected result: %#v", results)
 		}
@@ -571,10 +660,10 @@ func TestCheckMuseBinary(t *testing.T) {
 		}
 		return "/test/bin/muse", nil
 	}
-	commandOutputFunc = func(name string, args ...string) ([]byte, error) {
+	commandOutputFunc = func(_ context.Context, name string, args ...string) ([]byte, error) {
 		return []byte("muse 1.3.0-R3401.1\n"), nil
 	}
-	results := CheckMuseBinary()
+	results := CheckMuseBinary(context.Background())
 	if len(results) != 1 || results[0].Status != StatusOK || !strings.Contains(results[0].Message, "Muse 1.3.0") {
 		t.Fatalf("unexpected result: %#v", results)
 	}
@@ -594,7 +683,7 @@ func TestCheckBinaries_OverflowingVersionSegment(t *testing.T) {
 	const overflowVersion = "99999999999999999999.0.0"
 	tests := []struct {
 		name   string
-		check  func() []Result
+		check  func(context.Context) []Result
 		output string
 		want   Result
 	}{
@@ -635,8 +724,8 @@ func TestCheckBinaries_OverflowingVersionSegment(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			lookPathFunc = func(file string) (string, error) { return "/test/bin/" + file, nil }
-			commandOutputFunc = func(name string, args ...string) ([]byte, error) { return []byte(tt.output), nil }
-			results := tt.check()
+			commandOutputFunc = func(_ context.Context, name string, args ...string) ([]byte, error) { return []byte(tt.output), nil }
+			results := tt.check(context.Background())
 			if len(results) != 1 || results[0] != tt.want {
 				t.Fatalf("results = %#v, want [%#v]", results, tt.want)
 			}
@@ -673,7 +762,7 @@ func TestCheckAgents_DisabledAntigravitySkipsBinaryCheck(t *testing.T) {
 		binaryCheckCalled = true
 		return "", os.ErrNotExist
 	}
-	commandOutputFunc = func(name string, args ...string) ([]byte, error) {
+	commandOutputFunc = func(_ context.Context, name string, args ...string) ([]byte, error) {
 		binaryCheckCalled = true
 		return nil, fmt.Errorf("should not be invoked")
 	}
@@ -686,7 +775,7 @@ func TestCheckAgents_DisabledAntigravitySkipsBinaryCheck(t *testing.T) {
 			},
 		},
 	}
-	results := CheckAgents(cfg)
+	results := CheckAgents(context.Background(), cfg)
 	if binaryCheckCalled {
 		t.Fatal("CheckAgents must skip binary check when Antigravity is disabled")
 	}

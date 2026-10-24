@@ -37,6 +37,7 @@ func newDoctorCmd() *cobra.Command {
 		Short: messages.DoctorShort,
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx := commandContext(cmd)
 			out := cmd.OutOrStdout()
 			quiet, _ := cmd.Flags().GetBool("quiet")
 			root, err := resolveRepoRoot()
@@ -76,14 +77,14 @@ func newDoctorCmd() *cobra.Command {
 				}
 				go func() {
 					req := agentoptions.DefaultDiscoveryRequest()
-					req.Context = cmd.Context()
+					req.Context = ctx
 					checkModels(cfg, req, func(result doctor.Result) { modelResults <- result })
 					close(modelResults)
 				}()
 			}
 
 			updateResults := make(chan doctor.Result, 1)
-			go func() { updateResults <- checkDoctorUpdate(cmd.Context()) }()
+			go func() { updateResults <- checkDoctorUpdate(ctx) }()
 
 			// 3. Check for stale flat-format skills (runs regardless of config load
 			// state, since flat-format skills cause config loading to fail).
@@ -100,7 +101,7 @@ func newDoctorCmd() *cobra.Command {
 				}
 
 				// 5. Check Agents
-				report(doctor.CheckAgents(cfg)...)
+				report(doctor.CheckAgents(ctx, cfg)...)
 
 				// 6. Check Skills.
 				// CheckConfig's lenient fallback already emits a Skills result when
@@ -131,6 +132,11 @@ func newDoctorCmd() *cobra.Command {
 					report(result)
 					updateResults = nil
 				}
+			}
+			// An interrupt ends doctor once in-flight discovery has returned;
+			// warning discovery would only start more provider work.
+			if err := ctx.Err(); err != nil {
+				return err
 			}
 
 			// 9. Run Warning System (Instructions + MCP)
@@ -166,7 +172,7 @@ func newDoctorCmd() *cobra.Command {
 					progressOut = io.Discard
 				}
 				reportProgress, stopProgress := startMCPDiscoveryReporter(enabledServerIDs, progressOut)
-				mcpWarnings, summary, err := checkMCPServers(cmd.Context(), cfg, nil, reportProgress)
+				mcpWarnings, summary, err := checkMCPServers(ctx, cfg, nil, reportProgress)
 				stopProgress()
 				if err != nil {
 					_, _ = fmt.Fprintln(out, color.RedString(messages.DoctorMCPCheckFailedFmt, err))

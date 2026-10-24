@@ -1,6 +1,7 @@
 package doctor
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -17,6 +18,7 @@ import (
 	"github.com/conn-castle/agent-layer/internal/clients/muse"
 	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/messages"
+	"github.com/conn-castle/agent-layer/internal/probe"
 	"github.com/conn-castle/agent-layer/internal/projection"
 	"github.com/conn-castle/agent-layer/internal/skillvalidator"
 	"github.com/conn-castle/agent-layer/internal/version"
@@ -25,13 +27,12 @@ import (
 
 var (
 	lookPathFunc      = exec.LookPath
-	commandOutputFunc = func(name string, args ...string) ([]byte, error) {
-		return commandOutputWithTimeout(antigravityVersionTimeout, name, args...)
+	commandOutputFunc = func(ctx context.Context, name string, args ...string) ([]byte, error) {
+		return commandOutputWithTimeout(ctx, antigravityVersionTimeout, name, args...)
 	}
 )
 
 const antigravityVersionTimeout = 5 * time.Second
-const antigravityVersionWaitDelay = 100 * time.Millisecond
 
 // MaxSkillCatalogMetadataTokens is the recommended token budget for combined skill
 // names and descriptions (the catalog metadata loaded into the agent on every run).
@@ -53,21 +54,23 @@ func SkillCatalogMetadata(cfg *config.ProjectConfig) string {
 	return sb.String()
 }
 
-func commandOutputWithTimeout(timeout time.Duration, name string, args ...string) ([]byte, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+// commandOutputWithTimeout runs a bounded version command inside an owned
+// process group so descendants that retain its output stop before return.
+func commandOutputWithTimeout(ctx context.Context, timeout time.Duration, name string, args ...string) ([]byte, error) {
+	runCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
 	// #nosec G204 -- command name is resolved by doctor checks from a fixed executable lookup.
-	cmd := exec.CommandContext(ctx, name, args...)
-	cmd.WaitDelay = antigravityVersionWaitDelay
-	output, err := cmd.CombinedOutput()
-	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
-		return output, fmt.Errorf("command timed out after %s: %w", timeout, context.DeadlineExceeded)
+	//nolint:noctx // probe.Run owns cancellation while retaining the leader until cleanup.
+	cmd := exec.Command(name, args...)
+	var output bytes.Buffer
+	cmd.Stdout = &output
+	cmd.Stderr = &output
+	err := probe.Run(runCtx, cmd)
+	if ctx.Err() == nil && errors.Is(err, context.DeadlineExceeded) {
+		return output.Bytes(), fmt.Errorf("command timed out after %s: %w", timeout, context.DeadlineExceeded)
 	}
-	if errors.Is(err, exec.ErrWaitDelay) {
-		return output, fmt.Errorf("command output wait timed out after %s: %w", antigravityVersionWaitDelay, err)
-	}
-	return output, err
+	return output.Bytes(), err
 }
 
 // agyVersionRE matches the version reported on an `agy <version>` line so
@@ -398,8 +401,9 @@ func CheckSecrets(cfg *config.ProjectConfig) []Result {
 	return results
 }
 
-// CheckAgents reports which agents are enabled or disabled.
-func CheckAgents(cfg *config.ProjectConfig) []Result {
+// CheckAgents reports which agents are enabled or disabled. Cancelling ctx
+// stops the running version check and skips later ones.
+func CheckAgents(ctx context.Context, cfg *config.ProjectConfig) []Result {
 	var results []Result
 	agents := []struct {
 		Name    string
@@ -430,25 +434,35 @@ func CheckAgents(cfg *config.ProjectConfig) []Result {
 			})
 		}
 	}
-	if config.IsAgentEnabled(cfg.Config.Agents.Antigravity.Enabled) {
-		results = append(results, CheckAntigravityBinary()...)
+	binaryChecks := []struct {
+		Enabled *bool
+		Check   func(context.Context) []Result
+	}{
+		{cfg.Config.Agents.Antigravity.Enabled, CheckAntigravityBinary},
+		{cfg.Config.Agents.Grok.Enabled, CheckGrokBinary},
+		{cfg.Config.Agents.Muse.Enabled, CheckMuseBinary},
 	}
-	if config.IsAgentEnabled(cfg.Config.Agents.Grok.Enabled) {
-		results = append(results, CheckGrokBinary()...)
-	}
-	if config.IsAgentEnabled(cfg.Config.Agents.Muse.Enabled) {
-		results = append(results, CheckMuseBinary()...)
+	for _, b := range binaryChecks {
+		if !config.IsAgentEnabled(b.Enabled) {
+			continue
+		}
+		binaryResults := b.Check(ctx)
+		// Drop the interrupted check's result; doctor reports the cancellation.
+		if ctx.Err() != nil {
+			break
+		}
+		results = append(results, binaryResults...)
 	}
 	return results
 }
 
 // CheckMuseBinary verifies that Muse exists and meets the tested version floor.
-func CheckMuseBinary() []Result {
+func CheckMuseBinary(ctx context.Context) []Result {
 	path, err := lookPathFunc(muse.ExecutableName)
 	if err != nil {
 		return []Result{{Status: StatusWarn, CheckName: messages.DoctorCheckNameAgents, Message: "Muse binary not found", Recommendation: "Install Muse Code 1.3.0 or newer, then run al doctor again."}}
 	}
-	output, err := commandOutputFunc(path, "--version")
+	output, err := commandOutputFunc(ctx, path, "--version")
 	if err != nil {
 		return []Result{{Status: StatusWarn, CheckName: messages.DoctorCheckNameAgents, Message: fmt.Sprintf("Muse version check failed: %v", err)}}
 	}
@@ -464,7 +478,7 @@ func CheckMuseBinary() []Result {
 }
 
 // CheckAntigravityBinary verifies that agy exists and is at least v1.0.0.
-func CheckAntigravityBinary() []Result {
+func CheckAntigravityBinary(ctx context.Context) []Result {
 	path, err := lookPathFunc("agy")
 	if err != nil {
 		return []Result{{
@@ -474,7 +488,7 @@ func CheckAntigravityBinary() []Result {
 			Recommendation: messages.DoctorAntigravityInstallRecommend,
 		}}
 	}
-	output, err := commandOutputFunc(path, "--version")
+	output, err := commandOutputFunc(ctx, path, "--version")
 	if err != nil {
 		return []Result{{
 			Status:         StatusFail,
@@ -524,7 +538,7 @@ var grokVersionRE = regexp.MustCompile(`(?m)^grok(?:\s+version)?\s+v?(\d+\.\d+\.
 // CheckGrokBinary verifies that grok exists and is at least the tested pin.
 // Missing or old binaries are warnings: Grok remains usable to configure, and
 // the user can still install or upgrade the CLI.
-func CheckGrokBinary() []Result {
+func CheckGrokBinary(ctx context.Context) []Result {
 	path, err := lookPathFunc("grok")
 	if err != nil {
 		return []Result{{
@@ -534,7 +548,7 @@ func CheckGrokBinary() []Result {
 			Recommendation: grokInstallRecommend(),
 		}}
 	}
-	output, err := commandOutputFunc(path, "--version")
+	output, err := commandOutputFunc(ctx, path, "--version")
 	if err != nil {
 		return []Result{{
 			Status:         StatusWarn,
