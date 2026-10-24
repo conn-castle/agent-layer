@@ -102,12 +102,12 @@ func TestMigrateBackupsRetriesAfterDirectorySyncFailure(t *testing.T) {
 }
 
 func TestBackupsRejectNonRegularFiles(t *testing.T) {
-	for _, operation := range []string{"migrate", "cleanup"} {
+	for _, operation := range []string{"write", "migrate", "cleanup"} {
 		for _, kind := range []string{"directory", "symlink"} {
 			t.Run(operation+"/"+kind, func(t *testing.T) {
 				root := t.TempDir()
 				path := filepath.Join(root, ".agent-layer", configBackupName)
-				if operation == "cleanup" {
+				if operation != "migrate" {
 					path = backupPath(root, configBackupName)
 				}
 				require.NoError(t, os.MkdirAll(filepath.Dir(path), 0700))
@@ -119,9 +119,12 @@ func TestBackupsRejectNonRegularFiles(t *testing.T) {
 					require.NoError(t, os.Symlink(target, path))
 				}
 				var err error
-				if operation == "migrate" {
+				switch operation {
+				case "write":
+					_, err = writeBackup(root, configBackupName, []byte("new"), 0600)
+				case "migrate":
 					err = MigrateBackups(root)
-				} else {
+				default:
 					_, err = CleanupBackups(root)
 				}
 				require.ErrorContains(t, err, "must be a regular file")
@@ -140,9 +143,8 @@ func TestWriteBackupReplacesPermissionsAndPreservesLinkedFile(t *testing.T) {
 	require.NoError(t, os.WriteFile(path, []byte("old"), 0644))
 	linked := filepath.Join(root, "original")
 	require.NoError(t, os.Link(path, linked))
-	created, err := writeBackup(root, envBackupName, []byte("secret"), 0600)
+	_, err := writeBackup(root, envBackupName, []byte("secret"), 0600)
 	require.NoError(t, err)
-	require.False(t, created)
 	info, err := os.Stat(path)
 	require.NoError(t, err)
 	require.Equal(t, os.FileMode(0600), info.Mode().Perm())

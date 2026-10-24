@@ -314,48 +314,210 @@ func TestFilePermOr(t *testing.T) {
 }
 
 func TestWriteBackup(t *testing.T) {
-	t.Run("new backup created", func(t *testing.T) {
+	t.Run("restore removes a new backup", func(t *testing.T) {
 		tmpDir := t.TempDir()
 
-		created, err := writeBackup(tmpDir, configBackupName, []byte("data"), 0644)
+		restore, err := writeBackup(tmpDir, configBackupName, []byte("data"), 0644)
 		require.NoError(t, err)
-		assert.True(t, created)
 
 		data, _ := os.ReadFile(backupPath(tmpDir, configBackupName))
 		assert.Equal(t, "data", string(data))
+		require.NoError(t, restore())
+		assert.NoFileExists(t, backupPath(tmpDir, configBackupName))
 	})
 
-	t.Run("backup already exists", func(t *testing.T) {
+	t.Run("restore returns the previous backup", func(t *testing.T) {
 		tmpDir := t.TempDir()
 		path := backupPath(tmpDir, configBackupName)
 		require.NoError(t, os.MkdirAll(filepath.Dir(path), 0700))
 		require.NoError(t, os.WriteFile(path, []byte("old"), 0600))
 
-		created, err := writeBackup(tmpDir, configBackupName, []byte("new"), 0644)
+		restore, err := writeBackup(tmpDir, configBackupName, []byte("new"), 0644)
 		require.NoError(t, err)
-		assert.False(t, created)
 
 		data, _ := os.ReadFile(path)
 		assert.Equal(t, "new", string(data))
+		require.NoError(t, restore())
+		data, _ = os.ReadFile(path)
+		assert.Equal(t, "old", string(data))
+		info, err := os.Stat(path)
+		require.NoError(t, err)
+		assert.Equal(t, os.FileMode(0600), info.Mode().Perm())
 	})
 
 	t.Run("write error", func(t *testing.T) {
 		tmpDir := t.TempDir()
-		// Create directory to cause write error
-		require.NoError(t, os.MkdirAll(backupPath(tmpDir, configBackupName), 0700))
+		require.NoError(t, os.MkdirAll(filepath.Dir(backupPath(tmpDir, configBackupName)), 0700))
+		origWrite := writeFileAtomic
+		t.Cleanup(func() { writeFileAtomic = origWrite })
+		writeFileAtomic = func(string, []byte, os.FileMode) error { return errors.New("write failed") }
 
-		created, err := writeBackup(tmpDir, configBackupName, []byte("data"), 0644)
-		assert.Error(t, err)
-		assert.False(t, created)
+		_, err := writeBackup(tmpDir, configBackupName, []byte("data"), 0644)
+		assert.ErrorContains(t, err, "write failed")
+	})
+
+	t.Run("write failure after rename restores the previous state", func(t *testing.T) {
+		for _, previous := range []string{"", "old"} {
+			tmpDir := t.TempDir()
+			path := backupPath(tmpDir, configBackupName)
+			require.NoError(t, os.MkdirAll(filepath.Dir(path), 0700))
+			if previous != "" {
+				require.NoError(t, os.WriteFile(path, []byte(previous), 0600))
+			}
+			origWrite := writeFileAtomic
+			writeFileAtomic = func(path string, data []byte, perm os.FileMode) error {
+				if err := origWrite(path, data, perm); err != nil {
+					return err
+				}
+				if string(data) == "new" {
+					return errors.New("sync dir failed")
+				}
+				return nil
+			}
+
+			_, err := writeBackup(tmpDir, configBackupName, []byte("new"), 0644)
+			writeFileAtomic = origWrite
+			require.ErrorContains(t, err, "sync dir failed")
+			if previous == "" {
+				assert.NoFileExists(t, path)
+			} else {
+				data, _ := os.ReadFile(path)
+				assert.Equal(t, previous, string(data))
+			}
+		}
 	})
 
 	t.Run("storage is not a directory", func(t *testing.T) {
 		tmpDir := t.TempDir()
 		require.NoError(t, os.WriteFile(filepath.Join(tmpDir, ".agent-layer"), []byte("x"), 0600))
 
-		created, err := writeBackup(tmpDir, configBackupName, []byte("data"), 0644)
+		_, err := writeBackup(tmpDir, configBackupName, []byte("data"), 0644)
 		assert.ErrorContains(t, err, "must be a real directory")
-		assert.False(t, created)
+	})
+}
+
+func TestApplyChanges_AbortRestoresPreviousBackups(t *testing.T) {
+	choices := NewChoices()
+	choices.ApprovalMode = "all"
+	choices.ApprovalModeTouched = true
+	choices.Secrets["NEW"] = "secret"
+	initialConfig := "[approvals]\nmode = \"none\"\n"
+	initialEnv := "OLD=value\n"
+
+	setup := func(t *testing.T) (string, string, string) {
+		root := t.TempDir()
+		configPath := filepath.Join(root, "config.toml")
+		envPath := filepath.Join(root, ".env")
+		require.NoError(t, os.WriteFile(configPath, []byte(initialConfig), 0600))
+		require.NoError(t, os.WriteFile(envPath, []byte(initialEnv), 0600))
+		for _, name := range []string{configBackupName, envBackupName} {
+			_, err := writeBackup(root, name, []byte("previous "+name), 0600)
+			require.NoError(t, err)
+		}
+		return root, configPath, envPath
+	}
+	failWrites := func(t *testing.T, fail func(path string, data []byte) error) {
+		origWrite := writeFileAtomic
+		t.Cleanup(func() { writeFileAtomic = origWrite })
+		writeFileAtomic = func(path string, data []byte, perm os.FileMode) error {
+			if err := fail(path, data); err != nil {
+				return err
+			}
+			return origWrite(path, data, perm)
+		}
+	}
+	requireFile := func(t *testing.T, path, want string) {
+		data, err := os.ReadFile(path)
+		require.NoError(t, err)
+		assert.Equal(t, want, string(data))
+	}
+	syncOK := func(string) (*alsync.Result, error) { return &alsync.Result{}, nil }
+
+	t.Run("env backup failure", func(t *testing.T) {
+		root, configPath, envPath := setup(t)
+		failWrites(t, func(path string, _ []byte) error {
+			if path == backupPath(root, envBackupName) {
+				return errors.New("env backup failed")
+			}
+			return nil
+		})
+
+		err := applyChanges(root, configPath, envPath, choices, syncOK, io.Discard)
+		require.ErrorContains(t, err, "failed to backup .env")
+
+		requireFile(t, configPath, initialConfig)
+		requireFile(t, backupPath(root, configBackupName), "previous "+configBackupName)
+		requireFile(t, backupPath(root, envBackupName), "previous "+envBackupName)
+	})
+
+	t.Run("config write failure", func(t *testing.T) {
+		root, configPath, envPath := setup(t)
+		failWrites(t, func(path string, _ []byte) error {
+			if path == configPath {
+				return errors.New("write config failed")
+			}
+			return nil
+		})
+
+		err := applyChanges(root, configPath, envPath, choices, syncOK, io.Discard)
+		require.ErrorContains(t, err, "failed to write config")
+
+		requireFile(t, backupPath(root, configBackupName), "previous "+configBackupName)
+		requireFile(t, backupPath(root, envBackupName), "previous "+envBackupName)
+	})
+
+	t.Run("env write failure after config rollback", func(t *testing.T) {
+		root, configPath, envPath := setup(t)
+		failWrites(t, func(path string, _ []byte) error {
+			if path == envPath {
+				return errors.New("write env failed")
+			}
+			return nil
+		})
+
+		err := applyChanges(root, configPath, envPath, choices, syncOK, io.Discard)
+		require.ErrorContains(t, err, "failed to write .env")
+
+		requireFile(t, configPath, initialConfig)
+		requireFile(t, backupPath(root, configBackupName), "previous "+configBackupName)
+		requireFile(t, backupPath(root, envBackupName), "previous "+envBackupName)
+	})
+
+	t.Run("failed config rollback keeps its original backup", func(t *testing.T) {
+		root, configPath, envPath := setup(t)
+		failWrites(t, func(path string, data []byte) error {
+			if path == envPath {
+				return errors.New("write env failed")
+			}
+			if path == configPath && string(data) == initialConfig {
+				return errors.New("rollback failed")
+			}
+			return nil
+		})
+
+		err := applyChanges(root, configPath, envPath, choices, syncOK, io.Discard)
+		require.ErrorContains(t, err, "also failed to rollback config")
+
+		requireFile(t, backupPath(root, configBackupName), initialConfig)
+		requireFile(t, backupPath(root, envBackupName), "previous "+envBackupName)
+	})
+
+	t.Run("backup restore failure is reported", func(t *testing.T) {
+		root, configPath, envPath := setup(t)
+		failWrites(t, func(path string, data []byte) error {
+			switch {
+			case path == configPath:
+				return errors.New("write config failed")
+			case path == backupPath(root, configBackupName) && string(data) == "previous "+configBackupName:
+				return errors.New("restore failed")
+			}
+			return nil
+		})
+
+		err := applyChanges(root, configPath, envPath, choices, syncOK, io.Discard)
+		require.ErrorContains(t, err, "failed to write config")
+		require.ErrorContains(t, err, "restore wizard backup")
+		requireFile(t, backupPath(root, envBackupName), "previous "+envBackupName)
 	})
 }
 
@@ -457,6 +619,7 @@ func TestApplyChanges_WritesOnlyChangedDocuments(t *testing.T) {
 		require.ErrorContains(t, err, "failed to write .env")
 		assert.NotContains(t, err.Error(), "rollback")
 		assert.Zero(t, configWrites)
+		requireBackup(t, root, envBackupName, "previous "+envBackupName)
 	})
 
 	t.Run("missing env is created without backup", func(t *testing.T) {

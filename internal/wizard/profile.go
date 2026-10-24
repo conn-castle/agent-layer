@@ -2,6 +2,7 @@ package wizard
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -141,11 +142,12 @@ func writeProfileConfig(root, configPath, profilePath string, profileBytes []byt
 	if err != nil {
 		return err
 	}
-	if _, err := writeBackup(root, configBackupName, currentConfig, configPerm); err != nil {
+	restoreBackup, err := backupDocument(root, configBackupName, configPath, currentConfig, configPerm)
+	if err != nil {
 		return fmt.Errorf(messages.WizardBackupConfigFailedFmt, err)
 	}
 	if err := writeFileAtomic(configPath, profileBytes, configPerm); err != nil {
-		return fmt.Errorf(messages.WizardWriteConfigFailedFmt, err)
+		return errors.Join(fmt.Errorf(messages.WizardWriteConfigFailedFmt, err), restoreBackup())
 	}
 
 	return nil
