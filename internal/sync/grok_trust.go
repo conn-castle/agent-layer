@@ -47,7 +47,7 @@ func writeGrokTrustedFolders(sys System, root string) error {
 	}
 
 	path := filepath.Join(homeDir, "trusted_folders.toml")
-	existing, err := sys.ReadFile(path)
+	existing, err := readRegularFile(sys, path)
 	if err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf(messages.SyncGrokTrustReadFailedFmt, path, err)
 	}

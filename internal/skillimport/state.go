@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/conn-castle/agent-layer/internal/config"
+	"github.com/conn-castle/agent-layer/internal/fsutil"
 	"github.com/conn-castle/agent-layer/internal/skilllock"
 	"github.com/conn-castle/agent-layer/internal/skilltree"
 )
@@ -72,7 +73,7 @@ type state struct {
 func loadState(root string, instructions bool) (*state, error) {
 	paths := config.DefaultPaths(root)
 
-	raw, err := os.ReadFile(paths.ConfigPath) // #nosec G304 -- paths.ConfigPath is the resolved repository configuration file.
+	raw, err := fsutil.ReadRegularFile(paths.ConfigPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read %s: %w", paths.ConfigPath, err)
 	}

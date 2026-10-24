@@ -1636,6 +1636,7 @@ func TestWriteCodexConfig_FailsOnInvalidExistingTOMLWithoutOverwrite(t *testing.
 func TestWriteCodexConfig_ReadErrorDoesNotWrite(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
+	writeExistingCodexConfig(t, root, "")
 	readErr := errors.New("read denied")
 	wrote := false
 	sys := &MockSystem{

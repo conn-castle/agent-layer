@@ -10,6 +10,7 @@ import (
 	"github.com/pelletier/go-toml/v2"
 
 	"github.com/conn-castle/agent-layer/internal/envfile"
+	"github.com/conn-castle/agent-layer/internal/fsutil"
 	"github.com/conn-castle/agent-layer/internal/messages"
 	"github.com/conn-castle/agent-layer/internal/templates"
 )
@@ -45,7 +46,7 @@ func LoadTemplateConfig() (*Config, error) {
 // LoadEnv reads .agent-layer/.env into a key-value map. A missing file is
 // equivalent to an empty environment; malformed or unreadable files fail.
 func LoadEnv(path string) (map[string]string, error) {
-	data, err := os.ReadFile(path)
+	data, err := fsutil.ReadRegularFile(path)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return map[string]string{}, nil
@@ -229,7 +230,7 @@ func applyLegacyConfigAliases(data []byte, cfg *Config) {
 // LoadConfigLenient reads .agent-layer/config.toml without validation.
 // Returns an error only on filesystem or TOML syntax errors.
 func LoadConfigLenient(path string) (*Config, error) {
-	data, err := os.ReadFile(path)
+	data, err := fsutil.ReadRegularFile(path)
 	if err != nil {
 		return nil, fmt.Errorf(messages.ConfigMissingFileFmt, path, err)
 	}

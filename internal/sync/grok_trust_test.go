@@ -89,6 +89,13 @@ func TestWriteGrokTrustedFoldersFailsLoudly(t *testing.T) {
 	t.Run("filesystem failures", func(t *testing.T) {
 		injected := errors.New("injected")
 		root := t.TempDir()
+		home := filepath.Join(root, ".grok-config")
+		if err := os.MkdirAll(home, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(home, "trusted_folders.toml"), nil, 0o600); err != nil {
+			t.Fatal(err)
+		}
 
 		readSystem := &MockSystem{Fallback: RealSystem{}, ReadFileFunc: func(string) ([]byte, error) { return nil, injected }}
 		if err := writeGrokTrustedFolders(readSystem, root); !errors.Is(err, injected) {
