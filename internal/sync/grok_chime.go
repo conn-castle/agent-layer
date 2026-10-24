@@ -2,10 +2,10 @@ package sync
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/messages"
@@ -127,9 +127,15 @@ func cleanGrokChimeHook(sys System, root string) error {
 	return nil
 }
 
+// grokChimeHookIsManaged reports whether data is the complete managed hook
+// document, ignoring only JSON whitespace. Compacting preserves key order and
+// duplicate keys, so lookalike user hooks cannot decode into the managed shape.
 func grokChimeHookIsManaged(data []byte) bool {
-	content := string(data)
-	return strings.Contains(content, "al hook chime grok") && strings.Contains(content, agentLayerChimeMarker)
+	var existing, managed bytes.Buffer
+	if json.Compact(&existing, data) != nil || json.Compact(&managed, grokChimeHookContents()) != nil {
+		return false
+	}
+	return bytes.Equal(existing.Bytes(), managed.Bytes())
 }
 
 func ensureGrokChimePathContained(sys System, root string, target string) error {
