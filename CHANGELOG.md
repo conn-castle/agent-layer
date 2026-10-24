@@ -15,6 +15,7 @@ All notable changes to this project will be documented in this file.
 - `al doctor` MCP discovery stops each stdio MCP server and any children remaining in its process group before returning, after normal shutdown, failure, timeout, or the first interrupt, including children that ignore interrupts or keep output open (#461).
 - `al doctor` MCP discovery stops with a clear error when a server returns a pagination cursor it already returned, instead of requesting the same empty pages until the 30-second discovery deadline. Ordinary pagination is unchanged (#462).
 - A wizard or profile apply that fails while backing up or writing `config.toml` or `.env` restores the previous wizard backups of files it left unchanged, instead of replacing them with copies of the current files (#487).
+- `al sync` treats `.grok/hooks/agent-layer-chime.json` as Agent Layer-owned only when it is the complete managed hook document, ignoring JSON whitespace. A user hook at that path that merely mentions the chime command or marker, adds handlers or metadata, or is malformed is now preserved with a conflict error instead of being overwritten when the chime is enabled or deleted when it is disabled (#449).
 - Agent Dispatch accepts provider output that encodes supplementary characters such as emoji as escaped JSON surrogate pairs, instead of failing the run and losing its final answer. A truncated answer never ends in half of such a character (#443).
 
 ## v1.1.0 - 2026-10-22

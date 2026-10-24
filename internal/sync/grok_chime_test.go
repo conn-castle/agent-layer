@@ -2,7 +2,9 @@ package sync
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -240,16 +242,19 @@ func TestWriteGrokChimeHookPreservesSiblingHooks(t *testing.T) {
 	}
 }
 
-func TestWriteGrokChimeHookRewritesPriorManagedContents(t *testing.T) {
+func TestWriteGrokChimeHookOwnsReformattedManagedContents(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
 	path := grokChimeHookPath(root)
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		t.Fatalf("mkdir hooks: %v", err)
 	}
-	legacy := []byte(`{"hooks":{"Stop":[{"hooks":[{"type":"command","command":"al hook chime grok # agent-layer-chime","timeout":1}]}]}}` + "\n")
-	if err := os.WriteFile(path, legacy, 0o600); err != nil {
-		t.Fatalf("write legacy hook: %v", err)
+	var reformatted bytes.Buffer
+	if err := json.Compact(&reformatted, grokChimeHookContents()); err != nil {
+		t.Fatalf("compact managed hook: %v", err)
+	}
+	if err := os.WriteFile(path, reformatted.Bytes(), 0o600); err != nil {
+		t.Fatalf("write reformatted hook: %v", err)
 	}
 	enabled := true
 	project := &config.ProjectConfig{
@@ -267,27 +272,63 @@ func TestWriteGrokChimeHookRewritesPriorManagedContents(t *testing.T) {
 	if !bytes.Equal(data, grokChimeHookContents()) {
 		t.Fatalf("expected current managed hook contents, got:\n%s", data)
 	}
+
+	if err := os.WriteFile(path, reformatted.Bytes(), 0o600); err != nil {
+		t.Fatalf("rewrite reformatted hook: %v", err)
+	}
+	disabled := false
+	project.Config.Notifications.Chime = &disabled
+	if err := writeGrokChimeHook(RealSystem{}, root, project); err != nil {
+		t.Fatalf("writeGrokChimeHook cleanup: %v", err)
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("expected reformatted managed hook removed, stat err = %v", err)
+	}
 }
 
-func TestWriteGrokChimeHookRejectsUserOwnedFile(t *testing.T) {
+func TestGrokChimeHookPreservesUserOwnedFiles(t *testing.T) {
 	t.Parallel()
-	root := t.TempDir()
-	path := grokChimeHookPath(root)
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		t.Fatalf("mkdir hooks: %v", err)
+	managed := strings.TrimSuffix(string(grokChimeHookContents()), "\n")
+	cases := map[string]string{
+		"empty hooks": `{"hooks":{}}` + "\n",
+		"marker words in description": `{"description":"User hook; documentation mentions al hook chime grok and agent-layer-chime",` +
+			`"hooks":{"Stop":[{"hooks":[{"type":"command","command":"./notify.sh","timeout":5}]}]}}` + "\n",
+		"extra handler": strings.Replace(managed, `"timeout": 5
+          }`, `"timeout": 5
+          },
+          {"type": "command", "command": "./notify.sh"}`, 1),
+		"extra metadata":                strings.Replace(managed, "{\n", "{\n  \"owner\": \"me\",\n", 1),
+		"duplicate key hides user hook": `{"hooks":{"Stop":[{"hooks":[{"type":"command","command":"./notify.sh"}]}]},` + managed[1:],
+		"malformed":                     managed[:len(managed)-1],
 	}
-	if err := os.WriteFile(path, []byte(`{"hooks":{}}`+"\n"), 0o600); err != nil {
-		t.Fatalf("write user hook: %v", err)
-	}
-	enabled := true
-	project := &config.ProjectConfig{
-		Config: config.Config{
-			Notifications: config.NotificationsConfig{Chime: &enabled},
-		},
-	}
-	err := writeGrokChimeHook(RealSystem{}, root, project)
-	if err == nil || !strings.Contains(err.Error(), "not the Agent Layer-managed Grok chime hook") {
-		t.Fatalf("error = %v, want managed-hook conflict", err)
+	for name, contents := range cases {
+		for _, chime := range []bool{true, false} {
+			t.Run(fmt.Sprintf("%s/chime=%t", name, chime), func(t *testing.T) {
+				t.Parallel()
+				root := t.TempDir()
+				path := grokChimeHookPath(root)
+				if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+					t.Fatalf("mkdir hooks: %v", err)
+				}
+				if err := os.WriteFile(path, []byte(contents), 0o600); err != nil {
+					t.Fatalf("write user hook: %v", err)
+				}
+				project := &config.ProjectConfig{
+					Config: config.Config{Notifications: config.NotificationsConfig{Chime: &chime}},
+				}
+				err := writeGrokChimeHook(RealSystem{}, root, project)
+				if err == nil || !strings.Contains(err.Error(), "not the Agent Layer-managed Grok chime hook") {
+					t.Fatalf("error = %v, want managed-hook conflict", err)
+				}
+				data, err := os.ReadFile(path) // #nosec G304 -- test-owned path.
+				if err != nil {
+					t.Fatalf("read user hook: %v", err)
+				}
+				if string(data) != contents {
+					t.Fatalf("user hook changed:\n%s", data)
+				}
+			})
+		}
 	}
 }
 
