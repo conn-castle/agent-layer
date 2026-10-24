@@ -108,6 +108,40 @@ func TestSecretsRedactPrefersLongerValues(t *testing.T) {
 	}
 }
 
+// TestSecretsRedactCoversDiagnosticSpellings proves a credential stays hidden
+// when Git or a transport echoes it percent-decoded, quoted, or re-encoded
+// rather than as the substituted text.
+func TestSecretsRedactCoversDiagnosticSpellings(t *testing.T) {
+	t.Parallel()
+	secrets := NewSecrets(map[string]string{"AL_TOKEN": "dog%22food-secret%40sentinel"}) // #nosec G101 -- intentionally fake credential for redaction regression.
+	if _, err := secrets.Resolve("https://oauth2:${AL_TOKEN}@host/repo.git"); err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	for _, tc := range []struct{ name, text string }{
+		{"raw", "fatal: https://oauth2:dog%22food-secret%40sentinel@host/repo.git"},
+		{"decoded", `fatal: https://oauth2:dog"food-secret@sentinel@host/repo.git`},
+		{"quoted decoded", `fatal: "https://oauth2:dog\"food-secret@sentinel@host/repo.git"`},
+		{"re-encoded", "fatal: https://oauth2:dog%2522food-secret%2540sentinel@host/repo.git"},
+	} {
+		got := secrets.Redact(tc.text)
+		if strings.Contains(got, "food-secret") || !strings.Contains(got, "oauth2:${AL_TOKEN}@host") {
+			t.Fatalf("%s spelling was not redacted: %q", tc.name, got)
+		}
+	}
+	if got := secrets.Redact("unrelated sentinel@host text"); got != "unrelated sentinel@host text" {
+		t.Fatalf("Redact changed text without a resolved spelling: %q", got)
+	}
+
+	// Git decodes the well-formed escapes and copies a malformed `%` through.
+	malformed := NewSecrets(map[string]string{"AL_TOKEN": "100%_sure%40token"}) // #nosec G101 -- intentionally fake credential for redaction regression.
+	if _, err := malformed.Resolve("https://oauth2:${AL_TOKEN}@host/repo.git"); err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if got := malformed.Redact("fatal: https://oauth2:100%_sure@token@host/repo.git"); got != "fatal: https://oauth2:${AL_TOKEN}@host/repo.git" {
+		t.Fatalf("leniently decoded spelling was not redacted: %q", got)
+	}
+}
+
 // TestCommandErrorRedactsResolvedSecrets proves the redaction reaches a real
 // git failure. A repository URL is an ordinary command argument and git echoes
 // it back in its own diagnostics, so both the arguments and the captured stderr

@@ -40,7 +40,8 @@ type Secrets struct {
 	env map[string]string
 	// mu guards resolved, which grows as blocks are opened.
 	mu sync.Mutex
-	// resolved maps each substituted value to the placeholder that produced it.
+	// resolved maps each spelling of a substituted value to the placeholder
+	// that produced it.
 	resolved map[string]string
 }
 
@@ -85,11 +86,15 @@ func (s *Secrets) Resolve(reference string) (Repository, error) {
 	return Repository{display: reference, git: git}, nil
 }
 
-// remember records a substituted value so redact can replace it later.
+// remember records every spelling of a substituted value that a Git argument
+// or diagnostic may echo, so Redact can replace it later. Git decodes percent
+// escapes in a URL's credentials, so its errors can show the decoded value.
 func (s *Secrets) remember(value string, placeholder string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.resolved[value] = placeholder
+	for _, form := range envref.RedactionForms(value) {
+		s.resolved[form] = placeholder
+	}
 }
 
 // Redact replaces every value this resolver substituted with the placeholder

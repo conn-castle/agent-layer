@@ -1,6 +1,9 @@
 package envref
 
-import "testing"
+import (
+	"slices"
+	"testing"
+)
 
 // TestNamesReportsEveryReference proves the scan feeds both the substitution
 // path and the validation paths the same list of variables.
@@ -175,6 +178,40 @@ func TestRedactReplacesResolvedValuesWithPlaceholders(t *testing.T) {
 	}
 	if got := Redact("abc", nil); got != "abc" {
 		t.Fatalf("Redact with no placeholders = %q", got)
+	}
+}
+
+// TestRedactionFormsCoverEchoedSpellings proves every spelling a diagnostic
+// may echo is listed once, and that no empty spelling can redact everything.
+func TestRedactionFormsCoverEchoedSpellings(t *testing.T) {
+	t.Parallel()
+	got := RedactionForms(`a%40b"c`)
+	want := []string{
+		`a%40b"c`, `a%40b\"c`, "a%2540b%22c", // raw, quoted, re-encoded
+		`a@b"c`, `a@b\"c`, "a%40b%22c", "a@b%22c", // decoded, quoted, query- and path-escaped
+	}
+	if !slices.Equal(got, want) {
+		t.Fatalf("RedactionForms = %q, want %q", got, want)
+	}
+	// Decoding is lenient like Git's: a malformed `%` is copied through.
+	if got := RedactionForms("100%_sure%40token%"); !slices.Contains(got, "100%_sure@token%") {
+		t.Fatalf("RedactionForms(malformed) = %q, want the leniently decoded spelling", got)
+	}
+	// A one-byte decoding would rewrite every `@` or `+`; only the value stays.
+	if got := RedactionForms("%40"); slices.Contains(got, "@") {
+		t.Fatalf("RedactionForms(%%40) = %q, want no one-byte derived spelling", got)
+	}
+	if got := RedactionForms("%20"); slices.Contains(got, " ") || slices.Contains(got, "+") {
+		t.Fatalf("RedactionForms(%%20) = %q, want no one-byte derived spelling", got)
+	}
+	if got := RedactionForms("x"); !slices.Equal(got, []string{"x"}) {
+		t.Fatalf("RedactionForms(x) = %q, want the value itself", got)
+	}
+	if got := RedactionForms("plain"); !slices.Equal(got, []string{"plain"}) {
+		t.Fatalf("RedactionForms(plain) = %q", got)
+	}
+	if got := RedactionForms(""); len(got) != 0 {
+		t.Fatalf("RedactionForms(\"\") = %q, want none", got)
 	}
 }
 

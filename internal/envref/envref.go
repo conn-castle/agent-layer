@@ -17,6 +17,7 @@ import (
 	"regexp"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"unicode"
 )
@@ -92,6 +93,64 @@ func Redact(text string, placeholders map[string]string) string {
 		text = strings.ReplaceAll(text, value, placeholders[value])
 	}
 	return text
+}
+
+// RedactionForms returns the spellings under which a diagnostic may echo a
+// resolved value, so a caller can map each one back to its placeholder before
+// passing the result to Redact. Transports and tools rarely echo a value
+// verbatim: Go's `%q` escapes quotes and backslashes, URL builders re-encode
+// it, and URL parsers such as Git's decode percent escapes once, copying a
+// malformed `%` through. The forms are the value and its once-percent-decoded
+// spelling, each raw, `%q`-quoted without the surrounding quotes,
+// query-escaped, and path-escaped. Repeated spellings are omitted, as is any
+// derived spelling shorter than two bytes, which would rewrite unrelated text
+// such as every `@` in a URL.
+func RedactionForms(value string) []string {
+	bases := []string{value}
+	if decoded := percentDecode(value); decoded != value {
+		bases = append(bases, decoded)
+	}
+	forms := make([]string, 0, 4*len(bases))
+	for _, base := range bases {
+		quoted := strconv.Quote(base)
+		for _, form := range []string{base, quoted[1 : len(quoted)-1], url.QueryEscape(base), url.PathEscape(base)} {
+			if form == "" || form != value && len(form) < 2 || slices.Contains(forms, form) {
+				continue
+			}
+			forms = append(forms, form)
+		}
+	}
+	return forms
+}
+
+// percentDecode replaces each well-formed `%XX` escape in value with its byte
+// and copies everything else, including a malformed `%`, unchanged.
+func percentDecode(value string) string {
+	var decoded strings.Builder
+	for i := 0; i < len(value); i++ {
+		if value[i] == '%' && i+2 < len(value) && isHex(value[i+1]) && isHex(value[i+2]) {
+			decoded.WriteByte(unhex(value[i+1])<<4 | unhex(value[i+2]))
+			i += 2
+			continue
+		}
+		decoded.WriteByte(value[i])
+	}
+	return decoded.String()
+}
+
+func isHex(c byte) bool {
+	return '0' <= c && c <= '9' || 'a' <= c && c <= 'f' || 'A' <= c && c <= 'F'
+}
+
+func unhex(c byte) byte {
+	switch {
+	case c <= '9':
+		return c - '0'
+	case c <= 'F':
+		return c - 'A' + 10
+	default:
+		return c - 'a' + 10
+	}
 }
 
 // IsAgentLayerName reports whether a placeholder name can resolve from
