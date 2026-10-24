@@ -4,10 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net/url"
 	"runtime"
 	"sort"
-	"strconv"
 	"strings"
 	"sync"
 
@@ -322,20 +320,15 @@ func discoverTools(ctx context.Context, servers []projection.ResolvedMCPServer, 
 // env back to that placeholder's text. Discovery hands resolved URLs, headers,
 // commands, arguments, and environment values to transports whose errors echo
 // them (Go's HTTP client quotes the full request URL), so every substituted
-// value is treated as a secret. Those errors may quote a value (`%q`) or
-// re-encode it as part of a URL, so each encoded form maps to the placeholder
-// too. Expanded command and argument paths map back to their templates because
-// path cleaning can remove parts of a substituted value. Built-in placeholders
+// value is treated as a secret. Those errors may quote, decode, or re-encode a
+// value, so each envref.RedactionForms spelling maps to the placeholder too.
+// Expanded command and argument paths map back to their templates because path
+// cleaning can remove parts of a substituted value. Built-in placeholders
 // such as AL_REPO_ROOT name non-secret paths and are left visible.
 func mcpSecretPlaceholders(servers []config.MCPServer, env map[string]string) map[string]string {
 	placeholders := make(map[string]string)
 	addForms := func(value, placeholder string) {
-		quoted := strconv.Quote(value)
-		forms := []string{value, quoted[1 : len(quoted)-1], url.QueryEscape(value), url.PathEscape(value)}
-		if unescaped, err := url.PathUnescape(value); err == nil {
-			forms = append(forms, unescaped)
-		}
-		for _, form := range forms {
+		for _, form := range envref.RedactionForms(value) {
 			placeholders[form] = placeholder
 		}
 	}
