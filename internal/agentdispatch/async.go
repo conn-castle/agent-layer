@@ -15,6 +15,7 @@ import (
 	"github.com/conn-castle/agent-layer/internal/clients"
 	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/executableimage"
+	"github.com/conn-castle/agent-layer/internal/fsutil"
 	"github.com/conn-castle/agent-layer/internal/messages"
 	"github.com/conn-castle/agent-layer/internal/sync"
 )
@@ -234,7 +235,7 @@ func resolvePromptSource(prompt string, promptFile string) (string, error) {
 		}
 		return prompt, nil
 	}
-	data, err := os.ReadFile(trimmedPromptFile) // #nosec G304 -- caller explicitly selected the prompt file.
+	data, err := os.ReadFile(fsutil.ResolvePaddedPath(promptFile)) // #nosec G304 -- caller explicitly selected the prompt file.
 	if err != nil {
 		return "", wrapExitError(ExitUsage, "read dispatch prompt file", err)
 	}

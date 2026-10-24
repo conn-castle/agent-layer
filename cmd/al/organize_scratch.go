@@ -6,6 +6,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/conn-castle/agent-layer/internal/fsutil"
 	"github.com/conn-castle/agent-layer/internal/organizescratch"
 )
 
@@ -44,9 +45,9 @@ func newOrganizeScratchCmd() *cobra.Command {
 		Hidden: true,
 		Args:   cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			// Assign the trimmed value, not just validate it: `--root "  /tmp/x  "`
-			// would otherwise pass this check and then fail as an unreadable path.
-			options.Root = strings.TrimSpace(options.Root)
+			// An existing literal root wins; otherwise padding such as
+			// `--root "  /tmp/x  "` is trimmed instead of failing as unreadable.
+			options.Root = fsutil.ResolvePaddedPath(options.Root)
 			if options.Root == "" {
 				return errors.New(organizeScratchCommandName + " requires --root")
 			}

@@ -8,7 +8,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"strings"
 	"sync"
 	"time"
 
@@ -66,7 +65,7 @@ type mcpLifecycle struct {
 
 func newMCPLifecycle(opts MCPServerOptions, stderr io.Writer) *mcpLifecycle {
 	l := &mcpLifecycle{stderr: stderr, observed: make(map[string]bool)}
-	if strings.TrimSpace(opts.Root) == "" {
+	if opts.Root == "" {
 		return l
 	}
 	id, err := newUUID()
@@ -75,7 +74,7 @@ func newMCPLifecycle(opts MCPServerOptions, stderr io.Writer) *mcpLifecycle {
 		return l
 	}
 	l.identity = mcpLifecycleRecord{Schema: 1, ConnectionID: id, Version: opts.Version, PID: os.Getpid()}
-	dir := filepath.Join(strings.TrimSpace(opts.Root), ".agent-layer", "state", "dispatch-mcp")
+	dir := filepath.Join(opts.Root, ".agent-layer", "state", "dispatch-mcp")
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		l.warn()
 		return l

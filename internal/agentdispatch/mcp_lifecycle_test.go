@@ -222,7 +222,7 @@ func TestMCPLifecycleStartupAndPersistenceFailures(t *testing.T) {
 		}
 	})
 	t.Run("empty-root", func(t *testing.T) {
-		if err := runMCPServer(context.Background(), MCPServerOptions{Root: " "}, io.NopCloser(strings.NewReader("")), io.Discard, io.Discard); err == nil {
+		if err := runMCPServer(context.Background(), MCPServerOptions{Root: ""}, io.NopCloser(strings.NewReader("")), io.Discard, io.Discard); err == nil {
 			t.Fatal("missing root accepted")
 		}
 	})
@@ -805,5 +805,38 @@ func TestMCPLifecycleCloseDuringOperation(t *testing.T) {
 				t.Fatal("overlap diagnostics retained private data")
 			}
 		})
+	}
+}
+
+// POSIX roots may end in whitespace. The server, options lookup, and lifecycle
+// log must use that exact root, never a trimmed sibling.
+func TestDispatchPreservesLiteralRootWhitespace(t *testing.T) {
+	sibling := writeDispatchRepo(t, dispatchRepoConfig{})
+	root := sibling + " "
+	if err := os.Rename(sibling, root); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(sibling, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	tools, err := newDispatchToolServer(MCPServerOptions{Root: root, WorkDir: root, Env: []string{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tools.root != root || tools.workDir != root {
+		t.Fatalf("server root=%q workDir=%q, want %q", tools.root, tools.workDir, root)
+	}
+	if _, err := BuildOptions(OptionsRequest{Root: root, Env: []string{"AL_NO_NETWORK=1"}, LookPath: alwaysFound,
+		VersionLookup: func(_ string, agent string) (string, error) { return supportedProviderVersions[agent], nil }}); err != nil {
+		t.Fatal(err)
+	}
+	if err := runMCPServer(context.Background(), MCPServerOptions{Root: root, Version: "1.2.3"}, io.NopCloser(strings.NewReader("")), io.Discard, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	if logs := readMCPLifecycle(t, root); len(logs) != 1 {
+		t.Fatalf("lifecycle logs under literal root = %d, want 1", len(logs))
+	}
+	if entries, err := os.ReadDir(sibling); err != nil || len(entries) != 0 {
+		t.Fatalf("trimmed sibling was written: %v %v", entries, err)
 	}
 }

@@ -541,6 +541,29 @@ func TestMCPStartRejectsAmbiguousPromptSource(t *testing.T) {
 	}
 }
 
+// TestMCPPromptFileKeepsLiteralPath proves the MCP handlers pass prompt_file
+// through verbatim. The selected literal file is whitespace-only, so reading it
+// fails before launch; a trimmed sibling with real content must not be used.
+func TestMCPPromptFileKeepsLiteralPath(t *testing.T) {
+	dir := t.TempDir()
+	literal := filepath.Join(dir, "question.txt ")
+	for path, content := range map[string]string{literal: " \n", filepath.Join(dir, "question.txt"): "WRONG"} {
+		if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	session := newMCPTestSession(t, newMCPTestTools(writeDispatchRepo(t, dispatchRepoConfig{})))
+	for name, args := range map[string]any{
+		ToolStart:    StartInput{Agent: AgentCodex, PromptFile: literal},
+		ToolContinue: ContinueInput{Handle: "missing-handle", PromptFile: literal},
+	} {
+		result := callMCPTool(t, session, name, args)
+		if !result.IsError || !strings.Contains(toolResultText(result), "empty or whitespace") {
+			t.Fatalf("%s result = %s, want the selected literal file's empty-prompt error", name, toolResultText(result))
+		}
+	}
+}
+
 // TestMCPBenchmarkPolicyLocksTheExecutionTarget proves a benchmark container's
 // root-owned policy reaches the MCP surface. Without it, a coordinator could
 // select an arbitrary model through MCP and invalidate treatment comparability.

@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"io"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -86,6 +88,27 @@ func TestOrganizeScratchCommandPassesFlagsThrough(t *testing.T) {
 	}
 	if strings.Join(captured.Keep, "|") != "venv|.venv|node_modules" {
 		t.Fatalf("Keep = %v, want the blank field from the doubled comma dropped", captured.Keep)
+	}
+}
+
+func TestOrganizeScratchCommandPrefersExistingLiteralRoot(t *testing.T) {
+	captured := captureOrganizeScratch(t)
+	dir := t.TempDir()
+	literal := filepath.Join(dir, "scratch ")
+	for _, path := range []string{literal, filepath.Join(dir, "scratch")} {
+		if err := os.Mkdir(path, 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	command := newOrganizeScratchCmd()
+	command.SetOut(&bytes.Buffer{})
+	command.SetErr(&bytes.Buffer{})
+	command.SetArgs([]string{"--root", literal})
+	if err := command.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if captured.Root != literal {
+		t.Fatalf("Root = %q, want the existing literal root %q", captured.Root, literal)
 	}
 }
 
