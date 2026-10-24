@@ -10,15 +10,20 @@ import (
 	"net/textproto"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
+	"github.com/conn-castle/agent-layer/internal/clients"
 	"github.com/conn-castle/agent-layer/internal/config"
+	"github.com/conn-castle/agent-layer/internal/ownedprocess"
 )
 
 // The test executable doubles as a harness so protocol, environment, working
@@ -32,6 +37,53 @@ func TestMain(m *testing.M) {
 }
 
 func runModelHarness(mode string) {
+	if mode == "retained-child" {
+		// Publish readiness only once a group SIGINT/SIGTERM can no longer stop it.
+		signal.Ignore(syscall.SIGINT, syscall.SIGTERM)
+		pidFile := os.Getenv("AL_TEST_CHILD_PID_FILE")
+		if os.WriteFile(pidFile+".tmp", []byte(strconv.Itoa(os.Getpid())), 0o600) != nil || os.Rename(pidFile+".tmp", pidFile) != nil { // #nosec G703 -- test-owned PID path.
+			os.Exit(12)
+		}
+		deadline := time.Now().Add(30 * time.Second)
+		for time.Now().Before(deadline) {
+			if _, err := os.Stat(os.Getenv("AL_TEST_CHILD_RELEASE_FILE")); err == nil { // #nosec G703 -- test-owned release path.
+				return
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+		return
+	}
+	if pidFile := os.Getenv("AL_TEST_CHILD_PID_FILE"); pidFile != "" && strings.HasPrefix(mode, "descendant-") {
+		path, err := os.Executable()
+		if err != nil {
+			os.Exit(10)
+		}
+		child := exec.Command(path) // #nosec G204 -- current test executable.
+		child.Env = clients.SetEnv(os.Environ(), "AL_TEST_MODEL_HARNESS", "retained-child")
+		child.Stdout = os.Stdout
+		if err := child.Start(); err != nil {
+			os.Exit(11)
+		}
+		for deadline := time.Now().Add(3 * time.Second); ; time.Sleep(5 * time.Millisecond) {
+			if _, err := os.Stat(pidFile); err == nil { // #nosec G703 -- test-owned PID path.
+				break
+			}
+			if time.Now().After(deadline) {
+				os.Exit(13)
+			}
+		}
+		switch mode {
+		case "descendant-hang":
+			time.Sleep(time.Minute)
+			return
+		case "descendant-grok":
+			fmt.Println("Available models:\n  * future-grok")
+			return
+		case "descendant-antigravity":
+			fmt.Println("future-id\tFuture Display Name")
+			return
+		}
+	}
 	if mode == "stdout-silent-exit" {
 		return
 	}
@@ -618,11 +670,208 @@ func TestDiscoveryDeadlineAndOffline(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	req.Context = ctx
-	for _, agent := range []string{"grok", "antigravity"} {
+	for _, agent := range []string{"codex", "grok", "antigravity"} {
 		if _, err := DiscoverModels(agent, req); !errors.Is(err, context.Canceled) {
 			t.Fatalf("%s cancelled discovery error=%v", agent, err)
 		}
 	}
+}
+
+func TestDiscoveryOwnsDescendants(t *testing.T) {
+	for _, tc := range []struct {
+		name, agent, mode string
+		want              []string
+	}{
+		{"codex-cancel", "codex", "descendant-hang", nil},
+		{"codex-success", "codex", "descendant-codex", []string{"future-codex", "another-codex"}},
+		{"grok-exit", "grok", "descendant-grok", []string{"future-grok"}},
+		{"antigravity-exit", "antigravity", "descendant-antigravity", []string{"future-id"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			pidFile, release := filepath.Join(dir, "child"), filepath.Join(dir, "release")
+			t.Cleanup(func() {
+				if err := os.WriteFile(release, nil, 0o600); err != nil {
+					t.Error(err)
+				}
+				deadline := time.Now().Add(3 * time.Second)
+				for {
+					pid, err := modelFixturePID(pidFile)
+					if err != nil || modelFixtureStopped(pid) {
+						return
+					}
+					if time.Now().After(deadline) {
+						t.Error("retained child did not stop after release")
+						return
+					}
+					time.Sleep(10 * time.Millisecond)
+				}
+			})
+			req := harnessRequest(t, tc.mode)
+			req.Env = append(req.Env, "AL_TEST_CHILD_PID_FILE="+pidFile, "AL_TEST_CHILD_RELEASE_FILE="+release)
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			req.Context = ctx
+			type cancellation struct {
+				at  time.Time
+				err error
+			}
+			cancelled := make(chan cancellation, 1)
+			if tc.want == nil {
+				go func() {
+					deadline := time.Now().Add(3 * time.Second)
+					for {
+						_, err := modelFixturePID(pidFile)
+						if err == nil || time.Now().After(deadline) {
+							at := time.Now()
+							cancel()
+							cancelled <- cancellation{at, err}
+							return
+						}
+						time.Sleep(5 * time.Millisecond)
+					}
+				}()
+			}
+			got, err := DiscoverModels(tc.agent, req)
+			returned := time.Now()
+			pid, pidErr := modelFixturePID(pidFile)
+			if pidErr != nil {
+				t.Fatal(pidErr)
+			}
+			if !modelFixtureStopped(pid) {
+				t.Errorf("child %d still running when discovery returned", pid)
+			}
+			if tc.want == nil {
+				result := <-cancelled
+				if result.err != nil {
+					t.Fatalf("child readiness: %v", result.err)
+				}
+				if !errors.Is(err, context.Canceled) || returned.Sub(result.at) > 2*time.Second {
+					t.Fatalf("cancellation outcome: models=%v err=%v elapsed=%v", got, err, returned.Sub(result.at))
+				}
+			} else if err != nil || !reflect.DeepEqual(got, tc.want) {
+				t.Fatalf("models=%v want=%v err=%v", got, tc.want, err)
+			}
+		})
+	}
+}
+
+func modelFixturePID(path string) (int, error) {
+	data, err := os.ReadFile(path) // #nosec G304 -- test-owned PID path.
+	if err != nil {
+		return 0, err
+	}
+	pid, err := strconv.Atoi(string(data))
+	if err != nil || pid <= 0 {
+		return 0, fmt.Errorf("invalid fixture PID %q", data)
+	}
+	return pid, nil
+}
+
+// modelFixtureStopped accepts vanished, zombie and dead fixture processes.
+func modelFixtureStopped(pid int) bool {
+	state, err := exec.Command("/bin/ps", "-o", "stat=", "-p", strconv.Itoa(pid)).Output()
+	if err != nil {
+		var exit *exec.ExitError
+		return errors.As(err, &exit) && exit.ExitCode() == 1
+	}
+	stat := strings.TrimSpace(string(state))
+	return stat == "" || strings.ContainsAny(stat[:1], "ZXx")
+}
+
+func TestDiscoveryReportsCleanupFailure(t *testing.T) {
+	for _, tc := range []struct {
+		name, agent, mode string
+		cancel            bool
+	}{
+		{"codex-success", "codex", "codex", false},
+		{"grok-unauthenticated", "grok", "unauthenticated-empty", false},
+		{"antigravity-success", "antigravity", "antigravity-no-project", false},
+		{"codex-cancel", "codex", "hang", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			realStart := startOwnedProcess
+			t.Cleanup(func() { startOwnedProcess = realStart })
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			calls := 0
+			startOwnedProcess = func(ctx context.Context, cmd *exec.Cmd) (func() error, error) {
+				calls++
+				wait, err := realStart(ctx, cmd)
+				if err != nil {
+					return nil, err
+				}
+				if tc.cancel {
+					cancel()
+				}
+				return func() error {
+					return errors.Join(wait(), &ownedprocess.CleanupError{Err: errors.New("injected")})
+				}, nil
+			}
+			req := harnessRequest(t, tc.mode)
+			req.Context = ctx
+			models, err := DiscoverModels(tc.agent, req)
+			var cleanupErr *ownedprocess.CleanupError
+			if models != nil || !errors.As(err, &cleanupErr) {
+				t.Fatalf("cleanup failure lost: models=%v err=%v", models, err)
+			}
+			// Discovery's own cancellation of a replied server is not reported.
+			if errors.Is(err, context.Canceled) != tc.cancel {
+				t.Fatalf("cancellation reported=%v want=%v: %v", !tc.cancel, tc.cancel, err)
+			}
+			if tc.agent == "grok" && !errors.Is(err, errGrokUnauthenticated) {
+				t.Fatalf("authentication error lost: %v", err)
+			}
+			if calls != 1 {
+				t.Fatalf("harness started %d times, want 1", calls)
+			}
+		})
+	}
+}
+
+func TestDiscoveryClosesPipesBeforeLaunch(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("fd counts require /proc/self/fd")
+	}
+	for _, mode := range []string{"cancelled", "launch-error"} {
+		t.Run(mode, func(t *testing.T) {
+			req := harnessRequest(t, "codex")
+			if mode == "cancelled" {
+				ctx, cancel := context.WithCancel(context.Background())
+				cancel()
+				req.Context = ctx
+			} else {
+				path := filepath.Join(t.TempDir(), "not-executable")
+				if err := os.WriteFile(path, nil, 0o600); err != nil {
+					t.Fatal(err)
+				}
+				req.LookPath = func(string) (string, error) { return path, nil }
+			}
+			before := openPipes(t)
+			if _, err := DiscoverModels("codex", req); err == nil {
+				t.Fatal("discovery unexpectedly succeeded")
+			}
+			if after := openPipes(t); after != before {
+				t.Fatalf("open pipe fds: before=%d after=%d", before, after)
+			}
+		})
+	}
+}
+
+// openPipes counts pipe descriptors only, so unrelated runtime fds cannot flake.
+func openPipes(t *testing.T) int {
+	t.Helper()
+	entries, err := os.ReadDir("/proc/self/fd")
+	if err != nil {
+		t.Fatal(err)
+	}
+	pipes := 0
+	for _, entry := range entries {
+		if target, err := os.Readlink(filepath.Join("/proc/self/fd", entry.Name())); err == nil && strings.HasPrefix(target, "pipe:") {
+			pipes++
+		}
+	}
+	return pipes
 }
 
 func TestAntigravityDiscoveryWithoutProject(t *testing.T) {

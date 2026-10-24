@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -57,6 +58,10 @@ func TestRunOwnsDescendants(t *testing.T) {
 			cmd.Stdout, cmd.Stderr = &output, &output
 			start := time.Now()
 			err := Run(ctx, cmd)
+			var cleanupErr *CleanupError
+			if errors.As(err, &cleanupErr) {
+				t.Fatalf("unexpected cleanup failure: %v", err)
+			}
 			if time.Since(start) > 2*time.Second {
 				t.Fatalf("unbounded return: %v", err)
 			}
@@ -87,6 +92,87 @@ func TestRunOwnsDescendants(t *testing.T) {
 			}
 			if pid, err := syscall.Wait4(sentinel.Process.Pid, nil, syscall.WNOHANG, nil); err != nil || pid != 0 {
 				t.Fatalf("unrelated sentinel: %v", err)
+			}
+		})
+	}
+}
+
+func TestStartPreservesCallerOwnedOutput(t *testing.T) {
+	pidFile := filepath.Join(t.TempDir(), "child")
+	t.Cleanup(func() {
+		if data, err := os.ReadFile(pidFile); t.Failed() && err == nil { // #nosec G304 -- owned fixture PID path.
+			if pid, err := strconv.Atoi(strings.TrimSpace(string(data))); err == nil && pid > 0 && !sessionFixtureStopped(pid) {
+				_ = syscall.Kill(pid, syscall.SIGKILL)
+			}
+		}
+	})
+	reader, writer, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = reader.Close(); _ = writer.Close() }()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	cmd := exec.Command("/bin/sh", "-c", `/bin/sleep 30 & echo $! > "$1"; echo retained; exit 0`, "fixture", pidFile)
+	cmd.Stdout = writer
+	wait, err := Start(ctx, cmd)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { cancel(); _ = wait() }()
+	if cmd.Stdout != writer {
+		t.Fatal("caller-owned stdout was wrapped")
+	}
+	_ = writer.Close()
+	if err := wait(); err != nil {
+		t.Fatal(err)
+	}
+	if err := wait(); err != nil {
+		t.Fatalf("second wait: %v", err)
+	}
+	output, err := io.ReadAll(reader)
+	if err != nil || string(output) != "retained\n" {
+		t.Fatalf("output=%q err=%v", output, err)
+	}
+	data, err := os.ReadFile(pidFile) // #nosec G304 -- owned fixture PID path.
+	if err != nil {
+		t.Fatal(err)
+	}
+	pid, err := strconv.Atoi(strings.TrimSpace(string(data)))
+	if err != nil || pid <= 0 || !sessionFixtureStopped(pid) {
+		t.Fatalf("child stop unproven: pid=%q err=%v", data, err)
+	}
+}
+
+func TestRunResult(t *testing.T) {
+	observeErr := errors.New("observe failed")
+	cleanupErr := errors.New("stop unproven")
+	waitErr := errors.New("wait failed")
+	for _, tc := range []struct {
+		name                                    string
+		ctxErr, observeErr, cleanupErr, waitErr error
+	}{
+		{"success", nil, nil, nil, nil},
+		{"plain wait", nil, nil, nil, waitErr},
+		{"cancelled", context.Canceled, nil, nil, nil},
+		{"cancelled wait", context.Canceled, nil, nil, waitErr},
+		{"observe", context.Canceled, observeErr, nil, waitErr},
+		{"cleanup", context.Canceled, nil, cleanupErr, waitErr},
+		{"both", context.Canceled, observeErr, cleanupErr, waitErr},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := runResult(tc.ctxErr, tc.observeErr, tc.cleanupErr, tc.waitErr)
+			if tc.ctxErr == nil && tc.observeErr == nil && tc.cleanupErr == nil && err != tc.waitErr {
+				t.Fatalf("plain wait error changed: %v", err)
+			}
+			var cleanup *CleanupError
+			if want := tc.observeErr != nil || tc.cleanupErr != nil; errors.As(err, &cleanup) != want {
+				t.Fatalf("cleanup classification: %v want=%v", err, want)
+			}
+			for _, original := range []error{tc.ctxErr, tc.observeErr, tc.cleanupErr, tc.waitErr} {
+				if original != nil && !errors.Is(err, original) {
+					t.Errorf("result %v lost %v", err, original)
+				}
 			}
 		})
 	}
