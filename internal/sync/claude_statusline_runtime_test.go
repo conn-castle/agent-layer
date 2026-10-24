@@ -25,6 +25,17 @@ var ansiEscape = regexp.MustCompile(`\x1b\[[0-9;]*m`)
 // degrades gracefully in those environments and there is nothing to assert.
 func runClaudeStatusline(t *testing.T, cwd, stdinJSON string) string {
 	t.Helper()
+	cmd, stdout, stderr := claudeStatuslineCommand(t, cwd, stdinJSON)
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("run statusline script: %v\nstderr: %s", err, stderr.String())
+	}
+	return ansiEscape.ReplaceAllString(stdout.String(), "")
+}
+
+// claudeStatuslineCommand prepares, without starting, the status line command
+// used by runClaudeStatusline, returning buffers that capture its output.
+func claudeStatuslineCommand(t *testing.T, cwd, stdinJSON string) (*exec.Cmd, *bytes.Buffer, *bytes.Buffer) {
+	t.Helper()
 	bashPath, err := exec.LookPath("bash")
 	if err != nil {
 		t.Skip("bash not available")
@@ -53,10 +64,7 @@ func runClaudeStatusline(t *testing.T, cwd, stdinJSON string) string {
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
-		t.Fatalf("run statusline script: %v\nstderr: %s", err, stderr.String())
-	}
-	return ansiEscape.ReplaceAllString(stdout.String(), "")
+	return cmd, &stdout, &stderr
 }
 
 // runGit executes git in a test repository with repository-local Git

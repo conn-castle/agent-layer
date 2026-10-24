@@ -190,13 +190,18 @@ if command -v git >/dev/null 2>&1; then
       lines_removed=$(( lines_removed + removed ))
     done < <(git -C "$git_root" diff --numstat HEAD -- 2>/dev/null)
 
-    # Count untracked files without spawning one git diff per file.
+    # Count untracked files without spawning one git diff per file. Every entry
+    # counts as changed, but only regular non-symlink files are read: following
+    # an untracked link could block on a FIFO or read content outside the repo.
     untracked_paths=()
     while IFS= read -r -d '' path; do
-      untracked_paths+=("$git_root/$path")
+      files_changed=$(( files_changed + 1 ))
+      path="$git_root/$path"
+      if [ -f "$path" ] && [ ! -L "$path" ]; then
+        untracked_paths+=("$path")
+      fi
     done < <(git -C "$git_root" ls-files -z -o --exclude-standard -- 2>/dev/null)
     if [ "${#untracked_paths[@]}" -gt 0 ]; then
-      files_changed=$(( files_changed + ${#untracked_paths[@]} ))
       # Read wc fields directly in the loop condition (no per-line here-string).
       # wc -l is an approximate added-line count: a file with no trailing newline
       # is undercounted by one. That is acceptable for this at-a-glance metric and
