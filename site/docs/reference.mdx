@@ -1196,6 +1196,7 @@ Use it to check whether your config is valid, your secrets are present, and your
 **Timeouts and network**
 
 - `al doctor` waits up to 30 seconds per enabled MCP server before timing out.
+- Before returning, including on interrupt or timeout, `al doctor` stops each stdio MCP server it started and any child processes that remain in its process group. A server still running five seconds after end of input receives SIGTERM, and its process group is stopped five seconds after that.
 - It uses network access for MCP servers and update checks. Set `AL_NO_NETWORK=1` to disable update checks and pinned downloads.
 
 ### Completion

@@ -829,11 +829,10 @@ func TestMCPDiscoveryTransport_Stdio(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	commandTransport, ok := transport.(*mcp.CommandTransport)
-	require.True(t, ok, "expected CommandTransport, got %T", transport)
-	assert.Equal(t, []string{"mcp-server", "arg1", "arg2"}, commandTransport.Command.Args)
-	assert.Contains(t, commandTransport.Command.Env, "TEST_VAR=test_value")
-	assert.NotNil(t, commandTransport.Command.Cancel, "stdio command must be bound to the discovery context")
+	stdioTransport, ok := transport.(*ownedStdioTransport)
+	require.True(t, ok, "expected owned stdio transport, got %T", transport)
+	assert.Equal(t, []string{"mcp-server", "arg1", "arg2"}, stdioTransport.cmd.Args)
+	assert.Contains(t, stdioTransport.cmd.Env, "TEST_VAR=test_value")
 }
 
 func TestMCPDiscoveryTransport_HTTP(t *testing.T) {
@@ -918,9 +917,9 @@ func TestMCPDiscovery_StdioContextCancellationKillsAndReapsChild(t *testing.T) {
 		Env:       map[string]string{helperEnv: "1"},
 	})
 	require.NoError(t, err)
-	commandTransport, ok := transport.(*mcp.CommandTransport)
-	require.True(t, ok, "expected CommandTransport, got %T", transport)
-	cmd := commandTransport.Command
+	stdioTransport, ok := transport.(*ownedStdioTransport)
+	require.True(t, ok, "expected owned stdio transport, got %T", transport)
+	cmd := stdioTransport.cmd
 	cmd.ExtraFiles = append(cmd.ExtraFiles, readyWriter)
 
 	resultCh := make(chan DiscoveryResult, 1)
@@ -974,7 +973,7 @@ func TestMCPDiscovery_StdioContextCancellationKillsAndReapsChild(t *testing.T) {
 
 	require.Error(t, result.Error)
 	assert.Contains(t, result.Error.Error(), "connection failed")
-	require.NotNil(t, cmd.ProcessState, "SDK command transport must reap the canceled child")
+	require.NotNil(t, cmd.ProcessState, "owned stdio transport must reap the canceled child")
 	assert.ErrorIs(t, cmd.Process.Signal(os.Kill), os.ErrProcessDone)
 }
 
