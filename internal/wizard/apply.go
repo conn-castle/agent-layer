@@ -106,46 +106,53 @@ func writeConfigEnv(root, configPath, envPath string, c *Choices) error {
 	if err != nil {
 		return fmt.Errorf(messages.WizardPatchConfigFailedFmt, err)
 	}
-	// Backup
-	configBackupPath := backupPath(root, configBackupName)
-	configBackupCreated, err := writeBackup(configBackupPath, rawConfig, configPerm)
-	if err != nil {
-		return fmt.Errorf(messages.WizardBackupConfigFailedFmt, err)
-	}
 	// Env
-	// Backup if exists
 	rawEnv, err := os.ReadFile(envPath) // #nosec G304 -- envPath is the caller-resolved .agent-layer/.env path used by wizard apply.
-	envPerm, permErr := filePermOr(envPath, 0600)
-	if permErr != nil {
-		if configBackupCreated {
-			_ = os.Remove(configBackupPath)
-		}
-		return permErr
+	envExists := err == nil
+	if err != nil && !os.IsNotExist(err) {
+		return err
 	}
-	if err == nil {
-		envBackupPath := backupPath(root, envBackupName)
-		if _, err := writeBackup(envBackupPath, rawEnv, envPerm); err != nil {
+	envPerm, err := filePermOr(envPath, 0600)
+	if err != nil {
+		return err
+	}
+	newEnv := envfile.Patch(string(rawEnv), c.Secrets)
+
+	// Back up and write only documents whose bytes change, so an unchanged
+	// document keeps its previous recovery backup. A missing .env is created.
+	configChanged := newConfig != string(rawConfig)
+	envChanged := !envExists || newEnv != string(rawEnv)
+	configBackupCreated := false
+	if configChanged {
+		configBackupCreated, err = writeBackup(root, configBackupName, rawConfig, configPerm)
+		if err != nil {
+			return fmt.Errorf(messages.WizardBackupConfigFailedFmt, err)
+		}
+	}
+	if envExists && envChanged {
+		if _, err := writeBackup(root, envBackupName, rawEnv, envPerm); err != nil {
 			if configBackupCreated {
-				_ = os.Remove(configBackupPath)
+				_ = os.Remove(backupPath(root, configBackupName))
 			}
 			return fmt.Errorf(messages.WizardBackupEnvFailedFmt, err)
 		}
-	} else if !os.IsNotExist(err) {
-		if configBackupCreated {
-			_ = os.Remove(configBackupPath)
-		}
-		return err
 	}
 	// Patch
-	if err := writeFileAtomic(configPath, []byte(newConfig), configPerm); err != nil {
-		return fmt.Errorf(messages.WizardWriteConfigFailedFmt, err)
-	}
-	newEnv := envfile.Patch(string(rawEnv), c.Secrets)
-	if err := writeFileAtomic(envPath, []byte(newEnv), envPerm); err != nil {
-		if rollbackErr := writeFileAtomic(configPath, rawConfig, configPerm); rollbackErr != nil {
-			return fmt.Errorf(messages.WizardWriteEnvRollbackConfigFailedFmt, err, rollbackErr)
+	if configChanged {
+		if err := writeFileAtomic(configPath, []byte(newConfig), configPerm); err != nil {
+			return fmt.Errorf(messages.WizardWriteConfigFailedFmt, err)
 		}
-		return fmt.Errorf(messages.WizardWriteEnvFailedFmt, err)
+	}
+	if envChanged {
+		if err := writeFileAtomic(envPath, []byte(newEnv), envPerm); err != nil {
+			if !configChanged {
+				return fmt.Errorf(messages.WizardWriteEnvFailedFmt, err)
+			}
+			if rollbackErr := writeFileAtomic(configPath, rawConfig, configPerm); rollbackErr != nil {
+				return fmt.Errorf(messages.WizardWriteEnvRollbackConfigFailedFmt, err, rollbackErr)
+			}
+			return fmt.Errorf(messages.WizardWriteEnvFailedFmt, err)
+		}
 	}
 
 	return nil
@@ -164,9 +171,13 @@ func filePermOr(path string, fallback os.FileMode) (os.FileMode, error) {
 	return info.Mode().Perm(), nil
 }
 
-// writeBackup writes a backup file and reports whether a new backup was created.
-// path is the backup file path; data is the source content; perm is the file mode to apply.
-func writeBackup(path string, data []byte, perm os.FileMode) (bool, error) {
+// writeBackup writes the named wizard backup and reports whether a new backup was created.
+// root is the repo root; name is the backup file name; data is the source content; perm is the file mode to apply.
+func writeBackup(root, name string, data []byte, perm os.FileMode) (bool, error) {
+	if err := validateBackupStorage(root); err != nil {
+		return false, err
+	}
+	path := backupPath(root, name)
 	if err := fsutil.EnsurePrivateDir(filepath.Dir(path)); err != nil {
 		return false, err
 	}

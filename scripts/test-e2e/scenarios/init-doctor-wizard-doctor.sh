@@ -217,9 +217,8 @@ _init_doctor_wizard_assert_post_wizard_files() {
   _init_doctor_wizard_assert_files_identical "$E2E_DEFAULTS_TOML" \
     "$repo_dir/.agent-layer/config.toml" \
     "wizard profile leaves config.toml at default profile content"
-  _init_doctor_wizard_assert_files_identical "$E2E_DEFAULTS_TOML" \
-    "$repo_dir/.agent-layer/state/wizard-backups/config.toml.bak" \
-    "wizard backup captures pre-profile config"
+  assert_file_not_exists "$repo_dir/.agent-layer/state/wizard-backups/config.toml.bak" \
+    "wizard profile matching current config creates no redundant backup"
 
   assert_file_contains "$repo_dir/.agent-layer/config.toml" 'mode = "all"' \
     "wizard config keeps approval mode all"

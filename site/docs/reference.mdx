@@ -772,7 +772,7 @@ Use it when you want to get to a safe, working configuration quickly, or when yo
 
 Instruction selection adds missing imports only. Trusted adoption of `00_rules.md` and `01_memory.md` preserves local bytes, permissions and ordering, using the fetched upstream file as the base for later pulls. Memory docs are seeded only when missing. Use `al instructions pull` for instruction updates and `al upgrade` for bundled operator-skill templates. None preserves existing instructions.
 
-The wizard rewrites `config.toml` in a fixed preferred section order and creates backups in `.agent-layer/state/wizard-backups/` before modifying `.agent-layer/config.toml` or `.agent-layer/.env`. Inline comments on modified lines may be moved to leading comments or removed; the original formatting is preserved in the backup files. After a successful upgrade and sync, `al upgrade` moves older backups from `.agent-layer/` into this directory, retaining conflicts with numbered `.legacy-N` suffixes.
+The wizard rewrites `config.toml` in a fixed preferred section order and creates backups in `.agent-layer/state/wizard-backups/` before modifying `.agent-layer/config.toml` or `.agent-layer/.env`. An apply that leaves a file unchanged keeps that file's previous backup. Backup operations refuse a symlinked `.agent-layer/`, `state/`, or `wizard-backups/` directory. Inline comments on modified lines may be moved to leading comments or removed; the original formatting is preserved in the backup files. After a successful upgrade and sync, `al upgrade` moves older backups from `.agent-layer/` into this directory, retaining conflicts with numbered `.legacy-N` suffixes.
 
 Additional modes:
 

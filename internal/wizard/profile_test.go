@@ -323,6 +323,35 @@ func TestRunProfile_NoConfigChangesApplyWithWarningAndSyncError(t *testing.T) {
 	})
 }
 
+func TestRunProfile_NoConfigChangesApplyKeepsConfigAndBackup(t *testing.T) {
+	root := t.TempDir()
+	setupRepo(t, root)
+	configPath := filepath.Join(root, ".agent-layer", "config.toml")
+	config := basicAgentConfig() + "\n[[instructions.local]]\nselectors = [\"01_base.md\"]\norder = 0\n"
+	require.NoError(t, os.WriteFile(configPath, []byte(config), 0o600))
+	profilePath := filepath.Join(root, "profile.toml")
+	require.NoError(t, os.WriteFile(profilePath, []byte(config), 0o600))
+	_, err := writeBackup(root, configBackupName, []byte("previous"), 0o600)
+	require.NoError(t, err)
+	before, err := os.Stat(configPath)
+	require.NoError(t, err)
+
+	syncCalled := false
+	err = RunProfile(root, func(string) (*alsync.Result, error) {
+		syncCalled = true
+		return &alsync.Result{}, nil
+	}, "", profilePath, true, nil)
+	require.NoError(t, err)
+	require.True(t, syncCalled)
+
+	after, err := os.Stat(configPath)
+	require.NoError(t, err)
+	require.True(t, os.SameFile(before, after))
+	backup, err := os.ReadFile(backupPath(root, configBackupName))
+	require.NoError(t, err)
+	require.Equal(t, "previous", string(backup))
+}
+
 func TestRunProfile_BackupAndWriteErrors(t *testing.T) {
 	root := t.TempDir()
 	setupRepo(t, root)

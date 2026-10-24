@@ -1,6 +1,7 @@
 package wizard
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"os"
@@ -132,12 +133,15 @@ func writeProfileConfig(root, configPath, profilePath string, profileBytes []byt
 		return fmt.Errorf("wizard profile is inconsistent with project sources; config was not written: %w", err)
 	}
 
+	// An unchanged config keeps its previous recovery backup.
+	if bytes.Equal(currentConfig, profileBytes) {
+		return nil
+	}
 	configPerm, err := filePermOr(configPath, 0o644)
 	if err != nil {
 		return err
 	}
-	configBackupPath := backupPath(root, configBackupName)
-	if _, err := writeBackup(configBackupPath, currentConfig, configPerm); err != nil {
+	if _, err := writeBackup(root, configBackupName, currentConfig, configPerm); err != nil {
 		return fmt.Errorf(messages.WizardBackupConfigFailedFmt, err)
 	}
 	if err := writeFileAtomic(configPath, profileBytes, configPerm); err != nil {
@@ -154,23 +158,17 @@ func CleanupBackups(root string) ([]string, error) {
 		filepath.Join(root, ".agent-layer", envBackupName),
 	}
 
-	backupDir := filepath.Dir(backupPath(root, configBackupName))
-	info, err := os.Lstat(backupDir)
-	if err != nil && !os.IsNotExist(err) {
-		return nil, fmt.Errorf("inspect wizard backup directory %s: %w", backupDir, err)
+	if err := validateBackupStorage(root); err != nil {
+		return nil, err
 	}
-	if err == nil {
-		if !info.IsDir() {
-			return nil, fmt.Errorf("wizard backup directory %s must be a real directory", backupDir)
-		}
-		entries, err := os.ReadDir(backupDir)
-		if err != nil {
-			return nil, fmt.Errorf("read wizard backup directory %s: %w", backupDir, err)
-		}
-		for _, entry := range entries {
-			if isBackupName(entry.Name()) {
-				candidates = append(candidates, backupPath(root, entry.Name()))
-			}
+	backupDir := filepath.Dir(backupPath(root, configBackupName))
+	entries, err := os.ReadDir(backupDir)
+	if err != nil && !os.IsNotExist(err) {
+		return nil, fmt.Errorf("read wizard backup directory %s: %w", backupDir, err)
+	}
+	for _, entry := range entries {
+		if isBackupName(entry.Name()) {
+			candidates = append(candidates, backupPath(root, entry.Name()))
 		}
 	}
 
