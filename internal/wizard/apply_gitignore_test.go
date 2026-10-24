@@ -2,6 +2,7 @@ package wizard
 
 import (
 	"bytes"
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -127,7 +128,7 @@ func TestApplyChanges_GitTrackingUpdatesSourceBeforeSync(t *testing.T) {
 		return alsync.Run(gotRoot)
 	}
 
-	err := applyChanges(root, configPath, envPath, choices, runSync, &bytes.Buffer{})
+	err := applyChanges(context.Background(), root, configPath, envPath, choices, runSync, &bytes.Buffer{})
 	require.NoError(t, err)
 	assert.True(t, syncCalled)
 

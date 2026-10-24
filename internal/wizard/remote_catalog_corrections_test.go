@@ -35,7 +35,7 @@ func TestWizardPartialCatalogLifecycle(t *testing.T) {
 	initial.EnabledCLISkills[entry.ID] = false
 	preview, err = computeSkillsChangeSet(root, initial)
 	require.NoError(t, err)
-	require.NoError(t, applySkillsChanges(root, preview))
+	require.NoError(t, applySkillsChanges(context.Background(), root, preview))
 	require.Equal(t, beforeLegacy, snapshotManualCatalogSources(t, root))
 	require.NoError(t, os.RemoveAll(legacy))
 	_, err = skillimport.New(root).Add(context.Background(), skillimport.AddOptions{Repository: entry.Repository, Selectors: entry.Selectors[:5]})
@@ -54,7 +54,7 @@ func TestWizardPartialCatalogLifecycle(t *testing.T) {
 	for _, selector := range entry.Selectors[5:] {
 		require.Contains(t, buildSkillsPreview(changes), "al skills add "+entry.Repository+" "+selector)
 	}
-	require.NoError(t, applySkillsChanges(root, changes))
+	require.NoError(t, applySkillsChanges(context.Background(), root, changes))
 	require.Equal(t, before, snapshotManualCatalogSources(t, root))
 	imported := filepath.Join(root, ".agent-layer", "skills-imported")
 	saved := filepath.Join(t.TempDir(), "saved-imports")

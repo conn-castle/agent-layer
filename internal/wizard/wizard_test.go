@@ -2,6 +2,7 @@ package wizard
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -161,7 +162,7 @@ func TestRunWithWriter_LenientFallbackOnBrokenConfig(t *testing.T) {
 	// The wizard should proceed past config loading (lenient fallback).
 	// It will fail later in the prompt flow (errUI returns an error), but the key
 	// assertion is that it reaches initializeChoices, not that it completes.
-	err := RunWithWriter(root, &errUI{err: stubErr}, nil, "0.8.1", &out)
+	err := RunWithWriter(context.Background(), root, &errUI{err: stubErr}, nil, "0.8.1", &out)
 
 	// We expect an error from the stub UI, not from config loading.
 	if err == nil {
@@ -208,7 +209,7 @@ func TestRunWithWriter_RedirectsWhenConfigNeedsUpgrade(t *testing.T) {
 	var out bytes.Buffer
 	// errUI errors on any prompt, so reaching the wizard flow would surface a
 	// non-nil error — proving the redirect short-circuits before the flow.
-	err := RunWithWriter(root, &errUI{err: errors.New("stub UI error")}, runSync, "0.0.0", &out)
+	err := RunWithWriter(context.Background(), root, &errUI{err: errors.New("stub UI error")}, runSync, "0.0.0", &out)
 
 	if err != nil {
 		t.Fatalf("expected clean exit (nil) for needs-upgrade config, got: %v", err)
@@ -244,7 +245,7 @@ model = "Gemini 3.5 Flash (High)"
 	}
 
 	var out bytes.Buffer
-	err := RunWithWriter(root, &errUI{err: errors.New("stub UI error")}, runSync, "0.0.0", &out)
+	err := RunWithWriter(context.Background(), root, &errUI{err: errors.New("stub UI error")}, runSync, "0.0.0", &out)
 	if err != nil {
 		t.Fatalf("expected clean exit (nil) for legacy Antigravity model config, got: %v", err)
 	}
@@ -318,7 +319,7 @@ func TestRunWithWriter_LenientFallbackOnUnknownKeys(t *testing.T) {
 	stubErr := errors.New("stub UI error")
 
 	// The wizard should proceed past config loading (lenient fallback).
-	err := RunWithWriter(root, &errUI{err: stubErr}, nil, "0.8.1", &out)
+	err := RunWithWriter(context.Background(), root, &errUI{err: stubErr}, nil, "0.8.1", &out)
 
 	// We expect an error from the stub UI, not from config loading.
 	if err == nil {
@@ -356,7 +357,7 @@ func TestRunWithWriter_NonValidationErrorPropagates(t *testing.T) {
 
 	var out bytes.Buffer
 
-	err := RunWithWriter(root, nil, nil, "0.8.1", &out)
+	err := RunWithWriter(context.Background(), root, nil, nil, "0.8.1", &out)
 
 	if err == nil {
 		t.Fatal("expected error")
@@ -392,7 +393,7 @@ func TestRunWithWriter_ValidationErrorLenientAlsoFails(t *testing.T) {
 
 	var out bytes.Buffer
 
-	err := RunWithWriter(root, nil, nil, "0.8.1", &out)
+	err := RunWithWriter(context.Background(), root, nil, nil, "0.8.1", &out)
 
 	if err == nil {
 		t.Fatal("expected error")

@@ -188,13 +188,19 @@ func TestInitCmd(t *testing.T) {
 			}
 
 			// Mock post-init wizard
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
 			wizardCalled := false
-			runWizardAfterInit = func(root string, pinVersion string) error {
+			runWizardAfterInit = func(gotCtx context.Context, root string, pinVersion string) error {
+				if gotCtx != ctx {
+					t.Fatal("post-init wizard did not receive the command context")
+				}
 				wizardCalled = true
 				return tt.mockWizardErr
 			}
 
 			cmd := newInitCmd()
+			cmd.SetContext(ctx)
 			cmd.SetArgs(tt.args)
 
 			// Setup stdin/stdout
@@ -414,7 +420,7 @@ func TestInitCmd_VersionLatestPinsResolvedRelease(t *testing.T) {
 	}
 	releaseValidationHTTPClient = server.Client()
 	releaseValidationBaseURL = server.URL
-	runWizard = func(string, string) error { return nil }
+	runWizard = func(context.Context, string, string) error { return nil }
 
 	var pinned string
 	installRun = func(root string, opts install.Options) error {
@@ -462,7 +468,7 @@ func TestInitCmd_VersionValidationFailureBlocksInstall(t *testing.T) {
 	isTerminal = func() bool { return false }
 	releaseValidationHTTPClient = server.Client()
 	releaseValidationBaseURL = server.URL
-	runWizard = func(string, string) error { return nil }
+	runWizard = func(context.Context, string, string) error { return nil }
 
 	installCalled := false
 	installRun = func(string, install.Options) error {
@@ -590,7 +596,7 @@ func TestInitCmd_UpdateWarning(t *testing.T) {
 	getwd = func() (string, error) { return tmpDir, nil }
 	isTerminal = func() bool { return false }
 	installRun = func(string, install.Options) error { return nil }
-	runWizard = func(string, string) error { return nil }
+	runWizard = func(context.Context, string, string) error { return nil }
 	checkForUpdate = func(context.Context, string) (update.CheckResult, error) {
 		return update.CheckResult{Current: "1.0.0", Latest: "2.0.0", Outdated: true}, nil
 	}
@@ -643,7 +649,7 @@ func TestInitCmd_UpdateWarningRateLimitSuppressed(t *testing.T) {
 		installCalled = true
 		return nil
 	}
-	runWizard = func(string, string) error { return nil }
+	runWizard = func(context.Context, string, string) error { return nil }
 	checkForUpdate = func(context.Context, string) (update.CheckResult, error) {
 		return update.CheckResult{}, &update.RateLimitError{StatusCode: 403, Status: "403 Forbidden"}
 	}
@@ -686,7 +692,7 @@ func TestInitCmd_UpdateWarningDevBuild(t *testing.T) {
 	getwd = func() (string, error) { return tmpDir, nil }
 	isTerminal = func() bool { return false }
 	installRun = func(string, install.Options) error { return nil }
-	runWizard = func(string, string) error { return nil }
+	runWizard = func(context.Context, string, string) error { return nil }
 	checkForUpdate = func(context.Context, string) (update.CheckResult, error) {
 		return update.CheckResult{Current: "dev", Latest: "2.0.0", CurrentIsDev: true}, nil
 	}
@@ -734,7 +740,7 @@ func TestInitCmd_TerminalEOFDeclinesWizard(t *testing.T) {
 		return update.CheckResult{Current: "1.0.0", Latest: "1.0.0"}, nil
 	}
 	wizardCalled := false
-	runWizardAfterInit = func(string, string) error {
+	runWizardAfterInit = func(context.Context, string, string) error {
 		wizardCalled = true
 		return nil
 	}
@@ -805,7 +811,7 @@ func TestInitCmd_UpdateWarningSkipped(t *testing.T) {
 			getwd = func() (string, error) { return tmpDir, nil }
 			isTerminal = func() bool { return false }
 			installRun = func(string, install.Options) error { return nil }
-			runWizard = func(string, string) error { return nil }
+			runWizard = func(context.Context, string, string) error { return nil }
 			validatePinnedReleaseVersionFunc = func(context.Context, string) error { return nil }
 
 			calls := 0
@@ -861,7 +867,7 @@ func TestInitCmd_StatAgentLayerErrorFailsFast(t *testing.T) {
 		installCalled = true
 		return nil
 	}
-	runWizard = func(string, string) error { return nil }
+	runWizard = func(context.Context, string, string) error { return nil }
 
 	statAgentLayerPath = func(string) (os.FileInfo, error) {
 		return nil, &os.PathError{Op: "stat", Path: ".agent-layer", Err: os.ErrPermission}
@@ -913,7 +919,7 @@ func TestInitCmd_HereInstallsInSubfolderOfExistingAgentLayer(t *testing.T) {
 	checkForUpdate = func(context.Context, string) (update.CheckResult, error) {
 		return update.CheckResult{Current: "1.0.0", Latest: "1.0.0"}, nil
 	}
-	runWizard = func(string, string) error { return nil }
+	runWizard = func(context.Context, string, string) error { return nil }
 
 	var gotRoot string
 	installRun = func(root string, _ install.Options) error {

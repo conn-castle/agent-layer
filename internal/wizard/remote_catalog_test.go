@@ -78,7 +78,7 @@ func TestWizardManualPoliciesAndWildcardCoverageArePreserved(t *testing.T) {
 			changes, err = computeSkillsChangeSet(root, choices)
 			require.NoError(t, err)
 			require.Empty(t, changes.removeSelectors)
-			require.NoError(t, applySkillsChanges(root, changes))
+			require.NoError(t, applySkillsChanges(context.Background(), root, changes))
 			require.Equal(t, before, snapshotManualCatalogSources(t, root))
 		})
 	}
@@ -105,7 +105,7 @@ func TestWizardOfflineFetchReportsPriorConfigWritesAndRetriesCoherently(t *testi
 	syncFn := func(string) (*alsync.Result, error) { called = true; return &alsync.Result{}, syncFailure }
 	configPath := filepath.Join(root, ".agent-layer", "config.toml")
 	envPath := filepath.Join(root, ".agent-layer", ".env")
-	err = applyChanges(root, configPath, envPath, choices, syncFn, &output)
+	err = applyChanges(context.Background(), root, configPath, envPath, choices, syncFn, &output)
 	require.ErrorContains(t, err, "prior wizard config/env writes may already be applied")
 	require.ErrorContains(t, err, "gitignore block updates, statusline source updates, and sync were not run")
 	require.False(t, called)
@@ -117,7 +117,7 @@ func TestWizardOfflineFetchReportsPriorConfigWritesAndRetriesCoherently(t *testi
 	require.Contains(t, string(raw), `mode = "all"`)
 	require.NoFileExists(t, filepath.Join(root, ".agent-layer", "skills.lock.json"))
 	t.Setenv("GIT_CONFIG_KEY_0", original)
-	err = applyChanges(root, configPath, envPath, choices, syncFn, &output)
+	err = applyChanges(context.Background(), root, configPath, envPath, choices, syncFn, &output)
 	require.ErrorIs(t, err, syncFailure)
 	require.ErrorContains(t, err, "import source changes were committed; projection was not completed")
 	require.True(t, called)
@@ -147,7 +147,7 @@ func TestWizardMixedAddAndBlockedRemovalReportsCommittedInstallation(t *testing.
 	choices.EnabledCLISkills[tool.ID] = true
 	changes, err := computeSkillsChangeSet(root, choices)
 	require.NoError(t, err)
-	err = applySkillsChanges(root, changes)
+	err = applySkillsChanges(context.Background(), root, changes)
 	require.ErrorContains(t, err, "installation committed; selector removal was not applied")
 	require.ErrorContains(t, err, "al skills")
 	require.FileExists(t, policy)

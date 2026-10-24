@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"io"
 	"os"
@@ -28,9 +29,14 @@ func TestWizardCommandInteractiveRunsWizard(t *testing.T) {
 	wantRoot := t.TempDir()
 	getwd = func() (string, error) { return wantRoot, nil }
 
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 	wizardCalled := false
-	runWizard = func(root string, _ string) error {
+	runWizard = func(gotCtx context.Context, root string, _ string) error {
 		wizardCalled = true
+		if gotCtx != ctx {
+			t.Fatal("wizard did not receive the command context")
+		}
 		if root != canonicalPath(wantRoot) {
 			t.Fatalf("expected root %q, got %q", canonicalPath(wantRoot), root)
 		}
@@ -38,11 +44,44 @@ func TestWizardCommandInteractiveRunsWizard(t *testing.T) {
 	}
 
 	cmd := newWizardCmd()
+	cmd.SetContext(ctx)
 	if err := cmd.RunE(cmd, nil); err != nil {
 		t.Fatalf("wizard RunE error: %v", err)
 	}
 	if !wizardCalled {
 		t.Fatal("expected wizard to run in interactive mode")
+	}
+}
+
+func TestWizardCommandAnswersPassesContext(t *testing.T) {
+	originalGetwd := getwd
+	originalRunWizardAnswers := runWizardAnswers
+	t.Cleanup(func() {
+		getwd = originalGetwd
+		runWizardAnswers = originalRunWizardAnswers
+	})
+	root := t.TempDir()
+	getwd = func() (string, error) { return root, nil }
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	called := false
+	runWizardAnswers = func(gotCtx context.Context, _ string, _ string, path string, _ io.Writer) error {
+		called = true
+		if gotCtx != ctx || path != "answers.json" {
+			t.Fatal("scripted wizard did not receive the command context and answers path")
+		}
+		return nil
+	}
+	cmd := newWizardCmd()
+	cmd.SetContext(ctx)
+	if err := cmd.Flags().Set("answers", "answers.json"); err != nil {
+		t.Fatal(err)
+	}
+	if err := cmd.RunE(cmd, nil); err != nil {
+		t.Fatal(err)
+	}
+	if !called {
+		t.Fatal("expected scripted wizard to run")
 	}
 }
 

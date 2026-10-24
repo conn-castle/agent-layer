@@ -58,7 +58,7 @@ func TestInitCommandNoWizardSkipsWizard(t *testing.T) {
 
 	originalRunWizardAfterInit := runWizardAfterInit
 	wizardCalled := false
-	runWizardAfterInit = func(_ string, _ string) error {
+	runWizardAfterInit = func(_ context.Context, _ string, _ string) error {
 		wizardCalled = true
 		return nil
 	}
@@ -89,7 +89,7 @@ func TestInitCommandPromptYesRunsWizard(t *testing.T) {
 
 	originalRunWizardAfterInit := runWizardAfterInit
 	wizardCalled := false
-	runWizardAfterInit = func(_ string, _ string) error {
+	runWizardAfterInit = func(_ context.Context, _ string, _ string) error {
 		wizardCalled = true
 		return nil
 	}
@@ -120,7 +120,7 @@ func TestInitCommandNonInteractiveSkipsWizard(t *testing.T) {
 
 	originalRunWizardAfterInit := runWizardAfterInit
 	wizardCalled := false
-	runWizardAfterInit = func(_ string, _ string) error {
+	runWizardAfterInit = func(_ context.Context, _ string, _ string) error {
 		wizardCalled = true
 		return nil
 	}
@@ -151,7 +151,7 @@ func TestInitCommandPromptNoDeclinesWizard(t *testing.T) {
 
 	originalRunWizardAfterInit := runWizardAfterInit
 	wizardCalled := false
-	runWizardAfterInit = func(_ string, _ string) error {
+	runWizardAfterInit = func(_ context.Context, _ string, _ string) error {
 		wizardCalled = true
 		return nil
 	}
