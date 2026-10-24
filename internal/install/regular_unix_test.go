@@ -10,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/conn-castle/agent-layer/internal/chime"
+	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/fsutil"
 	"github.com/conn-castle/agent-layer/internal/testutil"
 )
@@ -90,5 +92,75 @@ func TestUpgradeSnapshotFollowsRegularSymlink(t *testing.T) {
 	got, err := readUpgradeSnapshot(path, RealSystem{})
 	if err != nil || got.SnapshotID != snapshot.SnapshotID {
 		t.Fatalf("read linked snapshot = %v, %v", got, err)
+	}
+}
+
+func TestDisabledAgentArtifactsIgnoreLinkedAndSpecialCandidates(t *testing.T) {
+	for _, layout := range []string{"regular", "linked file", "linked parent", "dangling link", "fifo", "linked fifo", "file parent"} {
+		t.Run(layout, func(t *testing.T) {
+			root := t.TempDir()
+			hooks := filepath.Join(root, ".grok", "hooks")
+			hookPath := filepath.Join(hooks, "agent-layer-chime.json")
+			outside := filepath.Join(t.TempDir(), "agent-layer-chime.json")
+			if err := os.WriteFile(outside, chime.GrokHookDocument(), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if layout == "file parent" {
+				if err := os.WriteFile(filepath.Join(root, ".grok"), chime.GrokHookDocument(), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			} else if layout == "linked parent" {
+				if err := os.MkdirAll(filepath.Dir(hooks), 0o700); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Symlink(filepath.Dir(outside), hooks); err != nil {
+					t.Fatal(err)
+				}
+			} else if err := os.MkdirAll(hooks, 0o700); err != nil {
+				t.Fatal(err)
+			}
+			fifo := ""
+			switch layout {
+			case "regular":
+				if err := os.WriteFile(hookPath, chime.GrokHookDocument(), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			case "linked file":
+				if err := os.Symlink(outside, hookPath); err != nil {
+					t.Fatal(err)
+				}
+			case "dangling link":
+				if err := os.Symlink(filepath.Join(root, "missing.json"), hookPath); err != nil {
+					t.Fatal(err)
+				}
+			case "fifo", "linked fifo":
+				fifo = testutil.MakeFIFO(t, hookPath, layout == "linked fifo")
+			}
+			cfg := config.Config{Agents: config.AgentsConfig{Grok: config.GrokConfig{Enabled: testutil.BoolPtr(false)}}}
+			var check *UpgradeReadinessCheck
+			detect := func() error {
+				var err error
+				check, err = detectDisabledAgentArtifacts(&installer{root: root, sys: RealSystem{}}, &cfg)
+				return err
+			}
+			var err error
+			if fifo != "" {
+				err = testutil.BoundedFIFO(t, fifo, detect)
+			} else {
+				err = detect()
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if layout == "regular" {
+				if check == nil || !strings.Contains(strings.Join(check.Details, "\n"), "grok: .grok/hooks/agent-layer-chime.json") {
+					t.Fatalf("regular managed hook not reported: %+v", check)
+				}
+				return
+			}
+			if check != nil {
+				t.Fatalf("linked or special hook reported although sync will not clean it: %+v", check.Details)
+			}
+		})
 	}
 }
