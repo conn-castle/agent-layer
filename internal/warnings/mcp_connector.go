@@ -19,6 +19,7 @@ import (
 
 	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/messages"
+	"github.com/conn-castle/agent-layer/internal/ownedprocess"
 	"github.com/conn-castle/agent-layer/internal/projection"
 	"github.com/conn-castle/agent-layer/internal/versiondispatch"
 )
@@ -67,6 +68,14 @@ func (r *RealConnector) ConnectAndDiscover(ctx context.Context, server projectio
 		return DiscoveryResult{ServerID: server.ID, Error: err}
 	}
 	res := discoverMCPTools(ctx, server.ID, transport)
+	if stdio, ok := transport.(*ownedStdioTransport); ok {
+		// Join group cleanup even when the session never opened. An unproven
+		// stop fails discovery even after a complete tool list.
+		var cleanupErr *ownedprocess.CleanupError
+		if errors.As(stdio.Close(), &cleanupErr) {
+			res.Error = errors.Join(res.Error, cleanupErr)
+		}
+	}
 	if res.Error != nil && mcpTransportRefusedOrigin(transport) {
 		res.Error = errMCPOriginRefused
 	}
@@ -77,13 +86,13 @@ func (r *RealConnector) ConnectAndDiscover(ctx context.Context, server projectio
 func mcpDiscoveryTransport(ctx context.Context, server projection.ResolvedMCPServer) (mcp.Transport, error) {
 	switch server.Transport {
 	case config.TransportStdio:
-		// Bind the spawned MCP server process to the discovery context (which
-		// carries mcpDiscoveryTimeout) so a hung or misbehaving server is killed
-		// directly on cancel/timeout rather than only torn down indirectly via
-		// session Close().
-		cmd := exec.CommandContext(ctx, server.Command, server.Args...)
+		// The discovery context (which carries mcpDiscoveryTimeout) bounds the
+		// server's owned process group, so cancellation or timeout stops the
+		// server and its descendants directly.
+		//nolint:noctx // ownedprocess.Start owns cancellation while retaining the leader until cleanup.
+		cmd := exec.Command(server.Command, server.Args...)
 		cmd.Env = buildMCPCommandEnv(os.Environ(), server.Env)
-		return &mcp.CommandTransport{Command: cmd}, nil
+		return &ownedStdioTransport{cmd: cmd, ctx: ctx}, nil
 	case config.TransportHTTP:
 		client, err := headerHTTPClient(server.URL, server.Headers)
 		if err != nil {
