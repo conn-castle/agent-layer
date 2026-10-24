@@ -68,6 +68,7 @@ func EnsureSelectedHome(root string, env []string, cfg config.CodexConfig) error
 	home := filepath.Join(root, ".codex")
 	// Compare parents: symlink resolution cannot match aliases of a missing leaf.
 	current, ok := clients.GetEnv(env, "CODEX_HOME")
+	current = filepath.Clean(current)
 	if !config.CodexLocalConfigDirEnabled(cfg) || !ok || filepath.Base(current) != ".codex" || !clients.SamePath(filepath.Dir(current), root) {
 		return nil
 	}

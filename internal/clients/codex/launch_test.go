@@ -233,21 +233,28 @@ func TestEnsureSelectedHome(t *testing.T) {
 		enabled  *bool
 		external bool
 		alias    bool
+		trailing bool
 		existing os.FileMode
 		create   bool
 	}{
 		{name: "creates missing selected home", enabled: &enabled, create: true},
+		{name: "creates selected home with trailing separator", enabled: &enabled, trailing: true, create: true},
 		{name: "keeps existing selected home", enabled: &enabled, existing: 0o755},
+		{name: "keeps existing home with trailing separator", enabled: &enabled, trailing: true, existing: 0o755},
 		{name: "disabled does not create inherited project home", enabled: &disabled},
+		{name: "disabled does not create home with trailing separator", enabled: &disabled, trailing: true},
+		{name: "unset option does not create home with trailing separator", trailing: true},
 		{name: "external inherited home is not created", enabled: &enabled, external: true},
+		{name: "external home with trailing separator is not created", enabled: &enabled, external: true, trailing: true},
 		{name: "creates home selected through a root alias", enabled: &enabled, alias: true, create: true},
+		{name: "creates home through a root alias with trailing separator", enabled: &enabled, alias: true, trailing: true, create: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			root := t.TempDir()
 			home := filepath.Join(root, ".codex")
 			selected := home
 			if tc.external {
-				selected = filepath.Join(t.TempDir(), "external")
+				selected = filepath.Join(t.TempDir(), ".codex")
 			}
 			if tc.alias {
 				link := filepath.Join(t.TempDir(), "alias")
@@ -255,6 +262,9 @@ func TestEnsureSelectedHome(t *testing.T) {
 					t.Fatal(err)
 				}
 				selected = filepath.Join(link, ".codex")
+			}
+			if tc.trailing {
+				selected += string(filepath.Separator)
 			}
 			if tc.existing != 0 {
 				if err := os.Mkdir(home, tc.existing); err != nil {
