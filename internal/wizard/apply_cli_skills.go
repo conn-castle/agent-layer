@@ -333,7 +333,7 @@ func instructionAddOptions(name string) skillimport.AddOptions {
 // applySkillsChanges materializes the change set on disk. Each catalog skill
 // addition is copied from its embedded template tree; deletions are recursive
 // removes scoped to the targeted directory.
-func applySkillsChanges(root string, changes skillsChangeSet) (err error) {
+func applySkillsChanges(ctx context.Context, root string, changes skillsChangeSet) (err error) {
 	var committedInstructions []string
 	defer func() {
 		if err != nil && len(committedInstructions) > 0 {
@@ -368,7 +368,7 @@ func applySkillsChanges(root string, changes skillsChangeSet) (err error) {
 	}
 	for _, rel := range changes.instructionImports {
 		name := filepath.Base(rel)
-		report, err := skillimport.NewInstructionsSourceOnly(root).Add(context.Background(), instructionAddOptions(name))
+		report, err := skillimport.NewInstructionsSourceOnly(root).Add(ctx, instructionAddOptions(name))
 		if err != nil {
 			return fmt.Errorf("instruction import failed for %s: %w%s", name, err, catalogFailureReport(report, "instruction import"))
 		}
@@ -379,13 +379,13 @@ func applySkillsChanges(root string, changes skillsChangeSet) (err error) {
 	}
 
 	if len(changes.importSelectors) > 0 {
-		report, err := skillimport.NewSourceOnly(root).InstallCatalog(context.Background(), changes.importSelectors, changes.adoptLegacy)
+		report, err := skillimport.NewSourceOnly(root).InstallCatalog(ctx, changes.importSelectors, changes.adoptLegacy)
 		if err != nil {
 			return fmt.Errorf("catalog installation failed; prior wizard config/env writes may already be applied; import source state remains coherent: %w%s", err, catalogFailureReport(report, "catalog installation"))
 		}
 	}
 	if len(changes.removeSelectors) > 0 {
-		report, err := skillimport.NewSourceOnly(root).RemoveCatalogSelectors(context.Background(), changes.removeSelectors)
+		report, err := skillimport.NewSourceOnly(root).RemoveCatalogSelectors(ctx, changes.removeSelectors)
 		if err != nil {
 			if len(changes.importSelectors) > 0 {
 				return fmt.Errorf("catalog installation committed; selector removal was not applied; prior wizard config/env writes remain: %w%s", err, catalogFailureReport(report, "catalog removal"))

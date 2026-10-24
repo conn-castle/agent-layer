@@ -1,6 +1,7 @@
 package wizard
 
 import (
+	"context"
 	"io"
 	"os"
 	"path/filepath"
@@ -38,7 +39,7 @@ func TestWizardCatalogApplyRefusesUnpreviewedLegacyCopies(t *testing.T) {
 			require.NoError(t, os.MkdirAll(roots[1], 0o750))
 			before := testutil.SnapshotEvidence(t, roots...)
 			t.Setenv("GIT_CONFIG_KEY_0", "url."+filepath.Join(t.TempDir(), "unavailable")+".insteadOf")
-			err = applyChanges(root, filepath.Join(root, ".agent-layer", "config.toml"), filepath.Join(root, ".agent-layer", ".env"), choices, func(string) (*alsync.Result, error) {
+			err = applyChanges(context.Background(), root, filepath.Join(root, ".agent-layer", "config.toml"), filepath.Join(root, ".agent-layer", ".env"), choices, func(string) (*alsync.Result, error) {
 				t.Fatal("unapproved adoption must fail before sync")
 				return nil, nil
 			}, io.Discard)

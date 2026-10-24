@@ -1,6 +1,7 @@
 package wizard
 
 import (
+	"context"
 	"errors"
 	"io"
 	"io/fs"
@@ -221,7 +222,7 @@ func TestApplyRejectsLinkedState(t *testing.T) {
 		choices.ApprovalModeTouched = true
 		syncCalled = false
 
-		require.ErrorContains(t, applyChanges(root, configPath, envPath, choices, runSync, io.Discard), "must be a real directory")
+		require.ErrorContains(t, applyChanges(context.Background(), root, configPath, envPath, choices, runSync, io.Discard), "must be a real directory")
 		require.False(t, syncCalled)
 		require.Empty(t, snapshotFiles(t, external))
 		data, err := os.ReadFile(configPath)
@@ -229,7 +230,7 @@ func TestApplyRejectsLinkedState(t *testing.T) {
 		require.Equal(t, initialConfig, string(data))
 
 		require.NoError(t, os.Remove(state))
-		require.NoError(t, applyChanges(root, configPath, envPath, choices, runSync, io.Discard))
+		require.NoError(t, applyChanges(context.Background(), root, configPath, envPath, choices, runSync, io.Discard))
 		require.FileExists(t, backupPath(root, configBackupName))
 	})
 

@@ -1,6 +1,7 @@
 package wizard
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -61,7 +62,7 @@ func TestComputeSkillsChangeSet_LegacyDispatchAgentState(t *testing.T) {
 		changes, err := computeSkillsChangeSet(root, choices)
 		require.NoError(t, err)
 		assert.Equal(t, []string{legacyDispatchAgentCatalogID}, changes.catalogSkillsToRemove)
-		require.NoError(t, applySkillsChanges(root, changes))
+		require.NoError(t, applySkillsChanges(context.Background(), root, changes))
 		assert.NoDirExists(t, legacyDir)
 	})
 }
@@ -180,7 +181,7 @@ func TestApplySkillsChanges_CatalogAddCopiesEmbeddedFiles(t *testing.T) {
 	require.NoError(t, os.MkdirAll(filepath.Join(root, ".agent-layer", "skills"), 0o750))
 
 	changes := skillsChangeSet{catalogSkillsToAdd: []string{"benchmark"}}
-	require.NoError(t, applySkillsChanges(root, changes))
+	require.NoError(t, applySkillsChanges(context.Background(), root, changes))
 
 	skillPath := filepath.Join(root, ".agent-layer", "skills", "benchmark", "SKILL.md")
 	info, err := os.Stat(skillPath)
@@ -200,7 +201,7 @@ func TestApplySkillsChanges_CatalogRepairCopiesOnlyMissingFiles(t *testing.T) {
 	require.NoError(t, os.WriteFile(skillPath, []byte("custom skill text"), 0o600))
 
 	changes := skillsChangeSet{catalogSkillsToRepair: []string{"benchmark"}}
-	require.NoError(t, applySkillsChanges(root, changes))
+	require.NoError(t, applySkillsChanges(context.Background(), root, changes))
 
 	data, err := os.ReadFile(skillPath) // #nosec G304 -- path is constructed from test-controlled inputs.
 	require.NoError(t, err)
@@ -236,14 +237,14 @@ func TestApplySkillsChanges_CatalogRemove(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte("x"), 0o600))
 
 	changes := skillsChangeSet{catalogSkillsToRemove: []string{"dispatch-agent"}}
-	require.NoError(t, applySkillsChanges(root, changes))
+	require.NoError(t, applySkillsChanges(context.Background(), root, changes))
 
 	_, err := os.Stat(dir)
 	assert.True(t, os.IsNotExist(err))
 }
 
 func TestApplySkillsChanges_AddCatalogErrorIncludesSkill(t *testing.T) {
-	err := applySkillsChanges(t.TempDir(), skillsChangeSet{catalogSkillsToAdd: []string{"../bad"}})
+	err := applySkillsChanges(context.Background(), t.TempDir(), skillsChangeSet{catalogSkillsToAdd: []string{"../bad"}})
 	require.ErrorContains(t, err, "add catalog skill ../bad")
 }
 
@@ -254,7 +255,7 @@ func TestApplySkillsChanges_ErrorBranches(t *testing.T) {
 		require.NoError(t, os.MkdirAll(filepath.Dir(blocker), 0o750))
 		require.NoError(t, os.WriteFile(blocker, []byte("file blocks catalog install"), 0o600))
 
-		err := applySkillsChanges(root, skillsChangeSet{
+		err := applySkillsChanges(context.Background(), root, skillsChangeSet{
 			catalogSkillsToAdd: []string{"dispatch-agent"},
 		})
 		require.ErrorContains(t, err, "add catalog skill dispatch-agent")
@@ -266,7 +267,7 @@ func TestApplySkillsChanges_ErrorBranches(t *testing.T) {
 		require.NoError(t, os.MkdirAll(filepath.Dir(blocker), 0o750))
 		require.NoError(t, os.WriteFile(blocker, []byte("file blocks memory create"), 0o600))
 
-		err := applySkillsChanges(root, skillsChangeSet{memoryFilesToCreate: []string{"docs/agent-layer/ISSUES.md"}})
+		err := applySkillsChanges(context.Background(), root, skillsChangeSet{memoryFilesToCreate: []string{"docs/agent-layer/ISSUES.md"}})
 		require.ErrorContains(t, err, "create memory files")
 	})
 
@@ -276,7 +277,7 @@ func TestApplySkillsChanges_ErrorBranches(t *testing.T) {
 		require.NoError(t, os.MkdirAll(filepath.Dir(blocker), 0o750))
 		require.NoError(t, os.WriteFile(blocker, []byte("file blocks template create"), 0o600))
 
-		err := applySkillsChanges(root, skillsChangeSet{templateMemoryFilesToCreate: []string{".agent-layer/templates/docs/ISSUES.md"}})
+		err := applySkillsChanges(context.Background(), root, skillsChangeSet{templateMemoryFilesToCreate: []string{".agent-layer/templates/docs/ISSUES.md"}})
 		require.ErrorContains(t, err, "create memory templates")
 	})
 
@@ -286,7 +287,7 @@ func TestApplySkillsChanges_ErrorBranches(t *testing.T) {
 		require.NoError(t, os.MkdirAll(filepath.Dir(blocker), 0o750))
 		require.NoError(t, os.WriteFile(blocker, []byte("file blocks instruction create"), 0o600))
 
-		err := applySkillsChanges(root, skillsChangeSet{instructionImports: []string{".agent-layer/instructions/00_rules.md"}})
+		err := applySkillsChanges(context.Background(), root, skillsChangeSet{instructionImports: []string{".agent-layer/instructions/00_rules.md"}})
 		require.ErrorContains(t, err, "instruction import failed")
 	})
 
@@ -468,7 +469,7 @@ func TestWizardInstructionOptionsUseImportsAndPreserveLocalFiles(t *testing.T) {
 			choices.InstructionSet = set
 			changes, err := computeSkillsChangeSet(root, choices)
 			require.NoError(t, err)
-			require.NoError(t, applySkillsChanges(root, changes))
+			require.NoError(t, applySkillsChanges(context.Background(), root, changes))
 			cfg, err := config.LoadConfigLenient(paths.ConfigPath)
 			require.NoError(t, err)
 			count := 0

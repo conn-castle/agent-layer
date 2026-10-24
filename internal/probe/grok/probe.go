@@ -16,6 +16,7 @@ import (
 
 	"github.com/conn-castle/agent-layer/internal/clients"
 	clientgrok "github.com/conn-castle/agent-layer/internal/clients/grok"
+	"github.com/conn-castle/agent-layer/internal/ownedprocess"
 	"github.com/conn-castle/agent-layer/internal/probe"
 	"github.com/conn-castle/agent-layer/internal/tomlpatch"
 )
@@ -108,7 +109,7 @@ func probeWithOutputLimit(ctx context.Context, tmpRoot string, authHome string, 
 	stdout := &boundedProbeOutput{limit: outputLimit}
 	stderr := &boundedProbeOutput{limit: outputLimit}
 	// #nosec G204 -- grokPath is resolved from exec.LookPath("grok") and is the explicit probe target.
-	//nolint:noctx // probe.Run owns cancellation while retaining the leader until cleanup.
+	//nolint:noctx // ownedprocess.Run owns cancellation while retaining the leader until cleanup.
 	cmd := exec.Command(grokPath,
 		"--no-auto-update",
 		"--trust",
@@ -125,7 +126,7 @@ func probeWithOutputLimit(ctx context.Context, tmpRoot string, authHome string, 
 	cmd.Stderr = stderr
 
 	start := time.Now()
-	runErr := probe.Run(runCtx, cmd)
+	runErr := ownedprocess.Run(runCtx, cmd)
 	elapsed := time.Since(start)
 	exitCode := probe.ExitCode(runErr)
 	if authPath != "" {
@@ -337,11 +338,11 @@ func detectGrokVersion(ctx context.Context, grokPath string) string {
 	defer cancel()
 	output := &boundedProbeOutput{limit: maxProbeVersionBytes}
 	// #nosec G204 -- grokPath is resolved from exec.LookPath("grok") and is the explicit probe target.
-	//nolint:noctx // probe.Run owns cancellation while retaining the leader until cleanup.
+	//nolint:noctx // ownedprocess.Run owns cancellation while retaining the leader until cleanup.
 	cmd := exec.Command(grokPath, "--version")
 	cmd.Stdout = output
 	cmd.Stderr = output
-	if err := probe.Run(runCtx, cmd); err != nil || output.truncated {
+	if err := ownedprocess.Run(runCtx, cmd); err != nil || output.truncated {
 		return ""
 	}
 	return string(bytes.TrimSpace(output.Bytes()))

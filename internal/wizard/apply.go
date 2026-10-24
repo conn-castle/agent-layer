@@ -2,6 +2,7 @@ package wizard
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -24,7 +25,7 @@ var writeFileAtomic = fsutil.WriteFileAtomic
 
 // applyChanges writes config/env updates and runs sync.
 // root/configPath/envPath identify files; c holds wizard selections; runSync is the sync function to call; returns an error on failure.
-func applyChanges(root, configPath, envPath string, c *Choices, runSync syncer, out io.Writer) (err error) {
+func applyChanges(ctx context.Context, root, configPath, envPath string, c *Choices, runSync syncer, out io.Writer) (err error) {
 	sourcesApplied := false
 	defer func() {
 		if err != nil && sourcesApplied {
@@ -50,7 +51,7 @@ func applyChanges(root, configPath, envPath string, c *Choices, runSync syncer, 
 	if c.previewedSkills != nil {
 		skillsChangeSet.adoptLegacy = c.previewedSkills.adoptLegacy
 	}
-	if err := applySkillsChanges(root, skillsChangeSet); err != nil {
+	if err := applySkillsChanges(ctx, root, skillsChangeSet); err != nil {
 		return fmt.Errorf(messages.WizardApplySkillsFailedFmt+"; config/env writes were applied; gitignore block updates, statusline source updates, and sync were not run", err)
 	}
 	sourcesApplied = len(skillsChangeSet.importSelectors)+len(skillsChangeSet.removeSelectors)+len(skillsChangeSet.instructionImports) > 0

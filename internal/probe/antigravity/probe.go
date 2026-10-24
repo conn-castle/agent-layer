@@ -13,6 +13,7 @@ import (
 	"sort"
 	"time"
 
+	"github.com/conn-castle/agent-layer/internal/ownedprocess"
 	"github.com/conn-castle/agent-layer/internal/probe"
 )
 
@@ -58,7 +59,7 @@ func Probe(ctx context.Context, tmpRoot string) (*Result, error) {
 	// stays inside this disposable workspace. Do not copy these flags into
 	// BaseArgs, interactive launch, or Agent Dispatch.
 	// #nosec G204 -- agyPath is resolved from exec.LookPath("agy") and is the explicit probe target.
-	//nolint:noctx // probe.Run owns cancellation while retaining the leader until cleanup.
+	//nolint:noctx // ownedprocess.Run owns cancellation while retaining the leader until cleanup.
 	cmd := exec.Command(agyPath,
 		"--gemini_dir="+geminiDir,
 		"--dangerously-skip-permissions",
@@ -73,7 +74,7 @@ func Probe(ctx context.Context, tmpRoot string) (*Result, error) {
 	cmd.Stderr = &stderr
 
 	start := time.Now()
-	runErr := probe.Run(runCtx, cmd)
+	runErr := ownedprocess.Run(runCtx, cmd)
 	elapsed := time.Since(start)
 	exitCode := probe.ExitCode(runErr)
 
@@ -261,11 +262,11 @@ func detectAgyVersion(ctx context.Context, agyPath string) string {
 	defer cancel()
 	var output bytes.Buffer
 	// #nosec G204 -- agyPath is resolved from exec.LookPath("agy") and is the explicit probe target.
-	//nolint:noctx // probe.Run owns cancellation while retaining the leader until cleanup.
+	//nolint:noctx // ownedprocess.Run owns cancellation while retaining the leader until cleanup.
 	cmd := exec.Command(agyPath, "--version")
 	cmd.Stdout = &output
 	cmd.Stderr = &output
-	err := probe.Run(runCtx, cmd)
+	err := ownedprocess.Run(runCtx, cmd)
 	if err != nil {
 		return ""
 	}

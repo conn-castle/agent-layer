@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -18,12 +19,12 @@ var runWizardProfile = func(root string, pinVersion string, profilePath string, 
 	return wizard.RunProfile(root, alsync.Run, pinVersion, profilePath, apply, out)
 }
 
-var runWizardAnswers = func(root string, pinVersion string, answersPath string, out io.Writer) error {
+var runWizardAnswers = func(ctx context.Context, root string, pinVersion string, answersPath string, out io.Writer) error {
 	ui, err := wizard.NewScriptedUIFromFile(answersPath)
 	if err != nil {
 		return err
 	}
-	return wizard.RunWithWriter(root, ui, alsync.Run, pinVersion, out)
+	return wizard.RunWithWriter(ctx, root, ui, alsync.Run, pinVersion, out)
 }
 
 var cleanupWizardBackups = wizard.CleanupBackups
@@ -82,14 +83,14 @@ func newWizardCmd() *cobra.Command {
 			}
 
 			if answersPath != "" {
-				return runWizardAnswers(root, pinned, answersPath, cmd.OutOrStdout())
+				return runWizardAnswers(cmd.Context(), root, pinned, answersPath, cmd.OutOrStdout())
 			}
 
 			if !isTerminal() {
 				return errors.New(messages.WizardRequiresTerminal)
 			}
 
-			return runWizard(root, pinned)
+			return runWizard(cmd.Context(), root, pinned)
 		},
 	}
 

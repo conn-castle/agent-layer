@@ -23,12 +23,12 @@ import (
 	"github.com/conn-castle/agent-layer/internal/wizard"
 )
 
-var runWizard = func(root string, pinVersion string) error {
-	return wizard.RunWithWriter(root, wizard.NewHuhUI(), alsync.Run, pinVersion, os.Stdout)
+var runWizard = func(ctx context.Context, root string, pinVersion string) error {
+	return wizard.RunWithWriter(ctx, root, wizard.NewHuhUI(), alsync.Run, pinVersion, os.Stdout)
 }
 
-var runWizardAfterInit = func(root string, pinVersion string) error {
-	return wizard.RunAfterFreshInitWithWriter(root, wizard.NewHuhUI(), alsync.Run, pinVersion, os.Stdout)
+var runWizardAfterInit = func(ctx context.Context, root string, pinVersion string) error {
+	return wizard.RunAfterFreshInitWithWriter(ctx, root, wizard.NewHuhUI(), alsync.Run, pinVersion, os.Stdout)
 }
 
 var installRun = install.Run
@@ -109,7 +109,7 @@ func newInitCmd() *cobra.Command {
 			if !run {
 				return nil
 			}
-			return runWizardAfterInit(root, pinned)
+			return runWizardAfterInit(cmd.Context(), root, pinned)
 		},
 	}
 

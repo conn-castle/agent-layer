@@ -2,6 +2,7 @@ package wizard
 
 import (
 	"bytes"
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -24,7 +25,7 @@ func TestRunWithWriter_InstallCancelledPrintsToWriter(t *testing.T) {
 	}
 
 	var out bytes.Buffer
-	err := RunWithWriter(root, ui, func(string) (*alsync.Result, error) { return &alsync.Result{}, nil }, "", &out)
+	err := RunWithWriter(context.Background(), root, ui, func(string) (*alsync.Result, error) { return &alsync.Result{}, nil }, "", &out)
 	require.NoError(t, err)
 	require.Contains(t, out.String(), messages.WizardExitWithoutChanges)
 }
@@ -41,7 +42,7 @@ func TestRunWithWriter_InstallEscapeBackPrintsToWriter(t *testing.T) {
 	}
 
 	var out bytes.Buffer
-	err := RunWithWriter(root, ui, func(string) (*alsync.Result, error) { return &alsync.Result{}, nil }, "", &out)
+	err := RunWithWriter(context.Background(), root, ui, func(string) (*alsync.Result, error) { return &alsync.Result{}, nil }, "", &out)
 	require.NoError(t, err)
 	require.Contains(t, out.String(), messages.WizardExitWithoutChanges)
 }
@@ -66,7 +67,7 @@ func TestRunWithWriter_ApplyCancelledPrintsToWriter(t *testing.T) {
 	}
 
 	var out bytes.Buffer
-	err := RunWithWriter(root, ui, func(string) (*alsync.Result, error) { return &alsync.Result{}, nil }, "", &out)
+	err := RunWithWriter(context.Background(), root, ui, func(string) (*alsync.Result, error) { return &alsync.Result{}, nil }, "", &out)
 	require.NoError(t, err)
 	require.Contains(t, out.String(), messages.WizardExitWithoutChanges)
 }
@@ -86,7 +87,7 @@ func TestRunWithWriter_FreshInstallPromptCancelledDoesNotClaimNoChanges(t *testi
 	}
 
 	var out bytes.Buffer
-	err := RunWithWriter(root, ui, func(string) (*alsync.Result, error) { return &alsync.Result{}, nil }, "0.0.0", &out)
+	err := RunWithWriter(context.Background(), root, ui, func(string) (*alsync.Result, error) { return &alsync.Result{}, nil }, "0.0.0", &out)
 	require.NoError(t, err)
 	require.Contains(t, out.String(), messages.WizardInstallComplete)
 	require.NotContains(t, out.String(), messages.WizardExitWithoutChanges)
@@ -110,7 +111,7 @@ func TestRunWithWriter_FreshInstallApplyCancelledDoesNotClaimNoChanges(t *testin
 	}
 
 	var out bytes.Buffer
-	err := RunWithWriter(root, ui, func(string) (*alsync.Result, error) { return &alsync.Result{}, nil }, "0.0.0", &out)
+	err := RunWithWriter(context.Background(), root, ui, func(string) (*alsync.Result, error) { return &alsync.Result{}, nil }, "0.0.0", &out)
 	require.NoError(t, err)
 	require.Contains(t, out.String(), messages.WizardInstallComplete)
 	require.NotContains(t, out.String(), messages.WizardExitWithoutChanges)

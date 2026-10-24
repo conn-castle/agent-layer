@@ -36,18 +36,18 @@ var (
 
 // RunWithWriter starts the interactive wizard and writes user-facing output to out.
 // pinVersion is written to .agent-layer/al.version when install is needed.
-func RunWithWriter(root string, ui UI, runSync syncer, pinVersion string, out io.Writer) error {
-	return runWithWriter(root, ui, runSync, pinVersion, out, false)
+func RunWithWriter(ctx context.Context, root string, ui UI, runSync syncer, pinVersion string, out io.Writer) error {
+	return runWithWriter(ctx, root, ui, runSync, pinVersion, out, false)
 }
 
 // RunAfterFreshInitWithWriter runs the wizard immediately after `al init`
 // created the bare operational layout. Provider statusline options and the
 // instruction-set prompt use fresh-setup defaults in this path.
-func RunAfterFreshInitWithWriter(root string, ui UI, runSync syncer, pinVersion string, out io.Writer) error {
-	return runWithWriter(root, ui, runSync, pinVersion, out, true)
+func RunAfterFreshInitWithWriter(ctx context.Context, root string, ui UI, runSync syncer, pinVersion string, out io.Writer) error {
+	return runWithWriter(ctx, root, ui, runSync, pinVersion, out, true)
 }
 
-func runWithWriter(root string, ui UI, runSync syncer, pinVersion string, out io.Writer, freshInitDefaults bool) (err error) {
+func runWithWriter(ctx context.Context, root string, ui UI, runSync syncer, pinVersion string, out io.Writer, freshInitDefaults bool) (err error) {
 	if out == nil {
 		out = os.Stdout
 	}
@@ -126,7 +126,7 @@ func runWithWriter(root string, ui UI, runSync syncer, pinVersion string, out io
 
 	err = promptWizardFlow(root, ui, choices, &wizardOptionDiscoveryCache{project: cfg, out: out})
 	if err == nil {
-		err = confirmAndApply(root, configPath, envPath, ui, choices, runSync, out, freshInstall, pinVersion)
+		err = confirmAndApply(ctx, root, configPath, envPath, ui, choices, runSync, out, freshInstall, pinVersion)
 	}
 	if errors.Is(err, errWizardCancelled) || errors.Is(err, errWizardBack) {
 		if !freshInstall {
@@ -965,7 +965,7 @@ func appendPreviewSection(preview, section string) string {
 	return preview + "\n\n" + section
 }
 
-func confirmAndApply(root, configPath, envPath string, ui UI, choices *Choices, runSync syncer, out io.Writer, freshInstall bool, pinVersion string) error {
+func confirmAndApply(ctx context.Context, root, configPath, envPath string, ui UI, choices *Choices, runSync syncer, out io.Writer, freshInstall bool, pinVersion string) error {
 	confirmApply := true
 	scripted, isScripted := ui.(*ScriptedUI)
 	if isScripted {
@@ -1037,7 +1037,7 @@ func confirmAndApply(root, configPath, envPath string, ui UI, choices *Choices, 
 		return nil
 	}
 
-	if err := applyChanges(root, configPath, envPath, choices, runSync, out); err != nil {
+	if err := applyChanges(ctx, root, configPath, envPath, choices, runSync, out); err != nil {
 		return err
 	}
 

@@ -2,6 +2,7 @@ package wizard
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -200,7 +201,7 @@ func TestRun_ScriptedUnusedAnswersDoNotWrite(t *testing.T) {
 				ui.answers.Select[messages.WizardInstructionSetTitle] = instructionSetLabels()[0]
 			}
 			var out bytes.Buffer
-			err := RunWithWriter(root, ui, func(string) (*alsync.Result, error) {
+			err := RunWithWriter(context.Background(), root, ui, func(string) (*alsync.Result, error) {
 				t.Fatal("sync ran before answer validation")
 				return nil, nil
 			}, "0.0.0", &out)

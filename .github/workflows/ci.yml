@@ -95,8 +95,8 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
-      - name: Test native probe process cleanup
-        run: go test -race ./internal/probe/...
+      - name: Test native owned process cleanup
+        run: go test -race ./internal/probe/... ./internal/ownedprocess/... ./internal/gitrepo/...
       - name: Test native update process cleanup
         run: go test -race ./cmd/al -run '^TestUpdateCommand' -count=1
       - name: Test dispatch shutdown with slow persistence

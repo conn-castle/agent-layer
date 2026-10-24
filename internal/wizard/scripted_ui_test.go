@@ -2,6 +2,7 @@ package wizard
 
 import (
 	"bytes"
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -93,7 +94,7 @@ func TestScriptedUIMissingAnswerFails(t *testing.T) {
 	}
 	ui.answers.Confirm[messages.WizardInstallPrompt] = true
 	root := t.TempDir()
-	err = RunWithWriter(root, ui, nil, "0.0.0", &bytes.Buffer{})
+	err = RunWithWriter(context.Background(), root, ui, nil, "0.0.0", &bytes.Buffer{})
 	require.ErrorContains(t, err, "missing select")
 	require.NoDirExists(t, filepath.Join(root, ".agent-layer"))
 }
@@ -136,7 +137,7 @@ func TestScriptedUIInvalidOptionFails(t *testing.T) {
 	ui.answers.Confirm = map[string]bool{messages.WizardInstallPrompt: true}
 	ui.answers.Select = map[string]string{messages.WizardApprovalModeTitle: "bad"}
 	root := t.TempDir()
-	err = RunWithWriter(root, ui, nil, "0.0.0", &bytes.Buffer{})
+	err = RunWithWriter(context.Background(), root, ui, nil, "0.0.0", &bytes.Buffer{})
 	require.ErrorContains(t, err, "not one of")
 	require.NoDirExists(t, filepath.Join(root, ".agent-layer"))
 }
@@ -153,7 +154,7 @@ func TestRun_ScriptedBlankSecretStopsBeforeApply(t *testing.T) {
 			"No value provided for AL_CONTEXT7_API_KEY. Disable MCP server context7?": false},
 		SecretInput: map[string]string{"Enter AL_CONTEXT7_API_KEY (leave blank to skip)": " \t "},
 	}}
-	err := RunWithWriter(root, ui, nil, "0.0.0", &bytes.Buffer{})
+	err := RunWithWriter(context.Background(), root, ui, nil, "0.0.0", &bytes.Buffer{})
 	require.ErrorContains(t, err, "wizard answers leave AL_CONTEXT7_API_KEY blank but decline disabling MCP server context7; provide a secret or confirm disabling the server")
 	require.NotContains(t, ui.used, scriptedAnswerKey("confirm", messages.WizardEnableWarningsPrompt))
 	require.NotContains(t, ui.used, scriptedAnswerKey("confirm", messages.WizardApplyChangesPrompt))
