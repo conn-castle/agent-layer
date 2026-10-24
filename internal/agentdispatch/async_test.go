@@ -137,7 +137,7 @@ func TestResolvePromptSourceNormalizesPathButRejectsWhitespaceOnlySources(t *tes
 	if err := os.WriteFile(promptPath, []byte("Review this."), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	prompt, err := resolvePromptSource("", "  "+promptPath+"  ")
+	prompt, err := resolvePromptSource(context.Background(), "", "  "+promptPath+"  ")
 	if err != nil {
 		t.Fatalf("resolve trimmed prompt file path: %v", err)
 	}
@@ -151,13 +151,13 @@ func TestResolvePromptSourceNormalizesPathButRejectsWhitespaceOnlySources(t *tes
 		{prompt: " \t\n "},
 		{file: " \t\n "},
 	} {
-		_, err := resolvePromptSource(source.prompt, source.file)
+		_, err := resolvePromptSource(context.Background(), source.prompt, source.file)
 		requireDispatchExitCode(t, err, ExitUsage)
 	}
 	if err := os.WriteFile(promptPath, []byte(" \t\n "), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	_, err = resolvePromptSource("", promptPath)
+	_, err = resolvePromptSource(context.Background(), "", promptPath)
 	requireDispatchExitCode(t, err, ExitUsage)
 }
 
@@ -169,7 +169,7 @@ func TestResolvePromptSourcePrefersExistingLiteralPath(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	prompt, err := resolvePromptSource("", literal)
+	prompt, err := resolvePromptSource(context.Background(), "", literal)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -180,7 +180,7 @@ func TestResolvePromptSourcePrefersExistingLiteralPath(t *testing.T) {
 
 func TestResolvePromptSourceMissingFileReportsCause(t *testing.T) {
 	promptPath := filepath.Join(t.TempDir(), "missing.md")
-	_, err := resolvePromptSource("", promptPath)
+	_, err := resolvePromptSource(context.Background(), "", promptPath)
 	requireDispatchExitCode(t, err, ExitUsage)
 	if !strings.HasPrefix(err.Error(), "read dispatch prompt file: ") || !strings.Contains(err.Error(), promptPath) {
 		t.Fatalf("missing prompt file error = %q, want the read failure and its path", err)

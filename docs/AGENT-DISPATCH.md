@@ -218,6 +218,10 @@ immediately after starting the next invocation.
 
 `--prompt-file` reads the named file as the prompt. It avoids shell escaping
 and command-length limits; `--prompt` remains convenient for short prompts.
+Prompt sources are limited to 10 MiB, a named pipe is read until its writer
+closes, and interrupting the command (or ending the MCP request) before the
+prompt is read cancels the start or continuation without contacting the
+provider.
 
 ## States
 

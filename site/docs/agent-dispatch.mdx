@@ -161,7 +161,7 @@ al dispatch cancel <handle-or-invocation-id>
 
 `start` requires `--agent` and exactly one prompt source. When model or reasoning effort is omitted, Agent Layer uses the configured value; if there is no configured value, the provider uses its own default.
 
-`--prompt-file` avoids shell escaping and command-length limits for substantial prompts. `--skill` names a known user-managed or imported Agent Layer skill. Dispatch prepends the target's native skill invocation to the prompt—for example `$review` for Codex or `/review` for another target. The skill must already be projected for that target; run `al sync` if start reports it missing. `dispatch_continue` does not accept a skill.
+`--prompt-file` avoids shell escaping and command-length limits for substantial prompts. Prompt sources are limited to 10 MiB, a named pipe is read until its writer closes, and interrupting the command (or ending the MCP request) before the prompt is read cancels the start or continuation without contacting the provider. `--skill` names a known user-managed or imported Agent Layer skill. Dispatch prepends the target's native skill invocation to the prompt—for example `$review` for Codex or `/review` for another target. The skill must already be projected for that target; run `al sync` if start reports it missing. `dispatch_continue` does not accept a skill.
 
 `continue` retains the conversation's provider, model, reasoning effort, and provider context. It accepts a new prompt only after the current invocation reaches a terminal state.
 

@@ -129,11 +129,12 @@ type runOptions struct {
 
 // StartOptions configures the first asynchronous invocation of a conversation.
 type StartOptions struct {
-	// Context, when set, is checked once at the start of publication, after
-	// preparation and before writing the worker request or launching the worker.
-	// If it has ended at that checkpoint, the start fails without contacting the
-	// provider. If it ends after the check, even before the launch call, the worker
-	// can still launch. Nil leaves publication unaffected by caller cancellation.
+	// Context, when set, cancels prompt-file preparation and is checked again
+	// at the start of publication, before writing the worker request or
+	// launching the worker. If it has ended at either point, the start fails
+	// without contacting the provider. If it ends after the publication check,
+	// even before the launch call, the worker can still launch. Nil disables
+	// caller cancellation.
 	Context         context.Context
 	Root            string
 	WorkDir         string
@@ -166,7 +167,7 @@ type ReserveOptions struct {
 
 // ContinueOptions configures one asynchronous continuation of a conversation.
 type ContinueOptions struct {
-	// Context, when set, is the caller's request; see StartOptions.Context.
+	// Context cancels prompt-file preparation and guards publication; see StartOptions.Context.
 	Context        context.Context
 	Root           string
 	WorkDir        string
