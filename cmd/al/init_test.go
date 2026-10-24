@@ -16,8 +16,10 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/conn-castle/agent-layer/internal/install"
+	"github.com/conn-castle/agent-layer/internal/messages"
 	"github.com/conn-castle/agent-layer/internal/update"
 	"github.com/conn-castle/agent-layer/internal/versiondispatch"
 )
@@ -757,6 +759,72 @@ func TestInitCmd_TerminalEOFDeclinesWizard(t *testing.T) {
 	}
 	if wizardCalled {
 		t.Fatalf("expected wizard to be skipped on EOF decline")
+	}
+}
+
+func TestInitCmd_CanceledWizardPromptNeedsNoInput(t *testing.T) {
+	origGetwd := getwd
+	origIsTerminal := isTerminal
+	origInstallRun := installRun
+	origCheckForUpdate := checkForUpdate
+	origRunWizardAfterInit := runWizardAfterInit
+	t.Cleanup(func() {
+		getwd = origGetwd
+		isTerminal = origIsTerminal
+		installRun = origInstallRun
+		checkForUpdate = origCheckForUpdate
+		runWizardAfterInit = origRunWizardAfterInit
+	})
+
+	tmpDir := t.TempDir()
+	if err := os.Mkdir(filepath.Join(tmpDir, ".git"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	getwd = func() (string, error) { return tmpDir, nil }
+	isTerminal = func() bool { return true }
+	installRun = func(string, install.Options) error { return nil }
+	checkForUpdate = func(context.Context, string) (update.CheckResult, error) {
+		return update.CheckResult{Current: "1.0.0", Latest: "1.0.0"}, nil
+	}
+	runWizardAfterInit = func(context.Context, string, string) error {
+		t.Error("canceled init must not run the wizard")
+		return nil
+	}
+
+	// The open pipe writer means only cancellation can end the prompt.
+	input, writer, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = input.Close() }()
+	defer func() { _ = writer.Close() }()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	cmd := newInitCmd()
+	cmd.SetArgs([]string{})
+	cmd.SetContext(ctx)
+	cmd.SetIn(input)
+	prompted := make(chan struct{}, 1)
+	cmd.SetOut(promptCancelWriter{prompt: messages.InitRunWizardPrompt, prompted: prompted})
+	cmd.SetErr(io.Discard)
+
+	done := make(chan error, 1)
+	go func() { done <- cmd.Execute() }()
+	select {
+	case <-prompted:
+		// Let the prompt block on stdin before interrupting it.
+		time.Sleep(100 * time.Millisecond)
+		cancel()
+	case <-time.After(3 * time.Second):
+		t.Fatal("init never reached the wizard prompt")
+	}
+	select {
+	case err := <-done:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("canceled init prompt error = %v, want context.Canceled", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("canceled init wizard prompt kept waiting for stdin")
 	}
 }
 

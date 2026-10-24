@@ -289,7 +289,7 @@ func buildUpgradePrompter(cmd *cobra.Command, policy upgradeApplyPolicy) *instal
 	// multiple prompts are issued sequentially (e.g., chained config_set_default
 	// migration operations).
 	ctx := commandContext(cmd)
-	stdinReader := &contextPromptReader{Reader: bufio.NewReader(contextInput{ctx: ctx, in: cmd.InOrStdin()}), ctx: ctx}
+	stdinReader := newCommandPromptReader(cmd)
 
 	statuslineSourceSkipAnnounced := false
 

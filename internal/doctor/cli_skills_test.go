@@ -7,11 +7,14 @@ import (
 	"os/exec"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/sys/unix"
 
 	"github.com/conn-castle/agent-layer/internal/config"
+	"github.com/conn-castle/agent-layer/internal/projectlock"
 	"github.com/conn-castle/agent-layer/internal/skillimport"
 	"github.com/conn-castle/agent-layer/internal/skilljournal"
 	"github.com/conn-castle/agent-layer/internal/templates"
@@ -34,7 +37,7 @@ func TestCheckCLISkillsRemoteOwnershipOfflineAndConflicts(t *testing.T) {
 			t.Cleanup(func() { lookPathFunc = originalLook })
 			t.Setenv("GIT_CONFIG_KEY_0", "url."+filepath.Join(t.TempDir(), "absent")+".insteadOf")
 			cfg := &config.ProjectConfig{Root: root}
-			results := CheckCLISkills(cfg)
+			results := CheckCLISkills(context.Background(), cfg)
 			require.Len(t, results, 1)
 			require.Contains(t, results[0].Message, "playwright")
 			for _, dangling := range []bool{false, true} {
@@ -46,7 +49,7 @@ func TestCheckCLISkillsRemoteOwnershipOfflineAndConflicts(t *testing.T) {
 					require.NoError(t, skilljournal.Write(stage, skilljournal.Document{Committed: true}))
 				}
 				before := testutil.SnapshotEvidence(t, root)
-				pending := CheckCLISkills(cfg)
+				pending := CheckCLISkills(context.Background(), cfg)
 				require.Len(t, pending, 1)
 				require.Contains(t, pending[0].Message, "pending recovery")
 				require.Contains(t, pending[0].Recommendation, "al sync")
@@ -56,21 +59,48 @@ func TestCheckCLISkillsRemoteOwnershipOfflineAndConflicts(t *testing.T) {
 			// A direct older installer can recreate this duplicate. Neither tree is removed.
 			local := filepath.Join(root, ".agent-layer", "skills", "playwright")
 			require.NoError(t, os.MkdirAll(local, 0o700))
-			results = CheckCLISkills(cfg)
+			results = CheckCLISkills(context.Background(), cfg)
 			require.Len(t, results, 2)
 			require.Contains(t, results[0].Message, "both local and imported")
 			require.DirExists(t, local)
 			require.FileExists(t, filepath.Join(root, ".agent-layer", "skills-imported", "playwright", "SKILL.md"))
 			require.NoError(t, os.WriteFile(filepath.Join(root, ".agent-layer", "skills.lock.json"), []byte("invalid"), 0o600))
-			results = CheckCLISkills(cfg)
+			results = CheckCLISkills(context.Background(), cfg)
 			require.Len(t, results, 1)
 			require.Contains(t, results[0].Recommendation, "does not fetch")
 		})
 	}
 }
 
+func TestCheckCLISkillsCancellationStopsProjectLockWait(t *testing.T) {
+	root := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(root, ".agent-layer"), 0o700))
+	// Hold the file lock through a separate open file description, as another
+	// process would, so inspection waits in the file-lock loop.
+	holder, err := os.OpenFile(projectlock.Path(root), os.O_CREATE|os.O_RDWR, 0o600) // #nosec G304 -- path is rooted in the test-owned temporary project.
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = holder.Close() })
+	require.NoError(t, unix.Flock(int(holder.Fd()), unix.LOCK_EX|unix.LOCK_NB)) //nolint:gosec // Unix file descriptors are small non-negative ints.
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan []Result, 1)
+	go func() { done <- CheckCLISkills(ctx, &config.ProjectConfig{Root: root}) }()
+	select {
+	case <-done:
+		t.Fatal("catalog inspection returned while the project lock was held")
+	case <-time.After(200 * time.Millisecond):
+	}
+	cancel()
+	select {
+	case results := <-done:
+		assert.Empty(t, results, "an interrupted inspection must not report a result")
+	case <-time.After(5 * time.Second):
+		t.Fatal("canceled doctor catalog inspection kept waiting for the project lock")
+	}
+}
+
 func TestCheckCLISkills_NilConfigReturnsNil(t *testing.T) {
-	results := CheckCLISkills(nil)
+	results := CheckCLISkills(context.Background(), nil)
 	assert.Nil(t, results)
 }
 
@@ -82,7 +112,7 @@ func TestCheckCLISkills_CatalogLoadFailureEmitsSingleFail(t *testing.T) {
 	t.Cleanup(func() { loadCLISkillCatalogFunc = original })
 
 	cfg := &config.ProjectConfig{Root: t.TempDir()}
-	results := CheckCLISkills(cfg)
+	results := CheckCLISkills(context.Background(), cfg)
 	require.Len(t, results, 1)
 	assert.Equal(t, StatusFail, results[0].Status)
 	assert.Contains(t, results[0].Message, "mock catalog load failure")
@@ -96,7 +126,7 @@ func TestCheckCLISkills_AbsentSkillDirEmitsNothing(t *testing.T) {
 	t.Cleanup(func() { loadCLISkillCatalogFunc = originalCatalog })
 
 	cfg := &config.ProjectConfig{Root: t.TempDir()}
-	results := CheckCLISkills(cfg)
+	results := CheckCLISkills(context.Background(), cfg)
 	assert.Empty(t, results, "absent catalog skill dir should produce no doctor results")
 }
 
@@ -110,7 +140,7 @@ func TestCheckCLISkills_NoBinaryEntrySkipped(t *testing.T) {
 	root := t.TempDir()
 	require.NoError(t, os.MkdirAll(filepath.Join(root, ".agent-layer", "skills", "dispatch-agent"), 0o750))
 	cfg := &config.ProjectConfig{Root: root}
-	results := CheckCLISkills(cfg)
+	results := CheckCLISkills(context.Background(), cfg)
 	assert.Empty(t, results, "catalog entries without a binary contract are skipped")
 }
 
@@ -133,7 +163,7 @@ func TestCheckCLISkills_BinaryFoundEmitsOK(t *testing.T) {
 	root := t.TempDir()
 	require.NoError(t, os.MkdirAll(filepath.Join(root, ".agent-layer", "skills", "tavily-web"), 0o750))
 	cfg := &config.ProjectConfig{Root: root}
-	results := CheckCLISkills(cfg)
+	results := CheckCLISkills(context.Background(), cfg)
 	require.Len(t, results, 1)
 	assert.Equal(t, StatusOK, results[0].Status)
 	assert.Contains(t, results[0].Message, "tvly")
@@ -155,7 +185,7 @@ func TestCheckCLISkills_BinaryMissingEmitsFail(t *testing.T) {
 	root := t.TempDir()
 	require.NoError(t, os.MkdirAll(filepath.Join(root, ".agent-layer", "skills", "tavily-web"), 0o750))
 	cfg := &config.ProjectConfig{Root: root}
-	results := CheckCLISkills(cfg)
+	results := CheckCLISkills(context.Background(), cfg)
 	require.Len(t, results, 1)
 	assert.Equal(t, StatusFail, results[0].Status)
 	assert.Contains(t, results[0].Message, "tvly")
@@ -175,6 +205,6 @@ func TestCheckCLISkills_PathPointsAtFileEmitsNoResult(t *testing.T) {
 	require.NoError(t, os.WriteFile(skillFile, []byte("x"), 0o600))
 
 	cfg := &config.ProjectConfig{Root: root}
-	results := CheckCLISkills(cfg)
+	results := CheckCLISkills(context.Background(), cfg)
 	assert.Empty(t, results, "a file (not a directory) at the catalog skill path is treated as absent")
 }

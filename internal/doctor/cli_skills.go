@@ -1,6 +1,7 @@
 package doctor
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -24,7 +25,8 @@ var loadCLISkillCatalogFunc = templates.LoadCLISkillCatalog
 // Remote entries inspect stable local config/lock/tree evidence and report
 // ownership conflicts. Pending recovery is reported with sync guidance, never
 // performed by doctor. Embedded entries use their real local tier. No fetches occur.
-func CheckCLISkills(cfg *config.ProjectConfig) []Result {
+// Cancelling ctx stops a wait for the project lock; doctor reports the cancellation.
+func CheckCLISkills(ctx context.Context, cfg *config.ProjectConfig) []Result {
 	if cfg == nil {
 		return nil
 	}
@@ -43,7 +45,11 @@ func CheckCLISkills(cfg *config.ProjectConfig) []Result {
 	for _, entry := range entries {
 		installed := false
 		if entry.Repository != "" {
-			members, err := skillimport.InspectCatalogState(cfg.Root, entry)
+			members, err := skillimport.InspectCatalogState(ctx, cfg.Root, entry)
+			// Drop the interrupted check's result; doctor reports the cancellation.
+			if ctx.Err() != nil {
+				return results
+			}
 			if err != nil {
 				recommendation := "Preserve source tiers and repair the reported local evidence; doctor does not fetch or recover."
 				if errors.Is(err, skillimport.ErrPendingRecovery) {

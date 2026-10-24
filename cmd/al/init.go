@@ -102,7 +102,7 @@ func newInitCmd() *cobra.Command {
 			if noWizard || !isTerminal() {
 				return nil
 			}
-			run, err := promptYesNo(cmd.InOrStdin(), cmd.OutOrStdout(), messages.InitRunWizardPrompt, true)
+			run, err := promptYesNo(newCommandPromptReader(cmd), cmd.OutOrStdout(), messages.InitRunWizardPrompt, true)
 			if err != nil {
 				return err
 			}

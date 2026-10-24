@@ -113,7 +113,7 @@ func newDoctorCmd() *cobra.Command {
 				}
 
 				// 7. Check CLI Skills (catalog-installed skills' binaries on PATH).
-				report(doctor.CheckCLISkills(cfg)...)
+				report(doctor.CheckCLISkills(ctx, cfg)...)
 			}
 			for modelResults != nil || updateResults != nil {
 				select {
