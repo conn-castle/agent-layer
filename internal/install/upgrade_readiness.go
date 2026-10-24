@@ -650,16 +650,30 @@ func boolPtr(value bool) *bool {
 	return &value
 }
 
+// appendDisabledArtifactDetail reports absPath only when it is a regular file
+// reached through real in-repo directories. Sync writes these artifacts as
+// regular files and never cleans through a link: depending on the path it
+// refuses, skips, or removes only the link. Linked or special entries are
+// therefore never read, which also keeps readiness from blocking on a FIFO.
 func appendDisabledArtifactDetail(inst *installer, details *[]string, agent string, absPath string, evidence func([]byte) (bool, error)) error {
-	info, err := inst.sys.Stat(absPath)
+	rel, err := filepath.Rel(inst.root, absPath)
 	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
+		return readinessErr("resolve", absPath, err)
+	}
+	current := inst.root
+	parts := strings.Split(rel, string(filepath.Separator))
+	for i, part := range parts {
+		current = filepath.Join(current, part)
+		info, err := inst.sys.Lstat(current)
+		if err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				return nil
+			}
+			return readinessErr("lstat", current, err)
+		}
+		if leaf := i == len(parts)-1; (leaf && !info.Mode().IsRegular()) || (!leaf && !info.IsDir()) {
 			return nil
 		}
-		return readinessErr("stat", absPath, err)
-	}
-	if info.IsDir() {
-		return nil
 	}
 	if evidence != nil {
 		data, readErr := inst.sys.ReadFile(absPath)

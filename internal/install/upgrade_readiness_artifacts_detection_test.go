@@ -61,11 +61,11 @@ func TestDetectDisabledAgentArtifacts_IgnoresDirectories(t *testing.T) {
 	}
 }
 
-func TestDetectDisabledAgentArtifacts_ClaudeStatError(t *testing.T) {
+func TestDetectDisabledAgentArtifacts_ClaudeLstatError(t *testing.T) {
 	root := t.TempDir()
 	claudePath := filepath.Join(root, ".mcp.json")
 	sys := newFaultSystem(RealSystem{})
-	sys.statErrs[normalizePath(claudePath)] = errors.New("stat boom")
+	sys.lstatErrs[normalizePath(claudePath)] = errors.New("stat boom")
 	inst := &installer{root: root, sys: sys}
 
 	// Both Claude and ClaudeVSCode must be disabled for the claude rule to fire.
@@ -76,11 +76,14 @@ func TestDetectDisabledAgentArtifacts_ClaudeStatError(t *testing.T) {
 	}
 }
 
-func TestDetectDisabledAgentArtifacts_ClaudeSettingsStatError(t *testing.T) {
+func TestDetectDisabledAgentArtifacts_ClaudeSettingsLstatError(t *testing.T) {
 	root := t.TempDir()
 	claudeSettingsPath := filepath.Join(root, ".claude", "settings.json")
+	if err := os.MkdirAll(filepath.Dir(claudeSettingsPath), 0o700); err != nil {
+		t.Fatal(err)
+	}
 	sys := newFaultSystem(RealSystem{})
-	sys.statErrs[normalizePath(claudeSettingsPath)] = errors.New("stat boom")
+	sys.lstatErrs[normalizePath(claudeSettingsPath)] = errors.New("stat boom")
 	inst := &installer{root: root, sys: sys}
 
 	// Both Claude and ClaudeVSCode must be disabled for the claude rule to fire.
@@ -123,11 +126,14 @@ func TestDetectDisabledAgentArtifacts_FlagsClaudeSettings(t *testing.T) {
 	}
 }
 
-func TestDetectDisabledAgentArtifacts_CodexStatError(t *testing.T) {
+func TestDetectDisabledAgentArtifacts_CodexLstatError(t *testing.T) {
 	root := t.TempDir()
 	codexRulesPath := filepath.Join(root, ".codex", "rules", "default.rules")
+	if err := os.MkdirAll(filepath.Dir(codexRulesPath), 0o700); err != nil {
+		t.Fatal(err)
+	}
 	sys := newFaultSystem(RealSystem{})
-	sys.statErrs[normalizePath(codexRulesPath)] = errors.New("stat boom")
+	sys.lstatErrs[normalizePath(codexRulesPath)] = errors.New("stat boom")
 	inst := &installer{root: root, sys: sys}
 
 	cfg := config.Config{Agents: config.AgentsConfig{
