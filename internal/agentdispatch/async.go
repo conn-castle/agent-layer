@@ -53,7 +53,7 @@ func Start(opts StartOptions) error {
 	if strings.TrimSpace(opts.Agent) == "" || strings.TrimSpace(opts.Agent) == AgentRandom {
 		return exitError(ExitUsage, "dispatch start requires an explicit --agent")
 	}
-	promptText, err := resolvePromptSource(opts.Prompt, opts.PromptFile)
+	promptText, err := resolvePromptSource(opts.Context, opts.Prompt, opts.PromptFile)
 	if err != nil {
 		return err
 	}
@@ -146,7 +146,7 @@ func prepareStart(opts runOptions, requested targetMeta, stderr io.Writer, depth
 
 // Continue starts the next invocation in an existing terminal conversation.
 func Continue(opts ContinueOptions) error {
-	promptText, err := resolvePromptSource(opts.Prompt, opts.PromptFile)
+	promptText, err := resolvePromptSource(opts.Context, opts.Prompt, opts.PromptFile)
 	if err != nil {
 		return err
 	}
@@ -221,7 +221,7 @@ func Continue(opts ContinueOptions) error {
 	return publishInvocation(opts.Context, opts.Root, run, session, request, writerOrDiscard(opts.Stdout), opts.launchWorker)
 }
 
-func resolvePromptSource(prompt string, promptFile string) (string, error) {
+func resolvePromptSource(ctx context.Context, prompt string, promptFile string) (string, error) {
 	trimmedPrompt := strings.TrimSpace(prompt)
 	trimmedPromptFile := strings.TrimSpace(promptFile)
 	hasText := trimmedPrompt != ""
@@ -235,12 +235,12 @@ func resolvePromptSource(prompt string, promptFile string) (string, error) {
 		}
 		return prompt, nil
 	}
-	data, err := os.ReadFile(fsutil.ResolvePaddedPath(promptFile)) // #nosec G304 -- caller explicitly selected the prompt file.
-	if err != nil {
-		return "", wrapExitError(ExitUsage, "read dispatch prompt file", err)
+	if ctx == nil {
+		ctx = context.Background()
 	}
-	if len(data) > MaxStdinPromptBytes {
-		return "", exitError(ExitUsage, fmt.Sprintf("dispatch prompt is %d bytes; the maximum is %d bytes", len(data), MaxStdinPromptBytes))
+	data, err := readPromptFile(ctx, fsutil.ResolvePaddedPath(promptFile))
+	if err != nil {
+		return "", err
 	}
 	if strings.TrimSpace(string(data)) == "" {
 		return "", exitError(ExitUsage, "dispatch prompt file is empty or whitespace")

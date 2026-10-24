@@ -122,7 +122,7 @@ func newDispatchStartCmd() *cobra.Command {
 				return err
 			}
 			opts := agentdispatch.StartOptions{
-				Root: root, WorkDir: workingDir, Agent: agent, Model: model,
+				Context: cmd.Context(), Root: root, WorkDir: workingDir, Agent: agent, Model: model,
 				ReasoningEffort: effort, Role: role, Skill: skill, Prompt: prompt, PromptFile: promptFile,
 				Stdout: cmd.OutOrStdout(), Stderr: cmd.ErrOrStderr(), Env: os.Environ(),
 			}
@@ -174,7 +174,7 @@ func newDispatchContinueCmd() *cobra.Command {
 				return err
 			}
 			return dispatchCommandError(cmd, agentdispatch.Continue(agentdispatch.ContinueOptions{
-				Root: root, WorkDir: workingDir, Handle: args[0], Prompt: prompt,
+				Context: cmd.Context(), Root: root, WorkDir: workingDir, Handle: args[0], Prompt: prompt,
 				PromptFile: promptFile, Stdout: cmd.OutOrStdout(), Stderr: cmd.ErrOrStderr(), Env: os.Environ(),
 			}))
 		},
