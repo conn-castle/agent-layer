@@ -72,7 +72,9 @@ const (
 	EnvfileUnterminatedQuotedValue = "unterminated quoted value"
 	EnvfileInvalidQuotedSuffix     = "invalid trailing characters after quoted value"
 
-	// Filesystem write errors.
+	// Filesystem errors.
+	FsutilNotRegularFile            = "not a regular file"
+	FsutilRequireRegularFileFmt     = "%s: %w; replace it with a regular file"
 	FsutilCheckExistingFileFmt      = "check existing file %s: %w"
 	FsutilReadExistingFileFmt       = "read existing file %s: %w"
 	FsutilCreateTempFileFmt         = "create temp file for %s: %w"

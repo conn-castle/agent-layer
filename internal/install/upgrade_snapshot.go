@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/conn-castle/agent-layer/internal/fsutil"
 	"github.com/conn-castle/agent-layer/internal/launchers"
 	"github.com/conn-castle/agent-layer/internal/messages"
 	"github.com/conn-castle/agent-layer/internal/templates"
@@ -176,6 +177,13 @@ func writeUpgradeSnapshotFile(path string, snapshot upgradeSnapshot, sys System)
 }
 
 func readUpgradeSnapshot(path string, sys System) (upgradeSnapshot, error) {
+	info, err := sys.Stat(path)
+	if err != nil {
+		return upgradeSnapshot{}, fmt.Errorf(messages.InstallFailedReadFmt, path, err)
+	}
+	if err := fsutil.RequireRegularFile(info, path); err != nil {
+		return upgradeSnapshot{}, err
+	}
 	data, err := sys.ReadFile(path)
 	if err != nil {
 		return upgradeSnapshot{}, fmt.Errorf(messages.InstallFailedReadFmt, path, err)

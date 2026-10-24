@@ -117,7 +117,7 @@ func codexTitleWithThreadID(value any) ([]string, error) {
 }
 
 func readExistingCodexConfig(sys System, path string) (string, error) {
-	data, err := sys.ReadFile(path)
+	data, err := readRegularFile(sys, path)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return "", nil

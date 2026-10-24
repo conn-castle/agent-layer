@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/conn-castle/agent-layer/internal/envfile"
+	"github.com/conn-castle/agent-layer/internal/fsutil"
 	"github.com/conn-castle/agent-layer/internal/messages"
 	"github.com/conn-castle/agent-layer/internal/skilltree"
 )
@@ -226,6 +227,13 @@ func LoadCommandsAllowFS(fsys fs.FS, root string, path string) ([]string, error)
 func readFileFS(fsys fs.FS, root string, path string) ([]byte, error) {
 	fsPath, err := fsPathFromRoot(root, path)
 	if err != nil {
+		return nil, err
+	}
+	info, err := fs.Stat(fsys, fsPath)
+	if err != nil {
+		return nil, err
+	}
+	if err := fsutil.RequireRegularFile(info, path); err != nil {
 		return nil, err
 	}
 	return fs.ReadFile(fsys, fsPath)

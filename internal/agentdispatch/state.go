@@ -19,6 +19,7 @@ import (
 
 	"golang.org/x/sys/unix"
 
+	"github.com/conn-castle/agent-layer/internal/fsutil"
 	"github.com/conn-castle/agent-layer/internal/messages"
 )
 
@@ -1108,7 +1109,7 @@ func publishBytes(path string, data []byte, publish func(oldpath, newpath string
 }
 
 func readJSON(path string, target any) error {
-	file, err := os.Open(path) // #nosec G304 -- caller passes validated Agent Layer paths.
+	file, err := fsutil.OpenRegularFile(path)
 	if err != nil {
 		return err
 	}

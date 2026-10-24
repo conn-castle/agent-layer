@@ -53,7 +53,7 @@ func writeVSCodeSettingsWithBuilder(sys System, root string, project *config.Pro
 	}
 
 	path := filepath.Join(vscodeDir, "settings.json")
-	existing, err := sys.ReadFile(path)
+	existing, err := readRegularFile(sys, path)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf(messages.SyncReadFailedFmt, path, err)
 	}

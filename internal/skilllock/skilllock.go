@@ -148,7 +148,7 @@ func New() *File {
 func Load(path string) (*File, error) { return load(path, false) }
 
 func load(path string, instructions bool) (*File, error) {
-	data, err := os.ReadFile(path) // #nosec G304 -- path is the resolved repository import lock, not user input.
+	data, err := fsutil.ReadRegularFile(path)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return nil, fmt.Errorf("%w: %s", ErrMissing, path)
