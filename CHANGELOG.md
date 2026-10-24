@@ -5,6 +5,7 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 - Skill imports preserve native Git ref names, resolve omitted refs as the default branch even when names collide with tags or resemble object IDs, and retain Unicode whitespace through import, push, and lock validation (#467, #468, #473, #474).
+- `al doctor` version checks stop the descendants they launch, including children that keep output open after the version command exits. The first interrupt cancels the running check, skips later client checks, and returns without starting MCP warning discovery (#448, #453).
 
 ## v1.1.0 - 2026-10-22
 

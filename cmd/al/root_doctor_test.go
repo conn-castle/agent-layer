@@ -1010,3 +1010,57 @@ func TestDoctorPrintsCompletedChecksWhileModelsAndUpdatesArePending(t *testing.T
 		waitFor("completed grok")
 	})
 }
+
+func TestDoctorInterruptStopsVersionCheckAndSkipsLaterWork(t *testing.T) {
+	root := t.TempDir()
+	writeDoctorTestRepo(t, root)
+	stubUpdateCheck(t, update.CheckResult{Current: "1.0.0", Latest: "1.0.0"}, nil)
+	origModels, origMCP := checkModels, checkMCPServers
+	t.Cleanup(func() { checkModels, checkMCPServers = origModels, origMCP })
+	checkModels = func(*config.ProjectConfig, agentoptions.DiscoveryRequest, func(doctor.Result)) []doctor.Result {
+		return nil
+	}
+	checkMCPServers = func(context.Context, *config.ProjectConfig, warnings.Connector, warnings.MCPDiscoveryStatusFunc) ([]warnings.Warning, warnings.MCPSummary, error) {
+		t.Error("MCP discovery started after cancellation")
+		return nil, warnings.MCPSummary{}, nil
+	}
+	// agy is checked first and hangs; grok would run next if cancellation were ignored.
+	binDir := t.TempDir()
+	started, later := filepath.Join(binDir, "agy-started"), filepath.Join(binDir, "grok-started")
+	for name, script := range map[string]string{
+		"agy":  "#!/bin/sh\n: > \"" + started + "\"\nexec /bin/sleep 30\n",
+		"grok": "#!/bin/sh\n: > \"" + later + "\"\necho grok 1.0.0\n",
+	} {
+		if err := os.WriteFile(filepath.Join(binDir, name), []byte(script), 0o700); err != nil { // #nosec G306 -- test writes an executable shell stub (PATH-shadowed) for doctor subprocess checks.
+			t.Fatal(err)
+		}
+	}
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func() {
+		for ctx.Err() == nil {
+			if _, err := os.Stat(started); err == nil {
+				cancel()
+				return
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+	}()
+	testutil.WithWorkingDir(t, root, func() {
+		cmd := newDoctorCmd()
+		cmd.SetOut(io.Discard)
+		cmd.SetContext(ctx)
+		startedAt := time.Now()
+		if err := cmd.RunE(cmd, nil); !errors.Is(err, context.Canceled) {
+			t.Fatalf("doctor error = %v, want context.Canceled", err)
+		}
+		if elapsed := time.Since(startedAt); elapsed > 4*time.Second {
+			t.Fatalf("doctor took %s to return after interrupt", elapsed)
+		}
+	})
+	if _, err := os.Stat(later); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("grok version check ran after cancellation: %v", err)
+	}
+}
