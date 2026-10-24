@@ -2,11 +2,11 @@ package sync
 
 import (
 	"bytes"
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 
+	"github.com/conn-castle/agent-layer/internal/chime"
 	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/messages"
 )
@@ -15,25 +15,6 @@ const grokChimeHookFileName = "agent-layer-chime.json"
 
 func grokChimeHookPath(root string) string {
 	return filepath.Join(root, ".grok", "hooks", grokChimeHookFileName)
-}
-
-func grokChimeHookContents() []byte {
-	return fmt.Appendf(nil, `{
-  "hooks": {
-    "Stop": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": %q,
-            "timeout": %d
-          }
-        ]
-      }
-    ]
-  }
-}
-`, agentLayerGrokChimeCommand, agentLayerChimeTimeout)
 }
 
 func writeGrokChimeHook(sys System, root string, project *config.ProjectConfig) error {
@@ -65,11 +46,11 @@ func writeGrokChimeHook(sys System, root string, project *config.ProjectConfig) 
 		if readErr != nil {
 			return fmt.Errorf(messages.SyncReadFailedFmt, path, readErr)
 		}
-		if grokChimeHookIsManaged(existing) {
-			if bytes.Equal(existing, grokChimeHookContents()) {
+		if chime.IsGrokHookDocument(existing) {
+			if bytes.Equal(existing, chime.GrokHookDocument()) {
 				return nil
 			}
-			if err := sys.WriteFileAtomic(path, grokChimeHookContents(), 0o600); err != nil {
+			if err := sys.WriteFileAtomic(path, chime.GrokHookDocument(), 0o600); err != nil {
 				return fmt.Errorf(messages.SyncWriteFileFailedFmt, path, err)
 			}
 			return nil
@@ -82,7 +63,7 @@ func writeGrokChimeHook(sys System, root string, project *config.ProjectConfig) 
 	if err := sys.MkdirAll(dir, 0o755); err != nil {
 		return fmt.Errorf(messages.SyncCreateDirFailedFmt, dir, err)
 	}
-	if err := sys.WriteFileAtomic(path, grokChimeHookContents(), 0o600); err != nil {
+	if err := sys.WriteFileAtomic(path, chime.GrokHookDocument(), 0o600); err != nil {
 		return fmt.Errorf(messages.SyncWriteFileFailedFmt, path, err)
 	}
 	return nil
@@ -101,7 +82,7 @@ func cleanGrokChimeHook(sys System, root string) error {
 	if err != nil {
 		return fmt.Errorf(messages.SyncReadFailedFmt, path, err)
 	}
-	if !grokChimeHookIsManaged(data) {
+	if !chime.IsGrokHookDocument(data) {
 		return fmt.Errorf(messages.SyncGrokChimeHookConflictFmt, path)
 	}
 	if err := target.checkWritable(); err != nil {
@@ -125,17 +106,6 @@ func cleanGrokChimeHook(sys System, root string) error {
 		return fmt.Errorf(messages.SyncRemoveFailedFmt, dir, err)
 	}
 	return nil
-}
-
-// grokChimeHookIsManaged reports whether data is the complete managed hook
-// document, ignoring only JSON whitespace. Compacting preserves key order and
-// duplicate keys, so lookalike user hooks cannot decode into the managed shape.
-func grokChimeHookIsManaged(data []byte) bool {
-	var existing, managed bytes.Buffer
-	if json.Compact(&existing, data) != nil || json.Compact(&managed, grokChimeHookContents()) != nil {
-		return false
-	}
-	return bytes.Equal(existing.Bytes(), managed.Bytes())
 }
 
 func ensureGrokChimePathContained(sys System, root string, target string) error {
