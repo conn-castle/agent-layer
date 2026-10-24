@@ -33,12 +33,19 @@ func MakeFIFO(t *testing.T, path string, linked bool) string {
 // On timeout it connects a writer, then closes it to release the reader with EOF.
 func BoundedFIFO(t *testing.T, fifo string, read func() error) error {
 	t.Helper()
+	return BoundedFIFOWithin(t, fifo, 2*time.Second, read)
+}
+
+// BoundedFIFOWithin is BoundedFIFO with a caller-chosen budget, for reads that
+// do substantial other work, such as running a script, before reaching the FIFO.
+func BoundedFIFOWithin(t *testing.T, fifo string, budget time.Duration, read func() error) error {
+	t.Helper()
 	done := make(chan error, 1)
 	go func() { done <- read() }()
 	select {
 	case err := <-done:
 		return err
-	case <-time.After(2 * time.Second):
+	case <-time.After(budget):
 	}
 	deadline := time.Now().Add(2 * time.Second)
 	for time.Now().Before(deadline) {
@@ -57,6 +64,6 @@ func BoundedFIFO(t *testing.T, fifo string, read func() error) error {
 	case <-time.After(2 * time.Second):
 		t.Errorf("FIFO reader %s did not exit after release", fifo)
 	}
-	t.Fatalf("read of FIFO %s blocked for more than 2s", fifo)
+	t.Fatalf("read of FIFO %s blocked for more than %s", fifo, budget)
 	return nil
 }

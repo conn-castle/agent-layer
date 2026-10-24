@@ -18,6 +18,7 @@ All notable changes to this project will be documented in this file.
 - `al sync` treats `.grok/hooks/agent-layer-chime.json` as Agent Layer-owned only when it is the complete managed hook document, ignoring JSON whitespace. A user hook at that path that merely mentions the chime command or marker, adds handlers or metadata, or is malformed is now preserved with a conflict error instead of being overwritten when the chime is enabled or deleted when it is disabled (#449).
 - Upgrade readiness lists `.grok/hooks/agent-layer-chime.json` as a disabled-agent artifact only when it is the managed hook document that `al sync` would remove, instead of also listing user hooks that merely mention the chime command and marker (#495).
 - Agent Dispatch accepts provider output that encodes supplementary characters such as emoji as escaped JSON surrogate pairs, instead of failing the run and losing its final answer. A truncated answer never ends in half of such a character (#443).
+- The default Claude status line no longer hangs when an untracked symlink points to a FIFO. It still counts every untracked entry as changed, but adds lines only from regular files, so untracked links are no longer read, including links to files outside the project. Existing `.agent-layer/claude-statusline.sh` sources keep their contents; accept the updated default during interactive `al upgrade` review (#450).
 
 ## v1.1.0 - 2026-10-22
 
