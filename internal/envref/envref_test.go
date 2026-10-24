@@ -186,7 +186,7 @@ func TestRedactReplacesResolvedValuesWithPlaceholders(t *testing.T) {
 func TestRedactDoesNotRewriteInsertedPlaceholders(t *testing.T) {
 	t.Parallel()
 	placeholders := make(map[string]string)
-	for value, placeholder := range map[string]string{
+	for value, placeholder := range map[string]string{ // #nosec G101 -- intentionally fake credential for redaction regression.
 		"long-secret": "${AL_TOKEN}",
 		"%41L":        "${AL_SHORT}",
 	} {
