@@ -22,6 +22,28 @@ func backupPath(root, name string) string {
 	return filepath.Join(root, ".agent-layer", "state", "wizard-backups", name)
 }
 
+// validateBackupStorage inspects AL-owned backup storage without following its
+// directory links, so backup reads, writes, and deletions stay inside the
+// project. Missing directories are valid. The project root and its ancestors
+// may be links.
+func validateBackupStorage(root string) error {
+	path := root
+	for _, name := range []string{".agent-layer", "state", "wizard-backups"} {
+		path = filepath.Join(path, name)
+		info, err := os.Lstat(path)
+		if os.IsNotExist(err) {
+			return nil
+		}
+		if err != nil {
+			return fmt.Errorf("inspect wizard backup directory %s: %w", path, err)
+		}
+		if !info.IsDir() {
+			return fmt.Errorf("wizard backup directory %s must be a real directory", path)
+		}
+	}
+	return nil
+}
+
 func isBackupName(name string) bool {
 	for _, base := range []string{configBackupName, envBackupName} {
 		if name == base {
@@ -41,6 +63,9 @@ func isBackupName(name string) bool {
 // recovery files. Copying exclusively works across filesystems; the source is
 // removed only after the destination has been written, synced, and closed.
 func MigrateBackups(root string) error {
+	if err := validateBackupStorage(root); err != nil {
+		return err
+	}
 	for _, name := range []string{configBackupName, envBackupName} {
 		source := filepath.Join(root, ".agent-layer", name)
 		info, err := os.Lstat(source)

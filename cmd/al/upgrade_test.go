@@ -1183,7 +1183,7 @@ func TestUpgradeCmd_BackupMigrationFailure(t *testing.T) {
 		cmd.SetErr(&bytes.Buffer{})
 		cmd.SetIn(bytes.NewBufferString(""))
 		err := cmd.Execute()
-		if err == nil || !strings.Contains(err.Error(), "create wizard backup directory") {
+		if err == nil || !strings.Contains(err.Error(), "must be a real directory") {
 			t.Fatalf("expected backup migration failure, got %v", err)
 		}
 		if strings.Contains(stdout.String(), messages.UpgradeSuccessful) {
