@@ -18,7 +18,7 @@ import (
 	"github.com/conn-castle/agent-layer/internal/clients/muse"
 	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/messages"
-	"github.com/conn-castle/agent-layer/internal/probe"
+	"github.com/conn-castle/agent-layer/internal/ownedprocess"
 	"github.com/conn-castle/agent-layer/internal/projection"
 	"github.com/conn-castle/agent-layer/internal/skillvalidator"
 	"github.com/conn-castle/agent-layer/internal/version"
@@ -61,12 +61,12 @@ func commandOutputWithTimeout(ctx context.Context, timeout time.Duration, name s
 	defer cancel()
 
 	// #nosec G204 -- command name is resolved by doctor checks from a fixed executable lookup.
-	//nolint:noctx // probe.Run owns cancellation while retaining the leader until cleanup.
+	//nolint:noctx // ownedprocess.Run owns cancellation while retaining the leader until cleanup.
 	cmd := exec.Command(name, args...)
 	var output bytes.Buffer
 	cmd.Stdout = &output
 	cmd.Stderr = &output
-	err := probe.Run(runCtx, cmd)
+	err := ownedprocess.Run(runCtx, cmd)
 	if ctx.Err() == nil && errors.Is(err, context.DeadlineExceeded) {
 		return output.Bytes(), fmt.Errorf("command timed out after %s: %w", timeout, context.DeadlineExceeded)
 	}

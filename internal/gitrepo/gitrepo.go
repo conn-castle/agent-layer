@@ -16,10 +16,13 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"os/signal"
 	"regexp"
 	"slices"
 	"strings"
+	"syscall"
 
+	"github.com/conn-castle/agent-layer/internal/ownedprocess"
 	"github.com/conn-castle/agent-layer/internal/skilllock"
 )
 
@@ -97,7 +100,8 @@ var gitPathspecVars = []string{
 
 // nonInteractiveEnv disables every interactive credential and SSH prompt so a
 // missing credential fails fast with an actionable error instead of blocking on
-// a terminal that an automated run does not have. It removes every inherited
+// a terminal that an automated run does not have. The execution boundary also
+// runs Git without a controlling terminal. It removes every inherited
 // repository-selection variable and replaces inherited protocol policy so each
 // command operates only on its caller-owned directory and approved transports.
 func nonInteractiveEnv(base []string) []string {
@@ -251,7 +255,13 @@ func (r *Runner) runAllowExitInput(ctx context.Context, dir string, input []byte
 	effectiveArgs := make([]string, 0, len(args)+4)
 	effectiveArgs = append(effectiveArgs, "-c", "core.hooksPath="+os.DevNull, "-c", "init.templateDir=")
 	effectiveArgs = append(effectiveArgs, args...)
-	cmd := exec.CommandContext(ctx, r.path, effectiveArgs...) // #nosec G204 -- args are built from validated configuration and resolved object ids, never a shell string.
+	//nolint:noctx // ownedprocess.Run owns cancellation while retaining the leader until cleanup.
+	cmd := exec.Command(r.path, effectiveArgs...) // #nosec G204 -- args are built from validated configuration and resolved object ids, never a shell string.
+	// A new session prevents SSH prompts from blocking on a controlling terminal.
+	// Helpers left in Git's group, such as a credential-cache daemon, stop with it.
+	// Only signals this process can catch reach the session; a SIGKILL of this
+	// process leaves Git to finish on its own.
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 	cmd.Dir = dir
 	cmd.Env = overlayEnv(r.env, extraEnv)
 	if input != nil {
@@ -261,19 +271,61 @@ func (r *Runner) runAllowExitInput(ctx context.Context, dir string, input []byte
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 
-	err := cmd.Run()
+	err := runOwnedHandlingHangup(ctx, cmd)
 	if err == nil {
 		return stdout.Bytes(), 0, nil
 	}
-	var exitErr *exec.ExitError
-	if errors.As(err, &exitErr) {
+	// Only a plain exit is eligible: cancellation or failed stop proof is a failure.
+	if exitErr, ok := err.(*exec.ExitError); ok {
 		code := exitErr.ExitCode()
 		if slices.Contains(allowedExitCodes, code) {
 			return stdout.Bytes(), code, nil
 		}
 		return stdout.Bytes(), code, r.commandError(args, stderr.String(), err)
 	}
+	// A descendant that escaped the group with the pipes open turns an exit 0
+	// into ErrWaitDelay, which fails here. A nonzero exit stays a plain
+	// ExitError, so allowed-exit callers must not trust stdout for those codes.
 	return nil, -1, r.commandError(args, stderr.String(), err)
+}
+
+// runOwnedHandlingHangup runs cmd as an owned process. Git's session no longer
+// receives the terminal's HUP or QUIT, so either one first stops and joins Git,
+// then is raised again so this process takes its default action as before.
+func runOwnedHandlingHangup(ctx context.Context, cmd *exec.Cmd) error {
+	signals := []os.Signal{syscall.SIGQUIT}
+	if !signal.Ignored(syscall.SIGHUP) {
+		signals = append(signals, syscall.SIGHUP)
+	}
+	caught := make(chan os.Signal, 1)
+	signal.Notify(caught, signals...)
+	runCtx, cancel := context.WithCancel(ctx)
+	received := make(chan os.Signal, 1)
+	watched := make(chan struct{})
+	go func() {
+		defer close(watched)
+		select {
+		case sig := <-caught:
+			received <- sig
+			cancel()
+		case <-runCtx.Done():
+		}
+	}()
+	err := ownedprocess.Run(runCtx, cmd)
+	cancel()
+	<-watched
+	signal.Stop(caught)
+	for _, pending := range []chan os.Signal{received, caught} {
+		select {
+		case sig := <-pending:
+			if raiseErr := syscall.Kill(os.Getpid(), sig.(syscall.Signal)); raiseErr != nil {
+				return errors.Join(err, raiseErr)
+			}
+			return err
+		default:
+		}
+	}
+	return err
 }
 
 // commandError builds a failure whose rendered form carries no resolved secret.
