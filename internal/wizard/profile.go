@@ -14,6 +14,7 @@ import (
 	"github.com/fatih/color"
 
 	"github.com/conn-castle/agent-layer/internal/config"
+	"github.com/conn-castle/agent-layer/internal/fsutil"
 	"github.com/conn-castle/agent-layer/internal/install"
 	"github.com/conn-castle/agent-layer/internal/messages"
 	"github.com/conn-castle/agent-layer/internal/skillmigration"
@@ -32,7 +33,7 @@ func RunProfile(root string, runSync syncer, pinVersion string, profilePath stri
 		return fmt.Errorf(messages.WizardProfilePathRequired)
 	}
 
-	profileBytes, err := os.ReadFile(profilePath) // #nosec G304 -- profilePath is an explicit wizard profile input intentionally read by this command.
+	profileBytes, err := fsutil.ReadRegularFile(profilePath)
 	if err != nil {
 		return fmt.Errorf(messages.WizardProfileReadFailedFmt, profilePath, err)
 	}
@@ -92,7 +93,7 @@ func writeProfileConfig(root, configPath, profilePath string, profileBytes []byt
 	var err error
 	var currentConfig []byte
 	if installed {
-		currentConfig, err = os.ReadFile(configPath) // #nosec G304 -- configPath is the caller-resolved .agent-layer/config.toml path used as the profile merge target.
+		currentConfig, err = fsutil.ReadRegularFile(configPath)
 		if err != nil {
 			return err
 		}
