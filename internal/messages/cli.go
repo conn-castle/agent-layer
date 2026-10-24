@@ -331,6 +331,8 @@ const (
 	ClientsVSCodeManagedBlockConflictFmt = "vscode preflight failed: managed settings block conflict in %s (%s); run `al sync` to repair `.vscode/settings.json`"
 
 	ClientsCodexHomeWarningFmt       = "Warning: CODEX_HOME is set to %s; expected %s\n"
+	ClientsCodexHomeEnsureFailedFmt  = "prepare repo-local CODEX_HOME %s: %w"
+	ClientsCodexHomeNotDirectoryFmt  = "repo-local CODEX_HOME %s exists but is not a directory; move it aside or set agents.codex.local_config_dir = false"
 	ClientsClaudeConfigDirWarningFmt = "Warning: CLAUDE_CONFIG_DIR is set to %s; expected %s\n"
 	ClientsGrokHomeWarningFmt        = "Warning: overriding inherited GROK_HOME=%s with repo-local %s\n"
 )

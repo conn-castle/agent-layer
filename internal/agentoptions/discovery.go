@@ -225,6 +225,9 @@ func discoveryCommand(agent string, req DiscoveryRequest) (*exec.Cmd, error) {
 			env = claude.ConfigureEnvironment(project.Root, env, project.Config.Agents.Claude, nil)
 		case agentCodex:
 			env = codex.ConfigureEnvironment(project.Root, env, project.Config.Agents.Codex, nil)
+			if err := codex.EnsureSelectedHome(project.Root, env, project.Config.Agents.Codex); err != nil {
+				return nil, err
+			}
 		case agentGrok:
 			if err := grok.EnsureHome(project.Root); err != nil {
 				return nil, err

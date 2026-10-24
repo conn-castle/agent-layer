@@ -240,7 +240,8 @@ version checks also concurrent. Launch, sync, and dispatch start/continue do not
 query models. Model defaults are delegated to the harness, never hard-coded by
 Agent Layer. The Antigravity wizard and model checker use display names accepted
 by project configuration; dispatch override suggestions retain native CLI IDs. Discovery may create the normal repo-local `.agy` and `.grok-config` directories
-when absent; it does not sync configuration or create dispatch runs.
+when absent, and an empty owner-only `.codex` home when `agents.codex.local_config_dir = true`
+selects it; it does not sync configuration or create dispatch runs.
 
 **Reasoning effort**
 
