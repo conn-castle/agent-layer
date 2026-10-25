@@ -18,7 +18,7 @@ func writeTransitionFile(t *testing.T, root, rel string, raw []byte) {
 	t.Helper()
 	dest := filepath.Join(root, filepath.FromSlash(rel))
 	require.NoError(t, os.MkdirAll(filepath.Dir(dest), 0o750))
-	require.NoError(t, os.WriteFile(dest, raw, 0o600))
+	require.NoError(t, os.WriteFile(dest, raw, 0o600)) // #nosec G703 -- fixture paths are test-controlled and rooted in t.TempDir.
 }
 
 func TestTransitionRefusalsPreserveProject(t *testing.T) {
@@ -49,6 +49,9 @@ func TestTransitionRefusalsPreserveProject(t *testing.T) {
 		}, ErrUnfinishedTransition},
 		{"MCP alias", func(t *testing.T, r string) {
 			writeTransitionFile(t, r, upgradeMigrationConfigPath, []byte("[[mcp.servers]]\nclients=[\"gemini\"]\n"))
+		}, ErrUnfinishedTransition},
+		{"retired model without enabled", func(t *testing.T, r string) {
+			writeTransitionFile(t, r, upgradeMigrationConfigPath, []byte("[approvals]\nmode=\"all\"\n[agents.antigravity.agent_specific]\nmodel=\"Gemini 3.1 Pro (High)\"\n"))
 		}, ErrUnfinishedTransition},
 		{"journal v2", func(t *testing.T, r string) {
 			writeTransitionFile(t, r, ".agent-layer/instructions-imported/.staging/journal.json", []byte(`{"version":2}`))

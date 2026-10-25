@@ -700,21 +700,32 @@ enabled = true
 [agents.grok]
 enabled = true
 `
-	_, err := ParseConfig([]byte(data), "test")
-	if err == nil {
-		t.Fatal("expected error for legacy agents.antigravity.agent_specific.model")
-	}
-	if !strings.Contains(err.Error(), "agents.antigravity.agent_specific.model is not supported") {
-		t.Fatalf("expected Antigravity agent_specific model marker in error, got: %v", err)
-	}
-	if !errors.Is(err, ErrConfigValidation) {
-		t.Fatalf("legacy Antigravity model error should match ErrConfigValidation, got: %v", err)
-	}
-	if !errors.Is(err, ErrConfigNeedsUpgrade) {
-		t.Fatalf("legacy Antigravity model error should match ErrConfigNeedsUpgrade, got: %v", err)
-	}
-	if strings.Contains(err.Error(), messages.ConfigValidationGuidance) {
-		t.Fatalf("legacy Antigravity model error should not route to wizard guidance, got: %v", err)
+	for _, scenario := range []struct {
+		name string
+		data string
+	}{
+		{"all enabled fields present", data},
+		{"antigravity enabled omitted", strings.Replace(data, "[agents.antigravity]\nenabled = true", "[agents.antigravity]", 1)},
+		{"all enabled fields omitted", strings.ReplaceAll(data, "enabled = true", "")},
+	} {
+		t.Run(scenario.name, func(t *testing.T) {
+			_, err := ParseConfig([]byte(scenario.data), "test")
+			if err == nil {
+				t.Fatal("expected error for legacy agents.antigravity.agent_specific.model")
+			}
+			if !strings.Contains(err.Error(), "agents.antigravity.agent_specific.model is not supported") {
+				t.Fatalf("expected Antigravity agent_specific model marker in error, got: %v", err)
+			}
+			if !errors.Is(err, ErrConfigValidation) {
+				t.Fatalf("legacy Antigravity model error should match ErrConfigValidation, got: %v", err)
+			}
+			if !errors.Is(err, ErrConfigNeedsUpgrade) {
+				t.Fatalf("legacy Antigravity model error should match ErrConfigNeedsUpgrade, got: %v", err)
+			}
+			if strings.Contains(err.Error(), messages.ConfigValidationGuidance) {
+				t.Fatalf("legacy Antigravity model error should not route to wizard guidance, got: %v", err)
+			}
+		})
 	}
 }
 

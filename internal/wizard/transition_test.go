@@ -17,35 +17,42 @@ import (
 )
 
 func TestWizardAndProfileRefuseBeforeAnyMutationOrPrompt(t *testing.T) {
-	for _, kind := range []string{"wizard", "profile preview", "profile apply", "locked apply"} {
-		t.Run(kind, func(t *testing.T) {
-			root := t.TempDir()
-			require.NoError(t, install.Run(root, install.Options{System: install.RealSystem{}, PinVersion: "1.1.0"}))
-			skill := filepath.Join(root, ".agent-layer/skills/ship-pr")
-			require.NoError(t, os.MkdirAll(skill, 0o750))
-			require.NoError(t, os.WriteFile(filepath.Join(skill, "SKILL.md"), testutil.TransitionFixture(t, "ship-pr.md"), 0o600))
-			stage := filepath.Join(root, ".agent-layer/instructions-imported/.staging")
-			require.NoError(t, os.MkdirAll(stage, 0o750))
-			require.NoError(t, os.WriteFile(filepath.Join(stage, "journal.json"), []byte(`{"version":1,"committed":true}`), 0o600))
-			// Missing config proves the gate precedes ensureWizardConfig and profile install.
-			require.NoError(t, os.Remove(config.DefaultPaths(root).ConfigPath))
-			before := testutil.SnapshotEvidence(t, root)
-			runSync := func(context.Context, string) (*alsync.Result, error) {
-				t.Fatal("refusal reached sync")
-				return nil, nil
-			}
-			var err error
-			switch kind {
-			case "wizard":
-				err = RunWithWriter(t.Context(), root, &ScriptedUI{}, runSync, "1.1.0", io.Discard)
-			case "locked apply":
-				err = applyChanges(t.Context(), root, config.DefaultPaths(root).ConfigPath, filepath.Join(root, ".agent-layer/.env"), &Choices{}, runSync, io.Discard)
-			default:
-				err = RunProfile(t.Context(), root, runSync, "1.1.0", filepath.Join(root, "missing-profile.toml"), kind == "profile apply", io.Discard)
-			}
-			require.ErrorIs(t, err, install.ErrUnfinishedTransition)
-			require.Equal(t, before, testutil.SnapshotEvidence(t, root))
-		})
+	for _, scenario := range []string{"pristine skill", "retired model without enabled"} {
+		for _, kind := range []string{"wizard", "profile preview", "profile apply", "locked apply"} {
+			t.Run(scenario+"/"+kind, func(t *testing.T) {
+				root := t.TempDir()
+				require.NoError(t, install.Run(root, install.Options{System: install.RealSystem{}, PinVersion: "1.1.0"}))
+				if scenario == "pristine skill" {
+					skill := filepath.Join(root, ".agent-layer/skills/ship-pr")
+					require.NoError(t, os.MkdirAll(skill, 0o750))
+					require.NoError(t, os.WriteFile(filepath.Join(skill, "SKILL.md"), testutil.TransitionFixture(t, "ship-pr.md"), 0o600))
+					// Missing config proves the gate precedes ensureWizardConfig and profile install.
+					require.NoError(t, os.Remove(config.DefaultPaths(root).ConfigPath))
+				} else {
+					raw := []byte("[approvals]\nmode=\"all\"\n[agents.antigravity.agent_specific]\nmodel=\"Gemini 3.1 Pro (High)\"\n")
+					require.NoError(t, os.WriteFile(config.DefaultPaths(root).ConfigPath, raw, 0o600))
+				}
+				stage := filepath.Join(root, ".agent-layer/instructions-imported/.staging")
+				require.NoError(t, os.MkdirAll(stage, 0o750))
+				require.NoError(t, os.WriteFile(filepath.Join(stage, "journal.json"), []byte(`{"version":1,"committed":true}`), 0o600))
+				before := testutil.SnapshotEvidence(t, root)
+				runSync := func(context.Context, string) (*alsync.Result, error) {
+					t.Fatal("refusal reached sync")
+					return nil, nil
+				}
+				var err error
+				switch kind {
+				case "wizard":
+					err = RunWithWriter(t.Context(), root, &ScriptedUI{}, runSync, "1.1.0", io.Discard)
+				case "locked apply":
+					err = applyChanges(t.Context(), root, config.DefaultPaths(root).ConfigPath, filepath.Join(root, ".agent-layer/.env"), &Choices{}, runSync, io.Discard)
+				default:
+					err = RunProfile(t.Context(), root, runSync, "1.1.0", filepath.Join(root, "missing-profile.toml"), kind == "profile apply", io.Discard)
+				}
+				require.ErrorIs(t, err, install.ErrUnfinishedTransition)
+				require.Equal(t, before, testutil.SnapshotEvidence(t, root))
+			})
+		}
 	}
 }
 
