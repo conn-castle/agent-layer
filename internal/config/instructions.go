@@ -46,7 +46,9 @@ func ValidateInstructionSelector(selector string) error {
 	return nil
 }
 
-func validateInstructions(source string, cfg InstructionsConfig) error {
+// ValidateInstructions checks explicit instruction declarations without reading files
+// or validating unrelated configuration that repair tools may need to update.
+func ValidateInstructions(source string, cfg InstructionsConfig) error {
 	orders := map[int]bool{}
 	names := map[string]bool{}
 	check := func(selectors []string, order *int) error {
@@ -108,7 +110,7 @@ func LoadOrderedInstructionsFS(fsys fs.FS, root string, cfg InstructionsConfig) 
 	if err := ValidateInstructionRootsFS(fsys, root); err != nil {
 		return nil, err
 	}
-	if err := validateInstructions("instructions", cfg); err != nil {
+	if err := ValidateInstructions("instructions", cfg); err != nil {
 		return nil, err
 	}
 	paths := DefaultPaths(root)
@@ -266,7 +268,7 @@ func migrateInstructionOrder(raw string, names []string, cfg InstructionsConfig)
 	if err != nil {
 		return "", err
 	}
-	if err := validateInstructions("config.toml", parsed.Instructions); err != nil {
+	if err := ValidateInstructions("config.toml", parsed.Instructions); err != nil {
 		return "", err
 	}
 	return raw, nil

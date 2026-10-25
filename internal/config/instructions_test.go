@@ -24,7 +24,7 @@ order = 40
 `
 	cfg, err := ParseConfigLenient([]byte(raw), "test")
 	require.NoError(t, err)
-	require.NoError(t, validateInstructions("test", cfg.Instructions))
+	require.NoError(t, ValidateInstructions("test", cfg.Instructions))
 	for _, bad := range []string{
 		strings.Replace(raw, "order = 0\n", "", 1), strings.Replace(raw, "order = 10", "order = 0", 1),
 		strings.Replace(raw, "order = 40", "order = -1", 1), strings.Replace(raw, "order = 40", "order = [40]", 1),
@@ -34,7 +34,7 @@ order = 40
 	} {
 		cfg, err := ParseConfigLenient([]byte(bad), "test")
 		if err == nil {
-			err = validateInstructions("test", cfg.Instructions)
+			err = ValidateInstructions("test", cfg.Instructions)
 		}
 		require.Error(t, err, bad)
 	}

@@ -164,7 +164,7 @@ func CheckUpgradeSource(root string, sys System) error {
 	}
 	instructions := cfg.Instructions
 	if len(instructions.Local)+len(instructions.Imports) > 0 {
-		return nil
+		return config.ValidateInstructions(upgradeMigrationConfigPath, instructions)
 	}
 	return sys.WalkDir(filepath.Join(root, ".agent-layer", "instructions"), func(path string, entry fs.DirEntry, err error) error {
 		if errors.Is(err, os.ErrNotExist) {

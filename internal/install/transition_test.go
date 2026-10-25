@@ -87,7 +87,7 @@ func TestTransitionGateAcceptsCompletedAndUserManagedSources(t *testing.T) {
 				writeTransitionFile(t, root, ".agent-layer/instructions/"+name, []byte("Custom "+name))
 			}
 			configureLocalInstructions(t, root, "00_rules.md", "01_memory.md")
-			before := testutil.SnapshotEvidence(t, filepath.Join(root, ".agent-layer/skills/ship-pr"), filepath.Join(root, ".agent-layer/instructions"))
+			before := testutil.SnapshotEvidence(t, filepath.Join(root, ".agent-layer/skills/ship-pr"), filepath.Join(root, ".agent-layer/instructions"), filepath.Join(root, upgradeMigrationConfigPath))
 			require.NoError(t, CheckUpgradeSource(root, RealSystem{}))
 			_, err := BuildUpgradePlan(root, UpgradePlanOptions{System: RealSystem{}, TargetPinVersion: "1.1.0"})
 			require.NoError(t, err)
@@ -95,7 +95,7 @@ func TestTransitionGateAcceptsCompletedAndUserManagedSources(t *testing.T) {
 			finalPin, err := readCurrentPinVersion(root, RealSystem{})
 			require.NoError(t, err)
 			require.Equal(t, "1.1.0", finalPin)
-			require.Equal(t, before, testutil.SnapshotEvidence(t, filepath.Join(root, ".agent-layer/skills/ship-pr"), filepath.Join(root, ".agent-layer/instructions")))
+			require.Equal(t, before, testutil.SnapshotEvidence(t, filepath.Join(root, ".agent-layer/skills/ship-pr"), filepath.Join(root, ".agent-layer/instructions"), filepath.Join(root, upgradeMigrationConfigPath)))
 		})
 	}
 	root := t.TempDir()
@@ -115,6 +115,43 @@ func TestUpgradeInstructionPreflightPreservesUnorderedSources(t *testing.T) {
 	err = Run(root, Options{System: RealSystem{}, Overwrite: true, Prompter: autoApprovePrompter()})
 	require.EqualError(t, err, config.UnconfiguredLocalInstruction(filepath.Join(root, ".agent-layer/instructions/custom.md"), config.InstructionsConfig{}).Error())
 	require.Equal(t, before, testutil.SnapshotEvidence(t, root))
+}
+
+func TestUpgradeInstructionPreflightRejectsInvalidBlocksBeforeMutation(t *testing.T) {
+	const local = "[[instructions.local]]\nselectors = [\"custom.md\"]\n"
+	const imported = "[[instructions.imports]]\nrepository = \"local-repo\"\nselectors = [\"instructions/imported.md\"]\n"
+	for _, scenario := range []struct {
+		name   string
+		blocks string
+		want   string
+	}{
+		{"missing local order", local, "requires a nonnegative integer order"},
+		{"missing imported order", imported, "requires a nonnegative integer order"},
+		{"negative local order", local + "order = -1\n", "requires a nonnegative integer order"},
+		{"negative imported order", imported + "order = -1\n", "requires a nonnegative integer order"},
+		{"duplicate local orders", local + "order = 0\n[[instructions.local]]\nselectors = [\"other.md\"]\norder = 0\n", "duplicate instruction order 0"},
+		{"duplicate imported orders", imported + "order = 0\n[[instructions.imports]]\nrepository = \"local-repo\"\nselectors = [\"instructions/other.md\"]\norder = 0\n", "duplicate instruction order 0"},
+		{"duplicate orders across tiers", local + "order = 0\n" + imported + "order = 0\n", "duplicate instruction order 0"},
+		{"multiple selectors", "[[instructions.local]]\nselectors = [\"custom.md\", \"other.md\"]\norder = 0\n", "requires exactly one selector"},
+	} {
+		t.Run(scenario.name, func(t *testing.T) {
+			root := t.TempDir()
+			require.NoError(t, Run(root, Options{System: RealSystem{}, PinVersion: "1.0.0"}))
+			raw, err := os.ReadFile(filepath.Join(root, upgradeMigrationConfigPath)) // #nosec G304 -- test-owned configuration.
+			require.NoError(t, err)
+			writeTransitionFile(t, root, upgradeMigrationConfigPath, append(raw, []byte("\n"+scenario.blocks)...))
+			writeTransitionFile(t, root, ".agent-layer/instructions/custom.md", []byte("Project-owned instructions.\n"))
+			writeTransitionFile(t, root, ".agent-layer/skills-imported/.staging/pending.txt", []byte("Preserve recovery evidence.\n"))
+			before := testutil.SnapshotEvidence(t, root)
+
+			_, err = BuildUpgradePlan(root, UpgradePlanOptions{System: RealSystem{}, TargetPinVersion: "1.1.0"})
+			require.ErrorContains(t, err, scenario.want)
+			require.Equal(t, before, testutil.SnapshotEvidence(t, root))
+			err = Run(root, Options{System: RealSystem{}, Overwrite: true, Prompter: autoApprovePrompter(), PinVersion: "1.1.0"})
+			require.ErrorContains(t, err, scenario.want)
+			require.Equal(t, before, testutil.SnapshotEvidence(t, root))
+		})
+	}
 }
 
 func TestRetiredOperationRefusesEntirePlanBeforeMutation(t *testing.T) {
