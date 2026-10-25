@@ -155,6 +155,8 @@ When `agents.codex.local_config_dir` is absent or false, Agent Layer does not se
 
 When `agents.codex.local_config_dir = true`, `al codex`, Codex dispatch, and `al vscode` set `CODEX_HOME=<repo>/.codex`. `.codex/config.toml` is shared Codex state patched by `al sync`; known Agent Layer-managed entries are refreshed from `.agent-layer/config.toml`, including MCP servers and a current repo trust seed when that exact project entry is absent.
 
+In that mode, `al vscode` always uses the repo home. `al codex`, Codex dispatch, and model discovery pass an inherited relative `CODEX_HOME` to Codex as an absolute path resolved from the directory where `al` runs. Because `al` runs from any project subfolder, `.codex` selects `<repo>/.codex` unless that directory has its own `.codex`. An inherited `CODEX_HOME` that points anywhere else is kept, and `al codex` and Codex dispatch warn about the mismatch.
+
 If you launch VS Code without Agent Layer's repo-local launcher while `agents.codex.local_config_dir = true`, the Codex VS Code extension will not receive the repo-local `CODEX_HOME`. In that case, the extension continues to use repo-local instructions and skills, but it uses MCP servers from your global Codex config instead.
 
 Tradeoffs (global Codex home):
