@@ -110,7 +110,7 @@ func TestAdoptionCrashRecoveryKeepsOneCommittedGeneration(t *testing.T) {
 			if !errors.As(err, &exit) || exit.ExitCode() != 73 {
 				t.Fatalf("child: %v %s", err, out)
 			}
-			_, err = CatalogState(proj.root, developmentEntry(t))
+			_, err = CatalogState(context.Background(), proj.root, developmentEntry(t))
 			require.NoError(t, err)
 			tier := proj.paths.SkillsDir
 			if step == "committed" {

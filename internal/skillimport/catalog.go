@@ -62,8 +62,8 @@ func requireCatalogPolicy(st *state) error {
 // CatalogState recovers interrupted imports under the project lock before reading
 // local config, lock, and content for wizard edits. It never fetches. Missing
 // config is allowed for install previews; malformed lock evidence is fatal.
-func CatalogState(root string, entry templates.CLISkillCatalogEntry) ([]CatalogMember, error) {
-	return catalogState(context.Background(), root, entry, true)
+func CatalogState(ctx context.Context, root string, entry templates.CLISkillCatalogEntry) ([]CatalogMember, error) {
+	return catalogState(ctx, root, entry, true)
 }
 
 // ErrPendingRecovery prevents diagnostics from reading a transitional generation.
@@ -241,7 +241,7 @@ func catalogMember(st *state, repository, selector string) CatalogMember {
 // slots together. It is intentionally restricted to the migration's default
 // policy and declared catalog coordinates, not a collision bypass for ordinary Add.
 func (s *Service) InstallCatalog(ctx context.Context, selectors, approvedLegacy []string) (*Report, error) {
-	return s.withLockedReport(func(st *state, report *Report) error {
+	return s.withLockedReport(ctx, func(st *state, report *Report) error {
 		if err := requireCatalogPolicy(st); err != nil {
 			return err
 		}

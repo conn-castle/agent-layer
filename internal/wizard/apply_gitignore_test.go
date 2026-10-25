@@ -44,7 +44,7 @@ func TestRun_GitTrackingPromptDefaultsFromManagedGitignoreBlock(t *testing.T) {
 		require.NoError(t, os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(basicAgentConfig()), 0o600))
 		require.NoError(t, os.WriteFile(filepath.Join(configDir, ".env"), []byte(""), 0o600))
 
-		err := Run(root, &MockUI{}, func(string) (*alsync.Result, error) { return &alsync.Result{}, nil }, "")
+		err := Run(root, &MockUI{}, func(context.Context, string) (*alsync.Result, error) { return &alsync.Result{}, nil }, "")
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "unsupported inline comment")
 	})
@@ -120,7 +120,7 @@ func TestApplyChanges_GitTrackingUpdatesSourceBeforeSync(t *testing.T) {
 	choices.GitTrackingTouched = true
 
 	syncCalled := false
-	runSync := func(gotRoot string) (*alsync.Result, error) {
+	runSync := func(_ context.Context, gotRoot string) (*alsync.Result, error) {
 		syncCalled = true
 		block := readGitignoreBlock(t, gotRoot)
 		assert.Contains(t, block, "# /.agent-layer/\n")
@@ -186,7 +186,7 @@ func runWizardToGitTrackingPrompt(t *testing.T, gitignoreBlockOverride string) [
 		},
 	}
 
-	err := Run(root, ui, func(string) (*alsync.Result, error) { return &alsync.Result{}, nil }, "")
+	err := Run(root, ui, func(context.Context, string) (*alsync.Result, error) { return &alsync.Result{}, nil }, "")
 	require.NoError(t, err)
 	require.True(t, sawGitTrackingPrompt, "wizard flow must include the git tracking prompt")
 	return gitTrackingSelected

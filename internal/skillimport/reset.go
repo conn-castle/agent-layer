@@ -12,7 +12,7 @@ import (
 // with the current configured upstream tree. It does not reconcile any other
 // selector membership.
 func (s *Service) Reset(ctx context.Context, name string) (*Report, error) {
-	return s.withLockedReport(func(st *state, report *Report) error {
+	return s.withLockedReport(ctx, func(st *state, report *Report) error {
 		return s.resetLocked(ctx, st, name, report)
 	})
 }

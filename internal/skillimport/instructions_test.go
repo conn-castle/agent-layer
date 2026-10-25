@@ -1,6 +1,7 @@
 package skillimport
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -26,7 +27,7 @@ func TestInstructionsExactFileLifecycleAndNumericProjection(t *testing.T) {
 	require.NoError(t, os.MkdirAll(filepath.Join(proj.paths.InstructionsDir, "archive.md"), 0o750))
 	require.NoError(t, os.Symlink(t.TempDir(), filepath.Join(proj.paths.InstructionsDir, "assets")))
 	service := NewInstructions(proj.root)
-	require.ErrorContains(t, skillmigration.CheckVersion(proj.root, "0.23.1"), "explicitly ordered instructions")
+	require.ErrorContains(t, skillmigration.CheckVersion(context.Background(), proj.root, "0.23.1"), "explicitly ordered instructions")
 	order := 40
 	report, err := service.Add(t.Context(), AddOptions{Repository: repo.dir, Selectors: []string{"instructions/rules.md"}, Order: &order, WritePolicy: config.SkillWritePolicyDirect})
 	require.NoError(t, err)
@@ -161,5 +162,5 @@ func TestInstructionAdoptionRecoversBytesModeOrderAndGenuineBase(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, tree.Hash(), lock.Skills[0].TreeHash)
 	// The real custom repository must also refuse an older instruction reader.
-	require.ErrorContains(t, skillmigration.CheckVersion(proj.root, "0.16.0"), "pre-migration")
+	require.ErrorContains(t, skillmigration.CheckVersion(context.Background(), proj.root, "0.16.0"), "pre-migration")
 }

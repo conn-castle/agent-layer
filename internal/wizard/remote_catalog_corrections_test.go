@@ -26,14 +26,14 @@ func TestWizardPartialCatalogLifecycle(t *testing.T) {
 	require.NoError(t, skilltree.Materialize(tree, legacy))
 	initial, err := initializeChoices(&config.ProjectConfig{Root: root})
 	require.NoError(t, err)
-	preview, err := computeSkillsChangeSet(root, initial)
+	preview, err := computeSkillsChangeSet(context.Background(), root, initial)
 	require.NoError(t, err)
 	require.Equal(t, []string{entry.Selectors[1]}, preview.importSelectors)
 	require.Contains(t, buildSkillsPreview(preview), "older defaults")
 	require.Contains(t, buildSkillsPreview(preview), "Missing bundle member")
 	beforeLegacy := snapshotManualCatalogSources(t, root)
 	initial.EnabledCLISkills[entry.ID] = false
-	preview, err = computeSkillsChangeSet(root, initial)
+	preview, err = computeSkillsChangeSet(context.Background(), root, initial)
 	require.NoError(t, err)
 	require.NoError(t, applySkillsChanges(context.Background(), root, preview))
 	require.Equal(t, beforeLegacy, snapshotManualCatalogSources(t, root))
@@ -47,7 +47,7 @@ func TestWizardPartialCatalogLifecycle(t *testing.T) {
 	require.True(t, clone.InitialCLISkills[entry.ID])
 	before := snapshotManualCatalogSources(t, root)
 	t.Setenv("GIT_CONFIG_KEY_0", "url."+filepath.Join(t.TempDir(), "unavailable")+".insteadOf")
-	changes, err := computeSkillsChangeSet(root, clone)
+	changes, err := computeSkillsChangeSet(context.Background(), root, clone)
 	require.NoError(t, err)
 	require.Empty(t, changes.importSelectors)
 	require.Empty(t, changes.removeSelectors)
@@ -62,12 +62,12 @@ func TestWizardPartialCatalogLifecycle(t *testing.T) {
 	choices, err = initializeChoices(&config.ProjectConfig{Root: root})
 	require.NoError(t, err)
 	require.True(t, choices.EnabledCLISkills[entry.ID])
-	changes, err = computeSkillsChangeSet(root, choices)
+	changes, err = computeSkillsChangeSet(context.Background(), root, choices)
 	require.NoError(t, err)
 	require.Empty(t, changes.removeSelectors)
 	require.NoError(t, os.Rename(saved, imported))
 	clone.InitialCLISkills[entry.ID] = false
-	changes, err = computeSkillsChangeSet(root, clone)
+	changes, err = computeSkillsChangeSet(context.Background(), root, clone)
 	require.NoError(t, err)
 	require.Equal(t, entry.Selectors[5:], changes.importSelectors)
 	require.Contains(t, buildSkillsPreview(changes), "configured named provider targets")
@@ -85,17 +85,17 @@ func TestWizardPartialCatalogLifecycle(t *testing.T) {
 		return nil
 	}}, choices))
 	choices.CLISkillsCatalog = []templates.CLISkillCatalogEntry{entry}
-	changes, err = computeSkillsChangeSet(root, choices)
+	changes, err = computeSkillsChangeSet(context.Background(), root, choices)
 	require.NoError(t, err)
 	require.Empty(t, changes.importSelectors)
 	require.Empty(t, changes.removeSelectors)
 	require.Contains(t, buildSkillsPreview(changes), "both local and imported tiers")
 	choices.EnabledCLISkills[entry.ID] = false
-	_, err = computeSkillsChangeSet(root, choices)
+	_, err = computeSkillsChangeSet(context.Background(), root, choices)
 	require.Error(t, err)
 	choices.EnabledCLISkills[entry.ID] = true
 	choices.InitialCLISkills = nil
-	_, err = computeSkillsChangeSet(root, choices)
+	_, err = computeSkillsChangeSet(context.Background(), root, choices)
 	require.Error(t, err)
 }
 func TestWizardLoaderDefersOnlyRetiredSkillProblems(t *testing.T) {

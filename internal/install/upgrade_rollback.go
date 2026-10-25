@@ -1,6 +1,7 @@
 package install
 
 import (
+	"context"
 	"encoding/base64"
 	"errors"
 	"fmt"
@@ -18,7 +19,8 @@ const manualRollbackFailureStep = "manual_rollback"
 
 // RollbackUpgradeSnapshotOptions controls manual rollback behavior.
 type RollbackUpgradeSnapshotOptions struct {
-	System System
+	Context context.Context
+	System  System
 }
 
 // RollbackUpgradeSnapshot restores a previously captured managed-file snapshot by ID.
@@ -29,7 +31,11 @@ func RollbackUpgradeSnapshot(root string, snapshotID string, opts RollbackUpgrad
 	if err := validateUpgradeStateDirs(root, opts.System); err != nil {
 		return err
 	}
-	return skillmigration.WithRecovered(root, func() error { return rollbackUpgradeSnapshot(root, snapshotID, opts) })
+	ctx := opts.Context
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return skillmigration.WithRecoveredContext(ctx, root, func() error { return rollbackUpgradeSnapshot(root, snapshotID, opts) })
 }
 
 func rollbackUpgradeSnapshot(root string, snapshotID string, opts RollbackUpgradeSnapshotOptions) error {

@@ -65,7 +65,7 @@ type pushGroup struct {
 // Push performs the configured upstream writes. It never pulls first and never
 // force-pushes.
 func (s *Service) Push(ctx context.Context) (*Report, error) {
-	return s.withLockedReport(func(st *state, report *Report) error {
+	return s.withLockedReport(ctx, func(st *state, report *Report) error {
 		return s.pushLocked(ctx, st, report)
 	})
 }

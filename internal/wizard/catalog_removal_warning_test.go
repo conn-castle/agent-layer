@@ -1,6 +1,7 @@
 package wizard
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -22,7 +23,7 @@ func TestRemovalPreviewNamesConfiguredSibling(t *testing.T) {
 	require.NoError(t, os.WriteFile(cfg, []byte(next), 0o600)) // #nosec G703 -- writes test-owned config.
 	choices.EnabledCLISkills[entry.ID] = false
 	choices.InitialCLISkills = map[string]bool{entry.ID: true}
-	changes, err := computeSkillsChangeSet(root, choices)
+	changes, err := computeSkillsChangeSet(context.Background(), root, choices)
 	require.NoError(t, err)
 	require.Equal(t, entry.Selectors, changes.removeSelectors)
 	require.Contains(t, buildSkillsPreview(changes), "configured sibling skills/development/implement")

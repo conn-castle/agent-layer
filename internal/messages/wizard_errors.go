@@ -30,4 +30,5 @@ const (
 	WizardDefaultMCPServersRequired         = "default MCP servers are required to patch config"
 	WizardRenderConfigFailedFmt             = "render config: %w"
 	WizardApplySkillsFailedFmt              = "failed to apply skill changes: %w"
+	WizardSyncCanceledAfterWritesFmt        = "sync was canceled after wizard changes were written; run al sync to finish: %w"
 )

@@ -21,11 +21,6 @@ import (
 // This is a CLI capability boundary, not a skill-content release/version.
 const MinimumCLI = "1.0.0"
 
-// WithRecovered serializes a supported operation with imports and projection.
-func WithRecovered(root string, fn func() error) error {
-	return WithRecoveredContext(context.Background(), root, fn)
-}
-
 // WithRecoveredContext recovers under the project lock unless ctx is canceled.
 func WithRecoveredContext(ctx context.Context, root string, fn func() error) error {
 	if err := ctx.Err(); err != nil {
@@ -136,9 +131,9 @@ func CheckVersionLocked(root, target string) error {
 }
 
 // CheckVersion checks capability before locking and recovering unsafe handoffs.
-func CheckVersion(root, target string) error {
+func CheckVersion(ctx context.Context, root, target string) error {
 	// A capable target must receive its own recovery evidence, including schemas
-	// this reader does not yet understand. Install/rollback still use WithRecovered.
+	// this reader does not yet understand. Install/rollback still use WithRecoveredContext.
 	cmp, err := version.Compare(target, MinimumCLI)
 	if err != nil {
 		return err
@@ -146,7 +141,7 @@ func CheckVersion(root, target string) error {
 	if cmp >= 0 {
 		return nil
 	}
-	return WithRecovered(root, func() error { return CheckVersionLocked(root, target) })
+	return WithRecoveredContext(ctx, root, func() error { return CheckVersionLocked(root, target) })
 }
 
 // LocalSlot is the trusted path a converted import must not recreate.

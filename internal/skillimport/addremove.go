@@ -50,7 +50,7 @@ func (o AddOptions) importBlock(exactFile bool) config.SkillImport {
 // together. A projection failure afterwards is reported without discarding that
 // valid source state.
 func (s *Service) Add(ctx context.Context, opts AddOptions) (*Report, error) {
-	return s.withLockedReport(func(st *state, report *Report) error {
+	return s.withLockedReport(ctx, func(st *state, report *Report) error {
 		return s.addLocked(ctx, st, opts, report, nil)
 	})
 }
@@ -137,7 +137,7 @@ func (s *Service) addLocked(ctx context.Context, st *state, opts AddOptions, rep
 // existing entry on its own lock evidence, imports newly revealed membership
 // at the current resolved target, and projects the result.
 func (s *Service) Remove(ctx context.Context, repository string, selector string) (*Report, error) {
-	return s.withLockedReport(func(st *state, report *Report) error {
+	return s.withLockedReport(ctx, func(st *state, report *Report) error {
 		return s.removeLocked(ctx, st, repository, selector, report)
 	})
 }
@@ -158,7 +158,7 @@ func (s *Service) removeLocked(ctx context.Context, st *state, repository string
 // The complete retirement set commits together; absent targets are no-ops.
 func (s *Service) RemoveCatalogSelectors(ctx context.Context, selectors []string) (*Report, error) {
 	identity := (config.SkillImport{Repository: templates.GeneralSkillsRepository}).Identity()
-	return s.withLockedReport(func(st *state, report *Report) error {
+	return s.withLockedReport(ctx, func(st *state, report *Report) error {
 		if err := requireCatalogPolicy(st); err != nil {
 			return err
 		}

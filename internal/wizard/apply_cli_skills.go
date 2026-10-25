@@ -83,13 +83,13 @@ var legacyInstructionBasenames = []string{
 // to derive the set of directory adds, directory removes, and memory file
 // changes the apply path will perform. Order in each slice is sorted for
 // deterministic preview output.
-func computeSkillsChangeSet(root string, choices *Choices) (skillsChangeSet, error) {
+func computeSkillsChangeSet(ctx context.Context, root string, choices *Choices) (skillsChangeSet, error) {
 	var out skillsChangeSet
 
 	for _, entry := range choices.CLISkillsCatalog {
 		selected := choices.EnabledCLISkills[entry.ID]
 		if entry.Repository != "" {
-			if err := appendRemoteCatalogChanges(root, entry, selected, choices.InitialCLISkills, &out); err != nil {
+			if err := appendRemoteCatalogChanges(ctx, root, entry, selected, choices.InitialCLISkills, &out); err != nil {
 				return skillsChangeSet{}, err
 			}
 			continue
@@ -140,7 +140,7 @@ func computeSkillsChangeSet(root string, choices *Choices) (skillsChangeSet, err
 			if entry.Repository != templates.GeneralSkillsRepository {
 				continue
 			}
-			members, err := skillimport.CatalogState(root, entry)
+			members, err := skillimport.CatalogState(ctx, root, entry)
 			if err != nil {
 				return skillsChangeSet{}, err
 			}
@@ -174,8 +174,8 @@ func computeSkillsChangeSet(root string, choices *Choices) (skillsChangeSet, err
 	return out, nil
 }
 
-func appendRemoteCatalogChanges(root string, entry templates.CLISkillCatalogEntry, selected bool, initial map[string]bool, out *skillsChangeSet) error {
-	members, err := skillimport.CatalogState(root, entry)
+func appendRemoteCatalogChanges(ctx context.Context, root string, entry templates.CLISkillCatalogEntry, selected bool, initial map[string]bool, out *skillsChangeSet) error {
+	members, err := skillimport.CatalogState(ctx, root, entry)
 	if err != nil {
 		return err
 	}

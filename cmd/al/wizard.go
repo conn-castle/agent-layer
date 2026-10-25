@@ -15,8 +15,8 @@ import (
 	"github.com/conn-castle/agent-layer/internal/wizard"
 )
 
-var runWizardProfile = func(root string, pinVersion string, profilePath string, apply bool, out io.Writer) error {
-	return wizard.RunProfile(root, alsync.Run, pinVersion, profilePath, apply, out)
+var runWizardProfile = func(ctx context.Context, root string, pinVersion string, profilePath string, apply bool, out io.Writer) error {
+	return wizard.RunProfile(ctx, root, alsync.RunContext, pinVersion, profilePath, apply, out)
 }
 
 var runWizardAnswers = func(ctx context.Context, root string, pinVersion string, answersPath string, out io.Writer) error {
@@ -24,7 +24,7 @@ var runWizardAnswers = func(ctx context.Context, root string, pinVersion string,
 	if err != nil {
 		return err
 	}
-	return wizard.RunWithWriter(ctx, root, ui, alsync.Run, pinVersion, out)
+	return wizard.RunWithWriter(ctx, root, ui, alsync.RunContext, pinVersion, out)
 }
 
 var cleanupWizardBackups = wizard.CleanupBackups
@@ -79,7 +79,7 @@ func newWizardCmd() *cobra.Command {
 			}
 
 			if profilePath != "" {
-				return runWizardProfile(root, pinned, profilePath, yes, cmd.OutOrStdout())
+				return runWizardProfile(commandContext(cmd), root, pinned, profilePath, yes, cmd.OutOrStdout())
 			}
 
 			if answersPath != "" {

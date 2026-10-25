@@ -31,7 +31,7 @@ func TestRun_NotInstalled_UserCancels(t *testing.T) {
 		},
 	}
 
-	mockSync := func(root string) (*alsync.Result, error) { return &alsync.Result{}, nil }
+	mockSync := func(_ context.Context, root string) (*alsync.Result, error) { return &alsync.Result{}, nil }
 
 	err := Run(root, ui, mockSync, "")
 	require.NoError(t, err)
@@ -63,7 +63,7 @@ func TestRun_Install(t *testing.T) {
 		NoteFunc:        func(title, body string) error { return nil },
 	}
 
-	mockSync := func(root string) (*alsync.Result, error) { return &alsync.Result{}, nil }
+	mockSync := func(_ context.Context, root string) (*alsync.Result, error) { return &alsync.Result{}, nil }
 
 	err := Run(root, ui, mockSync, "")
 	require.NoError(t, err)
@@ -82,7 +82,7 @@ func TestRun_ConfirmError_Install(t *testing.T) {
 		},
 	}
 
-	err := Run(root, ui, func(r string) (*alsync.Result, error) { return &alsync.Result{}, nil }, "")
+	err := Run(root, ui, func(_ context.Context, r string) (*alsync.Result, error) { return &alsync.Result{}, nil }, "")
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "confirm error")
 }
@@ -100,7 +100,7 @@ func TestRun_InstallFailure(t *testing.T) {
 		},
 	}
 
-	err := Run(root, ui, func(r string) (*alsync.Result, error) { return &alsync.Result{}, nil }, "")
+	err := Run(root, ui, func(_ context.Context, r string) (*alsync.Result, error) { return &alsync.Result{}, nil }, "")
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "install failed")
 }
@@ -118,7 +118,7 @@ func TestRun_PartialInstallMissingConfigRequiresUpgrade(t *testing.T) {
 		},
 	}
 
-	err := Run(root, ui, func(r string) (*alsync.Result, error) { return &alsync.Result{}, nil }, "")
+	err := Run(root, ui, func(_ context.Context, r string) (*alsync.Result, error) { return &alsync.Result{}, nil }, "")
 	assert.Error(t, err)
 	assert.NotContains(t, err.Error(), "unexpected install prompt")
 	assert.Contains(t, err.Error(), "partially initialized")
@@ -145,7 +145,7 @@ mode = "none"`
 		},
 	}
 
-	err := Run(root, ui, func(r string) (*alsync.Result, error) { return &alsync.Result{}, nil }, "")
+	err := Run(root, ui, func(_ context.Context, r string) (*alsync.Result, error) { return &alsync.Result{}, nil }, "")
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to load config")
 }
@@ -173,7 +173,7 @@ func TestRun_ConfigLoadFailureAfterInstall(t *testing.T) {
 
 	// With lenient fallback, the wizard should proceed through the flow
 	// (lenient loading reads the installed config without validation).
-	err := Run(root, ui, func(r string) (*alsync.Result, error) { return &alsync.Result{}, nil }, "")
+	err := Run(root, ui, func(_ context.Context, r string) (*alsync.Result, error) { return &alsync.Result{}, nil }, "")
 	assert.NoError(t, err)
 }
 
@@ -201,7 +201,7 @@ func TestRun_ScriptedUnusedAnswersDoNotWrite(t *testing.T) {
 				ui.answers.Select[messages.WizardInstructionSetTitle] = instructionSetLabels()[0]
 			}
 			var out bytes.Buffer
-			err := RunWithWriter(context.Background(), root, ui, func(string) (*alsync.Result, error) {
+			err := RunWithWriter(context.Background(), root, ui, func(context.Context, string) (*alsync.Result, error) {
 				t.Fatal("sync ran before answer validation")
 				return nil, nil
 			}, "0.0.0", &out)

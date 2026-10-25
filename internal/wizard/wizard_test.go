@@ -201,7 +201,7 @@ func TestRunWithWriter_RedirectsWhenConfigNeedsUpgrade(t *testing.T) {
 	// runSync must never be called: a needs-upgrade config has to redirect before
 	// reaching the apply/sync dead-end that motivated this fix.
 	syncCalled := false
-	runSync := func(string) (*alsync.Result, error) {
+	runSync := func(context.Context, string) (*alsync.Result, error) {
 		syncCalled = true
 		return &alsync.Result{}, nil
 	}
@@ -239,7 +239,7 @@ model = "Gemini 3.5 Flash (High)"
 	}
 
 	syncCalled := false
-	runSync := func(string) (*alsync.Result, error) {
+	runSync := func(context.Context, string) (*alsync.Result, error) {
 		syncCalled = true
 		return &alsync.Result{}, nil
 	}

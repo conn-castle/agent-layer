@@ -2,6 +2,7 @@ package wizard
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -25,7 +26,7 @@ import (
 // root is the repo root; runSync executes sync after writes; pinVersion is used when install is required.
 // profilePath points to a TOML file; apply controls whether writes are performed or preview-only output is shown.
 // The profile is validated before any write, and a missing install is performed only when apply is true.
-func RunProfile(root string, runSync syncer, pinVersion string, profilePath string, apply bool, out io.Writer) error {
+func RunProfile(ctx context.Context, root string, runSync syncer, pinVersion string, profilePath string, apply bool, out io.Writer) error {
 	if out == nil {
 		out = os.Stdout
 	}
@@ -45,7 +46,7 @@ func RunProfile(root string, runSync syncer, pinVersion string, profilePath stri
 	installed := true
 	if _, err := os.Stat(configPath); os.IsNotExist(err) {
 		if apply {
-			if err := install.Run(root, install.Options{Overwrite: false, PinVersion: pinVersion, System: install.RealSystem{}}); err != nil {
+			if err := install.Run(root, install.Options{Context: ctx, Overwrite: false, PinVersion: pinVersion, System: install.RealSystem{}}); err != nil {
 				return fmt.Errorf(messages.WizardInstallFailedFmt, err)
 			}
 		} else {
@@ -61,7 +62,7 @@ func RunProfile(root string, runSync syncer, pinVersion string, profilePath stri
 		return writeProfileConfig(root, configPath, profilePath, profileBytes, installed, apply, out)
 	}
 	if apply {
-		err = skillmigration.WithRecovered(root, write)
+		err = skillmigration.WithRecoveredContext(ctx, root, write)
 	} else {
 		err = write()
 	}
@@ -70,7 +71,10 @@ func RunProfile(root string, runSync syncer, pinVersion string, profilePath stri
 	}
 
 	_, _ = fmt.Fprintln(out, messages.WizardRunningSync)
-	result, err := runSync(root)
+	result, err := runSync(ctx, root)
+	if errors.Is(err, context.Canceled) {
+		return fmt.Errorf(messages.WizardSyncCanceledAfterWritesFmt, err)
+	}
 	if err != nil {
 		return err
 	}
