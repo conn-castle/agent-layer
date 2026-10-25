@@ -198,7 +198,7 @@ On macOS, Claude Code keys its Keychain entry to `CLAUDE_CONFIG_DIR` and falls b
 
 If you launch VS Code without Agent Layer's repo-local launcher, the Claude extension will not receive the repo-local `CLAUDE_CONFIG_DIR`. In that case, the extension uses your global `~/.claude/` configuration, so settings are shared across repositories.
 
-When `local_config_dir` is disabled (the default), Claude always uses the global `~/.claude/` configuration regardless of how VS Code is launched. Agent Layer clears an inherited `CLAUDE_CONFIG_DIR` only when it selects this repo's `.claude-config`, as resolved above, and keeps any other value.
+When `local_config_dir` is disabled (the default), Claude uses the global `~/.claude/` configuration unless a preserved `CLAUDE_CONFIG_DIR` override selects another directory. Agent Layer clears an inherited `CLAUDE_CONFIG_DIR` only when it selects this repo's `.claude-config`, as resolved above, and keeps any other value.
 
 Tradeoffs (VS Code without launcher, with `local_config_dir` enabled):
 
