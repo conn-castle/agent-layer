@@ -4,6 +4,7 @@ All notable changes to this project will be documented in this file.
 ## Unreleased
 
 ### Fixed
+- Source Make wrappers such as `make al-doctor`, `make al-sync`, and `make al-claude` keep the existing development executable when a rebuild produces identical bytes, so routine wrapper runs no longer make running MCP servers refuse new dispatch work. Changed output still replaces it atomically, and a failed build keeps the previous executable (#442).
 - Model discovery in `al doctor`, the wizard, and `al dispatch options` stops each Codex, Muse, Copilot CLI, Grok, or Antigravity harness and any children remaining in its process group before returning on success, failure, or the first interrupt, including children that ignore interrupts or keep output open. Claude keeps its graceful shutdown (#454).
 - Skill and instruction imports, pulls, and pushes stop Git and its transport helpers, such as SSH commands, on the first interrupt or a terminal hangup instead of waiting for leftover helpers to exit, and no longer leave helpers running after Git finishes, including a Git credential-cache daemon started by the command. Git now runs without a controlling terminal, so SSH host-key or passphrase prompts fail fast with Git's error instead of hanging; use ssh-agent for passphrase-protected keys (#459).
 - Project document, shared native config, upgrade snapshot, and dispatch metadata readers reject FIFOs and other non-regular files promptly, including symlinks to FIFOs, while preserving symlinks to regular files (#470, #445, #464, #476).

@@ -368,8 +368,13 @@ al-dev-build: ## Build source al for development commands that launch child proc
 	@mkdir -p $(call al_shell_quote,$(AL_DEV_BIN_DIR))
 	@dev_tmp=$$(mktemp $(call al_shell_quote,$(AL_DEV_BIN).build-XXXXXX)) || exit $$?; \
 	trap 'rm -f "$$dev_tmp"' EXIT; \
-	GOCACHE=$(call al_shell_quote,$(GO_CACHE)) GOMODCACHE=$(call al_shell_quote,$(GO_MOD_CACHE)) go build -o "$$dev_tmp" ./cmd/al && mv -f "$$dev_tmp" $(call al_shell_quote,$(AL_DEV_BIN))
-	@echo "Running MCP servers keep their code until reconnected; stale servers refuse new dispatch work."
+	GOCACHE=$(call al_shell_quote,$(GO_CACHE)) GOMODCACHE=$(call al_shell_quote,$(GO_MOD_CACHE)) go build -o "$$dev_tmp" ./cmd/al || exit $$?; \
+	if [ -x $(call al_shell_quote,$(AL_DEV_BIN)) ] && cmp -s "$$dev_tmp" $(call al_shell_quote,$(AL_DEV_BIN)); then \
+	  echo "Development executable unchanged; MCP servers already running it need no reconnect."; \
+	else \
+	  mv -f "$$dev_tmp" $(call al_shell_quote,$(AL_DEV_BIN)) || exit $$?; \
+	  echo "Development executable replaced; running MCP servers keep their code until reconnected and refuse new dispatch work."; \
+	fi
 
 # Tracked repo sources that upgrade would otherwise offer to delete as unknown.
 # This repo tracks issues on GitHub, so al-upgrade drops the unmodified ledger

@@ -38,13 +38,15 @@ This repo is built around determinism: the same inputs should produce the same c
 
 `make al-sync`, `make al-upgrade`, `make al-wizard`, and the agent launch
 commands build `.agent-layer/tmp/dev-bin/al` to a unique sibling file, then
-publish it atomically. They explicitly set `AL_DEV_EXECUTABLE`,
+publish it atomically only when the bytes changed; unchanged output leaves the
+existing executable in place. Go stamps the commit and dirty-tree state into the
+binary, so committing or first dirtying the tree changes the bytes. They explicitly set `AL_DEV_EXECUTABLE`,
 `AL_DEV_BYPASS_VERSION_DISPATCH` and `AL_DEV_SOURCE_ROOT` for this repository,
 and put that directory first on `PATH`.
 Sync embeds the absolute development executable as a quoted positional MCP
 launcher argument for every client. A client parent does not need these
-variables. After a rebuild, running MCP servers refuse new provider work until
-reconnected; admitted work keeps its original image. Bypass alone never promotes
+variables. After a rebuild replaces it, running MCP servers refuse new
+provider work until reconnected; admitted work keeps its original image. Bypass alone never promotes
 an arbitrary executable or a transient `go run` path into persistent source selection. The root marker
 must match the project's configuration root (canonical symlink spellings are
 accepted). Inherited Make environment from repository A does not persist MCP
@@ -55,7 +57,8 @@ source selection, explicitly set `AL_DEV_SOURCE_ROOT` to that scratch root;
 Generated argv carries the matching root marker without persisting provider env.
 
 A release `al sync` without development selection restores the pin/override
-launcher. Reconnect after rebuilding or changing source/release mode; sync does
+launcher. Reconnect after a rebuild replaces the executable or after changing
+source/release mode; sync does
 not replace a running server, and a new chat may reuse it. See
 [MCP code freshness](AGENT-DISPATCH.md#mcp-code-freshness) for recovery and limits.
 
