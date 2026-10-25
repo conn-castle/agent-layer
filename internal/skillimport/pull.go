@@ -19,7 +19,7 @@ import (
 // It is the only command that advances tracked imports. Pinned imports stay at
 // their locked commits unless the configured ref itself changed.
 func (s *Service) Pull(ctx context.Context) (*Report, error) {
-	return s.withLockedReport(func(st *state, report *Report) error {
+	return s.withLockedReport(ctx, func(st *state, report *Report) error {
 		return s.pullLocked(ctx, st, report)
 	})
 }

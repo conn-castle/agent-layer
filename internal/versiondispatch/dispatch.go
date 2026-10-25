@@ -106,7 +106,7 @@ func maybeExec(ctx context.Context, sys System, args []string, currentVersion st
 	}
 
 	if found {
-		if err := skillmigration.CheckVersion(rootDir, requested); err != nil {
+		if err := skillmigration.CheckVersion(ctx, rootDir, requested); err != nil {
 			return err
 		}
 	}

@@ -65,7 +65,7 @@ func runWithWriter(ctx context.Context, root string, ui UI, runSync syncer, pinV
 	configPath := filepath.Join(root, ".agent-layer", "config.toml")
 	envPath := filepath.Join(root, ".agent-layer", ".env")
 
-	proceed, freshInstall, err := ensureWizardConfig(root, configPath, ui, pinVersion, out)
+	proceed, freshInstall, err := ensureWizardConfig(ctx, root, configPath, ui, pinVersion, out)
 	if err != nil {
 		if errors.Is(err, errWizardBack) || errors.Is(err, errWizardCancelled) {
 			_, _ = fmt.Fprintln(out, messages.WizardExitWithoutChanges)
@@ -115,7 +115,7 @@ func runWithWriter(ctx context.Context, root string, ui UI, runSync syncer, pinV
 		cfg = &config.ProjectConfig{Config: *lenientCfg, Root: root}
 	}
 
-	choices, err := initializeChoicesWithCatalog(cfg, !isScripted)
+	choices, err := initializeChoicesWithCatalog(ctx, cfg, !isScripted)
 	if err != nil {
 		return err
 	}
@@ -144,7 +144,7 @@ func applyFreshSetupDefaults(choices *Choices) {
 	// on in the interactive wizard, while explicit false remains off.
 }
 
-func ensureWizardConfig(root, configPath string, ui UI, pinVersion string, out io.Writer) (bool, bool, error) {
+func ensureWizardConfig(ctx context.Context, root, configPath string, ui UI, pinVersion string, out io.Writer) (bool, bool, error) {
 	if _, err := os.Stat(configPath); os.IsNotExist(err) {
 		agentLayerPath := filepath.Join(root, ".agent-layer")
 		if info, agentLayerErr := os.Stat(agentLayerPath); agentLayerErr == nil {
@@ -166,7 +166,7 @@ func ensureWizardConfig(root, configPath string, ui UI, pinVersion string, out i
 		}
 
 		if _, scripted := ui.(*ScriptedUI); !scripted {
-			if err := installWizardConfig(root, pinVersion, out); err != nil {
+			if err := installWizardConfig(ctx, root, pinVersion, out); err != nil {
 				return false, false, err
 			}
 		}
@@ -178,8 +178,8 @@ func ensureWizardConfig(root, configPath string, ui UI, pinVersion string, out i
 	return true, false, nil
 }
 
-func installWizardConfig(root, pinVersion string, out io.Writer) error {
-	if err := install.Run(root, install.Options{PinVersion: pinVersion, System: install.RealSystem{}}); err != nil {
+func installWizardConfig(ctx context.Context, root, pinVersion string, out io.Writer) error {
+	if err := install.Run(root, install.Options{Context: ctx, PinVersion: pinVersion, System: install.RealSystem{}}); err != nil {
 		return fmt.Errorf(messages.WizardInstallFailedFmt, err)
 	}
 	_, _ = fmt.Fprintln(out, messages.WizardInstallComplete)
@@ -188,14 +188,14 @@ func installWizardConfig(root, pinVersion string, out io.Writer) error {
 
 // initializeCatalogChoices may recover imports and create the project lock.
 // Scripted runs defer it until all actually consumed answers are validated.
-func initializeCatalogChoices(root string, choices *Choices) error {
+func initializeCatalogChoices(ctx context.Context, root string, choices *Choices) error {
 	choices.InitialCLISkills = map[string]bool{}
 	for _, entry := range choices.CLISkillsCatalog {
 		if entry.Repository == "" {
 			choices.InitialCLISkills[entry.ID] = catalogSkillIsManagedOnDisk(root, entry)
 			continue
 		}
-		members, err := skillimport.CatalogState(root, entry)
+		members, err := skillimport.CatalogState(ctx, root, entry)
 		if err != nil {
 			return err
 		}
@@ -223,11 +223,7 @@ func initializeCatalogChoices(root string, choices *Choices) error {
 	return nil
 }
 
-func initializeChoices(cfg *config.ProjectConfig) (*Choices, error) {
-	return initializeChoicesWithCatalog(cfg, true)
-}
-
-func initializeChoicesWithCatalog(cfg *config.ProjectConfig, inspectCatalog bool) (*Choices, error) {
+func initializeChoicesWithCatalog(ctx context.Context, cfg *config.ProjectConfig, inspectCatalog bool) (*Choices, error) {
 	choices := NewChoices()
 
 	defaultServers, err := loadDefaultMCPServersFunc()
@@ -242,7 +238,7 @@ func initializeChoicesWithCatalog(cfg *config.ProjectConfig, inspectCatalog bool
 	}
 	choices.CLISkillsCatalog = cliSkills
 	if inspectCatalog {
-		if err := initializeCatalogChoices(cfg.Root, choices); err != nil {
+		if err := initializeCatalogChoices(ctx, cfg.Root, choices); err != nil {
 			return nil, err
 		}
 		choices.EnabledCLISkills = cloneMap(choices.InitialCLISkills)
@@ -978,7 +974,7 @@ func confirmAndApply(ctx context.Context, root, configPath, envPath string, ui U
 			return err
 		}
 		if freshInstall {
-			if err := installWizardConfig(root, pinVersion, out); err != nil {
+			if err := installWizardConfig(ctx, root, pinVersion, out); err != nil {
 				return err
 			}
 		}
@@ -988,7 +984,7 @@ func confirmAndApply(ctx context.Context, root, configPath, envPath string, ui U
 			}
 			return nil
 		}
-		if err := initializeCatalogChoices(root, choices); err != nil {
+		if err := initializeCatalogChoices(ctx, root, choices); err != nil {
 			return err
 		}
 	}
@@ -1000,7 +996,7 @@ func confirmAndApply(ctx context.Context, root, configPath, envPath string, ui U
 	if err != nil {
 		return err
 	}
-	skillsChangeSet, err := computeSkillsChangeSet(root, choices)
+	skillsChangeSet, err := computeSkillsChangeSet(ctx, root, choices)
 	if err != nil {
 		return err
 	}

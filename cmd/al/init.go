@@ -24,11 +24,11 @@ import (
 )
 
 var runWizard = func(ctx context.Context, root string, pinVersion string) error {
-	return wizard.RunWithWriter(ctx, root, wizard.NewHuhUI(), alsync.Run, pinVersion, os.Stdout)
+	return wizard.RunWithWriter(ctx, root, wizard.NewHuhUIWithContext(ctx), alsync.RunContext, pinVersion, os.Stdout)
 }
 
 var runWizardAfterInit = func(ctx context.Context, root string, pinVersion string) error {
-	return wizard.RunAfterFreshInitWithWriter(ctx, root, wizard.NewHuhUI(), alsync.Run, pinVersion, os.Stdout)
+	return wizard.RunAfterFreshInitWithWriter(ctx, root, wizard.NewHuhUIWithContext(ctx), alsync.RunContext, pinVersion, os.Stdout)
 }
 
 var installRun = install.Run

@@ -157,7 +157,8 @@ func newUpgradeRollbackCmd() *cobra.Command {
 			}
 			snapshotID := strings.TrimSpace(args[0])
 			if err := installRollbackUpgradeSnapshot(root, snapshotID, install.RollbackUpgradeSnapshotOptions{
-				System: install.RealSystem{},
+				Context: commandContext(cmd),
+				System:  install.RealSystem{},
 			}); err != nil {
 				return err
 			}

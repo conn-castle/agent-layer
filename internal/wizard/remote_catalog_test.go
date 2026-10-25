@@ -67,7 +67,7 @@ func TestWizardManualPoliciesAndWildcardCoverageArePreserved(t *testing.T) {
 			if kind == "excluded" {
 				choices.InitialCLISkills = map[string]bool{entry.ID: true}
 			}
-			changes, err := computeSkillsChangeSet(root, choices)
+			changes, err := computeSkillsChangeSet(context.Background(), root, choices)
 			require.NoError(t, err)
 			require.Empty(t, changes.importSelectors)
 			require.Contains(t, buildSkillsPreview(changes), "Manually managed")
@@ -75,7 +75,7 @@ func TestWizardManualPoliciesAndWildcardCoverageArePreserved(t *testing.T) {
 				require.Contains(t, buildSkillsPreview(changes), "Catalog note")
 			}
 			choices.EnabledCLISkills[entry.ID] = false
-			changes, err = computeSkillsChangeSet(root, choices)
+			changes, err = computeSkillsChangeSet(context.Background(), root, choices)
 			require.NoError(t, err)
 			require.Empty(t, changes.removeSelectors)
 			require.NoError(t, applySkillsChanges(context.Background(), root, changes))
@@ -102,7 +102,10 @@ func TestWizardOfflineFetchReportsPriorConfigWritesAndRetriesCoherently(t *testi
 	var output bytes.Buffer
 	called := false
 	syncFailure := errors.New("injected final projection failure")
-	syncFn := func(string) (*alsync.Result, error) { called = true; return &alsync.Result{}, syncFailure }
+	syncFn := func(context.Context, string) (*alsync.Result, error) {
+		called = true
+		return &alsync.Result{}, syncFailure
+	}
 	configPath := filepath.Join(root, ".agent-layer", "config.toml")
 	envPath := filepath.Join(root, ".agent-layer", ".env")
 	err = applyChanges(context.Background(), root, configPath, envPath, choices, syncFn, &output)
@@ -145,14 +148,14 @@ func TestWizardMixedAddAndBlockedRemovalReportsCommittedInstallation(t *testing.
 	_, tool := remoteChoices(t, "playwright")
 	choices.CLISkillsCatalog = append(choices.CLISkillsCatalog, tool)
 	choices.EnabledCLISkills[tool.ID] = true
-	changes, err := computeSkillsChangeSet(root, choices)
+	changes, err := computeSkillsChangeSet(context.Background(), root, choices)
 	require.NoError(t, err)
 	err = applySkillsChanges(context.Background(), root, changes)
 	require.ErrorContains(t, err, "installation committed; selector removal was not applied")
 	require.ErrorContains(t, err, "al skills")
 	require.FileExists(t, policy)
 	require.FileExists(t, filepath.Join(root, ".agent-layer", "skills-imported", "playwright", "SKILL.md"))
-	members, err := skillimport.CatalogState(root, entry)
+	members, err := skillimport.CatalogState(context.Background(), root, entry)
 	require.NoError(t, err)
 	for _, member := range members {
 		require.True(t, member.Imported)

@@ -204,7 +204,7 @@ func TestApplyRejectsLinkedState(t *testing.T) {
 		return state, external
 	}
 	syncCalled := false
-	runSync := func(string) (*alsync.Result, error) {
+	runSync := func(context.Context, string) (*alsync.Result, error) {
 		syncCalled = true
 		return &alsync.Result{}, nil
 	}
@@ -244,7 +244,7 @@ func TestApplyRejectsLinkedState(t *testing.T) {
 		state, external := link(t, root)
 		syncCalled = false
 
-		require.ErrorContains(t, RunProfile(root, runSync, "", profilePath, true, io.Discard), "must be a real directory")
+		require.ErrorContains(t, RunProfile(context.Background(), root, runSync, "", profilePath, true, io.Discard), "must be a real directory")
 		require.False(t, syncCalled)
 		require.Empty(t, snapshotFiles(t, external))
 		data, err := os.ReadFile(configPath)
@@ -252,7 +252,7 @@ func TestApplyRejectsLinkedState(t *testing.T) {
 		require.Equal(t, basicAgentConfig(), string(data))
 
 		require.NoError(t, os.Remove(state))
-		require.NoError(t, RunProfile(root, runSync, "", profilePath, true, io.Discard))
+		require.NoError(t, RunProfile(context.Background(), root, runSync, "", profilePath, true, io.Discard))
 		require.FileExists(t, backupPath(root, configBackupName))
 	})
 }

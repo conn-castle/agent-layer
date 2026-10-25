@@ -75,6 +75,8 @@ func TestUpgradeRollbackCmd_InvokesInstallRollback(t *testing.T) {
 	}
 
 	origRollback := installRollbackUpgradeSnapshot
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
 	called := false
 	installRollbackUpgradeSnapshot = func(gotRoot string, snapshotID string, opts install.RollbackUpgradeSnapshotOptions) error {
 		called = true
@@ -83,6 +85,9 @@ func TestUpgradeRollbackCmd_InvokesInstallRollback(t *testing.T) {
 		}
 		if snapshotID != "snapshot-123" {
 			t.Fatalf("snapshot id = %q, want snapshot-123", snapshotID)
+		}
+		if opts.Context != ctx {
+			t.Fatal("rollback did not receive the command context")
 		}
 		if opts.System == nil {
 			t.Fatal("opts.System = nil, want non-nil")
@@ -93,6 +98,7 @@ func TestUpgradeRollbackCmd_InvokesInstallRollback(t *testing.T) {
 
 	testutil.WithWorkingDir(t, root, func() {
 		cmd := newUpgradeCmd()
+		cmd.SetContext(ctx)
 		var out bytes.Buffer
 		cmd.SetArgs([]string{"rollback", "snapshot-123"})
 		cmd.SetOut(&out)

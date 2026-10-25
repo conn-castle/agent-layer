@@ -1,6 +1,7 @@
 package wizard
 
 import (
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
@@ -76,7 +77,7 @@ enabled = false
 	}
 
 	syncCalled := false
-	mockSync := func(r string) (*alsync.Result, error) {
+	mockSync := func(_ context.Context, r string) (*alsync.Result, error) {
 		syncCalled = true
 		return &alsync.Result{}, nil
 	}
@@ -142,7 +143,7 @@ enabled = false
 		},
 	}
 
-	err := Run(root, ui, func(string) (*alsync.Result, error) { return &alsync.Result{}, nil }, "")
+	err := Run(root, ui, func(context.Context, string) (*alsync.Result, error) { return &alsync.Result{}, nil }, "")
 	require.NoError(t, err)
 
 	data, readErr := os.ReadFile(filepath.Join(configDir, "config.toml"))
@@ -200,7 +201,7 @@ enabled = false
 				return nil
 			},
 		}
-		err := Run(root, ui, func(string) (*alsync.Result, error) { return &alsync.Result{}, nil }, "")
+		err := Run(root, ui, func(context.Context, string) (*alsync.Result, error) { return &alsync.Result{}, nil }, "")
 		require.NoError(t, err)
 	}
 
@@ -253,7 +254,7 @@ enabled = false
 	}
 
 	syncCalled := false
-	mockSync := func(r string) (*alsync.Result, error) {
+	mockSync := func(_ context.Context, r string) (*alsync.Result, error) {
 		syncCalled = true
 		return &alsync.Result{}, nil
 	}
@@ -298,7 +299,7 @@ enabled = false
 		},
 	}
 
-	mockSync := func(r string) (*alsync.Result, error) {
+	mockSync := func(_ context.Context, r string) (*alsync.Result, error) {
 		return nil, errors.New("sync failed")
 	}
 
@@ -362,7 +363,7 @@ command = "npx"
 		NoteFunc: func(title, body string) error { return nil },
 	}
 
-	mockSync := func(r string) (*alsync.Result, error) { return &alsync.Result{}, nil }
+	mockSync := func(_ context.Context, r string) (*alsync.Result, error) { return &alsync.Result{}, nil }
 
 	err := Run(root, ui, mockSync, "")
 	require.NoError(t, err)
@@ -433,7 +434,7 @@ enabled = false
 		},
 	}
 
-	mockSync := func(r string) (*alsync.Result, error) { return &alsync.Result{}, nil }
+	mockSync := func(_ context.Context, r string) (*alsync.Result, error) { return &alsync.Result{}, nil }
 
 	err := Run(root, ui, mockSync, "")
 	require.NoError(t, err)
@@ -498,7 +499,7 @@ enabled = false
 		},
 	}
 
-	mockSync := func(r string) (*alsync.Result, error) { return &alsync.Result{}, nil }
+	mockSync := func(_ context.Context, r string) (*alsync.Result, error) { return &alsync.Result{}, nil }
 
 	err := Run(root, ui, mockSync, "")
 	require.NoError(t, err)
@@ -563,7 +564,7 @@ enabled = false
 		},
 	}
 
-	mockSync := func(r string) (*alsync.Result, error) { return &alsync.Result{}, nil }
+	mockSync := func(_ context.Context, r string) (*alsync.Result, error) { return &alsync.Result{}, nil }
 
 	err := Run(root, ui, mockSync, "")
 	require.NoError(t, err)
@@ -651,7 +652,7 @@ enabled = false
 		},
 	}
 
-	mockSync := func(r string) (*alsync.Result, error) { return &alsync.Result{}, nil }
+	mockSync := func(_ context.Context, r string) (*alsync.Result, error) { return &alsync.Result{}, nil }
 
 	err := Run(root, ui, mockSync, "")
 	require.NoError(t, err)

@@ -103,7 +103,7 @@ func TestWizardCancellationStopsRunningCatalogImport(t *testing.T) {
 			}
 			syncCalled := false
 			start := time.Now()
-			err := run(ctx, root, ui, func(string) (*alsync.Result, error) {
+			err := run(ctx, root, ui, func(context.Context, string) (*alsync.Result, error) {
 				syncCalled = true
 				return &alsync.Result{}, nil
 			}, "", io.Discard)
