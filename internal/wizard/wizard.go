@@ -48,6 +48,9 @@ func RunAfterFreshInitWithWriter(ctx context.Context, root string, ui UI, runSyn
 }
 
 func runWithWriter(ctx context.Context, root string, ui UI, runSync syncer, pinVersion string, out io.Writer, freshInitDefaults bool) (err error) {
+	if err := install.CheckWizardSource(root, install.RealSystem{}); err != nil {
+		return err
+	}
 	if out == nil {
 		out = os.Stdout
 	}
@@ -199,25 +202,22 @@ func initializeCatalogChoices(ctx context.Context, root string, choices *Choices
 		if err != nil {
 			return err
 		}
-		imported, legacy, missing, manual := 0, 0, 0, 0
+		imported, missing, manual := 0, 0, 0
 		configured := false
 		for _, member := range members {
 			configured = configured || member.Configured
 			if member.Imported {
 				imported++
 			}
-			if member.Legacy {
-				legacy++
-			}
-			if !member.Imported && !member.Legacy {
+			if !member.Imported {
 				missing++
 			}
 			if member.Configured && !member.DefaultExact {
 				manual++
 			}
 		}
-		choices.InitialCLISkills[entry.ID] = imported+legacy > 0 || configured
-		choices.CLISkillStatus += fmt.Sprintf("\n  %s: imported %d/%d, legacy %d, missing %d, manual %d", entry.Name, imported, len(members), legacy, missing, manual)
+		choices.InitialCLISkills[entry.ID] = imported > 0 || configured
+		choices.CLISkillStatus += fmt.Sprintf("\n  %s: imported %d/%d, missing %d, manual %d", entry.Name, imported, len(members), missing, manual)
 	}
 
 	return nil

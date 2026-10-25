@@ -14,6 +14,7 @@ import (
 	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/envfile"
 	"github.com/conn-castle/agent-layer/internal/fsutil"
+	"github.com/conn-castle/agent-layer/internal/install"
 	"github.com/conn-castle/agent-layer/internal/messages"
 	"github.com/conn-castle/agent-layer/internal/skillmigration"
 	"github.com/conn-castle/agent-layer/internal/sync"
@@ -36,7 +37,7 @@ func applyChanges(ctx context.Context, root, configPath, envPath string, c *Choi
 		out = os.Stdout
 	}
 
-	if err := skillmigration.WithRecoveredContext(ctx, root, func() error {
+	if err := skillmigration.WithCheckedRecovery(ctx, root, func() error { return install.CheckWizardSource(root, install.RealSystem{}) }, func() error {
 		return writeConfigEnv(root, configPath, envPath, c)
 	}); err != nil {
 		return err
@@ -47,9 +48,6 @@ func applyChanges(ctx context.Context, root, configPath, envPath string, c *Choi
 	skillsChangeSet, err := computeSkillsChangeSet(ctx, root, c)
 	if err != nil {
 		return fmt.Errorf(messages.WizardApplySkillsFailedFmt+"; config/env writes were applied; gitignore block updates, statusline source updates, and sync were not run", err)
-	}
-	if c.previewedSkills != nil {
-		skillsChangeSet.adoptLegacy = c.previewedSkills.adoptLegacy
 	}
 	if err := applySkillsChanges(ctx, root, skillsChangeSet); err != nil {
 		return fmt.Errorf(messages.WizardApplySkillsFailedFmt+"; config/env writes were applied; gitignore block updates, statusline source updates, and sync were not run", err)

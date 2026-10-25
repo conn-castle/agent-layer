@@ -84,7 +84,6 @@ const (
 	UpgradeDeleteUnknownTmpHeader                   = "Files under .agent-layer/tmp/:"
 	UpgradeDeleteUnknownTmpDestructiveConfirmPrompt = "DESTRUCTIVE: deleting .agent-layer/tmp/ permanently removes ephemeral agent run artifacts and may impact ongoing work. Are you absolutely sure?"
 	UpgradeDeleteUnknownTmpDestructiveWarningHeader = "WARNING: .agent-layer/tmp/ may contain in-progress agent artifacts (plans, reports, scratch files). Deleting them is irreversible — Agent Layer will NOT snapshot or roll them back."
-	UpgradeSkillsMigrationPromptFmt                 = "Proceed with migrating %d skill(s) to directory format? (Use 'al upgrade rollback' to undo if needed.)"
 	UpgradeSkipManagedUpdatesInfo                   = "Info: skipping managed template updates (pass --apply-managed-updates to include them)."
 	UpgradeSkipMemoryUpdatesInfo                    = "Info: skipping memory file updates (pass --apply-memory-updates to include them)."
 	UpgradeSkipDeletionsInfo                        = "Info: skipping unknown file deletions outside .agent-layer/tmp/ (pass --apply-deletions to include them)."

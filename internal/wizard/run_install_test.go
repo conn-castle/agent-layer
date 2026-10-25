@@ -188,7 +188,7 @@ func TestRun_ScriptedUnusedAnswersDoNotWrite(t *testing.T) {
 			}
 			label, _ := approvalModeLabelForValue(config.ApprovalModeAll)
 			ui := &ScriptedUI{used: map[string]struct{}{}, answers: scriptedAnswers{
-				Select: map[string]string{messages.WizardApprovalModeTitle: label,
+				Select: map[string]string{messages.WizardInstructionSetTitle: instructionSetLabels()[0], messages.WizardApprovalModeTitle: label,
 					messages.WizardClaudeModelTitle: "unused-with-claude-disabled"},
 				MultiSelect: map[string][]string{
 					messages.WizardEnableAgentsTitle: {}, messages.WizardGitTrackingTitle: {},

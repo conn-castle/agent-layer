@@ -463,7 +463,12 @@ func prepareUpgradeTestRepo(t *testing.T) string {
 func seedWorkflowBundleForUpgradeCmdTest(t *testing.T, root string) {
 	t.Helper()
 	require.NoError(t, os.MkdirAll(filepath.Join(root, ".agent-layer", "instructions"), 0o750))
-	require.NoError(t, os.WriteFile(filepath.Join(root, ".agent-layer", "instructions", "00_rules.md"), []byte("legacy fixture\n"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(root, ".agent-layer", "instructions", "00_rules.md"), []byte("custom fixture\n"), 0o600))
+	configPath := filepath.Join(root, ".agent-layer", "config.toml")
+	raw, err := os.ReadFile(configPath) // #nosec G304 -- test-owned configuration.
+	require.NoError(t, err)
+	raw = append(raw, []byte("\n[[instructions.local]]\nselectors = [\"00_rules.md\"]\norder = 0\n")...)
+	require.NoError(t, os.WriteFile(configPath, raw, 0o600)) // #nosec G703 -- test-owned configuration under t.TempDir.
 	copyEmbeddedDirForUpgradeCmdTest(t, "skills-catalog/dispatch-agent", filepath.Join(root, ".agent-layer", "skills", "dispatch-agent"), 0o600)
 	copyEmbeddedDirForUpgradeCmdTest(t, "docs/agent-layer", filepath.Join(root, ".agent-layer", "templates", "docs"), 0o644)
 	copyEmbeddedDirForUpgradeCmdTest(t, "docs/agent-layer", filepath.Join(root, "docs", "agent-layer"), 0o644)
@@ -495,4 +500,20 @@ func copyEmbeddedDirForUpgradeCmdTest(t *testing.T, templateRoot string, destRoo
 	if err != nil {
 		t.Fatalf("copy embedded dir %s: %v", templateRoot, err)
 	}
+}
+
+func TestUpgradePlanCmdRefusesUnsupportedSourceWithoutPrintingPlan(t *testing.T) {
+	root := t.TempDir()
+	require.NoError(t, install.Run(root, install.Options{System: install.RealSystem{}, PinVersion: "0.24.3"}))
+	before := testutil.SnapshotEvidence(t, root)
+	testutil.WithWorkingDir(t, root, func() {
+		lines := install.DefaultDiffMaxLines
+		cmd := newUpgradePlanCmd(&lines)
+		var out bytes.Buffer
+		cmd.SetOut(&out)
+		cmd.SetErr(&out)
+		require.ErrorIs(t, cmd.Execute(), install.ErrUnsupportedSource)
+		require.NotContains(t, out.String(), "Upgrade plan (dry-run)")
+	})
+	require.Equal(t, before, testutil.SnapshotEvidence(t, root))
 }

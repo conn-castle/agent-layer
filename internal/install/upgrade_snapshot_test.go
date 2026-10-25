@@ -19,10 +19,10 @@ import (
 
 func TestRunWithOverwrite_WritesAppliedUpgradeSnapshot(t *testing.T) {
 	root := t.TempDir()
-	if err := Run(root, Options{System: RealSystem{}, PinVersion: "0.5.0"}); err != nil {
+	if err := Run(root, Options{System: RealSystem{}, PinVersion: "1.0.0"}); err != nil {
 		t.Fatalf("seed repo: %v", err)
 	}
-	if err := Run(root, Options{System: RealSystem{}, Overwrite: true, Prompter: autoApprovePrompter(), PinVersion: "0.6.0"}); err != nil {
+	if err := Run(root, Options{System: RealSystem{}, Overwrite: true, Prompter: autoApprovePrompter(), PinVersion: "1.1.0"}); err != nil {
 		t.Fatalf("overwrite run: %v", err)
 	}
 
@@ -45,14 +45,14 @@ func TestRunWithOverwrite_WritesAppliedUpgradeSnapshot(t *testing.T) {
 	if decodeErr != nil {
 		t.Fatalf("decode version entry content: %v", decodeErr)
 	}
-	if string(versionBytes) != "0.5.0\n" {
-		t.Fatalf("version entry content = %q, want %q", string(versionBytes), "0.5.0\n")
+	if string(versionBytes) != "1.0.0\n" {
+		t.Fatalf("version entry content = %q, want %q", string(versionBytes), "1.0.0\n")
 	}
 }
 
 func TestRunWithOverwrite_RollbackRestoresGitignoreOnFailure(t *testing.T) {
 	root := t.TempDir()
-	if err := Run(root, Options{System: RealSystem{}, PinVersion: "0.5.0"}); err != nil {
+	if err := Run(root, Options{System: RealSystem{}, PinVersion: "1.0.0"}); err != nil {
 		t.Fatalf("seed repo: %v", err)
 	}
 	originalGitignore := "node_modules/\n# user line\n"
@@ -67,7 +67,7 @@ func TestRunWithOverwrite_RollbackRestoresGitignoreOnFailure(t *testing.T) {
 		err:      errors.New("launcher write failed"),
 	}
 
-	err := Run(root, Options{System: faultsOnce, Overwrite: true, Prompter: autoApprovePrompter(), PinVersion: "0.6.0"})
+	err := Run(root, Options{System: faultsOnce, Overwrite: true, Prompter: autoApprovePrompter(), PinVersion: "1.1.0"})
 	if err == nil {
 		t.Fatal("expected upgrade failure")
 	}
@@ -94,7 +94,7 @@ func TestRunWithOverwrite_RollbackRestoresGitignoreOnFailure(t *testing.T) {
 
 func TestRunWithOverwrite_RollbackRestoresStatuslineSourceOnFailure(t *testing.T) {
 	root := t.TempDir()
-	if err := Run(root, Options{System: RealSystem{}, PinVersion: "0.5.0"}); err != nil {
+	if err := Run(root, Options{System: RealSystem{}, PinVersion: "1.0.0"}); err != nil {
 		t.Fatalf("seed repo: %v", err)
 	}
 	// A pre-existing, user-customized statusline source must survive an automatic
@@ -116,7 +116,7 @@ func TestRunWithOverwrite_RollbackRestoresStatuslineSourceOnFailure(t *testing.T
 		err:      errors.New("launcher write failed"),
 	}
 
-	err := Run(root, Options{System: faultsOnce, Overwrite: true, Prompter: autoApprovePrompter(), PinVersion: "0.6.0"})
+	err := Run(root, Options{System: faultsOnce, Overwrite: true, Prompter: autoApprovePrompter(), PinVersion: "1.1.0"})
 	if err == nil {
 		t.Fatal("expected upgrade failure")
 	}
@@ -143,7 +143,7 @@ func TestRunWithOverwrite_RollbackRestoresStatuslineSourceOnFailure(t *testing.T
 
 func TestRunWithOverwrite_RollbackRestoresDeletedUnknownPath(t *testing.T) {
 	root := t.TempDir()
-	if err := Run(root, Options{System: RealSystem{}, PinVersion: "0.5.0"}); err != nil {
+	if err := Run(root, Options{System: RealSystem{}, PinVersion: "1.0.0"}); err != nil {
 		t.Fatalf("seed repo: %v", err)
 	}
 	unknownA := filepath.Join(root, ".agent-layer", "a-unknown.txt")
@@ -171,7 +171,7 @@ func TestRunWithOverwrite_RollbackRestoresDeletedUnknownPath(t *testing.T) {
 				return false, fmt.Errorf("prompt failed for %s", path)
 			},
 		},
-		PinVersion: "0.6.0",
+		PinVersion: "1.1.0",
 	})
 	if err == nil {
 		t.Fatal("expected upgrade failure")
@@ -200,7 +200,7 @@ func TestRunWithOverwrite_RollbackRestoresDeletedUnknownPath(t *testing.T) {
 
 func TestRunWithOverwrite_SnapshotMarksRollbackFailed(t *testing.T) {
 	root := t.TempDir()
-	if err := Run(root, Options{System: RealSystem{}, PinVersion: "0.5.0"}); err != nil {
+	if err := Run(root, Options{System: RealSystem{}, PinVersion: "1.0.0"}); err != nil {
 		t.Fatalf("seed repo: %v", err)
 	}
 	seedWorkflowBundleForTest(t, root)
@@ -210,7 +210,7 @@ func TestRunWithOverwrite_SnapshotMarksRollbackFailed(t *testing.T) {
 	faults.writeErrs[normalizePath(managedFile)] = errors.New("write failure")
 	faults.removeErrs[normalizePath(managedFile)] = errors.New("rollback remove failure")
 
-	err := Run(root, Options{System: faults, Overwrite: true, Prompter: autoApprovePrompter(), PinVersion: "0.6.0"})
+	err := Run(root, Options{System: faults, Overwrite: true, Prompter: autoApprovePrompter(), PinVersion: "1.1.0"})
 	if err == nil {
 		t.Fatal("expected upgrade failure")
 	}
@@ -261,7 +261,7 @@ func TestRunWithOverwrite_SnapshotMarksRollbackFailed(t *testing.T) {
 
 func TestRunWithOverwrite_RollbackScopesToExecutedStepTargets(t *testing.T) {
 	root := t.TempDir()
-	if err := Run(root, Options{System: RealSystem{}, PinVersion: "0.5.0"}); err != nil {
+	if err := Run(root, Options{System: RealSystem{}, PinVersion: "1.0.0"}); err != nil {
 		t.Fatalf("seed repo: %v", err)
 	}
 	seedWorkflowBundleForTest(t, root)
@@ -276,7 +276,7 @@ func TestRunWithOverwrite_RollbackScopesToExecutedStepTargets(t *testing.T) {
 		err:      errors.New("version write failure"),
 	}
 
-	err := Run(root, Options{System: faultsOnce, Overwrite: true, Prompter: autoApprovePrompter(), PinVersion: "0.6.0"})
+	err := Run(root, Options{System: faultsOnce, Overwrite: true, Prompter: autoApprovePrompter(), PinVersion: "1.1.0"})
 	if err == nil {
 		t.Fatal("expected upgrade failure")
 	}
@@ -309,7 +309,7 @@ func TestRollbackUpgradeSnapshot_RestoresAppliedSnapshot(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(root, "docs", "agent-layer"), 0o700); err != nil {
 		t.Fatalf("mkdir docs/agent-layer: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(root, ".agent-layer", "al.version"), []byte("0.6.0\n"), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(root, ".agent-layer", "al.version"), []byte("1.1.0\n"), 0o600); err != nil {
 		t.Fatalf("write current pin: %v", err)
 	}
 	if err := os.WriteFile(filepath.Join(root, "docs", "agent-layer", "BACKLOG.md"), []byte("new backlog\n"), 0o600); err != nil {
@@ -332,7 +332,7 @@ func TestRollbackUpgradeSnapshot_RestoresAppliedSnapshot(t *testing.T) {
 				Path:          ".agent-layer/al.version",
 				Kind:          upgradeSnapshotEntryKindFile,
 				Perm:          &permFile,
-				ContentBase64: base64.StdEncoding.EncodeToString([]byte("0.5.0\n")),
+				ContentBase64: base64.StdEncoding.EncodeToString([]byte("1.0.0\n")),
 			},
 			{
 				Path: ".agent-layer/tmp/extra.txt",
@@ -364,8 +364,8 @@ func TestRollbackUpgradeSnapshot_RestoresAppliedSnapshot(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read restored pin: %v", err)
 	}
-	if string(versionBytes) != "0.5.0\n" {
-		t.Fatalf("restored pin = %q, want %q", string(versionBytes), "0.5.0\n")
+	if string(versionBytes) != "1.0.0\n" {
+		t.Fatalf("restored pin = %q, want %q", string(versionBytes), "1.0.0\n")
 	}
 	backlogBytes, err := os.ReadFile(filepath.Join(root, "docs", "agent-layer", "BACKLOG.md")) // #nosec G304 -- path is constructed from test-controlled inputs.
 	if err != nil {
@@ -406,7 +406,7 @@ func TestRollbackUpgradeSnapshot_RestoresCreatedSnapshot(t *testing.T) {
 				Path:          ".agent-layer/al.version",
 				Kind:          upgradeSnapshotEntryKindFile,
 				Perm:          &permFile,
-				ContentBase64: base64.StdEncoding.EncodeToString([]byte("0.8.0\n")),
+				ContentBase64: base64.StdEncoding.EncodeToString([]byte("1.0.0\n")),
 			},
 		},
 	}
@@ -423,8 +423,8 @@ func TestRollbackUpgradeSnapshot_RestoresCreatedSnapshot(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read restored pin: %v", err)
 	}
-	if string(versionBytes) != "0.8.0\n" {
-		t.Fatalf("restored pin = %q, want %q", string(versionBytes), "0.8.0\n")
+	if string(versionBytes) != "1.0.0\n" {
+		t.Fatalf("restored pin = %q, want %q", string(versionBytes), "1.0.0\n")
 	}
 
 	restoredSnapshot := latestSnapshot(t, root)
@@ -443,7 +443,7 @@ func TestRollbackUpgradeSnapshot_RestoresManagedBaseline(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			root := t.TempDir()
-			if err := Run(root, Options{System: RealSystem{}, PinVersion: "0.5.0"}); err != nil {
+			if err := Run(root, Options{System: RealSystem{}, PinVersion: "1.0.0"}); err != nil {
 				t.Fatalf("seed repo: %v", err)
 			}
 			baselinePath := filepath.Join(root, filepath.FromSlash(baselineStateRelPath))
@@ -457,15 +457,15 @@ func TestRollbackUpgradeSnapshot_RestoresManagedBaseline(t *testing.T) {
 				t.Fatalf("read seeded baseline: %v", beforeErr)
 			}
 
-			if err := Run(root, Options{System: RealSystem{}, Overwrite: true, Prompter: autoApprovePrompter(), PinVersion: "0.6.0"}); err != nil {
+			if err := Run(root, Options{System: RealSystem{}, Overwrite: true, Prompter: autoApprovePrompter(), PinVersion: "1.1.0"}); err != nil {
 				t.Fatalf("upgrade run: %v", err)
 			}
 			upgraded, err := readManagedBaselineState(root, RealSystem{})
 			if err != nil {
 				t.Fatalf("read upgraded baseline: %v", err)
 			}
-			if upgraded.BaselineVersion != "0.6.0" {
-				t.Fatalf("upgraded baseline version = %q, want %q", upgraded.BaselineVersion, "0.6.0")
+			if upgraded.BaselineVersion != "1.1.0" {
+				t.Fatalf("upgraded baseline version = %q, want %q", upgraded.BaselineVersion, "1.1.0")
 			}
 
 			snapshot := latestSnapshot(t, root)
@@ -719,7 +719,7 @@ func TestRollbackUpgradeSnapshotState_AlwaysRestoresVersionEntry(t *testing.T) {
 	}
 	versionPath := filepath.Join(root, ".agent-layer", "al.version")
 	backlogPath := filepath.Join(root, "docs", "agent-layer", "BACKLOG.md")
-	if err := os.WriteFile(versionPath, []byte("0.6.0\n"), 0o600); err != nil {
+	if err := os.WriteFile(versionPath, []byte("1.1.0\n"), 0o600); err != nil {
 		t.Fatalf("write current version: %v", err)
 	}
 	if err := os.WriteFile(backlogPath, []byte("new backlog\n"), 0o600); err != nil {
@@ -737,7 +737,7 @@ func TestRollbackUpgradeSnapshotState_AlwaysRestoresVersionEntry(t *testing.T) {
 				Path:          ".agent-layer/al.version",
 				Kind:          upgradeSnapshotEntryKindFile,
 				Perm:          &filePerm,
-				ContentBase64: base64.StdEncoding.EncodeToString([]byte("0.5.0\n")),
+				ContentBase64: base64.StdEncoding.EncodeToString([]byte("1.0.0\n")),
 			},
 			{
 				Path:          "docs/agent-layer/BACKLOG.md",
@@ -757,8 +757,8 @@ func TestRollbackUpgradeSnapshotState_AlwaysRestoresVersionEntry(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read restored version: %v", err)
 	}
-	if string(versionBytes) != "0.5.0\n" {
-		t.Fatalf("restored version = %q, want %q", string(versionBytes), "0.5.0\n")
+	if string(versionBytes) != "1.0.0\n" {
+		t.Fatalf("restored version = %q, want %q", string(versionBytes), "1.0.0\n")
 	}
 	backlogBytes, err := os.ReadFile(backlogPath) // #nosec G304 -- path is constructed from test-controlled inputs.
 	if err != nil {
@@ -780,7 +780,7 @@ func TestRollbackUpgradeSnapshotState_VersionEntryPathError(t *testing.T) {
 			{
 				Path:          pinVersionRelPath,
 				Kind:          upgradeSnapshotEntryKindFile,
-				ContentBase64: base64.StdEncoding.EncodeToString([]byte("0.5.0\n")),
+				ContentBase64: base64.StdEncoding.EncodeToString([]byte("1.0.0\n")),
 			},
 		},
 	}
@@ -1486,7 +1486,7 @@ func TestRollbackUpgradeSnapshot_FailureMarksSnapshotRollbackFailed(t *testing.T
 	if err := os.MkdirAll(filepath.Join(root, ".agent-layer"), 0o700); err != nil {
 		t.Fatalf("mkdir .agent-layer: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(root, ".agent-layer", "al.version"), []byte("0.6.0\n"), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(root, ".agent-layer", "al.version"), []byte("1.1.0\n"), 0o600); err != nil {
 		t.Fatalf("write current pin: %v", err)
 	}
 
@@ -1501,7 +1501,7 @@ func TestRollbackUpgradeSnapshot_FailureMarksSnapshotRollbackFailed(t *testing.T
 				Path:          ".agent-layer/al.version",
 				Kind:          upgradeSnapshotEntryKindFile,
 				Perm:          &perm,
-				ContentBase64: base64.StdEncoding.EncodeToString([]byte("0.5.0\n")),
+				ContentBase64: base64.StdEncoding.EncodeToString([]byte("1.0.0\n")),
 			},
 		},
 	}
@@ -1772,7 +1772,7 @@ func TestRollbackUpgradeSnapshot_FailureAndStatusWriteFailure(t *testing.T) {
 		t.Fatalf("mkdir .agent-layer: %v", err)
 	}
 	versionPath := filepath.Join(root, ".agent-layer", "al.version")
-	if err := os.WriteFile(versionPath, []byte("0.6.0\n"), 0o600); err != nil {
+	if err := os.WriteFile(versionPath, []byte("1.1.0\n"), 0o600); err != nil {
 		t.Fatalf("write current pin: %v", err)
 	}
 
@@ -1787,7 +1787,7 @@ func TestRollbackUpgradeSnapshot_FailureAndStatusWriteFailure(t *testing.T) {
 				Path:          ".agent-layer/al.version",
 				Kind:          upgradeSnapshotEntryKindFile,
 				Perm:          &perm,
-				ContentBase64: base64.StdEncoding.EncodeToString([]byte("0.5.0\n")),
+				ContentBase64: base64.StdEncoding.EncodeToString([]byte("1.0.0\n")),
 			},
 		},
 	}
@@ -1811,7 +1811,7 @@ func TestRollbackUpgradeSnapshot_FailureAndStatusWriteFailure(t *testing.T) {
 	if readErr != nil {
 		t.Fatalf("read version after scope write failure: %v", readErr)
 	}
-	if string(content) != "0.6.0\n" {
+	if string(content) != "1.1.0\n" {
 		t.Fatalf("version changed before rollback scope persisted: %q", content)
 	}
 }
@@ -2503,7 +2503,7 @@ func TestValidateUpgradeSnapshot_RejectsInvalidSnapshot(t *testing.T) {
 					Path:          ".agent-layer/al.version",
 					Kind:          upgradeSnapshotEntryKindFile,
 					Perm:          &perm,
-					ContentBase64: base64.StdEncoding.EncodeToString([]byte("0.5.0\n")),
+					ContentBase64: base64.StdEncoding.EncodeToString([]byte("1.0.0\n")),
 				},
 			},
 		}

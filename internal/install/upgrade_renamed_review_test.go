@@ -34,11 +34,11 @@ const renamedReviewCustomLine = "- MY CUSTOM RENAME RULE"
 func seedRenamedReview(t *testing.T, fixture renamedReviewFixture, customized bool) string {
 	t.Helper()
 	root := t.TempDir()
-	if err := Run(root, Options{System: RealSystem{}, PinVersion: "0.15.0"}); err != nil {
+	if err := Run(root, Options{System: RealSystem{}, PinVersion: "1.0.0"}); err != nil {
 		t.Fatalf("seed repo: %v", err)
 	}
-	if fixture == renamedMemoryFixture {
-		withMigrationManifestOverride(t, "0.16.0", fmt.Sprintf(`{"schema_version":1,"target_version":"0.16.0","min_prior_version":"0.15.0","operations":[{"id":"rename-memory-fixture","kind":"rename_file","source_agnostic":true,"rationale":"Retained memory template rename fixture","from":%q,"to":%q}]}`, fixture.source, fixture.target))
+	if fixture == renamedMemoryFixture || fixture == renamedSkillFixture {
+		withMigrationManifestOverride(t, "1.1.0", fmt.Sprintf(`{"schema_version":1,"target_version":"1.1.0","min_prior_version":"1.0.0","operations":[{"id":"rename-memory-fixture","kind":"rename_file","source_agnostic":true,"rationale":"Retained memory template rename fixture","from":%q,"to":%q}]}`, fixture.source, fixture.target))
 		_ = os.Remove(filepath.Join(root, filepath.FromSlash(fixture.target)))
 	}
 	data, err := templates.Read(fixture.template)
@@ -91,7 +91,7 @@ func TestUpgrade_RenamedCustomizedFileReview(t *testing.T) {
 				captured = managed
 				return true, false, nil
 			}
-			if err := Run(root, Options{System: RealSystem{}, PinVersion: "0.23.1", Overwrite: true, Prompter: prompter}); err != nil {
+			if err := Run(root, Options{System: RealSystem{}, PinVersion: "1.1.0", Overwrite: true, Prompter: prompter}); err != nil {
 				t.Fatalf("upgrade: %v", err)
 			}
 			assertRenamedReviewPreview(t, indexDiffPreviews(captured), tc.fixture)
@@ -110,7 +110,7 @@ func TestBuildUpgradePlan_RenamedCustomizedFileReview(t *testing.T) {
 	for name, fixture := range map[string]renamedReviewFixture{"File": renamedMemoryFixture, "Directory": renamedSkillFixture} {
 		t.Run(name, func(t *testing.T) {
 			root := seedRenamedReview(t, fixture, true)
-			plan, err := BuildUpgradePlan(root, UpgradePlanOptions{TargetPinVersion: "0.23.1", System: RealSystem{}})
+			plan, err := BuildUpgradePlan(root, UpgradePlanOptions{TargetPinVersion: "1.1.0", System: RealSystem{}})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -146,7 +146,7 @@ func TestBuildUpgradePlan_RenamedSymlinkedSourceReview(t *testing.T) {
 	if err := os.Symlink(external, source); err != nil {
 		t.Fatal(err)
 	}
-	plan, err := BuildUpgradePlan(root, UpgradePlanOptions{TargetPinVersion: "0.23.1", System: RealSystem{}})
+	plan, err := BuildUpgradePlan(root, UpgradePlanOptions{TargetPinVersion: "1.1.0", System: RealSystem{}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -169,24 +169,24 @@ func TestUpgrade_RenamedDirectorySymlinkReview(t *testing.T) {
 					if err := os.Symlink(external, sourceDir); err != nil {
 						t.Fatal(err)
 					}
-					targetVersion := "0.23.1"
+					targetVersion := "1.1.0"
 					if chained {
 						from, to := fixture.source, fixture.target
 						if name == "Skill" {
 							from, to = filepath.ToSlash(filepath.Dir(from)), filepath.ToSlash(filepath.Dir(to))
 						}
-						withMigrationManifestOverride(t, "0.16.0", fmt.Sprintf(`{
+						withMigrationManifestOverride(t, "1.1.0", fmt.Sprintf(`{
   "schema_version": 1,
-  "target_version": "0.16.0",
-  "min_prior_version": "0.15.0",
+  "target_version": "1.1.0",
+  "min_prior_version": "1.0.0",
   "operations": [
     {"id": "a-first", "kind": "rename_file", "rationale": "First move", "source_agnostic": true,
      "from": %q, "to": ".agent-layer/intermediate"},
-    {"id": "b-second", "kind": "rename_generated_artifact", "rationale": "Second move", "source_agnostic": true,
+    {"id": "b-second", "kind": "rename_file", "rationale": "Second move", "source_agnostic": true,
      "from": ".agent-layer/intermediate", "to": %q}
   ]
 }`, from, to))
-						targetVersion = "0.16.0"
+						targetVersion = "1.1.0"
 					}
 					plan, err := BuildUpgradePlan(root, UpgradePlanOptions{TargetPinVersion: targetVersion, System: RealSystem{}})
 					if err != nil {
@@ -247,7 +247,7 @@ func TestBuildUpgradePlanDiffPreviews_RenamedCustomizedFileReview(t *testing.T) 
 	for name, fixture := range map[string]renamedReviewFixture{"File": renamedMemoryFixture, "Directory": renamedSkillFixture} {
 		t.Run(name, func(t *testing.T) {
 			root := seedRenamedReview(t, fixture, true)
-			plan, err := BuildUpgradePlan(root, UpgradePlanOptions{TargetPinVersion: "0.23.1", System: RealSystem{}})
+			plan, err := BuildUpgradePlan(root, UpgradePlanOptions{TargetPinVersion: "1.1.0", System: RealSystem{}})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -273,7 +273,7 @@ func TestUpgrade_RenamedDirectorySymlinkMissingSourceGuard(t *testing.T) {
 	if err := os.Symlink(external, filepath.Dir(source)); err != nil {
 		t.Fatal(err)
 	}
-	plan, err := BuildUpgradePlan(root, UpgradePlanOptions{TargetPinVersion: "0.23.1", System: RealSystem{}})
+	plan, err := BuildUpgradePlan(root, UpgradePlanOptions{TargetPinVersion: "1.1.0", System: RealSystem{}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -295,7 +295,7 @@ func TestUpgrade_RenamedDirectorySymlinkMissingSourceGuard(t *testing.T) {
 		captured = managed
 		return true, false, nil
 	}
-	if err := Run(root, Options{System: RealSystem{}, PinVersion: "0.23.1", Overwrite: true, Prompter: prompter}); err != nil {
+	if err := Run(root, Options{System: RealSystem{}, PinVersion: "1.1.0", Overwrite: true, Prompter: prompter}); err != nil {
 		t.Fatal(err)
 	}
 	if _, ok := indexDiffPreviews(captured)[renamedSkillFixture.target]; ok {
@@ -317,7 +317,7 @@ func TestUpgrade_RenamedReviewSelectiveDeclineGuard(t *testing.T) {
 		prompted[preview.Path] = true
 		return preview.Path == ".agent-layer/commands.allow", nil
 	}
-	if err := Run(root, Options{System: RealSystem{}, PinVersion: "0.23.1", Overwrite: true, Prompter: prompter}); err != nil {
+	if err := Run(root, Options{System: RealSystem{}, PinVersion: "1.1.0", Overwrite: true, Prompter: prompter}); err != nil {
 		t.Fatal(err)
 	}
 	data, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(renamedMemoryFixture.target))) // #nosec G304 -- path is constructed from test-controlled inputs.
@@ -339,7 +339,7 @@ func TestBuildUpgradePlan_RenamedReviewUnchangedGuard(t *testing.T) {
 	for name, fixture := range map[string]renamedReviewFixture{"File": renamedMemoryFixture, "Directory": renamedSkillFixture} {
 		t.Run(name, func(t *testing.T) {
 			root := seedRenamedReview(t, fixture, false)
-			plan, err := BuildUpgradePlan(root, UpgradePlanOptions{TargetPinVersion: "0.23.1", System: RealSystem{}})
+			plan, err := BuildUpgradePlan(root, UpgradePlanOptions{TargetPinVersion: "1.1.0", System: RealSystem{}})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -355,25 +355,25 @@ func TestBuildUpgradePlan_RenamedReviewUnchangedGuard(t *testing.T) {
 // Regression guard: non-rename coverage wins when it overlaps a rename.
 func TestBuildUpgradePlan_RenamedReviewNonRenameCoverageGuard(t *testing.T) {
 	root := seedRenamedReview(t, renamedSkillFixture, true)
-	withMigrationManifestOverride(t, "0.16.0", `{
+	withMigrationManifestOverride(t, "1.1.0", `{
   "schema_version": 1,
-  "target_version": "0.16.0",
-  "min_prior_version": "0.15.0",
+  "target_version": "1.1.0",
+  "min_prior_version": "1.0.0",
   "operations": [
     {"id": "a-rename", "kind": "rename_file", "rationale": "Move skill", "source_agnostic": true,
      "from": ".agent-layer/skills/agent-dispatch", "to": ".agent-layer/skills/dispatch-agent"},
-    {"id": "b-format", "kind": "migrate_skills_format", "rationale": "Update format", "source_agnostic": true,
+    {"id": "b-delete", "kind": "delete_file", "rationale": "Delete destination", "source_agnostic": true,
      "path": ".agent-layer/skills"}
   ]
 }`)
-	plan, err := BuildUpgradePlan(root, UpgradePlanOptions{TargetPinVersion: "0.16.0", System: RealSystem{}})
+	plan, err := BuildUpgradePlan(root, UpgradePlanOptions{TargetPinVersion: "1.1.0", System: RealSystem{}})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if findUpgradeChange(plan.TemplateUpdates, renamedSkillFixture.target) != nil {
 		t.Fatal("non-rename coverage must keep destination hidden")
 	}
-	inst := &installer{root: root, pinVersion: "0.16.0", sys: RealSystem{}}
+	inst := &installer{root: root, pinVersion: "1.1.0", sys: RealSystem{}}
 	if err := inst.prepareUpgradeMigrations(); err != nil {
 		t.Fatal(err)
 	}
@@ -383,7 +383,7 @@ func TestBuildUpgradePlan_RenamedReviewNonRenameCoverageGuard(t *testing.T) {
 }
 
 func TestBuildUpgradePlan_RenamedReviewChains(t *testing.T) {
-	for _, kind := range []upgradeMigrationOperationKind{upgradeMigrationKindRenameFile, upgradeMigrationKindRenameGeneratedArtifact} {
+	for _, kind := range []upgradeMigrationOperationKind{upgradeMigrationKindRenameFile} {
 		for _, roundTrip := range []bool{false, true} {
 			t.Run(fmt.Sprintf("%s/roundTrip=%t", kind, roundTrip), func(t *testing.T) {
 				root := seedRenamedReview(t, renamedMemoryFixture, true)
@@ -394,10 +394,10 @@ func TestBuildUpgradePlan_RenamedReviewChains(t *testing.T) {
 					}
 					from = renamedMemoryFixture.target
 				}
-				withMigrationManifestOverride(t, "0.16.0", fmt.Sprintf(`{
+				withMigrationManifestOverride(t, "1.1.0", fmt.Sprintf(`{
   "schema_version": 1,
-  "target_version": "0.16.0",
-  "min_prior_version": "0.15.0",
+  "target_version": "1.1.0",
+  "min_prior_version": "1.0.0",
   "operations": [
     {"id": "a-first", "kind": %q, "rationale": "First move", "source_agnostic": true,
      "from": %q, "to": ".agent-layer/instructions/intermediate.md"},
@@ -405,7 +405,7 @@ func TestBuildUpgradePlan_RenamedReviewChains(t *testing.T) {
      "from": ".agent-layer/instructions/intermediate.md", "to": %q}
   ]
 }`, kind, from, kind, renamedMemoryFixture.target))
-				plan, err := BuildUpgradePlan(root, UpgradePlanOptions{TargetPinVersion: "0.16.0", System: RealSystem{}})
+				plan, err := BuildUpgradePlan(root, UpgradePlanOptions{TargetPinVersion: "1.1.0", System: RealSystem{}})
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -432,7 +432,7 @@ func TestBuildUpgradePlan_RenamedReviewChains(t *testing.T) {
 
 func TestMovedFileUpdates_RenamedReviewErrors(t *testing.T) {
 	root := seedRenamedReview(t, renamedMemoryFixture, true)
-	inst := &installer{root: root, pinVersion: "0.23.1", sys: RealSystem{}}
+	inst := &installer{root: root, pinVersion: "1.1.0", sys: RealSystem{}}
 	plan, err := inst.planUpgradeMigrations()
 	if err != nil {
 		t.Fatal(err)
@@ -466,7 +466,7 @@ func TestMovedFileUpdates_RenamedReviewErrors(t *testing.T) {
 			}
 		})
 	}
-	previewPlan, err := BuildUpgradePlan(root, UpgradePlanOptions{TargetPinVersion: "0.23.1", System: RealSystem{}})
+	previewPlan, err := BuildUpgradePlan(root, UpgradePlanOptions{TargetPinVersion: "1.1.0", System: RealSystem{}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -489,7 +489,7 @@ func TestTemplateOrigins_RenamedSymlinkParentStatError(t *testing.T) {
 	if err := os.Symlink(external, sourceDir); err != nil {
 		t.Fatal(err)
 	}
-	inst := &installer{root: root, pinVersion: "0.23.1", sys: RealSystem{}}
+	inst := &installer{root: root, pinVersion: "1.1.0", sys: RealSystem{}}
 	plan, err := inst.planUpgradeMigrations()
 	if err != nil {
 		t.Fatal(err)

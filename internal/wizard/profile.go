@@ -27,6 +27,9 @@ import (
 // profilePath points to a TOML file; apply controls whether writes are performed or preview-only output is shown.
 // The profile is validated before any write, and a missing install is performed only when apply is true.
 func RunProfile(ctx context.Context, root string, runSync syncer, pinVersion string, profilePath string, apply bool, out io.Writer) error {
+	if err := install.CheckWizardSource(root, install.RealSystem{}); err != nil {
+		return err
+	}
 	if out == nil {
 		out = os.Stdout
 	}
@@ -62,7 +65,7 @@ func RunProfile(ctx context.Context, root string, runSync syncer, pinVersion str
 		return writeProfileConfig(root, configPath, profilePath, profileBytes, installed, apply, out)
 	}
 	if apply {
-		err = skillmigration.WithRecoveredContext(ctx, root, write)
+		err = skillmigration.WithCheckedRecovery(ctx, root, func() error { return install.CheckWizardSource(root, install.RealSystem{}) }, write)
 	} else {
 		err = write()
 	}

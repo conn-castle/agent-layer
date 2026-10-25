@@ -169,7 +169,7 @@ make test-e2e
 ```
 Run from: repo root
 Prerequisites: Go 1.27.0+, `sha256sum` or `shasum`
-Notes: Builds release artifacts and runs all discovered scenarios with mock agent binaries. Auto-detects latest migration manifest version for upgrade testing. Upgrade scenarios use pre-cached binaries from `~/.cache/al-e2e/bin/` (run `make test-e2e-online` once to populate cache). Override version with `AL_E2E_VERSION=vX.Y.Z`. Filter: `AL_E2E_SCENARIOS="upgrade*" make test-e2e`. `defaults.toml` profile fixture is generated at runtime from `internal/templates/config.toml` to prevent drift.
+Notes: Builds release artifacts and runs all discovered scenarios with mock agent binaries. Auto-detects latest migration manifest version for upgrade testing. Ordinary upgrades start at 1.0.0; the unfinished-transition refusal scenario also uses real 0.24.3 and 1.0.0 binaries. Upgrade scenarios use pre-cached binaries from `~/.cache/al-e2e/bin/` (run `make test-e2e-online` once to populate cache). Override version with `AL_E2E_VERSION=vX.Y.Z`. Filter: `AL_E2E_SCENARIOS="upgrade*" make test-e2e`. `defaults.toml` profile fixture is generated at runtime from `internal/templates/config.toml` to prevent drift.
 
 - Run e2e tests with online upgrade binary downloads
 ```bash

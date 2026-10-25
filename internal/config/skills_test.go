@@ -28,7 +28,7 @@ func TestLoadSkills_FlatFormatReturnsError(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for flat-format skill")
 	}
-	if !strings.Contains(err.Error(), "flat format is no longer supported") {
+	if !strings.Contains(err.Error(), "flat-format skill") {
 		t.Fatalf("expected flat-format unsupported error, got %v", err)
 	}
 	if !strings.Contains(err.Error(), "al upgrade") {
@@ -226,7 +226,7 @@ func TestLoadSkills_FlatFileRejectsBeforeDirectoryLoads(t *testing.T) {
 	}
 
 	_, err := LoadSkills(dir)
-	if err == nil || !strings.Contains(err.Error(), "flat format is no longer supported") {
+	if err == nil || !strings.Contains(err.Error(), "flat-format skill") {
 		t.Fatalf("expected flat-format unsupported error, got %v", err)
 	}
 }

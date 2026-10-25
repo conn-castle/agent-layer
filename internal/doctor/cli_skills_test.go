@@ -208,3 +208,28 @@ func TestCheckCLISkills_PathPointsAtFileEmitsNoResult(t *testing.T) {
 	results := CheckCLISkills(context.Background(), cfg)
 	assert.Empty(t, results, "a file (not a directory) at the catalog skill path is treated as absent")
 }
+
+func TestCheckCLISkillsCustomizedCatalogNamesAreOrdinaryLocalContent(t *testing.T) {
+	original := lookPathFunc
+	lookPathFunc = func(name string) (string, error) { return "/mock/bin/" + name, nil }
+	t.Cleanup(func() { lookPathFunc = original })
+	for _, test := range []struct {
+		name  string
+		count int
+	}{{"ship-pr", 0}, {"playwright", 1}} {
+		t.Run(test.name, func(t *testing.T) {
+			root := t.TempDir()
+			raw, err := templates.Read("config.toml")
+			require.NoError(t, err)
+			base := filepath.Join(root, ".agent-layer")
+			require.NoError(t, os.MkdirAll(filepath.Join(base, "skills", test.name), 0o750))
+			require.NoError(t, os.WriteFile(filepath.Join(base, "config.toml"), raw, 0o600))
+			require.NoError(t, os.WriteFile(filepath.Join(base, "skills", test.name, "SKILL.md"), []byte("---\nname: "+test.name+"\ndescription: Project-specific workflow.\n---\nCustom user content.\n"), 0o600))
+			results := CheckCLISkills(t.Context(), &config.ProjectConfig{Root: root})
+			require.Len(t, results, test.count)
+			for _, result := range results {
+				require.Equal(t, StatusOK, result.Status)
+			}
+		})
+	}
+}

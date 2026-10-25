@@ -90,7 +90,7 @@ func formatNeedsUpgradeRecommendation(configPath string, details []configUnknown
 	}
 	lines := []string{
 		"These config keys are from an older release and need a migration.",
-		fmt.Sprintf("Run `al upgrade` to migrate %s.", configPath),
+		fmt.Sprintf(messages.DoctorLegacyConfigPathFmt, configPath),
 		"",
 		"Detected keys:",
 	}
@@ -115,9 +115,12 @@ func allConfigUnknownKeysNeedUpgrade(details []configUnknownKeyDetail) bool {
 }
 
 func configUnknownKeyNeedsUpgrade(path string) bool {
-	return path == legacyGeminiSection ||
-		strings.HasPrefix(path, legacyGeminiSection+".") ||
-		strings.HasPrefix(path, legacyGeminiSection+"[")
+	for _, retired := range []string{legacyGeminiSection, "agents.claude-vscode", `agents["claude-vscode"]`, "agents.antigravity.dispatch", "agents.claude.dispatch", "agents.codex.dispatch"} {
+		if path == retired || strings.HasPrefix(path, retired+".") || strings.HasPrefix(path, retired+"[") {
+			return true
+		}
+	}
+	return false
 }
 
 // configUnknownKeys returns detected unknown config keys using the current schema.

@@ -881,7 +881,7 @@ func TestBuildUpgradePrompter_UnifiedCallbackExplicitCategory(t *testing.T) {
 
 func TestUpgradePromptCancellationRollsBackWithoutInput(t *testing.T) {
 	root := t.TempDir()
-	if err := install.Run(root, install.Options{System: install.RealSystem{}, PinVersion: "0.24.3"}); err != nil {
+	if err := install.Run(root, install.Options{System: install.RealSystem{}, PinVersion: "1.0.0"}); err != nil {
 		t.Fatal(err)
 	}
 	block := filepath.Join(root, ".agent-layer", "gitignore.block")
@@ -928,7 +928,7 @@ func TestUpgradePromptCancellationRollsBackWithoutInput(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("canceled upgrade needed stdin")
 	}
-	for path, want := range map[string]string{block: string(original), filepath.Join(root, ".agent-layer", "al.version"): "0.24.3\n"} {
+	for path, want := range map[string]string{block: string(original), filepath.Join(root, ".agent-layer", "al.version"): "1.0.0\n"} {
 		got, err := os.ReadFile(path) // #nosec G304 -- paths are rooted in the test-owned temporary project.
 		if err != nil || string(got) != want {
 			t.Fatalf("rollback %s = %q, %v", path, got, err)

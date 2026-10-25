@@ -34,7 +34,7 @@ func TestServiceCancellationStopsProjectLockWait(t *testing.T) {
 				case "remove catalog":
 					_, err = service.RemoveCatalogSelectors(ctx, []string{"skills/tools/playwright"})
 				case "install catalog":
-					_, err = service.InstallCatalog(ctx, []string{"skills/tools/playwright"}, nil)
+					_, err = service.InstallCatalog(ctx, []string{"skills/tools/playwright"})
 				case "reset":
 					_, err = service.Reset(ctx, "playwright")
 				case "resolve":

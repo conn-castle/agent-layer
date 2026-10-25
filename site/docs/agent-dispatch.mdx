@@ -113,7 +113,7 @@ Run `al update`, then `al upgrade` in each repository, and reconnect `agent-laye
 once. In Claude Code use `/mcp`; in a persistent Codex app restart the app or
 reload MCP configuration. A new chat may reuse the running server. Pre-guard
 servers need one reconnect after upgrade to acquire the guard. For development,
-use `make al-sync` or `make al-upgrade` to project source despite an older pin,
+use `make al-sync` to project source despite an older pin, or `make al-upgrade` after completing the v1.0.0 transition,
 then reconnect when a rebuild replaces the executable; no manual pin edits are needed. Sync updates
 launch configuration without replacing servers. Timeout changes also require a
 reconnect and a reload of projected client timeouts.

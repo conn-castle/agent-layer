@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -15,6 +14,7 @@ import (
 
 	"github.com/conn-castle/agent-layer/internal/agentoptions"
 	"github.com/conn-castle/agent-layer/internal/config"
+	"github.com/conn-castle/agent-layer/internal/install"
 	"github.com/conn-castle/agent-layer/internal/messages"
 	alsync "github.com/conn-castle/agent-layer/internal/sync"
 )
@@ -211,16 +211,13 @@ func TestRunWithWriter_RedirectsWhenConfigNeedsUpgrade(t *testing.T) {
 	// non-nil error — proving the redirect short-circuits before the flow.
 	err := RunWithWriter(context.Background(), root, &errUI{err: errors.New("stub UI error")}, runSync, "0.0.0", &out)
 
-	if err != nil {
-		t.Fatalf("expected clean exit (nil) for needs-upgrade config, got: %v", err)
-	}
+	require.ErrorIs(t, err, install.ErrUnfinishedTransition)
 	if syncCalled {
 		t.Fatal("runSync must not be called when the config needs an upgrade")
 	}
 	if strings.Contains(out.String(), "will help you fix") {
 		t.Fatalf("must not promise a wizard fix for a needs-upgrade config, got: %q", out.String())
 	}
-	assert.Contains(t, out.String(), "al upgrade")
 }
 
 func TestRunWithWriter_RedirectsLegacyAntigravityAgentSpecificModel(t *testing.T) {
@@ -246,17 +243,13 @@ model = "Gemini 3.5 Flash (High)"
 
 	var out bytes.Buffer
 	err := RunWithWriter(context.Background(), root, &errUI{err: errors.New("stub UI error")}, runSync, "0.0.0", &out)
-	if err != nil {
-		t.Fatalf("expected clean exit (nil) for legacy Antigravity model config, got: %v", err)
-	}
+	require.ErrorIs(t, err, install.ErrUnfinishedTransition)
 	if syncCalled {
 		t.Fatal("runSync must not be called when legacy Antigravity model config needs an upgrade")
 	}
 	if strings.Contains(out.String(), "will help you fix") {
 		t.Fatalf("must not promise a wizard fix for legacy Antigravity model config, got: %q", out.String())
 	}
-	assert.Contains(t, out.String(), "al upgrade")
-	assert.Contains(t, out.String(), "agents.antigravity.agent_specific.model")
 }
 
 func TestRunWithWriter_LenientFallbackOnUnknownKeys(t *testing.T) {
@@ -691,15 +684,6 @@ func TestInitializeChoices_QuestionToolReadBackPrecedence(t *testing.T) {
 			t.Fatal("expected typed flag=false to take precedence over legacy block")
 		}
 	})
-}
-
-func TestInitializeChoices_PreservesLegacyDispatchAgentSelection(t *testing.T) {
-	root := t.TempDir()
-	require.NoError(t, os.MkdirAll(filepath.Join(root, ".agent-layer", "skills", legacyDispatchAgentCatalogID), 0o750))
-
-	choices, err := initializeChoices(&config.ProjectConfig{Root: root})
-	require.NoError(t, err)
-	assert.True(t, choices.EnabledCLISkills["dispatch-agent"])
 }
 
 func TestInitializeChoices_StatuslineWizardDefaults(t *testing.T) {

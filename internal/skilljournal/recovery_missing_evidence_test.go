@@ -27,7 +27,7 @@ func missingEvidenceFixture(t *testing.T, root string) config.Paths {
 }
 
 func TestSharedRecoveryPreservesAllEvidenceWhenRequiredBackupIsMissing(t *testing.T) {
-	for _, missing := range []string{"config", "lock", "existing write", "delete", "retirement", "original file", "original link", "original dangling link"} {
+	for _, missing := range []string{"config", "lock", "existing write", "delete", "original file", "original link", "original dangling link"} {
 		t.Run(missing, func(t *testing.T) {
 			root := t.TempDir()
 			paths := missingEvidenceFixture(t, root)
@@ -48,10 +48,6 @@ func TestSharedRecoveryPreservesAllEvidenceWhenRequiredBackupIsMissing(t *testin
 			case "delete":
 				doc.Deletes = []string{"alpha"}
 				wanted = skilljournal.DeleteBackupPrefix + "alpha"
-			case "retirement":
-				doc.Version = skilljournal.AdoptionVersion
-				doc.LocalRetirements = []string{"ship-pr"}
-				wanted = skilljournal.LocalBackupPrefix + "ship-pr"
 			default:
 				doc.Writes = append(doc.Writes, skilljournal.WriteIntent{Name: "alpha", Existed: true})
 				wanted = skilljournal.WriteBackupPrefix + "alpha"

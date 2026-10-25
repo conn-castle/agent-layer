@@ -25,25 +25,10 @@ type PromptStatuslineSourcePreviewFunc func(preview DiffPreview) (bool, error)
 // used without prompting.
 type PromptConfigSetDefaultFunc func(key string, manifestValue any, rationale string, field *config.FieldDef) (any, error)
 
-// SkillsMigrationConflict describes a flat-format skill that conflicts with an
-// existing directory-format skill (different content at both locations).
-type SkillsMigrationConflict struct {
-	SkillName string
-	FlatPath  string
-	DirPath   string
-	Reason    string
-}
-
-// PromptConfirmSkillsMigrationFunc asks the user to confirm the skills-format
-// migration. It receives the list of flat skills to migrate and any detected
-// conflicts. Returns true to proceed, false to abort.
-type PromptConfirmSkillsMigrationFunc func(flatSkills []string, conflicts []SkillsMigrationConflict) (bool, error)
-
 // PromptFuncs holds install prompt callbacks. A nil *PromptFuncs means headless.
 // Overwrite mode requires unified and per-file overwrite callbacks and both
 // delete-unknown callbacks. Optional nil callbacks keep statusline files, leave
-// tmp untouched, select no keep-list paths, use manifest config defaults, and
-// proceed with skills migration.
+// tmp untouched, select no keep-list paths, and use manifest config defaults.
 type PromptFuncs struct {
 	OverwriteAllUnifiedPreviewFunc PromptOverwriteAllUnifiedPreviewFunc
 	OverwritePreviewFunc           PromptOverwritePreviewFunc
@@ -53,7 +38,6 @@ type PromptFuncs struct {
 	DeleteUnknownTmpAllFunc        PromptDeleteUnknownTmpAllFunc
 	SelectUnknownsToKeepFunc       PromptSelectUnknownsToKeepFunc
 	ConfigSetDefaultFunc           PromptConfigSetDefaultFunc
-	ConfirmSkillsMigrationFunc     PromptConfirmSkillsMigrationFunc
 }
 
 // overwrite asks whether to overwrite a single path.
@@ -110,14 +94,6 @@ func (p *PromptFuncs) configSetDefault(key string, manifestValue any, rationale 
 		return manifestValue, nil
 	}
 	return p.ConfigSetDefaultFunc(key, manifestValue, rationale, field)
-}
-
-// confirmSkillsMigration proceeds when no callback is set.
-func (p *PromptFuncs) confirmSkillsMigration(flatSkills []string, conflicts []SkillsMigrationConflict) (bool, error) {
-	if p == nil || p.ConfirmSkillsMigrationFunc == nil {
-		return true, nil
-	}
-	return p.ConfirmSkillsMigrationFunc(flatSkills, conflicts)
 }
 
 // hasStatuslineSource gates the file-reading diff preview build.

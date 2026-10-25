@@ -22,11 +22,8 @@ import (
 var ErrConfigValidation = errors.New("config validation failed")
 
 // ErrConfigNeedsUpgrade is a sentinel wrapped alongside ErrConfigValidation
-// when a config fails validation because it contains a legacy key that only
-// `al upgrade` can migrate (e.g. a removed agent table). Repair tools such as
-// the wizard cannot rewrite these keys in place, so they use
-// errors.Is(err, ErrConfigNeedsUpgrade) to redirect the user to `al upgrade`
-// instead of attempting a fix that would dead-end at sync.
+// when config contains a retired key requiring Agent Layer v1.0.0. Repair tools
+// use errors.Is to direct users to that release before attempting edits.
 var ErrConfigNeedsUpgrade = errors.New("config requires migration")
 
 // LoadProjectConfig reads and validates the full Agent Layer config from disk.
@@ -81,6 +78,9 @@ func ParseConfig(data []byte, source string) (*Config, error) {
 	var cfg Config
 	if err := toml.Unmarshal(data, &cfg); err != nil {
 		return nil, fmt.Errorf(messages.ConfigInvalidConfigFmt, source, err)
+	}
+	if HasRetiredConfigAliases(data) {
+		return nil, fmt.Errorf("%w: %w: "+messages.TransitionConfigFmt, ErrConfigValidation, ErrConfigNeedsUpgrade, source)
 	}
 	if err := decodeStrict(data); err != nil {
 		if HasLegacyGeminiConfig(data) {
@@ -144,31 +144,6 @@ func HasLegacyDispatchConfig(data []byte) bool {
 	return false
 }
 
-// HasLegacyAntigravityAgentSpecificModel reports whether `data` contains the
-// pre-v0.12.0 Antigravity provider passthrough model key. That key is migrated
-// to the typed `agents.antigravity.model` field by `al upgrade`; repair tools
-// must not preserve it through lenient config rewrites.
-func HasLegacyAntigravityAgentSpecificModel(data []byte) bool {
-	var raw map[string]any
-	if err := toml.Unmarshal(data, &raw); err != nil {
-		return false
-	}
-	agents, ok := raw["agents"].(map[string]any)
-	if !ok {
-		return false
-	}
-	antigravity, ok := agents[agentAntigravity].(map[string]any)
-	if !ok {
-		return false
-	}
-	agentSpecific, ok := antigravity["agent_specific"].(map[string]any)
-	if !ok {
-		return false
-	}
-	_, ok = agentSpecific["model"]
-	return ok
-}
-
 // decodeStrict re-decodes the TOML data with strict unknown-field rejection.
 // This catches keys that toml.Unmarshal silently ignores (e.g. model on
 // enable-only agents whose struct has no Model field).
@@ -188,43 +163,7 @@ func ParseConfigLenient(data []byte, source string) (*Config, error) {
 	if err := toml.Unmarshal(data, &cfg); err != nil {
 		return nil, fmt.Errorf(messages.ConfigInvalidConfigFmt, source, err)
 	}
-	applyLegacyConfigAliases(data, &cfg)
 	return &cfg, nil
-}
-
-// applyLegacyConfigAliases carries forward values from legacy config keys
-// that were renamed in migration manifests but not yet migrated on disk.
-// This ensures repair tools (wizard, doctor) see the correct enabled state
-// even when the migration has not run yet.
-func applyLegacyConfigAliases(data []byte, cfg *Config) {
-	var raw map[string]any
-	if err := toml.Unmarshal(data, &raw); err != nil {
-		return
-	}
-	agents, ok := raw["agents"].(map[string]any)
-	if !ok {
-		return
-	}
-	// Legacy: [agents.claude-vscode] → [agents.claude_vscode]
-	// (v0.8.8 migration config_rename_key)
-	if legacy, ok := agents["claude-vscode"].(map[string]any); ok {
-		if cfg.Agents.ClaudeVSCode.Enabled == nil {
-			if val, ok := legacy["enabled"].(bool); ok {
-				cfg.Agents.ClaudeVSCode.Enabled = &val
-			}
-		}
-	}
-	// Legacy: [agents.gemini] → [agents.antigravity]
-	// (v0.10.2 migration config_rename_key b-rename-agents-gemini-enabled).
-	// Repair tools must see the user's intended enablement state on
-	// pre-migration repos so doctor's CheckAntigravityBinary gate fires.
-	if legacy, ok := agents["gemini"].(map[string]any); ok {
-		if cfg.Agents.Antigravity.Enabled == nil {
-			if val, ok := legacy["enabled"].(bool); ok {
-				cfg.Agents.Antigravity.Enabled = &val
-			}
-		}
-	}
 }
 
 // LoadConfigLenient reads .agent-layer/config.toml without validation.
@@ -235,4 +174,28 @@ func LoadConfigLenient(path string) (*Config, error) {
 		return nil, fmt.Errorf(messages.ConfigMissingFileFmt, path, err)
 	}
 	return ParseConfigLenient(data, path)
+}
+
+// HasRetiredConfigAliases recognizes aliases no longer converted by this CLI.
+func HasRetiredConfigAliases(data []byte) bool {
+	var raw map[string]any
+	if toml.Unmarshal(data, &raw) != nil {
+		return false
+	}
+	agents, _ := raw["agents"].(map[string]any)
+	if _, ok := agents["claude-vscode"]; ok {
+		return true
+	}
+	mcp, _ := raw["mcp"].(map[string]any)
+	servers, _ := mcp["servers"].([]any)
+	for _, server := range servers {
+		table, _ := server.(map[string]any)
+		clients, _ := table["clients"].([]any)
+		for _, client := range clients {
+			if client == "gemini" {
+				return true
+			}
+		}
+	}
+	return false
 }

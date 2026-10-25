@@ -1,5 +1,5 @@
-// Package skillmigration protects converted local slots during supported
-// rollback and CLI downgrade operations. It contains coordinates, never content.
+// Package skillmigration retains capability and ownership guards for CLI
+// handoffs and incompatible snapshot recovery. It contains coordinates, never content.
 package skillmigration
 
 import (
@@ -17,14 +17,25 @@ import (
 	"github.com/conn-castle/agent-layer/internal/version"
 )
 
-// MinimumCLI is the first CLI release with the migration's ownership safeguard.
-// This is a CLI capability boundary, not a skill-content release/version.
+// MinimumCLI is the first CLI that completed the skill and instruction transition
+// and the minimum supported installed-project source for this CLI.
 const MinimumCLI = "1.0.0"
 
 // WithRecoveredContext recovers under the project lock unless ctx is canceled.
 func WithRecoveredContext(ctx context.Context, root string, fn func() error) error {
+	return WithCheckedRecovery(ctx, root, nil, fn)
+}
+
+// WithCheckedRecovery checks before lock creation and again under the lock
+// before recovery. The check must be read-only.
+func WithCheckedRecovery(ctx context.Context, root string, check func() error, fn func() error) error {
 	if err := ctx.Err(); err != nil {
 		return err
+	}
+	if check != nil {
+		if err := check(); err != nil {
+			return err
+		}
 	}
 	if _, err := os.Lstat(filepath.Join(root, ".agent-layer")); errors.Is(err, os.ErrNotExist) {
 		return fn()
@@ -32,6 +43,11 @@ func WithRecoveredContext(ctx context.Context, root string, fn func() error) err
 		return err
 	}
 	return projectlock.WithContext(ctx, projectlock.RealSystem{}, root, func() error {
+		if check != nil {
+			if err := check(); err != nil {
+				return err
+			}
+		}
 		if err := skilljournal.RecoverBoth(root); err != nil {
 			return err
 		}

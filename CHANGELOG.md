@@ -3,6 +3,12 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+### Changed
+- Installed projects must complete the v1.0.0 transition before using v1.2.0 upgrade or wizard/profile mutation. Known pre-1.0 sources, pristine shipped transition files, legacy config and adoption-v2 recovery evidence are preserved and refused before mutation with guidance to install or run the v1.0.0 executable itself for `al upgrade`, then its `al wizard` to adopt or recover. Manual rollback to pre-1.0 pins requires v1.0.0 or v1.1.0. Customized local content and clean unpinned projects remain supported (#428).
+
+### Removed
+- Retired pre-1.0 migration executors, current-wizard adoption, automatic instruction ordering during upgrade, and conversion of old config aliases. Wizard/profile setup and benchmark freezing retain instruction ordering; published manifests, honored old pins, ordinary import recovery and reachable cleanup remain supported (#428).
+
 ### Fixed
 - Source Make wrappers such as `make al-doctor`, `make al-sync`, and `make al-claude` keep the existing development executable when a rebuild produces identical bytes, so routine wrapper runs no longer make running MCP servers refuse new dispatch work. Changed output still replaces it atomically, and a failed build keeps the previous executable (#442).
 - Model discovery in `al doctor`, the wizard, and `al dispatch options` stops each Codex, Muse, Copilot CLI, Grok, or Antigravity harness and any children remaining in its process group before returning on success, failure, or the first interrupt, including children that ignore interrupts or keep output open. Claude keeps its graceful shutdown (#454).

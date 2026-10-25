@@ -27,7 +27,7 @@ const (
 	ConfigCodexEnabledRequiredFmt                 = "%s: agents.codex.enabled is required"
 	ConfigVSCodeEnabledRequiredFmt                = "%s: agents.vscode.enabled is required"
 	ConfigAntigravityEnabledRequiredFmt           = "%s: agents.antigravity.enabled is required"
-	ConfigAntigravityAgentSpecificModelInvalidFmt = "%s: agents.antigravity.agent_specific.model is not supported; use agents.antigravity.model for Antigravity model selection"
+	ConfigAntigravityAgentSpecificModelInvalidFmt = "%s: agents.antigravity.agent_specific.model is not supported; this Agent Layer no longer converts it. " + TransitionRecoveryGuidance
 	ConfigCopilotCLIEnabledRequiredFmt            = "%s: agents.copilot_cli.enabled is required"
 	ConfigCopilotCLIReasoningEffortUnsupportedFmt = "%s: agents.copilot_cli.reasoning_effort is not supported in this release"
 	ConfigGrokEnabledRequiredFmt                  = "%s: agents.grok.enabled is required"
@@ -55,8 +55,8 @@ const (
 	ConfigMcpServerClientInvalidFmt               = "%s: mcp.servers[%d].clients contains invalid client %q"
 	ConfigMcpServerVSCodeRootFileFmt              = "%s: MCP server %q enters the generated root .mcp.json but excludes client \"vscode\"; VS Code imports root .mcp.json when agents.vscode.enabled is true, so include \"vscode\" in mcp.servers[%d].clients or disable every enabled Muse, Claude, or Claude VS Code integration selecting this server"
 	ConfigUnrecognizedKeysFmt                     = "%s: unrecognized config keys: %w"
-	ConfigLegacyGeminiUnsupportedFmt              = "%s: agents.gemini is no longer supported; run 'al upgrade' to migrate to agents.antigravity (renames agents.gemini.enabled, drops legacy gemini.model/reasoning_effort keys, and rewrites mcp.servers[].clients gemini→antigravity)"
-	ConfigLegacyDispatchUnsupportedFmt            = "%s: agents.<agent>.dispatch.default_agent is no longer supported; run 'al upgrade' to remove the retired dispatch defaults"
+	ConfigLegacyGeminiUnsupportedFmt              = "%s: agents.gemini is no longer converted by this Agent Layer. " + TransitionRecoveryGuidance
+	ConfigLegacyDispatchUnsupportedFmt            = "%s: agents.<agent>.dispatch.default_agent is no longer supported; this Agent Layer no longer converts it. " + TransitionRecoveryGuidance
 	ConfigWarningNoiseModeInvalidFmt              = "%s: warnings.noise_mode %q is invalid (allowed: default, reduce, quiet)"
 	ConfigWarningThresholdInvalidFmt              = "%s: %s must be greater than zero"
 
@@ -65,7 +65,7 @@ const (
 	ConfigFailedReadSkillFmt             = "failed to read skill %s: %w"
 	ConfigInvalidSkillFmt                = "invalid skill %s: %w"
 	ConfigSkillDuplicateNameFmt          = "duplicate skill name %q from %s and %s"
-	ConfigSkillFlatFormatUnsupportedFmt  = "found flat-format skill %q (%s) in skills directory; flat format is no longer supported -- run 'al upgrade' to migrate to directory format"
+	ConfigSkillFlatFormatUnsupportedFmt  = "found flat-format skill %q (%s); this Agent Layer no longer converts flat skills. " + TransitionRecoveryGuidance
 
 	// Skill import configuration validation.
 	ConfigSkillImportRepositoryRequiredFmt        = "%s: skills.imports[%d].repository is required"

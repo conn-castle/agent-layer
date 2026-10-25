@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/conn-castle/agent-layer/internal/messages"
 	"github.com/conn-castle/agent-layer/internal/templates"
 )
 
@@ -525,66 +526,6 @@ enabled = true
 	}
 }
 
-func TestParseConfigLenient_LegacyClaudeVSCodeAlias(t *testing.T) {
-	// Pre-migration config uses the legacy kebab-case key.
-	tomlData := `
-[approvals]
-mode = "all"
-
-[agents.antigravity]
-enabled = false
-
-[agents.claude]
-enabled = true
-
-[agents.claude-vscode]
-enabled = true
-
-[agents.codex]
-enabled = false
-
-[agents.vscode]
-enabled = false
-
-[agents.copilot_cli]
-enabled = false
-
-[agents.grok]
-enabled = false
-`
-	cfg, err := ParseConfigLenient([]byte(tomlData), "test")
-	if err != nil {
-		t.Fatalf("ParseConfigLenient: %v", err)
-	}
-	if cfg.Agents.ClaudeVSCode.Enabled == nil {
-		t.Fatal("expected claude_vscode.enabled to be carried from legacy claude-vscode key")
-	}
-	if !*cfg.Agents.ClaudeVSCode.Enabled {
-		t.Fatal("expected claude_vscode.enabled = true")
-	}
-}
-
-func TestParseConfigLenient_LegacyAliasDoesNotOverrideNewKey(t *testing.T) {
-	// When both old and new keys exist, the new key takes precedence.
-	tomlData := `
-[agents.claude-vscode]
-enabled = true
-
-[agents.claude_vscode]
-enabled = false
-`
-	cfg, err := ParseConfigLenient([]byte(tomlData), "test")
-	if err != nil {
-		t.Fatalf("ParseConfigLenient: %v", err)
-	}
-	if cfg.Agents.ClaudeVSCode.Enabled == nil {
-		t.Fatal("expected claude_vscode.enabled to be set")
-	}
-	if *cfg.Agents.ClaudeVSCode.Enabled {
-		t.Fatal("expected new key (false) to take precedence over legacy key (true)")
-	}
-}
-
 func TestLoadConfigLenient_MissingFile(t *testing.T) {
 	_, err := LoadConfigLenient("/nonexistent/config.toml")
 	if err == nil {
@@ -725,7 +666,7 @@ enabled = true
 	// (the generic ConfigValidationGuidance message also contains "al wizard"
 	// and could mention agents.antigravity via suggestRename, masking a
 	// regression that removes the legacy-Gemini detection path).
-	if !strings.Contains(err.Error(), "agents.gemini is no longer supported") {
+	if !strings.Contains(err.Error(), "agents.gemini is no longer converted") {
 		t.Fatalf("expected legacy-Gemini specific marker in error, got: %v", err)
 	}
 	if !errors.Is(err, ErrConfigValidation) {
@@ -759,21 +700,32 @@ enabled = true
 [agents.grok]
 enabled = true
 `
-	_, err := ParseConfig([]byte(data), "test")
-	if err == nil {
-		t.Fatal("expected error for legacy agents.antigravity.agent_specific.model")
-	}
-	if !strings.Contains(err.Error(), "agents.antigravity.agent_specific.model is not supported") {
-		t.Fatalf("expected Antigravity agent_specific model marker in error, got: %v", err)
-	}
-	if !errors.Is(err, ErrConfigValidation) {
-		t.Fatalf("legacy Antigravity model error should match ErrConfigValidation, got: %v", err)
-	}
-	if !errors.Is(err, ErrConfigNeedsUpgrade) {
-		t.Fatalf("legacy Antigravity model error should match ErrConfigNeedsUpgrade, got: %v", err)
-	}
-	if strings.Contains(err.Error(), "al wizard") {
-		t.Fatalf("legacy Antigravity model error should not route to wizard guidance, got: %v", err)
+	for _, scenario := range []struct {
+		name string
+		data string
+	}{
+		{"all enabled fields present", data},
+		{"antigravity enabled omitted", strings.Replace(data, "[agents.antigravity]\nenabled = true", "[agents.antigravity]", 1)},
+		{"all enabled fields omitted", strings.ReplaceAll(data, "enabled = true", "")},
+	} {
+		t.Run(scenario.name, func(t *testing.T) {
+			_, err := ParseConfig([]byte(scenario.data), "test")
+			if err == nil {
+				t.Fatal("expected error for legacy agents.antigravity.agent_specific.model")
+			}
+			if !strings.Contains(err.Error(), "agents.antigravity.agent_specific.model is not supported") {
+				t.Fatalf("expected Antigravity agent_specific model marker in error, got: %v", err)
+			}
+			if !errors.Is(err, ErrConfigValidation) {
+				t.Fatalf("legacy Antigravity model error should match ErrConfigValidation, got: %v", err)
+			}
+			if !errors.Is(err, ErrConfigNeedsUpgrade) {
+				t.Fatalf("legacy Antigravity model error should match ErrConfigNeedsUpgrade, got: %v", err)
+			}
+			if strings.Contains(err.Error(), messages.ConfigValidationGuidance) {
+				t.Fatalf("legacy Antigravity model error should not route to wizard guidance, got: %v", err)
+			}
+		})
 	}
 }
 
@@ -812,7 +764,7 @@ enabled = true
 	if !errors.Is(err, ErrConfigValidation) || !errors.Is(err, ErrConfigNeedsUpgrade) {
 		t.Fatalf("legacy dispatch error must require upgrade, got: %v", err)
 	}
-	if strings.Contains(err.Error(), "al wizard") {
+	if strings.Contains(err.Error(), messages.ConfigValidationGuidance) {
 		t.Fatalf("legacy dispatch error should not route to wizard guidance, got: %v", err)
 	}
 }
@@ -832,21 +784,6 @@ default_agent = "claude"
 	}
 }
 
-func TestHasLegacyAntigravityAgentSpecificModel(t *testing.T) {
-	data := []byte(`
-[agents.antigravity]
-enabled = true
-[agents.antigravity.agent_specific]
-model = "Gemini 3.5 Flash (High)"
-`)
-	if !HasLegacyAntigravityAgentSpecificModel(data) {
-		t.Fatal("expected legacy Antigravity agent_specific model to be detected")
-	}
-	if HasLegacyAntigravityAgentSpecificModel([]byte("# model = \"Gemini\"\n[agents.antigravity]\nmodel = \"Gemini\"\n")) {
-		t.Fatal("typed model or commented text must not be detected as legacy agent_specific model")
-	}
-}
-
 func TestHasLegacyGeminiConfig_TabIndentedHeader(t *testing.T) {
 	// Tab-indented TOML headers are valid; the previous space-strip helper
 	// missed them and skipped the legacy-Gemini diagnostic. The map-based
@@ -863,39 +800,6 @@ func TestHasLegacyGeminiConfig_CommentLineDoesNotFalsePositive(t *testing.T) {
 	data := []byte("# legacy: [agents.gemini] removed in 0.10.2\n[agents.antigravity]\nenabled = true\n")
 	if HasLegacyGeminiConfig(data) {
 		t.Fatal("expected comment mentioning [agents.gemini] to not be detected as a real table")
-	}
-}
-
-func TestParseConfigLenient_AliasesLegacyGeminiEnabled(t *testing.T) {
-	// Repair tools (wizard, doctor) need to see the user's intended
-	// Antigravity enablement on a pre-migration repo so CheckAntigravityBinary
-	// gates correctly. Without the alias, lenient parse would treat
-	// Antigravity as unset and skip the binary check.
-	data := []byte(`
-[approvals]
-mode = "all"
-[agents.gemini]
-enabled = true
-[agents.claude]
-enabled = true
-[agents.claude_vscode]
-enabled = true
-[agents.codex]
-enabled = true
-[agents.vscode]
-enabled = true
-[agents.copilot_cli]
-enabled = false
-
-[agents.grok]
-enabled = false
-`)
-	cfg, err := ParseConfigLenient(data, "test")
-	if err != nil {
-		t.Fatalf("ParseConfigLenient: %v", err)
-	}
-	if !IsAgentEnabled(cfg.Agents.Antigravity.Enabled) {
-		t.Fatal("expected Antigravity.Enabled to be aliased from agents.gemini.enabled")
 	}
 }
 

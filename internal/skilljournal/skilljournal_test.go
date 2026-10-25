@@ -255,29 +255,3 @@ func TestRecoverRejectsAJournalItCannotTrust(t *testing.T) {
 // TestRecoverReportsAnIncompleteRollback proves a rollback that cannot restore
 // prior state fails loudly instead of leaving the caller to read half-reverted
 // state as if it were clean.
-func TestAdoptionJournalPreservesVersionAndRejectsUnpermittedRetirements(t *testing.T) {
-	root := t.TempDir()
-	doc := Document{Version: AdoptionVersion, Writes: []WriteIntent{{Name: "ship-pr"}}, LocalRetirements: []string{"ship-pr"}}
-	if err := Write(root, doc); err != nil {
-		t.Fatal(err)
-	}
-	if err := MarkCommitted(root); err != nil {
-		t.Fatal(err)
-	}
-	actual, err := read(root)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if actual.Version != AdoptionVersion || !actual.Committed {
-		t.Fatal("commit marker downgraded adoption journal")
-	}
-	for _, name := range []string{"../../escape", "custom", "Ship-pr"} {
-		doc.LocalRetirements = []string{name}
-		if err := Write(root, doc); err != nil {
-			t.Fatal(err)
-		}
-		if _, err := read(root); err == nil {
-			t.Fatal("invalid local retirement accepted")
-		}
-	}
-}
