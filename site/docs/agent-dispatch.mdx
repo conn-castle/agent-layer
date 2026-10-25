@@ -104,7 +104,8 @@ Running servers keep their code until reconnected. After a pin change or binary
 replacement (including a source rebuild), options, start and continue refuse new
 provider work when selected code differs or freshness cannot be verified. Wait,
 inspect, output and cancel remain available. Admitted work keeps its original
-image. Even a same-byte atomic rebuild requires reconnecting. Changing the
+image. Even a same-byte atomic replacement requires reconnecting; source
+wrappers keep an unchanged rebuild's existing executable. Changing the
 launch environment or switching source/release mode also needs a reconnect;
 running servers cannot detect those projection changes.
 
@@ -113,7 +114,7 @@ once. In Claude Code use `/mcp`; in a persistent Codex app restart the app or
 reload MCP configuration. A new chat may reuse the running server. Pre-guard
 servers need one reconnect after upgrade to acquire the guard. For development,
 use `make al-sync` or `make al-upgrade` to project source despite an older pin,
-then reconnect after rebuilding; no manual pin edits are needed. Sync updates
+then reconnect when a rebuild replaces the executable; no manual pin edits are needed. Sync updates
 launch configuration without replacing servers. Timeout changes also require a
 reconnect and a reload of projected client timeouts.
 

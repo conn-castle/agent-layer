@@ -579,14 +579,16 @@ launch environment also requires reconnecting; the running server cannot detect
 those projection changes. Wait, inspect, output and cancel remain available for existing runs. Already admitted work finishes on its original
 image; a rebuild does not cancel or replay it. On Linux detached workers use
 that same image; on macOS replacement before worker publication fails cleanly.
-Even a same-byte atomic rebuild requires reconnecting.
+Even a same-byte atomic replacement requires reconnecting; source wrappers
+keep the existing development executable when rebuilt output is unchanged, so
+no reconnect is needed then.
 
 For release updates, run `al update`, then `al upgrade` in each repository and
 reconnect the `agent-layer` MCP server once. In Claude Code use `/mcp` to
 reconnect; for a persistent Codex app restart the app or reload MCP configuration.
 A new chat can reuse an existing server. Source workflows use `make al-sync` or
 `make al-upgrade` to build and project source despite an older repository pin;
-reconnect after rebuilding. Do not edit the pin manually to select source.
+reconnect when a rebuild replaces the executable. Do not edit the pin manually to select source.
 Servers from before the freshness guard need this reconnect once to acquire it.
 `al sync` updates launch configuration without replacing a running server.
 Timeout configuration changes also require reconnecting and reloading projected
