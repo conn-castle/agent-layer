@@ -125,10 +125,10 @@ func TestRunDoesNotInspectDisposableClientSkillRoots(t *testing.T) {
 		}
 	})
 
-	t.Run("upgrade across v0.16.0 claim migration", func(t *testing.T) {
+	t.Run("upgrade supported source", func(t *testing.T) {
 		root := t.TempDir()
-		if err := Run(root, Options{System: RealSystem{}, PinVersion: "0.15.0"}); err != nil {
-			t.Fatalf("seed v0.15.0 install: %v", err)
+		if err := Run(root, Options{System: RealSystem{}, PinVersion: "1.0.0"}); err != nil {
+			t.Fatalf("seed v1.0.0 install: %v", err)
 		}
 		manual := filepath.Join(root, ".agents", "skills", "manual", "SKILL.md")
 		if err := os.MkdirAll(filepath.Dir(manual), 0o750); err != nil {
@@ -171,7 +171,7 @@ func TestRunUpgradeWritesVSCodeLaunchersOnlyWhenVSCodeEnabled(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			root := t.TempDir()
-			if err := Run(root, Options{System: RealSystem{}, PinVersion: "0.5.0"}); err != nil {
+			if err := Run(root, Options{System: RealSystem{}, PinVersion: "1.0.0"}); err != nil {
 				t.Fatalf("seed repo: %v", err)
 			}
 			if !tc.enabled {
@@ -195,7 +195,7 @@ func TestRunUpgradeWritesVSCodeLaunchersOnlyWhenVSCodeEnabled(t *testing.T) {
 				}
 			}
 
-			if err := Run(root, Options{System: RealSystem{}, Overwrite: true, Prompter: autoApprovePrompter(), PinVersion: "0.6.0"}); err != nil {
+			if err := Run(root, Options{System: RealSystem{}, Overwrite: true, Prompter: autoApprovePrompter(), PinVersion: "1.1.0"}); err != nil {
 				t.Fatalf("upgrade: %v", err)
 			}
 
@@ -241,7 +241,7 @@ func TestWriteVSCodeLaunchers_ConfigBranches(t *testing.T) {
 
 func TestRunWritesPinVersion(t *testing.T) {
 	root := t.TempDir()
-	if err := Run(root, Options{PinVersion: "0.5.0", System: RealSystem{}}); err != nil {
+	if err := Run(root, Options{PinVersion: "1.0.0", System: RealSystem{}}); err != nil {
 		t.Fatalf("Run error: %v", err)
 	}
 	path := filepath.Join(root, ".agent-layer", "al.version")
@@ -249,7 +249,7 @@ func TestRunWritesPinVersion(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read pin file: %v", err)
 	}
-	if string(data) != "0.5.0\n" {
+	if string(data) != "1.0.0\n" {
 		t.Fatalf("unexpected pin content: %q", string(data))
 	}
 }
@@ -263,7 +263,7 @@ func TestRunPinVersionDoesNotOverwriteWithoutFlag(t *testing.T) {
 	if err := os.WriteFile(path, []byte("0.4.0\n"), 0o600); err != nil {
 		t.Fatalf("write pin file: %v", err)
 	}
-	if err := Run(root, Options{PinVersion: "0.5.0", System: RealSystem{}}); err != nil {
+	if err := Run(root, Options{PinVersion: "1.0.0", System: RealSystem{}}); err != nil {
 		t.Fatalf("Run error: %v", err)
 	}
 	data, err := os.ReadFile(path) // #nosec G304 -- path is constructed from test-controlled inputs.

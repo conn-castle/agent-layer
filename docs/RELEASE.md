@@ -35,7 +35,7 @@ git push origin "$VERSION"
 
 Before tagging, prepare and commit both release manifests:
 
-1. **Migration manifest** — create `internal/templates/migrations/<version>.json` (version without leading `v`). Set `min_prior_version` to the release line supported by the target row in `site/docs/upgrades.mdx`; for patch releases, preserve the previous target's supported range when unknown-source upgrades still need source-agnostic operations from that range. Add any needed migration operations; use an empty `operations` array if all changes are additive. See existing manifests for the schema.
+1. **Migration manifest** — create `internal/templates/migrations/<version>.json` (version without leading `v`). Set `min_prior_version` to the release line supported by the target row in `site/docs/upgrades.mdx`; from v1.2.0 onward it must be at least `1.0.0` (`skillmigration.MinimumCLI`), the supported installed-project floor. Unknown-source upgrades receive source-agnostic operations only from manifests after `1.0.0`. Add any needed migration operations; use an empty `operations` array if all changes are additive. See existing manifests for the schema.
 
 2. **Template ownership manifest** — generate via the script below. The script reads templates directly from the working tree (no git tag required). This keeps offline upgrade source-version inference deterministic without runtime network/tag lookups.
 

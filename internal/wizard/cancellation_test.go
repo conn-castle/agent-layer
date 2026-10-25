@@ -33,7 +33,7 @@ func TestApplySkillsChangesUsesContextForEveryImportOperation(t *testing.T) {
 			case "remove":
 				// Keep one selector so removal must resolve the remaining source.
 				selectors := []string{"skills/tools/playwright", "skills/tools/tavily-web"}
-				_, err := skillimport.NewSourceOnly(root).InstallCatalog(t.Context(), selectors, nil)
+				_, err := skillimport.NewSourceOnly(root).InstallCatalog(t.Context(), selectors)
 				require.NoError(t, err)
 				changes.removeSelectors = selectors[:1]
 			}
@@ -62,6 +62,12 @@ func TestWizardCancellationStopsRunningCatalogImport(t *testing.T) {
 			t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 			t.Setenv("WIZARD_GIT_READY", ready)
 			ui := &MockUI{
+				SelectFunc: func(title string, _ []string, selected *string) error {
+					if title == messages.WizardInstructionSetTitle {
+						*selected = instructionSetLabels()[0]
+					}
+					return nil
+				},
 				MultiSelectFunc: func(title string, _ []string, selected *[]string) error {
 					title, _, _ = strings.Cut(title, cliSkillsStatusHeading)
 					*selected = nil

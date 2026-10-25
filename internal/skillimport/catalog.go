@@ -10,9 +10,9 @@ import (
 	"strings"
 
 	"github.com/conn-castle/agent-layer/internal/config"
+	"github.com/conn-castle/agent-layer/internal/messages"
 	"github.com/conn-castle/agent-layer/internal/projectlock"
 	"github.com/conn-castle/agent-layer/internal/skilljournal"
-	"github.com/conn-castle/agent-layer/internal/skilltree"
 	"github.com/conn-castle/agent-layer/internal/sync"
 	"github.com/conn-castle/agent-layer/internal/templates"
 )
@@ -20,10 +20,11 @@ import (
 // CatalogMember describes offline evidence for one exact catalog path.
 // Configured missing content remains the responsibility of ordinary import commands.
 type CatalogMember struct {
-	Name         string
-	Selector     string
-	Imported     bool
-	Legacy       bool
+	Name     string
+	Selector string
+	Imported bool
+	// Local reports ordinary user content occupying the catalog name.
+	Local        bool
 	Configured   bool
 	DefaultExact bool
 	// AddBlocked explains why an uncovered selector cannot be added by the wizard.
@@ -175,15 +176,8 @@ func catalogMember(st *state, repository, selector string) CatalogMember {
 	if hasDefaultBlock && !catalogBlockEditable(defaultBlock, repository) {
 		member.AddBlocked = catalogManualBlockMessage
 	}
-	if local, exists := st.userSkills[collisionName(name)]; exists {
-		member.Legacy = true
-		if _, err := readLegacySkill(local, name); err != nil {
-			member.Problem = err.Error()
-		}
-		if filepath.Base(local) != name {
-			member.Problem = "case variant local name conflicts with " + name
-		}
-	}
+	_, localPresent := st.userSkills[collisionName(name)]
+	member.Local = localPresent
 	for _, block := range st.cfg.Skills.Imports {
 		if config.NormalizeSkillRepository(block.Repository) != config.NormalizeSkillRepository(repository) {
 			continue
@@ -195,6 +189,9 @@ func catalogMember(st *state, repository, selector string) CatalogMember {
 			}
 		}
 	}
+	if member.Local && member.Configured {
+		member.Problem = fmt.Sprintf(messages.CatalogLocalConflictFmt, name)
+	}
 	for _, locked := range st.lock.Skills {
 		if collisionName(locked.Name) != collisionName(name) {
 			continue
@@ -202,7 +199,7 @@ func catalogMember(st *state, repository, selector string) CatalogMember {
 		if locked.Name != name || config.NormalizeSkillRepository(locked.Repository) != config.NormalizeSkillRepository(repository) || locked.SelectedPath != selector {
 			member.Problem = "another locked source owns " + name + "; preserve it and reconcile explicitly with al skills commands"
 			observed := st.skill(locked.Name)
-			member.ForeignOwned = locked.Name == name && observed.Present && observed.Err == nil && st.configuredSelectionCount(locked) == 1 && !member.Legacy && !member.Configured
+			member.ForeignOwned = locked.Name == name && observed.Present && observed.Err == nil && st.configuredSelectionCount(locked) == 1 && !localPresent && !member.Configured
 			if observed.Err != nil {
 				member.Problem = observed.Err.Error()
 			}
@@ -230,17 +227,15 @@ func catalogMember(st *state, repository, selector string) CatalogMember {
 			member.Problem = "case variant imported name conflicts with " + name
 		}
 	}
-	if member.Legacy && (member.Imported || st.skill(name).Present) {
+	if localPresent && (member.Imported || st.skill(name).Present) {
 		member.ForeignOwned = false
 		member.Problem = "both local and imported tiers occupy " + name + "; preserve and resolve both copies explicitly"
 	}
 	return member
 }
 
-// InstallCatalog adds absent exact catalog selectors and, when approved, retires validated legacy
-// slots together. It is intentionally restricted to the migration's default
-// policy and declared catalog coordinates, not a collision bypass for ordinary Add.
-func (s *Service) InstallCatalog(ctx context.Context, selectors, approvedLegacy []string) (*Report, error) {
+// InstallCatalog adds absent exact catalog selectors under the default policy.
+func (s *Service) InstallCatalog(ctx context.Context, selectors []string) (*Report, error) {
 	return s.withLockedReport(ctx, func(st *state, report *Report) error {
 		if err := requireCatalogPolicy(st); err != nil {
 			return err
@@ -257,49 +252,25 @@ func (s *Service) InstallCatalog(ctx context.Context, selectors, approvedLegacy 
 				}
 			}
 		}
-		legacy := map[string]skilltree.Tree{}
 		var pending []string
 		for _, selector := range selectors {
 			member := catalogMember(st, templates.GeneralSkillsRepository, selector)
 			if !allowed[member.Selector] {
-				return fmt.Errorf("%q is not a migration catalog selector", member.Selector)
+				return fmt.Errorf(messages.CatalogSelectorUnsupportedFmt, member.Selector)
 			}
 			if member.Problem != "" {
-				return fmt.Errorf("cannot adopt %s: %s", member.Name, member.Problem)
+				return fmt.Errorf(messages.CatalogMemberProblemFmt, member.Name, member.Problem)
 			}
-			if member.Legacy && !containsSelector(approvedLegacy, member.Selector) {
-				return fmt.Errorf("legacy %s appeared after preview; rerun the wizard to review adoption", member.Name)
+			if member.Local {
+				return fmt.Errorf(messages.CatalogLocalConflictFmt, member.Name)
 			}
-			if member.Configured {
-				if member.Legacy {
-					return fmt.Errorf("%s has manually configured import coverage and a legacy local copy; resolve explicitly with al skills commands", member.Name)
-				}
-				continue
+			if !member.Configured {
+				pending = append(pending, member.Selector)
 			}
-			pending = append(pending, member.Selector)
-			if !member.Legacy {
-				continue
-			}
-			dir := filepath.Join(st.paths.SkillsDir, member.Name)
-			tree, err := readLegacySkill(dir, member.Name)
-			if err != nil {
-				return err
-			}
-			legacy[member.Name] = tree
 		}
 		if len(pending) == 0 {
 			return nil
 		}
-		return s.addLocked(ctx, st, AddOptions{Repository: templates.GeneralSkillsRepository, Selectors: pending}, report, legacy)
+		return s.addLocked(ctx, st, AddOptions{Repository: templates.GeneralSkillsRepository, Selectors: pending}, report)
 	})
-}
-
-// Preview and adoption apply the same preservation and identity checks.
-func readLegacySkill(dir, name string) (skilltree.Tree, error) {
-	tree, err := skilltree.ReadStrict(skilltree.OSFS{}, dir)
-	if err != nil {
-		return tree, err
-	}
-	_, err = skilltree.ValidateSkill(tree, name)
-	return tree, err
 }

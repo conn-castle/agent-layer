@@ -92,40 +92,6 @@ func TestPatchConfig_UpdatesMuseSection(t *testing.T) {
 	assert.Contains(t, out, `reasoning_effort = "high"`)
 }
 
-func TestPatchConfig_MigratesLegacyClaudeVSCodeSection(t *testing.T) {
-	content := `
-[agents.claude-vscode] # legacy
-enabled = true
-
-[agents.vscode]
-enabled = false
-`
-	out, err := PatchConfig(content, NewChoices())
-	require.NoError(t, err)
-
-	doc := tomlpatch.ParseDocument(out)
-	if _, exists := doc.Sections["agents.claude-vscode"]; exists {
-		t.Fatal("expected legacy section to be removed")
-	}
-	block, exists := doc.Sections["agents.claude_vscode"]
-	require.True(t, exists, "expected canonical section to exist")
-	require.NotEmpty(t, block.Lines)
-	assert.Equal(t, "[agents.claude_vscode] # legacy", strings.TrimSpace(block.Lines[0]))
-	assert.Contains(t, strings.Join(block.Lines, "\n"), "enabled = true")
-}
-
-func TestPatchConfig_DeduplicatesLegacyAndCanonicalClaudeVSCodeSections(t *testing.T) {
-	content := "[agents.claude-vscode]\nenabled = false\n\n[agents.claude_vscode]\nenabled = true\n"
-	out, err := PatchConfig(content, NewChoices())
-	require.NoError(t, err)
-	if strings.Contains(out, "[agents.claude-vscode]") || strings.Count(out, "[agents.claude_vscode]") != 1 {
-		t.Fatalf("patched aliases were not reduced to one canonical section:\n%s", out)
-	}
-	if !strings.Contains(out, "[agents.claude_vscode]\nenabled = true") {
-		t.Fatalf("canonical section value was not preserved:\n%s", out)
-	}
-}
-
 func TestOrderedWizardSections_UsesPreferredOrderWithTemplateFallback(t *testing.T) {
 	templateOrder := []string{
 		"warnings",

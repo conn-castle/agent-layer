@@ -59,7 +59,7 @@ func TestWizardManualPoliciesAndWildcardCoverageArePreserved(t *testing.T) {
 			before := snapshotManualCatalogSources(t, root)
 			if kind == "wildcard" {
 				t.Setenv("GIT_CONFIG_KEY_0", "url."+filepath.Join(t.TempDir(), "unavailable")+".insteadOf")
-				_, err = skillimport.New(root).InstallCatalog(context.Background(), []string{"skills/tools/playwright"}, nil)
+				_, err = skillimport.New(root).InstallCatalog(context.Background(), []string{"skills/tools/playwright"})
 				require.ErrorContains(t, err, "manually managed")
 				_, err = skillimport.New(root).RemoveCatalogSelectors(context.Background(), entry.Selectors[:1])
 				require.ErrorContains(t, err, "manually managed")

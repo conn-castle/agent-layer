@@ -46,7 +46,7 @@ func TestWizardCancellationStopsProjectLockWait(t *testing.T) {
 			if mode == "answers" {
 				label, _ := approvalModeLabelForValue(config.ApprovalModeAll)
 				ui = &ScriptedUI{used: map[string]struct{}{}, answers: scriptedAnswers{
-					Select: map[string]string{messages.WizardApprovalModeTitle: label},
+					Select: map[string]string{messages.WizardInstructionSetTitle: instructionSetLabels()[0], messages.WizardApprovalModeTitle: label},
 					MultiSelect: map[string][]string{
 						messages.WizardEnableAgentsTitle: {}, messages.WizardGitTrackingTitle: {},
 						messages.WizardEnableCLISkillsTitle: {}, messages.WizardEnableDefaultMCPServersTitle: {},

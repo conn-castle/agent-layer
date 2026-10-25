@@ -32,9 +32,6 @@ func TestPromptFuncs_NilDefaults(t *testing.T) {
 			if value, err := p.configSetDefault("key", "manifest", "reason", nil); value != "manifest" || err != nil {
 				t.Fatalf("config default = (%v, %v), want (manifest, nil)", value, err)
 			}
-			if ok, err := p.confirmSkillsMigration(nil, nil); !ok || err != nil {
-				t.Fatalf("skills default = (%v, %v), want (true, nil)", ok, err)
-			}
 			for _, required := range []struct {
 				name string
 				call func() (bool, error)

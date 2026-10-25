@@ -6,7 +6,6 @@ import (
 
 	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/skilllock"
-	"github.com/conn-castle/agent-layer/internal/skilltree"
 	"github.com/conn-castle/agent-layer/internal/templates"
 )
 
@@ -25,7 +24,6 @@ type AddOptions struct {
 	PushRepository string
 	PushBranch     string
 	Order          *int
-	AdoptLegacy    bool
 }
 
 // importBlock carries the shared policy for either source kind.
@@ -51,11 +49,11 @@ func (o AddOptions) importBlock(exactFile bool) config.SkillImport {
 // valid source state.
 func (s *Service) Add(ctx context.Context, opts AddOptions) (*Report, error) {
 	return s.withLockedReport(ctx, func(st *state, report *Report) error {
-		return s.addLocked(ctx, st, opts, report, nil)
+		return s.addLocked(ctx, st, opts, report)
 	})
 }
 
-func (s *Service) addLocked(ctx context.Context, st *state, opts AddOptions, report *Report, legacy map[string]skilltree.Tree) error {
+func (s *Service) addLocked(ctx context.Context, st *state, opts AddOptions, report *Report) error {
 	if len(opts.Selectors) == 0 {
 		return fmt.Errorf("at least one selector is required")
 	}
@@ -80,8 +78,7 @@ func (s *Service) addLocked(ctx context.Context, st *state, opts AddOptions, rep
 	var nextConfig string
 	var err error
 	if st.instructions {
-		legacy = map[string]skilltree.Tree{}
-		nextConfig, err = instructionAddConfig(st, opts, requested, legacy)
+		nextConfig, err = instructionAddConfig(st, opts, requested)
 	} else {
 		if !hasExisting && !hasPositiveSelector(opts.Selectors) {
 			return fmt.Errorf("an exclusion-only addition must extend an existing block that already has a positive selector; no block matches this repository and policy")
@@ -121,9 +118,6 @@ func (s *Service) addLocked(ctx context.Context, st *state, opts AddOptions, rep
 
 	txn := s.newTransaction(pathSetFor(st), st.lock)
 	txn.SetConfig(nextConfig)
-	for name, tree := range legacy {
-		txn.RetireLocal(name, tree)
-	}
 	return s.applySelectorEdit(ctx, st, txn, selectorEdit{
 		op:            selectorEditAdd,
 		blockIndex:    blockIndex,

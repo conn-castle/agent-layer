@@ -14,13 +14,13 @@ It covers:
 
 If guidance in other docs is shorter or summarized, this page is authoritative.
 
-General skills now come from `nicholasjconn/skills` through ordinary Git imports. Upgrade keeps unconverted local trees intact and does not install or refresh external skills. Use the wizard's explicit legacy adoption preview to move an existing tree into the imported tier while preserving its full local content.
+General skills come from `nicholasjconn/skills` through ordinary Git imports. Upgrades do not install or refresh external skills. Starting with v1.2.0, installed projects must have completed the v1.0.0 transition. Known sources below 1.0.0, pristine shipped moved skills or standard instructions, pre-1.0 configuration, and adoption-v2 recovery evidence are refused before mutation. Install or run the Agent Layer v1.0.0 executable itself. Use it to run `al upgrade`, then its `al wizard` to adopt or recover, then retry with this version. `al upgrade` bypasses version dispatch, so setting `AL_VERSION` does not select the upgrade executable. Customized local skills and configured customized instructions remain project content. A missing pin alone does not block a clean project.
 
 The source tiers `.agent-layer/skills` and `.agent-layer/skills-imported` must be real directories. A symlink replacing either entire source tier is refused before sync, import, or upgrade application, with preservation and repair guidance. Preserve the linked content and recovery evidence, then repair the source path to a real directory before retrying; this prevents operations from consuming recovery data outside the project. Symlinked moved-skill leaf nodes and local/imported conflicts are also preserved and require explicit repair. Client-projected skill symlinks are separate from these two source paths and remain supported.
 
-Reusable rules and memory instructions also became Git imports in `1.0.0`. Every accepted upgrade establishes explicit local order offline, using ten times each legacy filename's lexical index before sync, even when no version migration runs. Preview and wizard cancellation leave config unchanged. The wizard can adopt only the trusted mappings `rules.md <- 00_rules.md` and `memory.md <- 01_memory.md`, retaining bytes, permissions and order atomically and recording fetched upstream content as the genuine base. Local conventions stay local. Rolling back the offline ordering step restores the prior config; run `al upgrade` or accepted wizard changes before projecting again. Active adopted imports block rollback snapshots that would recreate their old slots or discard their configuration ownership. Linked source directories or instruction files are refused before writes. Deletion-enabled upgrades recognize both tiers, the lock and supported legacy names as project sources rather than template orphans.
+Reusable rules and memory instructions became Git imports in 1.0.0. Upgrade no longer assigns local instruction orders or adopts legacy files. Add explicit `[[instructions.local]]` entries with unique orders or accept wizard/profile changes to establish ordering on supported projects. Fresh setup and benchmark freezing retain ordering support. Adopt `00_rules.md` and `01_memory.md` by installing or running the Agent Layer v1.0.0 executable itself for `al upgrade`, then its `al wizard`, or rename the files and their selectors to retain them as local content. Imported edits and ordinary import crash recovery remain supported.
 
-CLI `1.0.0` is the migration capability boundary. With active moved imports, supported rollback refuses snapshots that would restore a converted local slot or pin a pre-migration CLI. Version selection and downgrade preflight also refuse a pre-migration CLI before mutation. Snapshot evidence and imported modifications remain intact. An older executable invoked directly cannot apply this safeguard; if it recreates a duplicate, the new CLI preserves both copies and reports the conflict for explicit resolution.
+CLI `1.0.0` is both the transition capability boundary and the minimum supported installed-project source for v1.2.0. Manual rollback refuses snapshots pinned below that floor even without active imports; use v1.0.0 or v1.1.0 for those snapshots. Existing guards still prevent recreating converted local slots or discarding import ownership. Global updates honor genuinely old project pins and retain unsafe-state handoff checks. Unconfirmed dispatch records remain readable and are never treated as terminated by age.
 
 After `al update` and per-repository `al upgrade`, reconnect existing
 `agent-layer` MCP servers (Claude Code: `/mcp`; persistent Codex app: restart or
@@ -76,11 +76,13 @@ Current enforcement status:
 
 ## Compatibility guarantees
 
-Agent Layer follows a sequential release-line guarantee:
+The current CLI supports completed installed-project sources at or above 1.0.0. Unknown-source projects pass when no positive transition evidence is found and local instructions are explicitly configured; unknown sources receive only source-agnostic operations after 1.0.0 through the target. A partial install with no `config.toml` can run upgrade to seed it, then use the wizard to order tracked local instructions. Published historical manifests remain immutable and readable by release tooling.
+
+Within that supported boundary, Agent Layer follows a sequential release-line guarantee:
 
 - Guaranteed path: upgrade from `N-1` to `N` release lines only.
-- Example: `0.7.x` to `0.8.x` is guaranteed.
-- Non-guaranteed path: skipping release lines (for example `0.6.x` to `0.8.x`).
+- Example: `1.0.x` to `1.1.x` is guaranteed.
+- Non-guaranteed path: skipping supported release lines.
 
 What "guaranteed" means:
 - We provide documented migration guidance for the guaranteed path.
@@ -175,7 +177,7 @@ Migration rules are published per release and versioned with docs/release notes.
 Migration execution rules for supported release-line upgrades:
 - Each supported target release ships an embedded migration manifest at `internal/templates/migrations/<target>.json`, including `min_prior_version`.
 - `al upgrade` executes migration operations before template writes and emits a deterministic migration report.
-- If source version resolution fails, source-agnostic operations still run; source-gated operations are skipped and reported.
+- If source version resolution fails for a project that passes the supported-source checks, only source-agnostic operations from manifests after `1.0.0` run; source-gated operations are skipped and reported. Pre-1.0 operations never run.
 - `.agent-layer/.env` is namespace-scoped: only keys prefixed with `AL_` are loaded. Non-`AL_` keys are ignored and there is no env-key migration path.
 
 How this table is maintained:

@@ -225,14 +225,14 @@ To manually restore an applied snapshot, run `al upgrade rollback <snapshot-id>`
 
 To pre-warm a release binary in cache (for offline/air-gapped runs), use `al upgrade prefetch --version X.Y.Z`.
 
-`al upgrade` also executes embedded per-release migration manifests before template writes (for example file renames/deletes and config key transitions). If the prior source version cannot be resolved, source-agnostic migrations still run and source-gated migrations are skipped with explicit report output.
+`al upgrade` also executes embedded per-release migration manifests before template writes (for example file renames/deletes and config key transitions). Unknown sources receive only source-agnostic operations from manifests after 1.0.0 through the target; pre-1.0 operations never run. Starting with v1.2.0, installed projects must have completed the v1.0.0 transition. Known sources below 1.0.0, pristine shipped moved skills or standard instructions, pre-1.0 configuration, and adoption-v2 recovery evidence are refused before mutation. Install or run the Agent Layer v1.0.0 executable itself. Use it to run `al upgrade`, then its `al wizard` to adopt or recover, then retry with this version. `al upgrade` bypasses version dispatch, so setting `AL_VERSION` does not select the upgrade executable. Customized local skills and configured customized instructions remain project content. A missing pin alone does not block a clean project.
 
 Upgrade previews now include line-level diffs in both `al upgrade plan` and interactive `al upgrade` prompts. By default, each file preview is truncated to 40 lines; raise this with `--diff-lines N` when needed. In interactive terminals, diff hunks are colorized for scanability; non-interactive and no-color runs stay plain text.
 
 `al doctor` always checks for newer releases and warns if you're behind. `al init` also warns when your installed CLI is out of date, unless you set `--version`, `AL_VERSION`, or `AL_NO_NETWORK`.
 
-Compatibility guarantee:
-- Guaranteed upgrade path is sequential release lines only (`N-1` to `N`; example: `0.6.x` to `0.7.x`).
+Compatibility guarantee (within the completed 1.0.0-or-newer source boundary):
+- Guaranteed upgrade path is sequential release lines only (`N-1` to `N`; example: `1.0.x` to `1.1.x`).
 - Skipping release lines is best effort and may require additional manual migration.
 - See the [upgrade contract](https://agent-layer.dev/docs/upgrades) (source: `site/docs/upgrades.mdx`) for event categories and release-versioned migration rules.
 
@@ -252,13 +252,13 @@ Run `al wizard` any time to interactively configure the most important settings:
     - Unchecking writes the matching `agent_specific` disable key; re-checking removes it, keeping the client's native default — except Codex **apps**, which defaults unchecked and always writes an explicit `features.apps`.
     - The AskUserQuestion toggle instead writes a typed `agents.claude.disable_question_tool` flag, and `al sync` injects the `permissions.deny` entry plus a `PreToolUse` hook (merged with, never replacing, your own deny/hook entries).
     - Status line checkboxes write explicit `statusline = true` or `statusline = false`; enabling one creates the missing editable source file once and never overwrites an existing source.
-- **Instructions** (None, Rules, or Rules and memory — imports `instructions/rules.md`, and for Rules and memory also `instructions/memory.md` plus project memory docs/templates. Fresh orders are 0 and 10; adopting existing standard files preserves their bytes and order. Fresh init defaults to Rules and memory. None preserves existing content.)
+- **Instructions** (None, Rules, or Rules and memory — imports `instructions/rules.md`, and for Rules and memory also `instructions/memory.md` plus project memory docs/templates. Fresh orders are 0 and 10; adoption of existing standard files requires Agent Layer v1.0.0. Fresh init defaults to Rules and memory. None preserves existing content.)
 - **Git tracking** (choose whether `.agent-layer/` and `docs/agent-layer/` stay trackable or are ignored through the managed `.agent-layer/gitignore.block` source)
 - **Catalog skills** (opt-in: `tavily-web`, `playwright`, `find-docs`, `dispatch-agent`, `skill-sync`, `instruction-sync`, `benchmark`, and development skills; tool rows require their own CLI on PATH; `al doctor` reports missing binaries without blocking agent launch)
 - **MCP Servers & Secrets** (toggle default servers; safely write secrets to `.agent-layer/.env`)
 - **Warnings** (enable/disable warning checks; threshold values use template defaults)
 
-General development skills and the `find-docs`, `playwright`, and `tavily-web` tool skills are authored in `nicholasjconn/skills`. The wizard imports their exact grouped paths into `.agent-layer/skills-imported/`; explicit `al skills pull` updates content independently of CLI upgrades. Legacy local copies are protected during upgrades and adopted only after the wizard previews their conversion. `dispatch-agent`, `skill-sync`, `instruction-sync`, and `benchmark` remain bundled. See the [skills guide](https://agent-layer.dev/skills) for dependency and ownership details.
+General development skills and the `find-docs`, `playwright`, and `tavily-web` tool skills are authored in `nicholasjconn/skills`. The wizard imports their exact grouped paths into `.agent-layer/skills-imported/`; explicit `al skills pull` updates content independently of CLI upgrades. Pristine moved local copies require adoption with Agent Layer v1.0.0 before upgrading; customized local copies remain user content. `dispatch-agent`, `skill-sync`, `instruction-sync`, and `benchmark` remain bundled. See the [skills guide](https://agent-layer.dev/skills) for dependency and ownership details.
 
 Wizard backups are stored in `.agent-layer/state/wizard-backups/`. Each wizard apply replaces the latest backup only for files whose contents it changes; an unchanged file keeps its previous backup. An apply that fails before completing its config and `.env` writes restores the previous backups of files it left unchanged. Backup creation, migration, and cleanup refuse a symlinked `.agent-layer/`, `state/`, or `wizard-backups/` directory, and a backup entry that is not a regular file. After a successful upgrade and sync, `al upgrade` moves legacy `.agent-layer/config.toml.bak` and `.agent-layer/.env.bak` files there, retaining conflicts with numbered `.legacy-N` suffixes. Explicit cleanup removes both current and legacy backups.
 
@@ -640,9 +640,7 @@ order = 40
 skills flags and policies; add requires `--order`. `al sync` and status are
 offline. Pull merges local edits against genuine locked upstream; push excludes
 local files and order. Commit imported files and `instructions.lock.json` together.
-Software upgrades preserve instruction bodies. Legacy ordering is established
-offline by `al upgrade` or accepted wizard changes; sync reports those commands
-until migration completes. Wizard Rules/Memory imports require Git access.
+Software upgrades preserve instruction bodies. Explicit local ordering is required before upgrade or sync. Accepted wizard/profile changes can assign orders on supported projects; pre-1.0 projects must first finish with Agent Layer v1.0.0. Wizard Rules/Memory imports require Git access.
 
 ### Skills: `.agent-layer/skills/`
 
@@ -715,7 +713,7 @@ The generated stdio launcher enters the repository root before invoking `al`,
 so the global shim honors that repository's `.agent-layer/al.version` even when
 the MCP client starts servers from another directory. Repositories whose MCP
 files were generated by an older release can refresh only those generated files
-without changing their pin by running `AL_VERSION=<new-version> al sync` once.
+without changing their pin by running `AL_VERSION=<new-version> al sync` once. Honored old pins and unsafe-state handoff guards remain supported; adoption-v2 recovery requires v1.0.0.
 `dispatch_wait` blocks for 30 minutes by default, so a coordinator waits inside
 one tool call instead of polling; `dispatch_cancel` requests cancellation.
 `termination_confirmed` separately reports durable proof that execution stopped.

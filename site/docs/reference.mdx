@@ -716,7 +716,7 @@ Use this when `.agent-layer/gitignore.block` is invalid (for example it accident
 
 ### Upgrade plan
 
-`al upgrade plan` is a read-only upgrade preview. It does not write files.
+`al upgrade plan` is a read-only upgrade preview. It does not write files. It enforces the 1.0.0 supported-source floor and refuses unfinished transitions with v1.0.0 recovery guidance before printing a plan.
 
 It compares your repository state against templates embedded in the currently running `al` binary (not an older repo-pinned binary).
 
@@ -772,7 +772,7 @@ Use it when you want to get to a safe, working configuration quickly, or when yo
 - Catalog skill directories under `.agent-layer/skills/` (selected rows are added or repaired; deselected catalog-managed rows are removed)
 - Missing statusline source files when a status line is enabled
 
-Instruction selection adds missing imports only. Trusted adoption of `00_rules.md` and `01_memory.md` preserves local bytes, permissions and ordering, using the fetched upstream file as the base for later pulls. Memory docs are seeded only when missing. Use `al instructions pull` for instruction updates and `al upgrade` for bundled operator-skill templates. None preserves existing instructions.
+Instruction selection adds missing imports only. The current wizard does not adopt `00_rules.md` or `01_memory.md`; install or run the Agent Layer v1.0.0 executable itself for `al upgrade`, then its `al wizard` for adoption, or rename the local files and their selectors. Accepted wizard/profile changes still establish explicit orders for supported local instructions. Memory docs are seeded only when missing. Use `al instructions pull` for instruction updates and `al upgrade` for bundled operator-skill templates. None preserves existing instructions.
 
 The wizard rewrites `config.toml` in a fixed preferred section order and creates backups in `.agent-layer/state/wizard-backups/` before modifying `.agent-layer/config.toml` or `.agent-layer/.env`. An apply that leaves a file unchanged keeps that file's previous backup. An apply that fails before completing its config and `.env` writes restores the previous backups of files it left unchanged. Backup operations refuse a symlinked `.agent-layer/`, `state/`, or `wizard-backups/` directory, and a backup entry that is not a regular file. Inline comments on modified lines may be moved to leading comments or removed; the original formatting is preserved in the backup files. After a successful upgrade and sync, `al upgrade` moves older backups from `.agent-layer/` into this directory, retaining conflicts with numbered `.legacy-N` suffixes.
 

@@ -357,27 +357,26 @@ one required nonnegative scalar order. Global uniqueness covers both tiers.
 Order affects projection only, independently of repository/ref identity and
 lock versions. Skills retain grouped selectors and wildcard behavior.
 
-Legacy projects receive explicit local orders `10 * index` in their previous
-lexicographic sequence through every accepted upgrade, including dev/unpinned
-upgrades, or accepted wizard edits. Preview and cancellation never write config.
-The upgrade snapshot covers config and restores it on rollback. Linked instruction
-roots or files fail before writes. Sync/launch/dispatch/doctor require this
-migration and do not silently assign order or fetch.
+With an existing config, upgrade requires explicit local instruction orders before writing. When config is absent, upgrade seeds the template so the wizard can finish a tracked partial install. Supported wizard,
+profile, preview, and benchmark freezing paths retain `MigrateInstructionOrder(FS)`
+for fresh and supported layouts. Sync never assigns orders or fetches content.
 
-Explicit wizard adoption maps `rules.md <- 00_rules.md` and
-`memory.md <- 01_memory.md`. One shared journal transaction preserves local
-bytes and permissions, retires the legacy slot, retains its order, and records
-the fetched upstream file as the genuine lock base. Later pulls merge edits
-against that base. Generated BEGIN/END markers use the new filenames. None is
-add-only and does not remove content; Rules+Memory still creates memory docs.
-Both tiers recover before install, rollback, projection and version handoff.
-Converted-slot guards prevent older CLIs or snapshots recreating old slots.
-Historical compatibility remains through v1.1.0; retirement is planned for the v1.2.0 fast follow (#428).
+### Upgrade and migration internals
 
-Publish the skills repository's new instruction paths before deploying this
-Agent Layer change. Tests use local Git fixtures, independent of unpublished
-remote paths. Only the current planned v1.0.0 ownership manifest is regenerated;
-released historical manifests remain unchanged.
+v1.2.0 retires pre-1.0 migration execution and optional adoption (#428). The
+read-only install detector recognizes only published-hash pristine moved skills
+and standard instructions, needs-upgrade config, and adoption-v2 evidence.
+Customized copies remain user content. The source floor uses
+`skillmigration.MinimumCLI`; unknown clean sources receive only source-agnostic operations after 1.0.0.
+Upgrade and wizard/profile entry check before recovery and again under the
+project lock. Manual rollback checks its captured pin before recovery. Journal
+recovery preflights both tiers for v2 evidence before touching either; ordinary
+v1 recovery remains supported. Install or run the v1.0.0 executable itself: run its `al upgrade`, then its `al wizard` to adopt or recover before retrying.
+
+Published template and migration manifests are immutable. Historical kinds still
+parse for release tooling and the required-field guardrail, but retired kinds
+fail during planning before any operation or snapshot. Generic rename, delete,
+and config default/key operations remain available for supported upgrades.
 
 ## Troubleshooting
 - If you see `golangci-lint: command not found` or `goimports: command not found`, run:

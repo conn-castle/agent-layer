@@ -34,39 +34,6 @@ func TestComputeSkillsChangeSet_CatalogAddAndRemove(t *testing.T) {
 	assert.NotEmpty(t, buildSkillsPreview(cs))
 }
 
-func TestComputeSkillsChangeSet_LegacyDispatchAgentState(t *testing.T) {
-	entry := templates.CLISkillCatalogEntry{ID: "dispatch-agent", Name: "Agent dispatch"}
-
-	t.Run("selected legacy installation is preserved for migration", func(t *testing.T) {
-		root := t.TempDir()
-		require.NoError(t, os.MkdirAll(filepath.Join(root, ".agent-layer", "skills", legacyDispatchAgentCatalogID), 0o750))
-		choices := NewChoices()
-		choices.CLISkillsCatalog = []templates.CLISkillCatalogEntry{entry}
-		choices.EnabledCLISkills[entry.ID] = true
-
-		changes, err := computeSkillsChangeSet(context.Background(), root, choices)
-		require.NoError(t, err)
-		assert.Empty(t, changes.catalogSkillsToAdd)
-		assert.Empty(t, changes.catalogSkillsToRepair)
-		assert.Empty(t, changes.catalogSkillsToRemove)
-		assert.NoDirExists(t, filepath.Join(root, ".agent-layer", "skills", entry.ID))
-	})
-
-	t.Run("deselected legacy installation is removable", func(t *testing.T) {
-		root := t.TempDir()
-		legacyDir := filepath.Join(root, ".agent-layer", "skills", legacyDispatchAgentCatalogID)
-		require.NoError(t, os.MkdirAll(legacyDir, 0o750))
-		choices := NewChoices()
-		choices.CLISkillsCatalog = []templates.CLISkillCatalogEntry{entry}
-
-		changes, err := computeSkillsChangeSet(context.Background(), root, choices)
-		require.NoError(t, err)
-		assert.Equal(t, []string{legacyDispatchAgentCatalogID}, changes.catalogSkillsToRemove)
-		require.NoError(t, applySkillsChanges(context.Background(), root, changes))
-		assert.NoDirExists(t, legacyDir)
-	})
-}
-
 func TestComputeSkillsChangeSet_CatalogRepairMissingFiles(t *testing.T) {
 	root := t.TempDir()
 	skillDir := filepath.Join(root, ".agent-layer", "skills", "benchmark")
@@ -420,7 +387,7 @@ func TestListMissingManagedFilesReportStatErrors(t *testing.T) {
 		choices.InstructionSet = InstructionSetRulesAndMemory
 
 		_, err := computeSkillsChangeSet(context.Background(), root, choices)
-		require.ErrorContains(t, err, "exists but is not a regular file")
+		require.ErrorContains(t, err, "already exists")
 	})
 
 }
@@ -495,30 +462,4 @@ func TestWizardInstructionOptionsUseImportsAndPreserveLocalFiles(t *testing.T) {
 			require.Equal(t, set == InstructionSetRulesAndMemory, err == nil)
 		})
 	}
-}
-
-func TestWizardInstructionPreviewValidatesCombinedAdoptionOrdersOffline(t *testing.T) {
-	root := t.TempDir()
-	paths := config.DefaultPaths(root)
-	require.NoError(t, os.MkdirAll(paths.InstructionsDir, 0o750))
-	raw := []byte("[[instructions.local]]\nselectors = [\"00_rules.md\"]\norder = 10\n")
-	require.NoError(t, os.WriteFile(paths.ConfigPath, raw, 0o600))
-	legacy := filepath.Join(paths.InstructionsDir, "00_rules.md")
-	body := []byte("customized legacy rules\n")
-	require.NoError(t, os.WriteFile(legacy, body, 0o600))
-	choices := NewChoices()
-	choices.InstructionSetTouched = true
-	choices.InstructionSet = InstructionSetRulesAndMemory
-
-	_, err := computeSkillsChangeSet(context.Background(), root, choices)
-	require.ErrorContains(t, err, "duplicate instruction order 10")
-	require.ErrorContains(t, err, "al instructions add --order N")
-	require.ErrorContains(t, err, ".agent-layer/config.toml")
-	actual, err := os.ReadFile(paths.ConfigPath)
-	require.NoError(t, err)
-	require.Equal(t, raw, actual)
-	actual, err = os.ReadFile(legacy)
-	require.NoError(t, err)
-	require.Equal(t, body, actual)
-	require.NoDirExists(t, paths.ImportedInstructionsDir)
 }
