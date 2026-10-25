@@ -20,6 +20,7 @@ All notable changes to this project will be documented in this file.
 - Upgrade readiness lists `.grok/hooks/agent-layer-chime.json` as a disabled-agent artifact only when it is the managed hook document that `al sync` would remove, instead of also listing user hooks that merely mention the chime command and marker (#495).
 - Agent Dispatch accepts provider output that encodes supplementary characters such as emoji as escaped JSON surrogate pairs, instead of failing the run and losing its final answer. A truncated answer never ends in half of such a character (#443).
 - The default Claude status line no longer hangs when an untracked symlink points to a FIFO. It still counts every untracked entry as changed, but adds lines only from regular files, so untracked links are no longer read, including links to files outside the project. Existing `.agent-layer/claude-statusline.sh` sources keep their contents; accept the updated default during interactive `al upgrade` review (#450).
+- With `agents.codex.local_config_dir = true`, `al codex`, Codex dispatch, and model discovery pass an inherited relative `CODEX_HOME` to Codex as an absolute path resolved from the directory where `al` runs, so they all use the same home. `CODEX_HOME=.codex` selects `<repo>/.codex` from any project subfolder unless that subfolder has its own `.codex`, and `al codex` and Codex dispatch no longer warn about a mismatch for it (#502).
 
 ## v1.1.0 - 2026-10-22
 
