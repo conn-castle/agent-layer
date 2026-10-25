@@ -1,6 +1,11 @@
 package clients
 
-import "path/filepath"
+import (
+	"errors"
+	"io/fs"
+	"os"
+	"path/filepath"
+)
 
 var (
 	filepathAbs          = filepath.Abs
@@ -25,4 +30,26 @@ func ResolvePath(path string) string {
 		return eval
 	}
 	return abs
+}
+
+// ResolveRelativeHome returns the absolute form of a relative provider home
+// directory, resolved from the caller's directory. Because al runs from any
+// project subfolder, a value that cleans to name also selects <root>/name when
+// nothing exists at the caller-relative path.
+func ResolveRelativeHome(root, current, name string) string {
+	expected := filepath.Join(root, name)
+	home, err := filepathAbs(current)
+	if err != nil {
+		return current
+	}
+	// Compare parents: symlink resolution cannot match aliases of a missing leaf.
+	if filepath.Base(home) == name && SamePath(filepath.Dir(home), root) {
+		return expected
+	}
+	if filepath.Clean(current) == name {
+		if _, err := os.Lstat(home); errors.Is(err, fs.ErrNotExist) {
+			return expected
+		}
+	}
+	return home
 }

@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/conn-castle/agent-layer/internal/clients"
+	"github.com/conn-castle/agent-layer/internal/clients/claude"
 	"github.com/conn-castle/agent-layer/internal/clients/grok"
 	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/messages"
@@ -46,12 +47,7 @@ func Launch(cfg *config.ProjectConfig, runInfo *run.Info, env []string, passArgs
 		claudeConfigDir := filepath.Join(cfg.Root, ".claude-config")
 		env = clients.SetEnv(env, "CLAUDE_CONFIG_DIR", claudeConfigDir)
 	} else {
-		// Clear only stale repo-local CLAUDE_CONFIG_DIR. Preserve user-defined
-		// values that point outside this repository.
-		expectedClaudeConfigDir := filepath.Join(cfg.Root, ".claude-config")
-		if current, ok := clients.GetEnv(env, "CLAUDE_CONFIG_DIR"); ok && clients.SamePath(current, expectedClaudeConfigDir) {
-			env = clients.UnsetEnv(env, "CLAUDE_CONFIG_DIR")
-		}
+		env = claude.ClearStaleConfigDir(cfg.Root, env)
 	}
 
 	args := append([]string{}, passArgs...)
