@@ -277,6 +277,87 @@ func TestEnsureClaudeConfigDirWithWarningWarnsOnMismatch(t *testing.T) {
 	}
 }
 
+func TestConfigureEnvironmentClaudeConfigDirRelativeValues(t *testing.T) {
+	cases := []struct {
+		name      string
+		cwd       string
+		value     string
+		nestedDir bool
+		viaAlias  bool
+		// keep is the root-relative user directory that must be passed on, with
+		// a warning, when local config is enabled and kept unchanged when it is
+		// disabled; empty means the repo directory, which is pinned when enabled
+		// and cleared as stale when disabled.
+		keep string
+	}{
+		{name: "root-relative from subfolder", cwd: "subfolder", value: ".claude-config"},
+		{name: "unclean root-relative from nested subfolder", cwd: "subfolder/nested", value: "./subfolder/../.claude-config"},
+		{name: "caller-relative from subfolder", cwd: "subfolder", value: "../.claude-config"},
+		{name: "caller-relative through root alias", cwd: "subfolder", value: "../.claude-config", viaAlias: true},
+		{name: "from root", cwd: ".", value: ".claude-config"},
+		{name: "existing caller-relative directory kept", cwd: "subfolder", value: ".claude-config", nestedDir: true, keep: "subfolder/.claude-config"},
+		{name: "other relative directory kept", cwd: "subfolder", value: "other-config", keep: "subfolder/other-config"},
+		{name: "nonlocal value naming directory from root kept", cwd: "subfolder", value: "../{base}/.claude-config", keep: "{base}/.claude-config"},
+	}
+
+	for _, tc := range cases {
+		for _, enabled := range []bool{true, false} {
+			t.Run(fmt.Sprintf("%s/local_config_dir=%t", tc.name, enabled), func(t *testing.T) {
+				root := t.TempDir()
+				expected := filepath.Join(root, ".claude-config")
+				for _, dir := range []string{expected, filepath.Join(root, "subfolder", "nested")} {
+					if err := os.MkdirAll(dir, 0o700); err != nil {
+						t.Fatalf("mkdir %s: %v", dir, err)
+					}
+				}
+				if tc.nestedDir {
+					if err := os.Mkdir(filepath.Join(root, "subfolder", ".claude-config"), 0o700); err != nil {
+						t.Fatalf("mkdir nested config dir: %v", err)
+					}
+				}
+				callerRoot := root
+				if tc.viaAlias {
+					callerRoot = filepath.Join(t.TempDir(), "alias")
+					if err := os.Symlink(root, callerRoot); err != nil {
+						t.Fatalf("symlink root: %v", err)
+					}
+				}
+				t.Chdir(filepath.Join(callerRoot, tc.cwd))
+				current := strings.ReplaceAll(tc.value, "{base}", filepath.Base(root))
+				cfg := config.ClaudeConfig{LocalConfigDir: &enabled}
+				var warning strings.Builder
+
+				out := ConfigureEnvironment(root, []string{"CLAUDE_CONFIG_DIR=" + current}, cfg, &warning)
+
+				value, ok := clients.GetEnv(out, "CLAUDE_CONFIG_DIR")
+				if !enabled {
+					if warning.Len() != 0 {
+						t.Fatalf("expected no warning when disabled, got %q", warning.String())
+					}
+					if tc.keep == "" && ok {
+						t.Fatalf("expected stale CLAUDE_CONFIG_DIR %q to be cleared, got %q", current, value)
+					}
+					if tc.keep != "" && value != current {
+						t.Fatalf("expected user CLAUDE_CONFIG_DIR %q to be kept, got %q (present=%t)", current, value, ok)
+					}
+					return
+				}
+				if tc.keep == "" {
+					if value != expected || warning.Len() != 0 {
+						t.Fatalf("expected CLAUDE_CONFIG_DIR %s without warning, got %q with warning %q", expected, value, warning.String())
+					}
+					return
+				}
+				want := filepath.Join(root, strings.ReplaceAll(tc.keep, "{base}", filepath.Base(root)))
+				wantWarning := fmt.Sprintf(messages.ClientsClaudeConfigDirWarningFmt, current, expected)
+				if value != want || warning.String() != wantWarning {
+					t.Fatalf("expected CLAUDE_CONFIG_DIR %s with warning %q, got %q with warning %q", want, wantWarning, value, warning.String())
+				}
+			})
+		}
+	}
+}
+
 func TestLaunchClaudeNoLocalConfigDir(t *testing.T) {
 	root := t.TempDir()
 	claudePath := writeResolvableClaude(t)
