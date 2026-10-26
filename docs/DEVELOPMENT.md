@@ -114,12 +114,7 @@ Go helpers inherit their parent’s test-owned Git configuration.
 
 ### Common Issues
 - **`go mod tidy` or `go run` fails with network errors**: If your environment restricts access to `proxy.golang.org`, you can try setting `GOPROXY=direct` or ensure you have a working internet connection.
-- **Permission errors on Go cache**: If you see errors related to `GOCACHE` or `GOMODCACHE`, you can override them to a local directory:
-  ```bash
-  export GOCACHE=$PWD/tmp/gocache
-  export GOMODCACHE=$PWD/tmp/gomodcache
-  go mod tidy
-  ```
+- **Permission errors on Go cache**: Inspect the active paths with `go env GOCACHE GOMODCACHE` and resolve access to those shared caches. If alternate paths are necessary, choose stable, writable paths outside individual checkouts.
 - **Tools not found**: If `make lint` fails because `golangci-lint` is missing, run `make tools` to install all pinned dependencies into `.tools/bin`.
 
 ### Upgrading the MCP Go SDK
@@ -397,10 +392,7 @@ and config default/key operations remain available for supported upgrades.
   ```
 
 - If `go mod download` fails due to proxy access, ensure your network can reach `proxy.golang.org` or set `GOPROXY=direct` temporarily.
-- If Go reports a cache permission error, select writable absolute cache paths:
-  ```bash
-  GOCACHE="$PWD/.cache/go-build" GOMODCACHE="$PWD/.cache/go-mod" go mod tidy
-  ```
+- If Go reports a cache permission error, inspect the active paths with `go env GOCACHE GOMODCACHE` and resolve access to those shared caches. If alternate paths are necessary, choose stable, writable paths outside individual checkouts.
 
 General skill authoring lives in `nicholasjconn/skills`: seven development and three tool trees. Agent Layer embeds only the catalog coordinates and `dispatch-agent`, `skill-sync`, and `benchmark` content. Supporting files and script behavioral tests travel inside each external skill; `ship-pr/tests` is a standalone standard-library-only Go module with a test-only CI gate in the destination. Product integration tests use minimal local Git fixtures and inherited Git URL rewriting, without duplicating production scripts.
 
