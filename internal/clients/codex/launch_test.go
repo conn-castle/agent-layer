@@ -225,3 +225,68 @@ func TestConfigureEnvironmentCodexHomeWarnsOnMismatchWhenEnabled(t *testing.T) {
 		t.Fatalf("expected stderr to contain warning %q, got %q", wantWarning, stderr)
 	}
 }
+
+func TestConfigureEnvironmentCodexHomeRelativeValues(t *testing.T) {
+	localConfigDir := true
+	cfg := config.CodexConfig{LocalConfigDir: &localConfigDir}
+
+	cases := []struct {
+		name       string
+		cwd        string
+		value      string
+		nestedHome bool
+		viaAlias   bool
+		// keep is the root-relative user home that must be passed on, with a
+		// warning; empty means the project home without a warning.
+		keep string
+	}{
+		{name: "root-relative from subfolder", cwd: "subfolder", value: ".codex"},
+		{name: "unclean root-relative from nested subfolder", cwd: "subfolder/nested", value: "./subfolder/../.codex"},
+		{name: "caller-relative from subfolder", cwd: "subfolder", value: "../.codex"},
+		{name: "caller-relative through root alias", cwd: "subfolder", value: "../.codex", viaAlias: true},
+		{name: "from root", cwd: ".", value: ".codex"},
+		{name: "existing caller-relative home kept", cwd: "subfolder", value: ".codex", nestedHome: true, keep: "subfolder/.codex"},
+		{name: "other relative home kept", cwd: "subfolder", value: "other-home", keep: "subfolder/other-home"},
+		{name: "nonlocal value naming home from root kept", cwd: "subfolder", value: "../{base}/.codex", keep: "{base}/.codex"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			root := t.TempDir()
+			expected := filepath.Join(root, ".codex")
+			if err := os.MkdirAll(filepath.Join(root, "subfolder", "nested"), 0o700); err != nil {
+				t.Fatalf("mkdir subfolder: %v", err)
+			}
+			if tc.nestedHome {
+				if err := os.Mkdir(filepath.Join(root, "subfolder", ".codex"), 0o700); err != nil {
+					t.Fatalf("mkdir nested home: %v", err)
+				}
+			}
+			callerRoot := root
+			if tc.viaAlias {
+				callerRoot = filepath.Join(t.TempDir(), "alias")
+				if err := os.Symlink(root, callerRoot); err != nil {
+					t.Fatalf("symlink root: %v", err)
+				}
+			}
+			t.Chdir(filepath.Join(callerRoot, tc.cwd))
+			current := strings.ReplaceAll(tc.value, "{base}", filepath.Base(root))
+			var warning strings.Builder
+
+			out := ConfigureEnvironment(root, []string{"CODEX_HOME=" + current}, cfg, &warning)
+
+			value, _ := clients.GetEnv(out, "CODEX_HOME")
+			if tc.keep == "" {
+				if value != expected || warning.Len() != 0 {
+					t.Fatalf("expected CODEX_HOME %s without warning, got %q with warning %q", expected, value, warning.String())
+				}
+				return
+			}
+			want := filepath.Join(root, strings.ReplaceAll(tc.keep, "{base}", filepath.Base(root)))
+			wantWarning := fmt.Sprintf(messages.ClientsCodexHomeWarningFmt, current, expected)
+			if value != want || warning.String() != wantWarning {
+				t.Fatalf("expected CODEX_HOME %s with warning %q, got %q with warning %q", want, wantWarning, value, warning.String())
+			}
+		})
+	}
+}
