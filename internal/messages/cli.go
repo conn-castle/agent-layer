@@ -84,7 +84,6 @@ const (
 	UpgradeDeleteUnknownTmpHeader                   = "Files under .agent-layer/tmp/:"
 	UpgradeDeleteUnknownTmpDestructiveConfirmPrompt = "DESTRUCTIVE: deleting .agent-layer/tmp/ permanently removes ephemeral agent run artifacts and may impact ongoing work. Are you absolutely sure?"
 	UpgradeDeleteUnknownTmpDestructiveWarningHeader = "WARNING: .agent-layer/tmp/ may contain in-progress agent artifacts (plans, reports, scratch files). Deleting them is irreversible — Agent Layer will NOT snapshot or roll them back."
-	UpgradeSkillsMigrationPromptFmt                 = "Proceed with migrating %d skill(s) to directory format? (Use 'al upgrade rollback' to undo if needed.)"
 	UpgradeSkipManagedUpdatesInfo                   = "Info: skipping managed template updates (pass --apply-managed-updates to include them)."
 	UpgradeSkipMemoryUpdatesInfo                    = "Info: skipping memory file updates (pass --apply-memory-updates to include them)."
 	UpgradeSkipDeletionsInfo                        = "Info: skipping unknown file deletions outside .agent-layer/tmp/ (pass --apply-deletions to include them)."
@@ -331,6 +330,8 @@ const (
 	ClientsVSCodeManagedBlockConflictFmt = "vscode preflight failed: managed settings block conflict in %s (%s); run `al sync` to repair `.vscode/settings.json`"
 
 	ClientsCodexHomeWarningFmt       = "Warning: CODEX_HOME is set to %s; expected %s\n"
+	ClientsCodexHomeEnsureFailedFmt  = "prepare repo-local CODEX_HOME %s: %w"
+	ClientsCodexHomeNotDirectoryFmt  = "repo-local CODEX_HOME %s exists but is not a directory; move it aside or set agents.codex.local_config_dir = false"
 	ClientsClaudeConfigDirWarningFmt = "Warning: CLAUDE_CONFIG_DIR is set to %s; expected %s\n"
 	ClientsGrokHomeWarningFmt        = "Warning: overriding inherited GROK_HOME=%s with repo-local %s\n"
 )

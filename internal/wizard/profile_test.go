@@ -149,7 +149,7 @@ func TestRunProfile_PreviewWithoutInstallWritesNothing(t *testing.T) {
 	err := RunProfile(context.Background(), root, func(context.Context, string) (*alsync.Result, error) {
 		t.Fatal("preview must not run sync")
 		return nil, nil
-	}, "0.0.0", profilePath, false, &out)
+	}, "1.1.0", profilePath, false, &out)
 	require.NoError(t, err)
 
 	entries, err := os.ReadDir(root)
@@ -177,7 +177,7 @@ func TestRunProfile_ApplyInstallsWhenConfigMissing(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, basicAgentConfig(), string(written))
 		return &alsync.Result{}, nil
-	}, "0.0.0", profilePath, true, nil)
+	}, "1.1.0", profilePath, true, nil)
 	require.NoError(t, err)
 	require.True(t, syncCalled)
 
@@ -217,7 +217,7 @@ func TestRunProfile_UnreadableOrInvalidProfileDoesNotInstall(t *testing.T) {
 					err := RunProfile(context.Background(), root, func(context.Context, string) (*alsync.Result, error) {
 						t.Fatal("bad profile must not run sync")
 						return nil, nil
-					}, "0.0.0", tc.profilePath, mode.apply, nil)
+					}, "1.1.0", tc.profilePath, mode.apply, nil)
 					require.ErrorContains(t, err, tc.wantErr)
 
 					entries, err := os.ReadDir(root)

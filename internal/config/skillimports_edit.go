@@ -78,7 +78,7 @@ func setImportSelectors(content string, identity SkillImportBlockIdentity, selec
 			return "", fmt.Errorf("instruction add requires --order")
 		}
 		cfg.Instructions.Imports = append(cfg.Instructions.Imports, *instruction)
-		if err := validateInstructions("config.toml", cfg.Instructions); err != nil {
+		if err := ValidateInstructions("config.toml", cfg.Instructions); err != nil {
 			return "", err
 		}
 	}

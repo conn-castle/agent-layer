@@ -9,8 +9,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/pelletier/go-toml/v2"
-
+	"github.com/conn-castle/agent-layer/internal/messages"
 	"github.com/conn-castle/agent-layer/internal/skilllock"
 	"github.com/conn-castle/agent-layer/internal/skilltree"
 	"github.com/conn-castle/agent-layer/internal/tomlpatch"
@@ -47,7 +46,9 @@ func ValidateInstructionSelector(selector string) error {
 	return nil
 }
 
-func validateInstructions(source string, cfg InstructionsConfig) error {
+// ValidateInstructions checks explicit instruction declarations without reading files
+// or validating unrelated configuration that repair tools may need to update.
+func ValidateInstructions(source string, cfg InstructionsConfig) error {
 	orders := map[int]bool{}
 	names := map[string]bool{}
 	check := func(selectors []string, order *int) error {
@@ -99,7 +100,7 @@ func LocalInstructionEntry(entry fs.DirEntry) bool {
 // UnconfiguredLocalInstruction explains how to establish explicit ownership.
 func UnconfiguredLocalInstruction(source string, cfg InstructionsConfig) error {
 	if len(cfg.Local)+len(cfg.Imports) == 0 {
-		return fmt.Errorf("unconfigured instruction source %s: run al upgrade or al wizard to establish explicit ordering", source)
+		return fmt.Errorf(messages.ConfigUnorderedInstructionsFmt, source)
 	}
 	return fmt.Errorf("unconfigured local instruction %s: declare it in .agent-layer/config.toml with [[instructions.local]], selectors = [<filename.md>], and a unique order", source)
 }
@@ -109,7 +110,7 @@ func LoadOrderedInstructionsFS(fsys fs.FS, root string, cfg InstructionsConfig) 
 	if err := ValidateInstructionRootsFS(fsys, root); err != nil {
 		return nil, err
 	}
-	if err := validateInstructions("instructions", cfg); err != nil {
+	if err := ValidateInstructions("instructions", cfg); err != nil {
 		return nil, err
 	}
 	paths := DefaultPaths(root)
@@ -207,47 +208,9 @@ func SetInstructionImport(content string, block SkillImport, order *int, remove 
 	return setImportSelectors(content, block.Identity(), selectors, &InstructionImport{SkillImport: block, Order: order})
 }
 
-// AddInstructionImport optionally adopts a legacy local file's explicit order.
-func AddInstructionImport(content string, block SkillImport, order *int, localName string) (string, error) {
-	if localName != "" {
-		var err error
-		content, order, err = RemoveLocalInstruction(content, localName)
-		if err != nil {
-			return "", err
-		}
-		if order == nil {
-			return "", fmt.Errorf("legacy %s needs explicit ordering; run al upgrade or al wizard", localName)
-		}
-	}
+// AddInstructionImport adds one exact instruction import with explicit order.
+func AddInstructionImport(content string, block SkillImport, order *int) (string, error) {
 	return SetInstructionImport(content, block, order, false)
-}
-
-// RemoveLocalInstruction retires only the explicitly configured legacy block.
-func RemoveLocalInstruction(content, name string) (string, *int, error) {
-	lines := strings.Split(content, "\n")
-	for _, span := range findTableBlocks(lines, "instructions.local") {
-		var cfg Config
-		if err := toml.Unmarshal([]byte(strings.Join(lines[span.start:span.end], "\n")), &cfg); err != nil {
-			return "", nil, err
-		}
-		if len(cfg.Instructions.Local) != 1 {
-			return "", nil, fmt.Errorf("invalid local instruction block")
-		}
-		local := cfg.Instructions.Local[0]
-		if len(local.Selectors) == 1 && local.Selectors[0] == name {
-			return strings.Join(removeSkillImportBlockLines(lines, span), "\n"), local.Order, nil
-		}
-	}
-	var cfg Config
-	if err := toml.Unmarshal([]byte(content), &cfg); err != nil {
-		return "", nil, err
-	}
-	for _, local := range cfg.Instructions.Local {
-		if len(local.Selectors) == 1 && local.Selectors[0] == name {
-			return "", nil, fmt.Errorf("local instruction requires its own [[instructions.local]] header before editing")
-		}
-	}
-	return content, nil, nil
 }
 
 // MigrateInstructionOrderFS is an offline, read-only preview of legacy ordering.
@@ -305,7 +268,7 @@ func migrateInstructionOrder(raw string, names []string, cfg InstructionsConfig)
 	if err != nil {
 		return "", err
 	}
-	if err := validateInstructions("config.toml", parsed.Instructions); err != nil {
+	if err := ValidateInstructions("config.toml", parsed.Instructions); err != nil {
 		return "", err
 	}
 	return raw, nil

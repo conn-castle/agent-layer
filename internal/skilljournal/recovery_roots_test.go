@@ -21,11 +21,11 @@ func TestSharedRecoveryRefusesUnsafeRootsAndPreservesEvidence(t *testing.T) {
 				paths := missingEvidenceFixture(t, root)
 				stage := skilljournal.StagingRoot(paths.ImportedSkillsDir)
 				writeRecoveryEvidence(t, filepath.Join(paths.SkillsDir, "ship-pr", "SKILL.md"), "original local skill")
-				writeRecoveryEvidence(t, filepath.Join(stage, skilljournal.LocalBackupPrefix+"ship-pr", "SKILL.md"), "staged local backup")
+				writeRecoveryEvidence(t, filepath.Join(stage, skilljournal.WriteBackupPrefix+"ship-pr", "SKILL.md"), "staged local backup")
 				writeRecoveryEvidence(t, filepath.Join(stage, skilljournal.ConfigBackupName), "previous config")
 				writeRecoveryEvidence(t, filepath.Join(stage, skilljournal.LockBackupName), "previous lock")
-				require.NoError(t, skilljournal.Write(stage, skilljournal.Document{Version: skilljournal.AdoptionVersion, Committed: node == "tree backup", Writes: []skilljournal.WriteIntent{{Name: "ship-pr"}}, LocalRetirements: []string{"ship-pr"}, Config: true, LockExisted: true}))
-				target := map[string]string{"imported tier": paths.ImportedSkillsDir, "local tier": paths.SkillsDir, "staging": stage, "journal": filepath.Join(stage, skilljournal.FileName), "tree backup": filepath.Join(stage, skilljournal.LocalBackupPrefix+"ship-pr"), "config backup": filepath.Join(stage, skilljournal.ConfigBackupName)}[node]
+				require.NoError(t, skilljournal.Write(stage, skilljournal.Document{Committed: node == "tree backup", Writes: []skilljournal.WriteIntent{{Name: "ship-pr", Existed: true}}, Config: true, LockExisted: true}))
+				target := map[string]string{"imported tier": paths.ImportedSkillsDir, "local tier": paths.SkillsDir, "staging": stage, "journal": filepath.Join(stage, skilljournal.FileName), "tree backup": filepath.Join(stage, skilljournal.WriteBackupPrefix+"ship-pr"), "config backup": filepath.Join(stage, skilljournal.ConfigBackupName)}[node]
 				saved := filepath.Join(external, "preserved-root")
 				require.NoError(t, os.Rename(target, saved))
 				if kind == "link" {

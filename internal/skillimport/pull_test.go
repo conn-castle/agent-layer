@@ -503,7 +503,7 @@ func TestPullBlocksImportOfAUserManagedName(t *testing.T) {
 				require.ErrorContains(t, blocked.Err, "already owns the name")
 			}
 			if kind == "retired directory" {
-				for _, wording := range []string{"preserve its complete local tree", "Reconcile any configured selector coverage", "wizard legacy adoption preview"} {
+				for _, wording := range []string{"preserve its complete local tree", "Agent Layer v1.0.0", "rename or remove"} {
 					require.ErrorContains(t, blocked.Err, wording)
 				}
 				require.NotContains(t, blocked.Err.Error(), "delete it")

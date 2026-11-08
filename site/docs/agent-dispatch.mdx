@@ -100,6 +100,15 @@ parent has no development environment. Inherited source environment from another
 repository does not persist MCP source selection; ordinary release sync restores
 release selection.
 
+GUI and background clients, such as the Codex app, may start the server with a
+shorter `PATH` than your terminal. The release launcher records the `al` that
+`al sync` resolved, runs it directly, and appends its directory to the server
+`PATH`. After moving or reinstalling `al`, re-run `al sync` and reconnect the
+`agent-layer` server; a running server keeps recording the entry it started
+from. Provider CLIs must be on the client's `PATH` or in that `al` directory. Projects pinned to an older
+release keep generating the older launcher until you run `al update`, then
+`al upgrade` in the project.
+
 Running servers keep their code until reconnected. After a pin change or binary
 replacement (including a source rebuild), options, start and continue refuse new
 provider work when selected code differs or freshness cannot be verified. Wait,
@@ -113,7 +122,7 @@ Run `al update`, then `al upgrade` in each repository, and reconnect `agent-laye
 once. In Claude Code use `/mcp`; in a persistent Codex app restart the app or
 reload MCP configuration. A new chat may reuse the running server. Pre-guard
 servers need one reconnect after upgrade to acquire the guard. For development,
-use `make al-sync` or `make al-upgrade` to project source despite an older pin,
+use `make al-sync` to project source despite an older pin, or `make al-upgrade` after completing the v1.0.0 transition,
 then reconnect when a rebuild replaces the executable; no manual pin edits are needed. Sync updates
 launch configuration without replacing servers. Timeout changes also require a
 reconnect and a reload of projected client timeouts.

@@ -41,6 +41,8 @@ Agent Layer projects skills from the canonical user-managed tier `.agent-layer/s
 
 Agent Layer exclusively owns `.agents/skills/` and `.claude/skills/` in an Agent Layer project. Do not install or edit skills directly in either directory. Put user-managed skills in `.agent-layer/skills/`; imported skills live in `.agent-layer/skills-imported/` and are managed through `al skills`. Every other entry in the client roots is removed during sync.
 
+Reachable cleanup of obsolete client artifacts is retained after the v1.2.0 source boundary, including when a client is enabled later. This cleanup is independent of retired pre-1.0 conversion executors.
+
 ### Ownership of legacy projection paths
 
 If a project uses Agent Layer, it must use Agent Layer to manage skills. `.agent-layer/skills/` and `.agent-layer/skills-imported/` are the two canonical source tiers, and the following client-side directories are claimed exclusively by Agent Layer and removed unconditionally on every `al sync`:

@@ -454,16 +454,47 @@ func installProviderSignalForwarder(requestTermination func()) (caught func() os
 		}
 }
 
+// providerStartError classifies a provider start failure. The worker resolves
+// the provider on PATH again, so a missing binary or one whose first PATH match
+// is under a relative entry reports the same unavailable message as preflight.
 func providerStartError(target string, err error) error {
-	if errors.Is(err, exec.ErrNotFound) {
+	if errors.Is(err, exec.ErrNotFound) || errors.Is(err, exec.ErrDot) {
 		meta, ok := lookupTarget(target)
 		binary := target
 		if ok {
 			binary = meta.Binary
 		}
-		return exitError(ExitUnavailable, fmt.Sprintf("`al dispatch` target %s requires `%s` on PATH", target, binary))
+		return exitError(ExitUnavailable, providerLookupMessage(target, binary, "", err))
 	}
 	return wrapExitError(ExitTargetFailure, fmt.Sprintf("start %s: %v", target, err), err)
+}
+
+// providerLookupMessage explains why PATH lookup did not select a provider
+// binary, including the lookup error and the PATH this process searched.
+// located is the path lookup returned, or "" when unknown.
+func providerLookupMessage(target, binary, located string, err error) string {
+	if errors.Is(err, exec.ErrDot) {
+		return fmt.Sprintf("`al dispatch` target %s cannot run `%s`: %s (%v; PATH=%q; for an MCP client, restart the client or reconnect the agent-layer MCP server afterward)", target, binary, relativeProviderReason(binary, located), err, os.Getenv("PATH"))
+	}
+	return providerNotFoundMessage(target, binary)
+}
+
+// relativeProviderReason explains exec.ErrDot: lookup stops at the first match
+// and refuses one relative to the current directory, which a relative or empty
+// PATH entry produces, or on Windows an implicit current-directory match when
+// PATH has none. located is that relative path, or "" when unknown.
+func relativeProviderReason(binary, located string) string {
+	if located != "" {
+		located = fmt.Sprintf(" (%q)", located)
+	}
+	return fmt.Sprintf("the first `%s` found%s is relative to the current directory, which is refused; remove the relative or empty PATH entry that matched it, or put an absolute directory containing the intended `%s` earlier on the PATH of the process that starts Agent Layer", binary, located, binary)
+}
+
+// providerNotFoundMessage names the missing provider binary and the PATH this
+// process searched. MCP clients started from a GUI or background service often
+// pass a shorter PATH than the user's terminal.
+func providerNotFoundMessage(target, binary string) string {
+	return fmt.Sprintf("`al dispatch` target %s requires `%s` on PATH, but it was not found in PATH=%q; install `%s` in one of those directories, or add its directory to the PATH of the process that starts Agent Layer (for an MCP client, restart the client or reconnect the agent-layer MCP server afterward)", target, binary, os.Getenv("PATH"), binary)
 }
 
 type waitExitCoder interface {

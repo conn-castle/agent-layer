@@ -438,17 +438,6 @@ func buildUpgradePrompter(cmd *cobra.Command, policy upgradeApplyPolicy) *instal
 			}
 			return promptYesNo(stdinReader, cmd.OutOrStdout(), messages.UpgradeDeleteUnknownTmpDestructiveConfirmPrompt, false)
 		},
-		ConfirmSkillsMigrationFunc: func(flatSkills []string, conflicts []install.SkillsMigrationConflict) (bool, error) {
-			// Conflicts always block, even in headless mode.
-			if len(conflicts) > 0 {
-				return false, nil
-			}
-			if policy.yes {
-				return true, nil
-			}
-			prompt := fmt.Sprintf(messages.UpgradeSkillsMigrationPromptFmt, len(flatSkills))
-			return promptYesNo(stdinReader, cmd.OutOrStdout(), prompt, true)
-		},
 	}
 }
 

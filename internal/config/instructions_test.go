@@ -24,7 +24,7 @@ order = 40
 `
 	cfg, err := ParseConfigLenient([]byte(raw), "test")
 	require.NoError(t, err)
-	require.NoError(t, validateInstructions("test", cfg.Instructions))
+	require.NoError(t, ValidateInstructions("test", cfg.Instructions))
 	for _, bad := range []string{
 		strings.Replace(raw, "order = 0\n", "", 1), strings.Replace(raw, "order = 10", "order = 0", 1),
 		strings.Replace(raw, "order = 40", "order = -1", 1), strings.Replace(raw, "order = 40", "order = [40]", 1),
@@ -34,7 +34,7 @@ order = 40
 	} {
 		cfg, err := ParseConfigLenient([]byte(bad), "test")
 		if err == nil {
-			err = validateInstructions("test", cfg.Instructions)
+			err = ValidateInstructions("test", cfg.Instructions)
 		}
 		require.Error(t, err, bad)
 	}
@@ -77,18 +77,18 @@ func TestLegacyOrderPreviewPreservesBytesAndRefusesLinks(t *testing.T) {
 	require.ErrorContains(t, err, "unlinked")
 }
 
-func TestInstructionEditorAdoptsOrderAndRejectsHiddenDeclarations(t *testing.T) {
+func TestInstructionEditorPreservesOrderAndRejectsHiddenDeclarations(t *testing.T) {
 	order := 40
 	block := SkillImport{Repository: "local-repo", Selectors: []string{"instructions/rules.md"}, Ref: "release", Tracking: SkillTrackingPinned, WritePolicy: SkillWritePolicyBranch, PushRepository: "fork-repo", PushBranch: "updates"}
 	prefix := "# keep this comment\n[dispatch]\nmax_depth = 3\n"
 	local := "[[instructions.local]]\nselectors = [\"00_rules.md\"]\norder = 0\n"
-	next, err := AddInstructionImport(prefix+"\n"+local, block, &order, "00_rules.md")
+	next, err := AddInstructionImport(prefix, block, &order)
 	require.NoError(t, err)
 	require.True(t, strings.HasPrefix(next, prefix))
 	cfg, err := ParseConfigLenient([]byte(next), "test")
 	require.NoError(t, err)
 	require.Empty(t, cfg.Instructions.Local)
-	require.Equal(t, 0, *cfg.Instructions.Imports[0].Order)
+	require.Equal(t, 40, *cfg.Instructions.Imports[0].Order)
 	require.Equal(t, block, cfg.Instructions.Imports[0].SkillImport)
 	removed, err := SetInstructionImport(next, block, nil, true)
 	require.NoError(t, err)
@@ -100,20 +100,11 @@ func TestInstructionEditorAdoptsOrderAndRejectsHiddenDeclarations(t *testing.T) 
 	removed, err = SetInstructionImport(added, block, nil, true)
 	require.NoError(t, err)
 	require.Equal(t, noNewline, removed)
-	_, err = AddInstructionImport(prefix, block, &order, "00_rules.md")
-	require.ErrorContains(t, err, "needs explicit ordering")
-	_, err = AddInstructionImport(local, block, new(int), "")
+	_, err = AddInstructionImport(local, block, new(int))
 	require.ErrorContains(t, err, "duplicate instruction order")
-	_, err = AddInstructionImport(local, SkillImport{Repository: "local-repo"}, &order, "")
+	_, err = AddInstructionImport(local, SkillImport{Repository: "local-repo"}, &order)
 	require.ErrorContains(t, err, "exactly one selector")
 
-	for _, hidden := range []string{
-		strings.Replace(local, "instructions.local", `instructions."local"`, 1),
-		"[instructions]\nlocal = [{ selectors = [\"00_rules.md\"], order = 0 }]\n",
-	} {
-		_, _, err := RemoveLocalInstruction(hidden, "00_rules.md")
-		require.ErrorContains(t, err, "[[instructions.local]] header")
-	}
 	for _, hidden := range []string{
 		strings.Replace(next, "instructions.imports", `instructions."imports"`, 1),
 		"[instructions]\nimports = [{ repository = \"local-repo\", selectors = [\"instructions/rules.md\"], ref = \"release\", tracking = \"pinned\", write_policy = \"branch\", push_repository = \"fork-repo\", push_branch = \"updates\", order = 0 }]\n",

@@ -185,9 +185,9 @@ Doctor checks only enabled
 harnesses with configured model overrides and reports discovery
 failures or configured models absent from their lists as warnings. Neither
 operation syncs as part of model discovery. Discovery may create the normal
-repo-local `.agy` and `.grok-config`
-directories when absent; it does not sync
-configuration or create dispatch runs.
+repo-local `.agy` and `.grok-config` directories when absent, and an empty
+owner-only `.codex` home when `agents.codex.local_config_dir = true` selects
+it; it does not sync configuration or create dispatch runs.
 
 Each explicit dispatch-options request obtains fresh results; no persistent
 model cache is used. Provider-version queries also run concurrently. Launch,
@@ -570,6 +570,25 @@ The MCP launcher follows normal CLI version selection: the project pin or
 Source Make workflows embed the stable development executable in launcher argv,
 scoped to the configuration root by `AL_DEV_SOURCE_ROOT`. The client parent
 needs no development environment. Ordinary release sync restores release selection.
+
+GUI and background MCP clients, such as a Codex app daemon, often start servers
+with a shorter `PATH` than a terminal. The release launcher therefore records
+the `al` entry that `al sync` resolved (the first `al` on its `PATH`, else the
+absolute path it was invoked by), executes it directly, exports it so
+in-server regeneration records the same entry, and appends its directory to the
+server `PATH`. Nested `al` calls from providers reach that entry only when
+no other `al` precedes it on the client `PATH`. If that entry is moved or removed, the launcher falls
+back to `al` on the client `PATH`; after reinstalling `al` elsewhere, re-run
+`al sync` and reconnect the server, because a running server keeps recording
+its own entry while that file exists. Provider CLIs (`codex`, `claude`, `agy`, `grok`, `muse`) must be on
+the client's `PATH` or in that `al` directory. Otherwise `dispatch_options`
+names the missing binary, and start and continue also report the `PATH` the
+server searched. Provider lookup stops at the first match on `PATH`; when that
+match is under a relative or empty entry, which is refused, options, start and
+continue report it instead of a missing binary. Remove that entry or put the
+directory of the intended provider CLI before it. A project
+pinned to a release older than this launcher (#513) still generates the older
+launcher; run `al update`, then `al upgrade` in the project.
 
 Running MCP servers keep their code until reconnected. After a pin change,
 executable replacement or source rebuild, `dispatch_options`, `dispatch_start`

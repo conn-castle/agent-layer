@@ -67,41 +67,6 @@ func TestPromptWizardFlow_BackFromAgentsReturnsToApprovalStep(t *testing.T) {
 	require.Empty(t, choices.EnabledAgents)
 }
 
-func TestPromptWizardFlowOffersLegacyInstructionAdoption(t *testing.T) {
-	root := t.TempDir()
-	instructionPath := filepath.Join(root, ".agent-layer", "instructions", "00_rules.md")
-	require.NoError(t, os.MkdirAll(filepath.Dir(instructionPath), 0o750))
-	require.NoError(t, os.WriteFile(instructionPath, []byte("existing instruction evidence"), 0o600))
-
-	choices := NewChoices()
-	choices.ApprovalMode = config.ApprovalModeAll
-
-	ui := &MockUI{
-		SelectFunc: func(title string, options []string, current *string) error {
-			if title == messages.WizardInstructionSetTitle {
-				*current = messages.WizardInstructionSetNone
-			}
-			return nil
-		},
-		MultiSelectFunc: func(title string, options []string, selected *[]string) error {
-			if title == messages.WizardEnableDefaultMCPServersTitle {
-				*selected = []string{}
-			}
-			return nil
-		},
-		ConfirmFunc: func(title string, value *bool) error {
-			if title == messages.WizardEnableWarningsPrompt {
-				*value = false
-			}
-			return nil
-		},
-	}
-
-	err := promptWizardFlow(root, ui, choices)
-	require.NoError(t, err)
-	require.True(t, choices.InstructionSetTouched)
-}
-
 func TestPromptWizardFlow_ShowsInstructionSetWhenOnlyDevelopmentSkillsExist(t *testing.T) {
 	root := t.TempDir()
 	require.NoError(t, os.MkdirAll(filepath.Join(root, ".agent-layer", "skills", "implement"), 0o750))

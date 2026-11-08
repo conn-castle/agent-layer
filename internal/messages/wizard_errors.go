@@ -7,7 +7,7 @@ const (
 	WizardInstallFailedFmt                  = "install failed: %w"
 	WizardPartialInstallUpgradeRequired     = "agent layer is partially initialized in this repository (missing .agent-layer/config.toml); run 'al upgrade' to repair templates before using 'al wizard'"
 	WizardLoadConfigFailedFmt               = "failed to load config: %w"
-	WizardConfigNeedsUpgradeFmt             = "The wizard can't fix this config — it needs a migration:\n  %v\nRun 'al upgrade' to migrate, then re-run 'al wizard'."
+	WizardConfigNeedsUpgradeFmt             = "The wizard cannot convert this config:\n  %v\n" + TransitionRecoveryGuidance
 	WizardLoadDefaultMCPServersFailedFmt    = "failed to load default MCP servers: %w"
 	WizardLoadWarningDefaultsFailedFmt      = "failed to load warning defaults: %w"
 	WizardUnknownApprovalModeFmt            = "unknown approval mode: %q"

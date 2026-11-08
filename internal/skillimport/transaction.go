@@ -36,13 +36,12 @@ type atomicWriter func(path string, data []byte, perm os.FileMode) error
 // transaction back, and an in-process failure restores the same state
 // immediately, surfacing any rollback failure rather than hiding it.
 type transaction struct {
-	paths            pathSet
-	writes           map[string]skilltree.Tree
-	deletes          map[string]struct{}
-	localRetirements map[string]skilltree.Tree
-	lock             *skilllock.File
-	configRaw        *string
-	stagingRoot      string
+	paths       pathSet
+	writes      map[string]skilltree.Tree
+	deletes     map[string]struct{}
+	lock        *skilllock.File
+	configRaw   *string
+	stagingRoot string
 	// writeFile publishes configuration and lock content.
 	writeFile atomicWriter
 	// checkpoint is a test seam for process interruption at durable boundaries.
@@ -54,12 +53,11 @@ type pathSet = skilljournal.Targets
 
 func newTransaction(paths pathSet, lock *skilllock.File) *transaction {
 	return &transaction{
-		paths:            paths,
-		writes:           map[string]skilltree.Tree{},
-		deletes:          map[string]struct{}{},
-		localRetirements: map[string]skilltree.Tree{},
-		lock:             lock.Clone(),
-		writeFile:        fsutil.WriteFileAtomic,
+		paths:     paths,
+		writes:    map[string]skilltree.Tree{},
+		deletes:   map[string]struct{}{},
+		lock:      lock.Clone(),
+		writeFile: fsutil.WriteFileAtomic,
 	}
 }
 
@@ -69,10 +67,7 @@ func (t *transaction) WriteSkill(name string, tree skilltree.Tree) {
 	t.writes[name] = tree
 }
 
-// RetireLocal records a validated legacy source to retire during adoption.
-func (t *transaction) RetireLocal(name string, tree skilltree.Tree) { t.localRetirements[name] = tree }
-
-// DeleteSkill records that an imported directory must be removed.
+// DeleteSkill records an imported tree to remove.
 func (t *transaction) DeleteSkill(name string) {
 	delete(t.writes, name)
 	t.deletes[name] = struct{}{}
@@ -167,26 +162,6 @@ func (t *transaction) Commit() (err error) {
 		return joinRollback(cause, rollbackErr)
 	}
 
-	// Retire the old active slot before publishing its imported replacement.
-	for _, name := range slices.Sorted(maps.Keys(t.localRetirements)) {
-		if _, err := t.readLocal(t.paths.LocalPath(name), name); err != nil {
-			return fail(err)
-		}
-		applied, moveErr := moveAside(t.paths.LocalPath(name), filepath.Join(staging, skilljournal.LocalBackupPrefix+name))
-		if applied {
-			published.LocalRetirements = append(published.LocalRetirements, name)
-		}
-		if moveErr != nil {
-			return fail(moveErr)
-		}
-		t.reached("retire:" + name)
-		if !applied {
-			return fail(fmt.Errorf("legacy source %s disappeared before retirement", name))
-		}
-	}
-	if err := t.verifyLocalRetirements(staging); err != nil {
-		return fail(err)
-	}
 	for _, name := range slices.Sorted(maps.Keys(t.writes)) {
 		applied, publishErr := t.publishTree(name)
 		if applied.Name != "" {
@@ -230,9 +205,6 @@ func (t *transaction) Commit() (err error) {
 	}
 
 	t.reached("lock")
-	if err := t.verifyLocalRetirements(staging); err != nil {
-		return fail(err)
-	}
 	// Everything is durable. Recording that fact stops a crash before the
 	// staging directory is cleared from reverting a complete transaction.
 	if commitErr := skilljournal.MarkCommitted(staging); commitErr != nil {
@@ -245,20 +217,6 @@ func (t *transaction) Commit() (err error) {
 // The project lock coordinates CLI operations, but editors can still change the
 // source during staging or through an open file after retirement. Abort and
 // restore that source if it differs from the copy being published.
-func (t *transaction) verifyLocalRetirements(staging string) error {
-	for _, name := range slices.Sorted(maps.Keys(t.localRetirements)) {
-		backup := filepath.Join(staging, skilljournal.LocalBackupPrefix+name)
-		current, err := t.readLocal(backup, name)
-		if err != nil {
-			return fmt.Errorf("verify retired legacy source %s: %w", name, err)
-		}
-		if current.Hash() != t.localRetirements[name].Hash() {
-			return fmt.Errorf("legacy source %s changed while adoption was staged; finish the edits and retry conversion", name)
-		}
-	}
-	return nil
-}
-
 // prepareJournal copies every file the transaction replaces into staging and
 // records the transaction's intent, so an interrupted process can be recovered.
 // It runs before any live path changes.
@@ -269,10 +227,6 @@ func (t *transaction) prepareJournal() error {
 	doc := skilljournal.Document{
 		Deletes: deletes,
 		Config:  t.configRaw != nil,
-	}
-	if len(t.localRetirements) > 0 {
-		doc.Version = skilljournal.AdoptionVersion
-		doc.LocalRetirements = slices.Sorted(maps.Keys(t.localRetirements))
 	}
 	for _, name := range slices.Sorted(maps.Keys(t.writes)) {
 		existed, err := pathExists(filepath.Join(t.paths.ImportedSkillsDir, name))
@@ -314,13 +268,6 @@ func (t *transaction) prepareJournal() error {
 			}
 			file, _ := t.writes[name].File(name)
 			perm := file.FileMode()
-			if _, adopting := t.localRetirements[name]; adopting {
-				info, err := os.Lstat(t.paths.LocalPath(name))
-				if err != nil {
-					return err
-				}
-				perm = info.Mode().Perm()
-			}
 			if err := fsutil.WriteFileAtomic(staged, file.Data, perm); err != nil {
 				return err
 			}
@@ -453,11 +400,4 @@ func syncStagedTree(root string) error {
 		closeErr := file.Close()
 		return errors.Join(syncErr, closeErr)
 	})
-}
-
-func (t *transaction) readLocal(source, name string) (skilltree.Tree, error) {
-	if t.paths.ExactFiles {
-		return skilltree.ReadFileNode(skilltree.OSFS{}, source, name)
-	}
-	return skilltree.ReadStrict(skilltree.OSFS{}, source)
 }

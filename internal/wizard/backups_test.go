@@ -76,7 +76,7 @@ func TestMigrateBackupsFailurePreservesSource(t *testing.T) {
 	source := filepath.Join(root, ".agent-layer", ".env.bak")
 	require.NoError(t, os.WriteFile(source, []byte("secret"), 0600))
 	require.NoError(t, os.WriteFile(filepath.Join(root, ".agent-layer", "state"), []byte("blocked"), 0600))
-	require.ErrorContains(t, MigrateBackups(root), "must be a real directory")
+	require.ErrorContains(t, MigrateBackups(root), "real directory")
 	data, err := os.ReadFile(source)
 	require.NoError(t, err)
 	require.Equal(t, "secret", string(data))
@@ -182,7 +182,7 @@ func TestBackupOperationsRejectLinkedStorage(t *testing.T) {
 				require.NoError(t, os.Symlink(external, linkPath))
 				before := snapshotFiles(t, external)
 
-				require.ErrorContains(t, operation(root), "must be a real directory")
+				require.ErrorContains(t, operation(root), "real directory")
 				require.Equal(t, before, snapshotFiles(t, external))
 
 				// Restoring a real directory allows retry.
@@ -222,7 +222,7 @@ func TestApplyRejectsLinkedState(t *testing.T) {
 		choices.ApprovalModeTouched = true
 		syncCalled = false
 
-		require.ErrorContains(t, applyChanges(context.Background(), root, configPath, envPath, choices, runSync, io.Discard), "must be a real directory")
+		require.ErrorContains(t, applyChanges(context.Background(), root, configPath, envPath, choices, runSync, io.Discard), "real directory")
 		require.False(t, syncCalled)
 		require.Empty(t, snapshotFiles(t, external))
 		data, err := os.ReadFile(configPath)
@@ -244,7 +244,7 @@ func TestApplyRejectsLinkedState(t *testing.T) {
 		state, external := link(t, root)
 		syncCalled = false
 
-		require.ErrorContains(t, RunProfile(context.Background(), root, runSync, "", profilePath, true, io.Discard), "must be a real directory")
+		require.ErrorContains(t, RunProfile(context.Background(), root, runSync, "", profilePath, true, io.Discard), "real directory")
 		require.False(t, syncCalled)
 		require.Empty(t, snapshotFiles(t, external))
 		data, err := os.ReadFile(configPath)

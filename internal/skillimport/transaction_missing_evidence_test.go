@@ -11,11 +11,12 @@ import (
 	"github.com/conn-castle/agent-layer/internal/fsutil"
 	"github.com/conn-castle/agent-layer/internal/skilljournal"
 	"github.com/conn-castle/agent-layer/internal/skilllock"
+	"github.com/conn-castle/agent-layer/internal/skilltree"
 	"github.com/conn-castle/agent-layer/internal/testutil"
 )
 
-func TestAdoptionCommitRollbackPreservesOriginalOrSurvivingGeneration(t *testing.T) {
-	for _, kind := range []string{"normal absent lock", "normal present lock", "missing lock", "missing local backup", "linked local backup"} {
+func TestCommitRollbackPreservesOriginalOrSurvivingGeneration(t *testing.T) {
+	for _, kind := range []string{"normal absent lock", "normal present lock", "missing lock", "missing imported backup", "linked imported backup"} {
 		t.Run(kind, func(t *testing.T) {
 			proj := newProject(t)
 			prior := skilllock.New()
@@ -23,11 +24,12 @@ func TestAdoptionCommitRollbackPreservesOriginalOrSurvivingGeneration(t *testing
 				require.NoError(t, prior.Save(proj.paths.SkillsLockPath))
 			}
 			require.NoError(t, os.Chmod(proj.paths.ConfigPath, 0o644)) // #nosec G302 -- the existing config writer uses canonical mode 0644.
-			tree := writeLegacy(t, proj, "implement")
+			tree := mustSkillTree(t, "implement", "original imported content")
+			require.NoError(t, os.MkdirAll(filepath.Join(proj.paths.ImportedSkillsDir, "implement"), 0o750))
+			require.NoError(t, skilltree.Materialize(tree, filepath.Join(proj.paths.ImportedSkillsDir, "implement")))
 			require.NoError(t, os.MkdirAll(proj.paths.ImportedSkillsDir, 0o750))
 			expected := testutil.SnapshotEvidence(t, proj.root)
 			tx := newTestTransaction(proj, prior)
-			tx.RetireLocal("implement", tree)
 			tx.WriteSkill("implement", tree)
 			tx.SetConfig(proj.ConfigContent() + "\n# published\n")
 			tx.SetLockEntry(lockEntry("implement"))
@@ -41,14 +43,14 @@ func TestAdoptionCommitRollbackPreservesOriginalOrSurvivingGeneration(t *testing
 					return nil
 				}
 				injected = true
-				if kind == "missing lock" || kind == "missing local backup" || kind == "linked local backup" {
-					backup := filepath.Join(tx.stagingRoot, skilljournal.LocalBackupPrefix+"implement")
+				if kind == "missing lock" || kind == "missing imported backup" || kind == "linked imported backup" {
+					backup := filepath.Join(tx.stagingRoot, skilljournal.WriteBackupPrefix+"implement")
 					if kind == "missing lock" {
 						backup = filepath.Join(tx.stagingRoot, skilljournal.LockBackupName)
 					}
 					saved := filepath.Join(proj.root, "quarantined-original")
 					require.NoError(t, os.Rename(backup, saved))
-					if kind == "linked local backup" {
+					if kind == "linked imported backup" {
 						require.NoError(t, os.Symlink(saved, backup))
 					}
 					expected = testutil.SnapshotEvidence(t, proj.root)
@@ -58,7 +60,7 @@ func TestAdoptionCommitRollbackPreservesOriginalOrSurvivingGeneration(t *testing
 			err := tx.Commit()
 			require.True(t, injected)
 			require.ErrorIs(t, err, cause)
-			if kind == "missing lock" || kind == "missing local backup" || kind == "linked local backup" {
+			if kind == "missing lock" || kind == "missing imported backup" || kind == "linked imported backup" {
 				require.ErrorContains(t, err, "rolling the change back also failed")
 			} else {
 				require.NotContains(t, err.Error(), "rolling the change back also failed")

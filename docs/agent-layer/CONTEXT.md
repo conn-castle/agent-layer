@@ -121,8 +121,8 @@ Do not duplicate information that belongs elsewhere:
 
 ## Upgrade and migration internals
 
-- When source version cannot be resolved during `al upgrade`, source-agnostic migration operations still execute; source-gated operations are skipped with deterministic report entries. Ambiguous repos may need an explicit follow-up if the skip report flags missed transitions.
-- Multi-version upgrades chain migration manifests: all manifests between source (exclusive) and target (inclusive) load in order with per-operation deduplication by ID. When source is unknown, only the target manifest loads (backward compatible). Manifests must have unique operation IDs across the chain or later duplicates are silently skipped.
+- v1.2.0 requires completed v1.0.0 transition state. Known pre-1.0 sources and positively identified pristine moved skills/instructions, needs-upgrade config, or adoption-v2 evidence refuse before mutation with v1.0.0 guidance. Customized user content is preserved.
+- Supported upgrades chain manifests from source (exclusive) to target (inclusive), deduplicating operation IDs. Unknown clean sources receive only source-agnostic operations after 1.0.0. Historical schemas remain recognized; obsolete executors are retired. Wizard/profile and benchmark ordering, ordinary import recovery, honored pins, and reachable sync cleanup remain supported.
 - The required-field migration guardrail uses a baseline allowlist for fields that predate manifest enforcement (baseline version `0.8.1`). The allowlist must be maintained when introducing new required fields; stale entries can hide drift if not reviewed.
 
 ## E2E test harness
@@ -132,7 +132,7 @@ Do not duplicate information that belongs elsewhere:
 ## Test policy
 
 - Do not write tests that assert specific wording, language, headings, or prose contracts in skill and instruction templates. Those checks are tautological and brittle. Tests may verify Agent Layer mechanics such as parsing, validation, sync/projection, resource copying, file existence/absence, and generated artifacts.
-- When a test must confirm a template/instruction file was seeded or written in full (not stubbed/truncated), compare the output against the template read at runtime (`templates.Read(<path>)`) and key dedup/occurrence checks on the migration op's own fields (`op.Match`/`op.From`/`op.Value`) — never hardcode template prose as the proxy. Runtime comparison tracks the source of truth, survives content edits, and still catches stub/truncation regressions (see `TestExecuteAppendToFile_*` in `internal/install`).
+- When a test must confirm a template/instruction file was seeded or written in full (not stubbed/truncated), compare the output against the template read at runtime (`templates.Read(<path>)`) and key dedup/occurrence checks on the migration op's own fields (`op.Match`/`op.From`/`op.Value`) — never hardcode template prose as the proxy. Runtime comparison tracks the source of truth, survives content edits, and still catches stub/truncation regressions.
 
 ## Root resolution in cmd/al tests
 

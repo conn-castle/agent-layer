@@ -8,6 +8,7 @@ import (
 
 	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/gitrepo"
+	"github.com/conn-castle/agent-layer/internal/messages"
 	"github.com/conn-castle/agent-layer/internal/skilllock"
 	"github.com/conn-castle/agent-layer/internal/skilltree"
 	"github.com/conn-castle/agent-layer/internal/templates"
@@ -236,23 +237,10 @@ func desiredSkillAtCommit(ctx context.Context, source *gitrepo.Source, block con
 // importNewAt imports a skill whose upstream tree was resolved at commit.
 func (s *Service) importNewAt(st *state, txn *transaction, blockCtx *blockContext, skill desiredSkill, commit string, report *Report) {
 	result := SkillResult{Name: skill.Name, Repository: config.NormalizeSkillRepository(skill.Block.Repository), SelectedPath: skill.SelectedPath}
-	if legacy, adopting := txn.localRetirements[skill.Name]; adopting {
-		// Raw equality is the only available pristine evidence. Historical normalized
-		// manifests cannot prove original bytes or executable bits: carry uncertainty.
-		txn.WriteSkill(skill.Name, legacy)
-		txn.SetLockEntry(lockEntryFor(skill, blockCtx, commit, skill.Tree))
-		result.Outcome = OutcomeImported
-		result.Detail = "adopted legacy tree; local slot retired"
-		if legacy.Hash() != skill.Tree.Hash() {
-			result.Detail += "; full local content preserved as modified against fetched upstream"
-		}
-		report.Add(result)
-		return
-	}
 	if dir, blocked := blockedByUserSkill(st, skill.Name); blocked {
 		result.Outcome = OutcomeFailed
 		if templates.IsRetiredSkill(skill.Name) {
-			result.Err = fmt.Errorf("legacy skill %s already owns the name %q; preserve its complete local tree. Reconcile any configured selector coverage with al skills commands first, then use the wizard legacy adoption preview to move it into the imported tier while preserving local changes", relativeTo(st.paths.Root, dir), skill.Name)
+			result.Err = fmt.Errorf(messages.RetiredLocalSkillConflictFmt, relativeTo(st.paths.Root, dir), skill.Name)
 		} else {
 			result.Err = fmt.Errorf("user-managed skill %s already owns the name %q; delete it to let this import take ownership, or narrow the selector that matches %s to keep the user-managed skill",
 				relativeTo(st.paths.Root, dir), skill.Name, skill.SelectedPath)

@@ -268,7 +268,7 @@ func TestLoadSkillsFS_FlatFileReturnsError(t *testing.T) {
 	}
 
 	_, err := LoadSkillsFS(fsys, "root", ".agent-layer/skills")
-	if err == nil || !strings.Contains(err.Error(), "flat format is no longer supported") {
+	if err == nil || !strings.Contains(err.Error(), "flat-format skill") {
 		t.Fatalf("expected flat-format unsupported error, got %v", err)
 	}
 }
