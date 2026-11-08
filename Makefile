@@ -357,9 +357,10 @@ dev: ## Fast local formatting and lint loop
 # Source commands must bypass release pins even outside an agent dev session.
 # Shell words for explicit paths must also preserve literal $, backticks and quotes.
 al_shell_quote = '$(subst ','"'"',$(1))'
-# Source sync, upgrade and wizard keep the caller's environment, but never the
-# installed al entry a parent release MCP server exported: sync would record it.
-AL_RUN = env -u AL_INSTALLED_EXECUTABLE $(AL_DEV_LAUNCH_ENV) $(call al_shell_quote,$(AL_DEV_BIN))
+# Source sync, upgrade and wizard keep the caller's environment, including the
+# dispatch context sync reads, but never the installed al entry a parent release
+# MCP server exported: sync would record it. AL_RUN starts each recipe line.
+AL_RUN = unset AL_INSTALLED_EXECUTABLE; $(AL_DEV_LAUNCH_ENV) $(call al_shell_quote,$(AL_DEV_BIN))
 AL_DEV_BIN_DIR := $(ROOT_DIR)/.agent-layer/tmp/dev-bin
 AL_DEV_BIN := $(AL_DEV_BIN_DIR)/al
 AL_DEV_LAUNCH_ENV := PATH=$(call al_shell_quote,$(AL_DEV_BIN_DIR)):"$$PATH" AL_DEV_BYPASS_VERSION_DISPATCH=1 AL_DEV_EXECUTABLE=$(call al_shell_quote,$(AL_DEV_BIN)) AL_DEV_SOURCE_ROOT=$(call al_shell_quote,$(ROOT_DIR))

@@ -464,26 +464,30 @@ func providerStartError(target string, err error) error {
 		if ok {
 			binary = meta.Binary
 		}
-		return exitError(ExitUnavailable, providerLookupMessage(target, binary, err))
+		return exitError(ExitUnavailable, providerLookupMessage(target, binary, "", err))
 	}
 	return wrapExitError(ExitTargetFailure, fmt.Sprintf("start %s: %v", target, err), err)
 }
 
 // providerLookupMessage explains why PATH lookup did not select a provider
-// binary, including the PATH this process searched.
-func providerLookupMessage(target, binary string, err error) string {
+// binary, including the lookup error and the PATH this process searched.
+// located is the path lookup returned, or "" when unknown.
+func providerLookupMessage(target, binary, located string, err error) string {
 	if errors.Is(err, exec.ErrDot) {
-		return fmt.Sprintf("`al dispatch` target %s cannot run `%s`: %s (PATH=%q; for an MCP client, restart the client or reconnect the agent-layer MCP server afterward)", target, binary, relativeProviderReason(binary), os.Getenv("PATH"))
+		return fmt.Sprintf("`al dispatch` target %s cannot run `%s`: %s (%v; PATH=%q; for an MCP client, restart the client or reconnect the agent-layer MCP server afterward)", target, binary, relativeProviderReason(binary, located), err, os.Getenv("PATH"))
 	}
 	return providerNotFoundMessage(target, binary)
 }
 
-// relativeProviderReason explains exec.ErrDot. LookPath stops at the first
-// match, so the first binary on PATH lies under a relative or empty entry and
-// later directories were not searched; making that entry absolute would still
-// select the same, possibly unintended, binary.
-func relativeProviderReason(binary string) string {
-	return fmt.Sprintf("the first `%s` on PATH is under a relative or empty PATH entry, which is refused; remove that entry from the PATH of the process that starts Agent Layer, or put the directory of the intended `%s` before it", binary, binary)
+// relativeProviderReason explains exec.ErrDot: lookup stops at the first match
+// and refuses one relative to the current directory, which a relative or empty
+// PATH entry produces, or on Windows an implicit current-directory match when
+// PATH has none. located is that relative path, or "" when unknown.
+func relativeProviderReason(binary, located string) string {
+	if located != "" {
+		located = fmt.Sprintf(" (%q)", located)
+	}
+	return fmt.Sprintf("the first `%s` found%s is relative to the current directory, which is refused; remove the relative or empty PATH entry that matched it, or put an absolute directory containing the intended `%s` earlier on the PATH of the process that starts Agent Layer", binary, located, binary)
 }
 
 // providerNotFoundMessage names the missing provider binary and the PATH this

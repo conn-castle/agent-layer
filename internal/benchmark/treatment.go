@@ -601,11 +601,12 @@ var treatmentMCPLauncherFiles = []string{
 	filepath.Join(".agy", "config", "mcp_config.json"),
 }
 
-// omitHostInstalledExecutable replaces the host's installed al entry and its
-// directory, which generated MCP launchers record as adjacent arguments, with
-// empty arguments: the launcher's form when no installed entry is recorded. It
-// rewrites only treatmentMCPLauncherFiles. Generated TOML quotes arguments like
-// strconv.Quote and JSON like json.Marshal, so both encodings are matched.
+// omitHostInstalledExecutable empties the adjacent installed-entry and
+// directory launcher arguments for entry, the launcher's form when no installed
+// entry is recorded. Contract: only treatmentMCPLauncherFiles are rewritten;
+// a missing launcher file is skipped; a launcher path that is a symlink or
+// other non-regular file is an error. Both the strconv.Quote (TOML) and
+// json.Marshal (JSON) encodings of the pair are matched.
 func omitHostInstalledExecutable(root, entry string) error {
 	if entry == "" {
 		return nil
@@ -626,7 +627,14 @@ func omitHostInstalledExecutable(root, entry string) error {
 	}
 	defer func() { _ = restricted.Close() }()
 	for _, path := range treatmentMCPLauncherFiles {
-		if err := rewriteTreatmentFile(restricted, path, omit); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		info, err := restricted.Lstat(path)
+		if errors.Is(err, fs.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return err
+		}
+		if err := rewriteTreatmentFile(restricted, path, fs.FileInfoToDirEntry(info), omit); err != nil {
 			return err
 		}
 	}
@@ -639,8 +647,9 @@ func jsonQuote(value string) string {
 	return string(encoded)
 }
 
-// rewriteTreatmentProjectionRoot replaces the staging root, including its
-// symlink-resolved spelling, with the container root in every staged file.
+// rewriteTreatmentProjectionRoot replaces every occurrence of from, and of its
+// symlink-resolved spelling, with to in all files under root. Contract: a
+// symlink or other non-regular file anywhere under root is an error.
 func rewriteTreatmentProjectionRoot(root, from, to string) error {
 	if strings.TrimSpace(from) == "" || strings.TrimSpace(to) == "" || from == to {
 		return fmt.Errorf("treatment projection root rewrite requires distinct non-empty paths")
@@ -670,29 +679,29 @@ func rewriteTreatmentProjectionRoot(root, from, to string) error {
 		if walkErr != nil || entry.IsDir() {
 			return walkErr
 		}
-		return rewriteTreatmentFile(restricted, path, replaceRoot)
+		return rewriteTreatmentFile(restricted, path, entry, replaceRoot)
 	})
 }
 
-// rewriteTreatmentFile applies rewrite to one staged file and writes it back
-// with its mode only when the bytes change. Staged treatments contain only
-// directories and regular files, so a symlink or other non-regular file is an
-// error; a missing file returns an error wrapping fs.ErrNotExist.
-func rewriteTreatmentFile(restricted *os.Root, path string, rewrite func([]byte) []byte) error {
-	info, err := restricted.Lstat(path)
-	if err != nil {
-		return err
-	}
-	if !info.Mode().IsRegular() {
+// rewriteTreatmentFile replaces the staged file at path, described by entry,
+// with rewrite's result when that differs, keeping its permissions. Contract:
+// a symlink or other non-regular entry is an error, and rewrite must return a
+// new slice rather than modify its input.
+func rewriteTreatmentFile(restricted *os.Root, path string, entry fs.DirEntry, rewrite func([]byte) []byte) error {
+	if !entry.Type().IsRegular() {
 		return fmt.Errorf("treatment contains non-regular file %s", filepath.ToSlash(path))
 	}
 	data, err := restricted.ReadFile(path)
 	if err != nil {
 		return err
 	}
-	rewritten := rewrite(bytes.Clone(data))
+	rewritten := rewrite(data)
 	if bytes.Equal(data, rewritten) {
 		return nil
+	}
+	info, err := entry.Info()
+	if err != nil {
+		return err
 	}
 	return restricted.WriteFile(path, rewritten, info.Mode().Perm())
 }

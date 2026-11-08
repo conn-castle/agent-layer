@@ -237,9 +237,15 @@ func TestProviderRelativePathEntryIsReportedAsFirstMatch(t *testing.T) {
 		},
 	})
 	relative := &exec.Error{Name: "codex", Err: exec.ErrDot}
-	for _, err := range []error{preflight, providerStartError(AgentCodex, relative)} {
-		message := requireDispatchExitError(t, err, ExitUnavailable).Error()
-		for _, want := range []string{"cannot run `codex`", relativeProviderReason("codex"), `PATH="bin:/usr/bin"`} {
+	for _, tc := range []struct {
+		err     error
+		located string
+	}{
+		{preflight, "bin/codex"},
+		{providerStartError(AgentCodex, relative), ""},
+	} {
+		message := requireDispatchExitError(t, tc.err, ExitUnavailable).Error()
+		for _, want := range []string{"cannot run `codex`", relativeProviderReason("codex", tc.located), relative.Error(), `PATH="bin:/usr/bin"`} {
 			if !strings.Contains(message, want) {
 				t.Fatalf("relative PATH message %q missing %q", message, want)
 			}

@@ -55,7 +55,9 @@ func TestMakeSourceTargetsStripInstalledExecutable(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(stubDir, "go"), []byte(stub), 0o755); err != nil { //nolint:gosec // The stub go must be executable.
 		t.Fatal(err)
 	}
-	devDir := t.TempDir()
+	// "=" in the checkout path must stay part of the command word, not become
+	// an environment assignment.
+	devDir := filepath.Join(t.TempDir(), "dev=bin")
 	cache := t.TempDir()
 	// al-upgrade shares al-sync's AL_RUN recipe but also edits this checkout's
 	// keep list, so al-sync stands in for it.

@@ -470,7 +470,7 @@ func prepareFresh(project *config.ProjectConfig, target targetMeta, opts runOpti
 	}
 	path, err := lookPath(target.Binary)
 	if err != nil {
-		return targetMeta{}, "", nil, exitError(ExitUnavailable, providerLookupMessage(target.Name, target.Binary, err))
+		return targetMeta{}, "", nil, exitError(ExitUnavailable, providerLookupMessage(target.Name, target.Binary, path, err))
 	}
 	target, version, err := compatibleTargetVersionCached(project.Root, path, target, opts.VersionLookup)
 	if err != nil {
