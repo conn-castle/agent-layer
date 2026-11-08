@@ -1,8 +1,12 @@
 package projection
 
 import (
+	"os"
+	"os/exec"
+	"path/filepath"
 	"slices"
 	"sort"
+	"strings"
 
 	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/versiondispatch"
@@ -30,7 +34,13 @@ const (
 	builtInDispatchSubject = "dispatch"
 	builtInDispatchAction  = "mcp-server"
 	builtInDispatchShell   = "/bin/sh"
-	builtInDispatchScript  = `AL_MCP_WORKING_DIR=$PWD; export AL_MCP_WORKING_DIR; cd "$1" || exit; if [ -n "$2" ]; then AL_DEV_EXECUTABLE=$2; AL_DEV_BYPASS_VERSION_DISPATCH=1; AL_DEV_SOURCE_ROOT=$1; export AL_DEV_EXECUTABLE AL_DEV_BYPASS_VERSION_DISPATCH AL_DEV_SOURCE_ROOT; exec "$2" dispatch mcp-server; else unset AL_DEV_EXECUTABLE AL_DEV_BYPASS_VERSION_DISPATCH AL_DEV_SOURCE_ROOT; exec al dispatch mcp-server; fi`
+	// The release branch prefers the al entry that sync resolved, exports it as
+	// AL_INSTALLED_EXECUTABLE so in-server regeneration records it again, and
+	// appends its directory to PATH so GUI and background clients that never
+	// inherited the terminal PATH can start the server. Nested al calls find
+	// that directory only when no other al precedes it on the client PATH.
+	// Clients expand ${...} in argv, so the script avoids it.
+	builtInDispatchScript  = `AL_MCP_WORKING_DIR=$PWD; export AL_MCP_WORKING_DIR; cd "$1" || exit; if [ -n "$2" ]; then AL_DEV_EXECUTABLE=$2; AL_DEV_BYPASS_VERSION_DISPATCH=1; AL_DEV_SOURCE_ROOT=$1; export AL_DEV_EXECUTABLE AL_DEV_BYPASS_VERSION_DISPATCH AL_DEV_SOURCE_ROOT; exec "$2" dispatch mcp-server; fi; unset AL_DEV_EXECUTABLE AL_DEV_BYPASS_VERSION_DISPATCH AL_DEV_SOURCE_ROOT; if [ -x "$3" ]; then case ":$PATH:" in *":$4:"*) ;; "::") PATH=$4 ;; *) PATH=$PATH:$4 ;; esac; AL_INSTALLED_EXECUTABLE=$3; export PATH AL_INSTALLED_EXECUTABLE; exec "$3" dispatch mcp-server; fi; exec al dispatch mcp-server`
 	builtInDispatchArgZero = "agent-layer-mcp"
 )
 
@@ -54,6 +64,10 @@ func BuiltInDispatchServer(cfg config.Config, client string) (ResolvedMCPServer,
 // RootedBuiltInDispatchServer returns the built-in server with a launcher that
 // enters repoRoot before invoking al. This lets version dispatch find the repo
 // pin even when an MCP client chooses a different server working directory.
+// The release launcher also records the al entry that sync resolved (see
+// InstalledExecutable) and appends its directory to PATH, so GUI and background
+// clients without the terminal PATH can start it. It falls back to al on PATH
+// when nothing was recorded or the recorded entry is no longer executable.
 func RootedBuiltInDispatchServer(cfg config.Config, client string, repoRoot string) (ResolvedMCPServer, bool) {
 	builtIn, ok := BuiltInDispatchServer(cfg, client)
 	if !ok {
@@ -64,9 +78,83 @@ func RootedBuiltInDispatchServer(cfg config.Config, client string, repoRoot stri
 		// arguments compatible with cached older binaries, which ignore the extra
 		// environment variable and run safely from the canonical root.
 		builtIn.Command = builtInDispatchShell
-		builtIn.Args = []string{"-c", builtInDispatchScript, builtInDispatchArgZero, repoRoot, versiondispatch.DevelopmentExecutable(repoRoot)}
+		installed, installedDir := InstalledExecutable(), ""
+		if installed != "" {
+			installedDir = filepath.Dir(installed)
+		}
+		builtIn.Args = []string{"-c", builtInDispatchScript, builtInDispatchArgZero, repoRoot, versiondispatch.DevelopmentExecutable(repoRoot), installed, installedDir}
 	}
 	return builtIn, true
+}
+
+// InstalledExecutable returns the absolute installed al entry point that the
+// generated launcher records, or "" when none qualifies. Candidates, in order:
+// the entry a release launcher or pinned re-exec exported (so regeneration
+// stays stable even when PATH lists another al first or omits it), the first al
+// on PATH, then an unpinned invocation path such as /install/bin/al. The
+// development executable, go run builds and version-dispatched cache binaries
+// are never recorded, and the entry is not resolved through symlinks because
+// package-manager targets are versioned and go stale on upgrade.
+func InstalledExecutable() string {
+	if candidate := os.Getenv(versiondispatch.EnvInstalledExecutable); filepath.Base(candidate) == builtInDispatchCommand && installedEntry(candidate) {
+		return candidate
+	}
+	for _, dir := range filepath.SplitList(os.Getenv("PATH")) {
+		if !filepath.IsAbs(dir) {
+			continue
+		}
+		if candidate := filepath.Join(dir, builtInDispatchCommand); installedEntry(candidate) {
+			return candidate
+		}
+	}
+	if len(os.Args) == 0 || os.Getenv(versiondispatch.EnvShimActive) != "" {
+		return ""
+	}
+	invoked := os.Args[0]
+	if !strings.ContainsRune(invoked, filepath.Separator) || filepath.Base(invoked) != builtInDispatchCommand || goRunExecutable(invoked) {
+		return ""
+	}
+	if abs, err := filepath.Abs(invoked); err == nil && installedEntry(abs) {
+		return abs
+	}
+	return ""
+}
+
+// goRunExecutable reports whether path lies in a go run build directory, which
+// Go removes when the command exits.
+func goRunExecutable(path string) bool {
+	return slices.ContainsFunc(strings.Split(filepath.ToSlash(path), "/"), func(element string) bool {
+		return strings.HasPrefix(element, "go-build")
+	})
+}
+
+// installedEntry reports whether path is an absolute regular file this user
+// can execute, other than the development executable. Clients expand ${...} in
+// generated argv, so such paths are rejected rather than escaped.
+func installedEntry(path string) bool {
+	if !filepath.IsAbs(path) || strings.Contains(path, "${") {
+		return false
+	}
+	info, err := os.Stat(path) // #nosec G703 -- only inspects a candidate executable; nothing is read or written.
+	if err != nil || !info.Mode().IsRegular() {
+		return false
+	}
+	if _, err := exec.LookPath(path); err != nil {
+		return false
+	}
+	development := os.Getenv(versiondispatch.EnvDevelopmentExecutable)
+	if !filepath.IsAbs(development) {
+		return true
+	}
+	if filepath.Clean(path) == filepath.Clean(development) {
+		return false
+	}
+	resolved, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		return true
+	}
+	resolvedDevelopment, err := filepath.EvalSymlinks(development)
+	return err != nil || resolved != resolvedDevelopment
 }
 
 // clientAgentEnabled reports whether the agent behind an MCP client is enabled.

@@ -18,12 +18,15 @@ const (
 // missing or empty in base, matching config.PlaceholderEnv.
 // It strips AL_SHIM_ACTIVE because child processes are new execution
 // contexts that should be free to dispatch independently; the dispatch
-// guard is only meaningful for the exec replacement chain. It also strips
-// AL_DISPATCH_ACTIVE so a leaked marker from the parent shell does not
+// guard is only meaningful for the exec replacement chain. It strips
+// AL_INSTALLED_EXECUTABLE for the same reason: a child may run another al
+// installation for another project, which must record its own entry. It also
+// strips AL_DISPATCH_ACTIVE so a leaked marker from the parent shell does not
 // poison normal (non-dispatch) launches; the dispatch flow re-sets the
 // marker explicitly on the dispatched child.
 func BuildEnv(base []string, projectEnv map[string]string, runInfo *run.Info) []string {
 	env := UnsetEnv(base, versiondispatch.EnvShimActive)
+	env = UnsetEnv(env, versiondispatch.EnvInstalledExecutable)
 	env = UnsetEnv(env, EnvDispatchActive)
 	env = mergeEnvFillMissing(env, projectEnv)
 	if runInfo != nil {

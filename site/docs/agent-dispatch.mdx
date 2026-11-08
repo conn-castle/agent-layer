@@ -100,6 +100,15 @@ parent has no development environment. Inherited source environment from another
 repository does not persist MCP source selection; ordinary release sync restores
 release selection.
 
+GUI and background clients, such as the Codex app, may start the server with a
+shorter `PATH` than your terminal. The release launcher records the `al` that
+`al sync` resolved, runs it directly, and appends its directory to the server
+`PATH`. After moving or reinstalling `al`, re-run `al sync` and reconnect the
+`agent-layer` server; a running server keeps recording the entry it started
+from. Provider CLIs must be on the client's `PATH` or in that `al` directory. Projects pinned to an older
+release keep generating the older launcher until you run `al update`, then
+`al upgrade` in the project.
+
 Running servers keep their code until reconnected. After a pin change or binary
 replacement (including a source rebuild), options, start and continue refuse new
 provider work when selected code differs or freshness cannot be verified. Wait,
