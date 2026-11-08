@@ -466,6 +466,16 @@ func providerStartError(target string, err error) error {
 	return wrapExitError(ExitTargetFailure, fmt.Sprintf("start %s: %v", target, err), err)
 }
 
+// providerLookupMessage explains why PATH lookup did not select a provider
+// binary. exec.ErrDot means the binary exists only under a relative PATH entry,
+// which Go refuses to run, so installing it elsewhere is not the fix.
+func providerLookupMessage(target, binary string, err error) string {
+	if errors.Is(err, exec.ErrDot) {
+		return fmt.Sprintf("`al dispatch` target %s found `%s` only through a relative PATH entry (%v); replace that entry with an absolute directory in the PATH of the process that starts Agent Layer (for an MCP client, restart the client or reconnect the agent-layer MCP server afterward)", target, binary, err)
+	}
+	return providerNotFoundMessage(target, binary)
+}
+
 // providerNotFoundMessage names the missing provider binary and the PATH this
 // process searched. MCP clients started from a GUI or background service often
 // pass a shorter PATH than the user's terminal.

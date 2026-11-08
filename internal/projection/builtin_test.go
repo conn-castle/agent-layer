@@ -598,6 +598,7 @@ func TestInstalledExecutableSelection(t *testing.T) {
 	first := writeExecutable(t, filepath.Join(base, "first", "al"), "#!/bin/sh\n")
 	second := writeExecutable(t, filepath.Join(base, "second", "al"), "#!/bin/sh\n")
 	invoked := writeExecutable(t, filepath.Join(base, "invoked", "al"), "#!/bin/sh\n")
+	wrapped := writeExecutable(t, filepath.Join(base, "wrapped", "al-real"), "#!/bin/sh\n")
 	goRun := writeExecutable(t, filepath.Join(base, "go-build123", "b001", "exe", "al"), "#!/bin/sh\n")
 	writeExecutable(t, filepath.Join(base, "relative", "al"), "#!/bin/sh\n")
 	placeholder := writeExecutable(t, filepath.Join(base, "x${HOME}", "al"), "#!/bin/sh\n")
@@ -634,6 +635,7 @@ func TestInstalledExecutableSelection(t *testing.T) {
 		unprivileged                                 bool
 	}{
 		{name: "exported entry wins over PATH", exported: exported, path: path(dir(first)), want: exported},
+		{name: "exported wrapper target falls back to PATH", exported: wrapped, path: path(dir(first)), want: first},
 		{name: "stale exported entry falls back to PATH", exported: filepath.Join(base, "gone", "al"), path: path(dir(first)), want: first},
 		{name: "first PATH entry", path: path(dir(first), dir(second)), want: first},
 		{name: "relative and empty PATH entries skipped", path: path("", ".", "relative", dir(second)), want: second},

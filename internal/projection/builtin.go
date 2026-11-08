@@ -34,10 +34,12 @@ const (
 	builtInDispatchSubject = "dispatch"
 	builtInDispatchAction  = "mcp-server"
 	builtInDispatchShell   = "/bin/sh"
-	// The release branch prefers the al entry that sync resolved and appends its
-	// directory to PATH, so GUI and background clients that never inherited the
-	// terminal PATH can start the server and its nested al calls resolve the
-	// same entry. Clients expand ${...} in argv, so the script avoids it.
+	// The release branch prefers the al entry that sync resolved, exports it as
+	// AL_INSTALLED_EXECUTABLE so in-server regeneration records it again, and
+	// appends its directory to PATH so GUI and background clients that never
+	// inherited the terminal PATH can start the server. Nested al calls find
+	// that directory only when no other al precedes it on the client PATH.
+	// Clients expand ${...} in argv, so the script avoids it.
 	builtInDispatchScript  = `AL_MCP_WORKING_DIR=$PWD; export AL_MCP_WORKING_DIR; cd "$1" || exit; if [ -n "$2" ]; then AL_DEV_EXECUTABLE=$2; AL_DEV_BYPASS_VERSION_DISPATCH=1; AL_DEV_SOURCE_ROOT=$1; export AL_DEV_EXECUTABLE AL_DEV_BYPASS_VERSION_DISPATCH AL_DEV_SOURCE_ROOT; exec "$2" dispatch mcp-server; fi; unset AL_DEV_EXECUTABLE AL_DEV_BYPASS_VERSION_DISPATCH AL_DEV_SOURCE_ROOT; if [ -x "$3" ]; then case ":$PATH:" in *":$4:"*) ;; "::") PATH=$4 ;; *) PATH=$PATH:$4 ;; esac; AL_INSTALLED_EXECUTABLE=$3; export PATH AL_INSTALLED_EXECUTABLE; exec "$3" dispatch mcp-server; fi; exec al dispatch mcp-server`
 	builtInDispatchArgZero = "agent-layer-mcp"
 )
@@ -94,7 +96,7 @@ func RootedBuiltInDispatchServer(cfg config.Config, client string, repoRoot stri
 // are never recorded, and the entry is not resolved through symlinks because
 // package-manager targets are versioned and go stale on upgrade.
 func InstalledExecutable() string {
-	if candidate := os.Getenv(versiondispatch.EnvInstalledExecutable); installedEntry(candidate) {
+	if candidate := os.Getenv(versiondispatch.EnvInstalledExecutable); filepath.Base(candidate) == builtInDispatchCommand && installedEntry(candidate) {
 		return candidate
 	}
 	for _, dir := range filepath.SplitList(os.Getenv("PATH")) {

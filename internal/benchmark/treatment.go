@@ -19,12 +19,14 @@ import (
 	"runtime/debug"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
 	alconfig "github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/fsutil"
 	"github.com/conn-castle/agent-layer/internal/gitenv"
+	"github.com/conn-castle/agent-layer/internal/projection"
 	"github.com/conn-castle/agent-layer/internal/sync"
 	"github.com/conn-castle/agent-layer/internal/update"
 	"github.com/conn-castle/agent-layer/internal/version"
@@ -376,8 +378,15 @@ func BuildStudyTreatmentBundle(repoRoot string, experiment preparedStudyExperime
 	if err := os.WriteFile(stagedConfig, []byte(orderedConfig), 0o600); err != nil { // #nosec G703 -- stagedConfig is inside the controlled private staging root.
 		return nil, err
 	}
+	// The staging sync records whichever installed al this host resolves; the
+	// container re-syncs with its own entry, so drop the host entry to keep the
+	// content-addressed manifest independent of the machine that staged it.
+	hostEntry := projection.InstalledExecutable()
 	if _, err := sync.RunWithSystemFS(benchmarkSyncSystem{}, os.DirFS(root), root); err != nil {
 		return nil, fmt.Errorf("synchronize staged study inputs: %w", err)
+	}
+	if err := omitHostInstalledExecutable(root, hostEntry); err != nil {
+		return nil, err
 	}
 	if err := materializeTreatmentInstructions(root); err != nil {
 		return nil, fmt.Errorf("materialize bundled instructions: %w", err)
@@ -576,6 +585,53 @@ func materializeTreatmentInstructions(root string) error {
 		return err
 	}
 	return fsutil.WriteFileAtomic(path, data, 0o600)
+}
+
+// omitHostInstalledExecutable replaces the host's installed al entry and its
+// directory, which generated MCP launchers record as adjacent arguments, with
+// empty arguments: the launcher's form when no installed entry is recorded.
+// Generated TOML quotes arguments like strconv.Quote and JSON like
+// json.Marshal, so both encodings of the pair are matched.
+func omitHostInstalledExecutable(root, entry string) error {
+	if entry == "" {
+		return nil
+	}
+	var patterns []*regexp.Regexp
+	for _, quote := range []func(string) string{strconv.Quote, jsonQuote} {
+		patterns = append(patterns, regexp.MustCompile(regexp.QuoteMeta(quote(entry))+`(\s*,\s*)`+regexp.QuoteMeta(quote(filepath.Dir(entry)))))
+	}
+	restricted, err := os.OpenRoot(root)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = restricted.Close() }()
+	return fs.WalkDir(restricted.FS(), ".", func(path string, dirEntry fs.DirEntry, walkErr error) error {
+		if walkErr != nil || !dirEntry.Type().IsRegular() {
+			return walkErr
+		}
+		data, err := restricted.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		rewritten := data
+		for _, pattern := range patterns {
+			rewritten = pattern.ReplaceAll(rewritten, []byte(`""${1}""`))
+		}
+		if bytes.Equal(data, rewritten) {
+			return nil
+		}
+		info, err := dirEntry.Info()
+		if err != nil {
+			return err
+		}
+		return restricted.WriteFile(path, rewritten, info.Mode().Perm())
+	})
+}
+
+// jsonQuote returns value as a JSON string literal.
+func jsonQuote(value string) string {
+	encoded, _ := json.Marshal(value) // #nosec G104 -- marshaling a string cannot fail.
+	return string(encoded)
 }
 
 func rewriteTreatmentProjectionRoot(root, from, to string) error {

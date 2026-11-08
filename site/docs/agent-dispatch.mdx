@@ -106,8 +106,8 @@ shorter `PATH` than your terminal. The release launcher records the `al` that
 `PATH`. After moving or reinstalling `al`, re-run `al sync` and reconnect the
 `agent-layer` server; a running server keeps recording the entry it started
 from. Provider CLIs must be on the client's `PATH` or in that `al` directory. Projects pinned to an older
-release keep generating the older launcher until you upgrade the pin with
-`al upgrade`.
+release keep generating the older launcher until you run `al update`, then
+`al upgrade` in the project.
 
 Running servers keep their code until reconnected. After a pin change or binary
 replacement (including a source rebuild), options, start and continue refuse new

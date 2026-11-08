@@ -506,6 +506,69 @@ func TestStudyTreatmentBundleIdentityIsDeterministic(t *testing.T) {
 	}
 }
 
+// TestStudyTreatmentBundleIdentityIgnoresHostInstalledAl proves the staged
+// launchers do not record the host's installed al, so the manifest hash does
+// not depend on where the staging machine installed it.
+func TestStudyTreatmentBundleIdentityIgnoresHostInstalledAl(t *testing.T) {
+	root := t.TempDir()
+	configPath := writeStudyTreatmentConfig(t, root)
+	configData, err := os.ReadFile(configPath) // #nosec G304 -- configPath is created inside this test's private temporary directory.
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Codex projects a TOML launcher and Claude a JSON one; cover both encodings.
+	configData = []byte(strings.ReplaceAll(string(configData), "[agents.claude]\nenabled = false", "[agents.claude]\nenabled = true"))
+	if err := os.WriteFile(configPath, configData, 0o600); err != nil { // #nosec G703 -- configPath is the test-owned fixture returned above.
+		t.Fatal(err)
+	}
+	model, effort, err := ParseModelSelection("luna:low")
+	if err != nil {
+		t.Fatal(err)
+	}
+	experiment := preparedStudyExperiment{
+		studyExperiment: studyExperiment{Config: filepath.Base(configPath)},
+		model:           model,
+		effort:          effort,
+		inputs:          studyExperimentInputs{Config: configPath},
+	}
+	t.Setenv("AL_INSTALLED_EXECUTABLE", "")
+	hostPath := os.Getenv("PATH")
+	build := func(installDir string) *TreatmentBundle {
+		t.Helper()
+		entry := filepath.Join(installDir, "al")
+		if err := os.MkdirAll(installDir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(entry, []byte("#!/bin/sh\n"), 0o700); err != nil { // #nosec G306 -- test-owned executable fixture.
+			t.Fatal(err)
+		}
+		t.Setenv("PATH", installDir+string(os.PathListSeparator)+hostPath)
+		bundle, err := BuildStudyTreatmentBundle(root, experiment)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = os.RemoveAll(bundle.Root) })
+		for _, generated := range []string{".mcp.json", filepath.Join(".codex", "config.toml")} {
+			data, err := os.ReadFile(filepath.Join(bundle.Root, generated)) // #nosec G304 -- generated is a fixed path inside the test-owned bundle.
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(string(data), "agent-layer-mcp") {
+				t.Fatalf("%s has no generated Agent Dispatch launcher:\n%s", generated, data)
+			}
+			if strings.Contains(string(data), installDir) {
+				t.Fatalf("%s records the host al entry %s:\n%s", generated, entry, data)
+			}
+		}
+		return bundle
+	}
+	first := build(filepath.Join(t.TempDir(), "first", "bin"))
+	second := build(filepath.Join(t.TempDir(), "second", "bin"))
+	if first.ManifestHash != second.ManifestHash {
+		t.Fatalf("host al location changed the bundle identity: %s != %s", first.ManifestHash, second.ManifestHash)
+	}
+}
+
 func TestTreatmentStudyDryRunIdentityIsDeterministicAcrossInvocations(t *testing.T) {
 	root := t.TempDir()
 	writeParsedTreatmentStudy(t, root, "luna:low")

@@ -44,6 +44,22 @@ func TestMakeSourceCommandBypassesInheritedVersionSelection(t *testing.T) {
 	}
 }
 
+// TestMakeManagedAgentEnvStripsInstalledExecutable proves source launchers drop
+// the installed al entry a parent release MCP server exported, so a nested
+// source sync cannot record that release entry.
+func TestMakeManagedAgentEnvStripsInstalledExecutable(t *testing.T) {
+	cmd := devMakeCommand(t.TempDir(), "-f", "-", "probe-managed-env")
+	cmd.Stdin = strings.NewReader("probe-managed-env:\n\t@unset $(AL_MANAGED_AGENT_ENV); printf '%s' \"$${AL_INSTALLED_EXECUTABLE-stripped}\"\n")
+	cmd.Env = append(cmd.Env, "AL_INSTALLED_EXECUTABLE=/parent/release/bin/al")
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("probe managed environment: %v\n%s", err, output)
+	}
+	if string(output) != "stripped" {
+		t.Fatalf("AL_MANAGED_AGENT_ENV kept AL_INSTALLED_EXECUTABLE: %q", output)
+	}
+}
+
 func TestMakeDevBuildPreservesUnchangedExecutable(t *testing.T) {
 	// A stub go writes chosen bytes so the test controls whether output changes.
 	stubDir := t.TempDir()

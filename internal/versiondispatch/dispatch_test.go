@@ -1172,6 +1172,7 @@ func TestMaybeExec_PassesInvokingEntryToCachedBinary(t *testing.T) {
 	for _, tc := range []struct {
 		name, argv0, current string
 		lookPath             func(string) (string, error)
+		forbidLookPath       bool
 		want                 string
 	}{
 		{name: "absolute invocation overrides inherited entry", argv0: "/custom/bin/al", want: "/custom/bin/al"},
@@ -1181,12 +1182,22 @@ func TestMaybeExec_PassesInvokingEntryToCachedBinary(t *testing.T) {
 		{name: "unresolved invocation keeps inherited entry", argv0: "al", lookPath: notFound, want: "/inherited/al"},
 		{name: "source build keeps inherited entry", argv0: "/tmp/go-build1/b001/exe/al", current: "dev", want: "/inherited/al"},
 		{name: "cached binary keeps inherited entry", argv0: filepath.Join(cacheDir, "versions", "0.9.0", "al"), want: "/inherited/al"},
+		{name: "wrapper target keeps inherited entry", argv0: "/usr/local/bin/al-real", want: "/inherited/al"},
+		{name: "renamed bare invocation keeps inherited entry", argv0: "al-1.0", lookPath: func(string) (string, error) { return "/usr/local/bin/al-1.0", nil }, want: "/inherited/al"},
+		{name: "source build skips PATH lookup", argv0: "al", current: "dev", forbidLookPath: true, want: "/inherited/al"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var execArgs, execEnv []string
+			lookPath := tc.lookPath
+			if tc.forbidLookPath {
+				lookPath = func(string) (string, error) {
+					t.Error("searched PATH for an entry that is discarded")
+					return "/usr/local/bin/al", nil
+				}
+			}
 			sys := &testSystem{
 				EnvironFunc:  func() []string { return []string{"PATH=/usr/bin", inherited} },
-				LookPathFunc: tc.lookPath,
+				LookPathFunc: lookPath,
 				ExecBinaryFunc: func(path string, args []string, env []string) error {
 					execArgs, execEnv = args, env
 					return nil
@@ -1208,5 +1219,36 @@ func TestMaybeExec_PassesInvokingEntryToCachedBinary(t *testing.T) {
 			require.Equal(t, []string{tc.want}, entries)
 			require.Contains(t, execEnv, EnvShimActive+"=1")
 		})
+	}
+}
+
+// TestInvokingEntryExcludesCacheBehindRelativeOrSymlinkedDir proves a cached
+// binary is never recorded as the installed entry when AL_CACHE_DIR is relative
+// or reaches the cache through a symlink.
+func TestInvokingEntryExcludesCacheBehindRelativeOrSymlinkedDir(t *testing.T) {
+	base := t.TempDir()
+	realCache := filepath.Join(base, "real-cache")
+	cached := filepath.Join(realCache, "versions", "1.0.0", "al")
+	require.NoError(t, os.MkdirAll(filepath.Dir(cached), 0o700))
+	require.NoError(t, os.WriteFile(cached, []byte("#!/bin/sh\n"), 0o700)) // #nosec G306 -- test-owned cached binary fixture.
+	linkedCache := filepath.Join(base, "linked-cache")
+	require.NoError(t, os.Symlink(realCache, linkedCache))
+	t.Chdir(base)
+	sys := &testSystem{}
+	for _, tc := range []struct{ name, cacheRoot, argv0 string }{
+		{name: "relative cache dir", cacheRoot: "real-cache", argv0: cached},
+		{name: "symlinked cache dir, real entry", cacheRoot: linkedCache, argv0: cached},
+		{name: "real cache dir, entry through symlink", cacheRoot: realCache, argv0: filepath.Join(linkedCache, "versions", "1.0.0", "al")},
+		{name: "relative symlinked cache dir", cacheRoot: "linked-cache", argv0: cached},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := invokingEntry(sys, tc.argv0, tc.cacheRoot); got != "" {
+				t.Fatalf("invokingEntry(%q, %q) = %q, want cached binary excluded", tc.argv0, tc.cacheRoot, got)
+			}
+		})
+	}
+	outside := filepath.Join(base, "bin", "al")
+	if got := invokingEntry(sys, outside, "linked-cache"); got != outside {
+		t.Fatalf("invokingEntry outside the cache = %q, want %q", got, outside)
 	}
 }

@@ -222,6 +222,29 @@ func TestProviderNotFoundNamesBinaryAndSearchedPath(t *testing.T) {
 	}
 }
 
+// TestProviderRelativePathEntryAdvisesAbsoluteEntry proves a provider found
+// only through a relative PATH entry is not reported as missing.
+func TestProviderRelativePathEntryAdvisesAbsoluteEntry(t *testing.T) {
+	root := writeDispatchRepo(t, dispatchRepoConfig{})
+	err := Start(StartOptions{
+		Root: root, Agent: AgentCodex, Prompt: "Review", Env: []string{},
+		LookPath: func(string) (string, error) { return "bin/codex", &exec.Error{Name: "codex", Err: exec.ErrDot} },
+		launchWorker: func(string, string, string) (launchedWorker, error) {
+			t.Fatal("relative provider launched a worker")
+			return launchedWorker{}, nil
+		},
+	})
+	message := requireDispatchExitError(t, err, ExitUnavailable).Error()
+	for _, want := range []string{"found `codex` only through a relative PATH entry", "absolute directory"} {
+		if !strings.Contains(message, want) {
+			t.Fatalf("relative PATH message %q missing %q", message, want)
+		}
+	}
+	if strings.Contains(message, "was not found") {
+		t.Fatalf("relative PATH message %q reports the provider as missing", message)
+	}
+}
+
 func TestTerminalCommitKeepsAnswerRunAndClaimCoherent(t *testing.T) {
 	newRunning := func(t *testing.T) (string, *dispatchRun, Session) {
 		t.Helper()
