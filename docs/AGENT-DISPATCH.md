@@ -571,6 +571,20 @@ Source Make workflows embed the stable development executable in launcher argv,
 scoped to the configuration root by `AL_DEV_SOURCE_ROOT`. The client parent
 needs no development environment. Ordinary release sync restores release selection.
 
+GUI and background MCP clients, such as a Codex app daemon, often start servers
+with a shorter `PATH` than a terminal. The release launcher therefore records
+the `al` entry that `al sync` resolved (the first `al` on its `PATH`, else the
+absolute path it was invoked by), executes it directly, and appends its
+directory to the server `PATH` so nested `al` calls and in-server regeneration
+resolve the same entry. If that entry is moved or removed, the launcher falls
+back to `al` on the client `PATH`; after reinstalling `al` elsewhere, re-run
+`al sync` and reconnect the server, because a running server keeps recording
+its own entry while that file exists. Provider CLIs (`codex`, `claude`, `agy`, `grok`, `muse`) must be on
+the client's `PATH` or in that `al` directory; otherwise start and options
+report the missing binary and the `PATH` the server searched. A project pinned
+to a release older than this launcher (#513) still generates the older
+launcher; upgrade its pin with `al upgrade`.
+
 Running MCP servers keep their code until reconnected. After a pin change,
 executable replacement or source rebuild, `dispatch_options`, `dispatch_start`
 and `dispatch_continue` refuse new provider work if the selected code differs

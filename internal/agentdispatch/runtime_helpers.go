@@ -461,9 +461,16 @@ func providerStartError(target string, err error) error {
 		if ok {
 			binary = meta.Binary
 		}
-		return exitError(ExitUnavailable, fmt.Sprintf("`al dispatch` target %s requires `%s` on PATH", target, binary))
+		return exitError(ExitUnavailable, providerNotFoundMessage(target, binary))
 	}
 	return wrapExitError(ExitTargetFailure, fmt.Sprintf("start %s: %v", target, err), err)
+}
+
+// providerNotFoundMessage names the missing provider binary and the PATH this
+// process searched. MCP clients started from a GUI or background service often
+// pass a shorter PATH than the user's terminal.
+func providerNotFoundMessage(target, binary string) string {
+	return fmt.Sprintf("`al dispatch` target %s requires `%s` on PATH, but it was not found in PATH=%q; install `%s` in one of those directories, or add its directory to the PATH of the process that starts Agent Layer (for an MCP client, restart the client or reconnect the agent-layer MCP server afterward)", target, binary, os.Getenv("PATH"), binary)
 }
 
 type waitExitCoder interface {

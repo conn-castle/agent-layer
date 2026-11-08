@@ -193,6 +193,35 @@ func TestProviderProcessErrorsNameTheCorrectLifecyclePhase(t *testing.T) {
 	}
 }
 
+// TestProviderNotFoundNamesBinaryAndSearchedPath proves a GUI-launched
+// dispatch server reports which binary is missing and the PATH it searched.
+func TestProviderNotFoundNamesBinaryAndSearchedPath(t *testing.T) {
+	t.Setenv("PATH", "/gui/bin:/usr/bin")
+	root := writeDispatchRepo(t, dispatchRepoConfig{})
+	preflight := Start(StartOptions{
+		Root: root, Agent: AgentCodex, Prompt: "Review", Env: []string{},
+		LookPath: func(string) (string, error) { return "", exec.ErrNotFound },
+		launchWorker: func(string, string, string) (launchedWorker, error) {
+			t.Fatal("missing provider launched a worker")
+			return launchedWorker{}, nil
+		},
+	})
+	for _, tc := range []struct {
+		err    error
+		binary string
+	}{
+		{preflight, "codex"},
+		{providerStartError(AgentAntigravity, exec.ErrNotFound), "agy"},
+	} {
+		message := requireDispatchExitError(t, tc.err, ExitUnavailable).Error()
+		for _, want := range []string{"requires `" + tc.binary + "` on PATH", `PATH="/gui/bin:/usr/bin"`, "reconnect the agent-layer MCP server"} {
+			if !strings.Contains(message, want) {
+				t.Fatalf("provider-not-found message %q missing %q", message, want)
+			}
+		}
+	}
+}
+
 func TestTerminalCommitKeepsAnswerRunAndClaimCoherent(t *testing.T) {
 	newRunning := func(t *testing.T) (string, *dispatchRun, Session) {
 		t.Helper()

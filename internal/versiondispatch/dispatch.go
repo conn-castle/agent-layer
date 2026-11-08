@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/conn-castle/agent-layer/internal/messages"
@@ -26,6 +27,10 @@ const (
 	EnvDevelopmentExecutable = "AL_DEV_EXECUTABLE"
 	// EnvDevelopmentSourceRoot scopes persistent source selection to one configuration root.
 	EnvDevelopmentSourceRoot = "AL_DEV_SOURCE_ROOT"
+	// EnvInstalledExecutable carries the installed al entry a generated release
+	// MCP launcher executed, or the entry a pinned re-exec was invoked through,
+	// so regeneration in that process records it again.
+	EnvInstalledExecutable = "AL_INSTALLED_EXECUTABLE"
 
 	// sourceCurrent and sourcePin label the origin of the resolved version.
 	sourceCurrent = "current"
@@ -124,11 +129,41 @@ func maybeExec(ctx context.Context, sys System, args []string, currentVersion st
 
 	dispatchArgs := argsForRequestedVersion(args, requested)
 	env := append(sys.Environ(), fmt.Sprintf("%s=1", EnvShimActive))
+	// The cached binary's argv[0] is its cache path, so pass the stable entry
+	// that generated MCP launchers record (overriding an inherited one). Source
+	// builds such as go run and cached binaries are not installations.
+	if entry := invokingEntry(sys, args[0], cacheRoot); entry != "" && current != "dev" {
+		env = append(withoutEnv(env, EnvInstalledExecutable), EnvInstalledExecutable+"="+entry)
+	}
 	execArgs := append([]string{path}, dispatchArgs[1:]...)
 	if err := sys.ExecBinary(path, execArgs, env); err != nil {
 		return err
 	}
 	return ErrDispatched
+}
+
+// invokingEntry returns the absolute path this process was invoked through, or
+// "" when it cannot be determined or lies in the version cache.
+func invokingEntry(sys System, argv0 string, cacheRoot string) string {
+	entry := ""
+	if strings.ContainsRune(argv0, filepath.Separator) {
+		if abs, err := filepath.Abs(argv0); err == nil {
+			entry = abs
+		}
+	} else if found, err := sys.LookPath(argv0); err == nil && filepath.IsAbs(found) {
+		entry = found
+	}
+	if entry == "" {
+		return ""
+	}
+	if rel, err := filepath.Rel(cacheRoot, entry); err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return ""
+	}
+	return entry
+}
+
+func withoutEnv(env []string, key string) []string {
+	return slices.DeleteFunc(env, func(entry string) bool { return strings.HasPrefix(entry, key+"=") })
 }
 
 func argsForRequestedVersion(args []string, requested string) []string {

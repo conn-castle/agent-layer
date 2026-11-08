@@ -220,7 +220,8 @@ func TestMCPReportsLateShutdownErrorOnlyToClaudeConsumers(t *testing.T) {
 	assertClaudeOptions(t, callMCPTool(t, session, ToolOptions, OptionsInput{}))
 	release()
 	result := callMCPTool(t, session, ToolStart, StartInput{Agent: AgentCodex, Prompt: "fixture"})
-	if !result.IsError || strings.Contains(toolResultText(result), "Claude") {
+	// The missing-provider message echoes PATH, which holds this test's name.
+	if !result.IsError || strings.Contains(toolResultText(result), "exit status 2") {
 		t.Fatalf("unrelated start consumed Claude's shutdown failure: %s", toolResultText(result))
 	}
 	result = callMCPTool(t, session, ToolStart, StartInput{Agent: AgentClaude, Prompt: "fixture"})

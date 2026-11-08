@@ -114,7 +114,7 @@ func TestOptionsReportUnavailableProviderReasons(t *testing.T) {
 		lookup   func(string, string) (string, error)
 		want     string
 	}{
-		{"missing binary", func(string) (string, error) { return "", exec.ErrNotFound }, unexpectedLookup, "provider binary not found"},
+		{"missing binary", func(string) (string, error) { return "", exec.ErrNotFound }, unexpectedLookup, "`codex` not found on PATH"},
 		{"version error", found, func(string, string) (string, error) { return "1.0.0", errors.New("probe failed") }, unverified},
 		{"empty version", found, func(string, string) (string, error) { return "", nil }, unverified},
 	} {

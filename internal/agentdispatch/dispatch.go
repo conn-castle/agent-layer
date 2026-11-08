@@ -470,7 +470,7 @@ func prepareFresh(project *config.ProjectConfig, target targetMeta, opts runOpti
 	}
 	path, err := lookPath(target.Binary)
 	if err != nil {
-		return targetMeta{}, "", nil, exitError(ExitUnavailable, fmt.Sprintf("`al dispatch` target %s requires `%s` on PATH", target.Name, target.Binary))
+		return targetMeta{}, "", nil, exitError(ExitUnavailable, providerNotFoundMessage(target.Name, target.Binary))
 	}
 	target, version, err := compatibleTargetVersionCached(project.Root, path, target, opts.VersionLookup)
 	if err != nil {

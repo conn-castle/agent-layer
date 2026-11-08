@@ -147,6 +147,13 @@ VS Code and some extensions (for example Peacock) add a new setting after the la
 - For HTTP servers, confirm the URL and headers are correct.
 - Use `al doctor` to confirm discovery and tool listing.
 
+### `agent-layer` MCP server: `al: not found` or provider not on PATH
+
+GUI and background MCP clients (for example, the Codex app on macOS) may not inherit your terminal `PATH`, so `/opt/homebrew/bin` or similar directories can be missing.
+
+- If the `agent-layer` server exits with `exec: al: not found`, run `al sync` from a terminal where `command -v al` works, then reconnect the server. The generated launcher records that `al` and appends its directory to the server `PATH`. A project pinned to an older release keeps the older launcher until you run `al upgrade`.
+- If dispatch reports `` `al dispatch` target codex requires `codex` on PATH ``, the message lists the `PATH` the server searched. Install the provider CLI in one of those directories or next to `al`, or start the client from an environment whose `PATH` includes it, then reconnect the `agent-layer` server.
+
 ### Global MCP server fallback for VS Code (Codex)
 
 This is primarily a VS Code fallback for repos that opt into repo-local Codex home with `agents.codex.local_config_dir = true`.

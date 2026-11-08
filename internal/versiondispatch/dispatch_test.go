@@ -1150,3 +1150,63 @@ func TestMaybeExec_UsesPinFromRealRootOfSymlinkedDescendant(t *testing.T) {
 		t.Fatalf("expected repository pin to be resolved through symlinked descendant, got %q", stderr.String())
 	}
 }
+
+// TestMaybeExec_PassesInvokingEntryToCachedBinary proves a pinned re-exec
+// keeps the stable entry the user invoked: the cached binary's argv[0] is its
+// cache path, so generated MCP launchers would otherwise lose it.
+func TestMaybeExec_PassesInvokingEntryToCachedBinary(t *testing.T) {
+	const version = "1.0.0"
+	cacheDir := t.TempDir()
+	osName, arch, err := platformStrings()
+	require.NoError(t, err)
+	cached := filepath.Join(cacheDir, "versions", version, osName+"-"+arch, assetName(osName, arch))
+	require.NoError(t, os.MkdirAll(filepath.Dir(cached), 0o700))
+	require.NoError(t, os.WriteFile(cached, []byte("#!/bin/sh\n"), 0o700)) // #nosec G306 -- test-owned cached binary fixture.
+	t.Setenv(EnvVersionOverride, version)
+	t.Setenv(EnvCacheDir, cacheDir)
+	t.Setenv(EnvShimActive, "")
+	cwd := t.TempDir()
+	t.Chdir(cwd)
+	inherited := EnvInstalledExecutable + "=/inherited/al"
+	notFound := func(string) (string, error) { return "", errors.New("not found") }
+	for _, tc := range []struct {
+		name, argv0, current string
+		lookPath             func(string) (string, error)
+		want                 string
+	}{
+		{name: "absolute invocation overrides inherited entry", argv0: "/custom/bin/al", want: "/custom/bin/al"},
+		{name: "relative invocation is made absolute", argv0: "./bin/al", want: filepath.Join(cwd, "bin", "al")},
+		{name: "bare invocation uses PATH", argv0: "al", lookPath: func(string) (string, error) { return "/usr/local/bin/al", nil }, want: "/usr/local/bin/al"},
+		{name: "relative PATH result keeps inherited entry", argv0: "al", lookPath: func(string) (string, error) { return "bin/al", nil }, want: "/inherited/al"},
+		{name: "unresolved invocation keeps inherited entry", argv0: "al", lookPath: notFound, want: "/inherited/al"},
+		{name: "source build keeps inherited entry", argv0: "/tmp/go-build1/b001/exe/al", current: "dev", want: "/inherited/al"},
+		{name: "cached binary keeps inherited entry", argv0: filepath.Join(cacheDir, "versions", "0.9.0", "al"), want: "/inherited/al"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var execArgs, execEnv []string
+			sys := &testSystem{
+				EnvironFunc:  func() []string { return []string{"PATH=/usr/bin", inherited} },
+				LookPathFunc: tc.lookPath,
+				ExecBinaryFunc: func(path string, args []string, env []string) error {
+					execArgs, execEnv = args, env
+					return nil
+				},
+			}
+			current := tc.current
+			if current == "" {
+				current = "0.9.0"
+			}
+			err := maybeExec(context.Background(), sys, []string{tc.argv0, "sync"}, current, t.TempDir())
+			require.ErrorIs(t, err, ErrDispatched)
+			require.Equal(t, []string{cached, "sync"}, execArgs)
+			var entries []string
+			for _, entry := range execEnv {
+				if value, ok := strings.CutPrefix(entry, EnvInstalledExecutable+"="); ok {
+					entries = append(entries, value)
+				}
+			}
+			require.Equal(t, []string{tc.want}, entries)
+			require.Contains(t, execEnv, EnvShimActive+"=1")
+		})
+	}
+}

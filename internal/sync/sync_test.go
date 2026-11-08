@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/conn-castle/agent-layer/internal/templates"
+	"github.com/conn-castle/agent-layer/internal/versiondispatch"
 )
 
 const generatedMarkerFixture = "<!--\n  GENERATED FILE\n  Source: .agent-layer/skills/alpha/SKILL.md\n  Regenerate: al sync\n-->\n"
@@ -14,6 +15,13 @@ const generatedMarkerFixture = "<!--\n  GENERATED FILE\n  Source: .agent-layer/s
 func TestRunGolden(t *testing.T) {
 	t.Setenv("AL_DEV_BYPASS_VERSION_DISPATCH", "")
 	t.Setenv("AL_DEV_EXECUTABLE", "")
+	t.Setenv(versiondispatch.EnvInstalledExecutable, "")
+	// The release launcher records the first al on PATH; pin it to a fixture.
+	installedDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(installedDir, "al"), []byte("#!/bin/sh\n"), 0o700); err != nil { // #nosec G306 -- test-owned executable fixture.
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", installedDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	fixtureRoot := filepath.Join("testdata", "fixture-repo")
 	root := t.TempDir()
 	if err := copyFixtureRepo(fixtureRoot, root); err != nil {
@@ -68,7 +76,7 @@ func TestRunGolden(t *testing.T) {
 	for _, rel := range files {
 		expected := filepath.Join(expectedRoot, rel)
 		actual := filepath.Join(root, rel)
-		assertFileEquals(t, expected, actual, root)
+		assertFileEquals(t, expected, actual, root, installedDir)
 	}
 	assertFileMatchesTemplate(t, "claude-statusline.sh", filepath.Join(root, ".claude", "claude-statusline.sh"))
 
@@ -372,7 +380,7 @@ func copyFixtureRepo(src string, dest string) error {
 	})
 }
 
-func assertFileEquals(t *testing.T, expectedPath string, actualPath string, repoRoot string) {
+func assertFileEquals(t *testing.T, expectedPath string, actualPath string, repoRoot string, installedDir string) {
 	expected, err := os.ReadFile(expectedPath) // #nosec G304 -- path is constructed from test-controlled inputs.
 	if err != nil {
 		t.Fatalf("read expected %s: %v", expectedPath, err)
@@ -382,6 +390,7 @@ func assertFileEquals(t *testing.T, expectedPath string, actualPath string, repo
 		t.Fatalf("read actual %s: %v", actualPath, err)
 	}
 	expectedContent := strings.ReplaceAll(string(expected), "__REPO_ROOT__", repoRoot)
+	expectedContent = strings.ReplaceAll(expectedContent, "__INSTALLED_AL_DIR__", installedDir)
 	canonicalRepoRoot, err := filepath.EvalSymlinks(repoRoot)
 	if err != nil {
 		t.Fatalf("canonicalize repo root: %v", err)

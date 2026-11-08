@@ -236,7 +236,10 @@ _init_doctor_wizard_assert_post_wizard_files() {
     ".mcp.json has no default MCP servers enabled"
   # Whitespace inside the launcher script is stripped by the compact-JSON helper.
   local dispatch_launcher_args
-  dispatch_launcher_args='["-c","AL_MCP_WORKING_DIR=$PWD; export AL_MCP_WORKING_DIR; cd \"$1\" || exit; if [ -n \"$2\" ]; then AL_DEV_EXECUTABLE=$2; AL_DEV_BYPASS_VERSION_DISPATCH=1; AL_DEV_SOURCE_ROOT=$1; export AL_DEV_EXECUTABLE AL_DEV_BYPASS_VERSION_DISPATCH AL_DEV_SOURCE_ROOT; exec \"$2\" dispatch mcp-server; else unset AL_DEV_EXECUTABLE AL_DEV_BYPASS_VERSION_DISPATCH AL_DEV_SOURCE_ROOT; exec al dispatch mcp-server; fi","agent-layer-mcp","'"$repo_dir"'",""]'
+  # The release launcher records the al that sync resolved from PATH.
+  local installed_al
+  installed_al="$(command -v al)"
+  dispatch_launcher_args='["-c","AL_MCP_WORKING_DIR=$PWD; export AL_MCP_WORKING_DIR; cd \"$1\" || exit; if [ -n \"$2\" ]; then AL_DEV_EXECUTABLE=$2; AL_DEV_BYPASS_VERSION_DISPATCH=1; AL_DEV_SOURCE_ROOT=$1; export AL_DEV_EXECUTABLE AL_DEV_BYPASS_VERSION_DISPATCH AL_DEV_SOURCE_ROOT; exec \"$2\" dispatch mcp-server; fi; unset AL_DEV_EXECUTABLE AL_DEV_BYPASS_VERSION_DISPATCH AL_DEV_SOURCE_ROOT; if [ -x \"$3\" ]; then case \":$PATH:\" in *\":$4:\"*) ;; \"::\") PATH=$4 ;; *) PATH=$PATH:$4 ;; esac; AL_INSTALLED_EXECUTABLE=$3; export PATH AL_INSTALLED_EXECUTABLE; exec \"$3\" dispatch mcp-server; fi; exec al dispatch mcp-server","agent-layer-mcp","'"$repo_dir"'","","'"$installed_al"'","'"${installed_al%/*}"'"]'
   _init_doctor_wizard_assert_compact_json_equals "$repo_dir/.copilot/mcp-config.json" \
     '{"mcpServers":{"agent-layer":{"type":"stdio","command":"/bin/sh","args":'"$dispatch_launcher_args"',"tools":["*"]}}}' \
     "Copilot CLI MCP config includes the built-in Agent Dispatch server"
