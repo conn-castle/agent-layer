@@ -554,7 +554,7 @@ class _AgentLayerTreatment:
                         f"{REMOTE_CLAUDE_MCP_PREFLIGHT} && "
                         f"jq -e '{AGENT_LAYER_MCP_PREFLIGHT_JQ['file']}' .mcp.json >/dev/null || "
                         f"{{ echo 'Claude Agent Dispatch MCP preflight failed' >&2; "
-                        "cat .mcp.json >&2; "
+                        "jq '.mcpServers[\"agent-layer\"]' .mcp.json >&2; "
                         f"test ! -f {REMOTE_CLAUDE_MCP_PREFLIGHT} || "
                         f"cat {REMOTE_CLAUDE_MCP_PREFLIGHT} >&2; exit 1; }}"
                     ),

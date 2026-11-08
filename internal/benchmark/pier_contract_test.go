@@ -365,7 +365,7 @@ func TestMCPPreflightAcceptsGeneratedLaunchers(t *testing.T) {
 	codex := readTOML(filepath.Join(".codex", "config.toml"))
 	grok := readTOML(filepath.Join(".grok", "config.toml"))
 	for _, launcher := range []server{claude, antigravity, codex, grok} {
-		if launcher.Command != "/bin/sh" || len(launcher.Args) < 4 || launcher.Args[3] != treatmentContainerRoot {
+		if launcher.Command != "/bin/sh" || len(launcher.Args) < 5 || launcher.Args[3] != treatmentContainerRoot {
 			t.Fatalf("staged launcher is not rooted at %s: %+v", treatmentContainerRoot, launcher)
 		}
 	}
