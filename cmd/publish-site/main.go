@@ -233,7 +233,7 @@ func publishAgentMarkdownDocs(repoA, repoB string) error {
 // offsets to preserve every other byte, including code in Markdown containers.
 func markdownExportLinks(source string) (string, error) {
 	data := []byte(source)
-	document := parser.New(parser.WithExtensions(extension.GFMParser)).Parse(data)
+	document := parser.New(parser.WithExtensions(extension.NewGFMParser())).Parse(data)
 	var offsets []int
 	err := ast.Walk(document, func(node ast.Node, entering bool) (ast.WalkStatus, error) {
 		if !entering {
