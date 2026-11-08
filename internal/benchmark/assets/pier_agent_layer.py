@@ -74,20 +74,40 @@ STREAM_BYTE_CAP = 16 * 1024 * 1024
 ANTIGRAVITY_PROMPT_BYTE_CAP = 100 * 1024
 
 
-def agent_layer_mcp_launcher_jq(server: str) -> str:
+def _agent_layer_mcp_launcher_jq(server: str) -> str:
     """Return a jq predicate accepting the Agent Dispatch server at `server`.
 
     Sync writes either `al dispatch mcp-server` or the rooted /bin/sh launcher.
-    The rooted launcher's trailing development and installed-entry arguments
-    vary by build and host, so only its script, $0 and repo root are checked.
+    The rooted launcher must enter the container workspace and must not select
+    a host development executable; its trailing installed-entry arguments vary
+    by host, so they are not checked.
     """
     return (
         f'(({server}.command == "al" and {server}.args == ["dispatch", "mcp-server"]) or '
         f'({server}.command == "/bin/sh" and {server}.args[0] == "-c" and '
-        f'({server}.args[1] | contains("dispatch mcp-server")) and '
+        f'({server}.args[1] | contains("exec al dispatch mcp-server")) and '
         f'{server}.args[2] == "agent-layer-mcp" and '
-        f'{server}.args[3] == "{REMOTE_WORKSPACE}"))'
+        f'{server}.args[3] == {json.dumps(REMOTE_WORKSPACE)} and '
+        f'({server}.args[4] // "") == ""))'
     )
+
+
+# jq programs that accept the Agent Dispatch entry in each preflight document:
+# Codex `mcp get --json`, a Claude or Antigravity MCP config file, and Grok
+# `mcp list --json`. None contains a single quote, so each fits in one
+# single-quoted shell word.
+AGENT_LAYER_MCP_PREFLIGHT_JQ = {
+    "codex": (
+        '.enabled == true and .transport.type == "stdio" and '
+        f'(.transport as $s | {_agent_layer_mcp_launcher_jq("$s")})'
+    ),
+    "file": f'.mcpServers["agent-layer"] as $s | {_agent_layer_mcp_launcher_jq("$s")}',
+    "grok": (
+        'any(.[]?; (.name // .id) == "agent-layer" and '
+        '({command: (.command // .transport.command // ""), args: (.args // .transport.args)} as $s | '
+        f'{_agent_layer_mcp_launcher_jq("$s")}))'
+    ),
+}
 
 
 def _pin_single_verifier_attempt() -> None:
@@ -509,8 +529,7 @@ class _AgentLayerTreatment:
                         f"cd {REMOTE_WORKSPACE} && mkdir -p \"$CODEX_HOME\" && "
                         "if [ -s ~/.nvm/nvm.sh ]; then . ~/.nvm/nvm.sh; fi; "
                         f"codex mcp get agent-layer --json > {REMOTE_CODEX_MCP_PREFLIGHT} && "
-                        f"jq -e '.enabled == true and .transport.type == \"stdio\" and "
-                        f"(.transport as $s | {agent_layer_mcp_launcher_jq('$s')})' "
+                        f"jq -e '{AGENT_LAYER_MCP_PREFLIGHT_JQ['codex']}' "
                         f"{REMOTE_CODEX_MCP_PREFLIGHT} >/dev/null || "
                         f"{{ echo 'Codex Agent Dispatch MCP preflight failed' >&2; "
                         f"test ! -f {REMOTE_CODEX_MCP_PREFLIGHT} || "
@@ -524,8 +543,8 @@ class _AgentLayerTreatment:
                 # Unlike Codex's configuration-only inspection, Claude's MCP
                 # command also starts the approved project server and reports
                 # its health. Require the shared project entry it reports on;
-                # its text output elides the launcher arguments, so validate
-                # the generated .mcp.json entry itself.
+                # its text output joins the launcher arguments with spaces, so
+                # validate the generated .mcp.json entry itself.
                 await self.exec_as_agent(
                     environment,
                     command=(
@@ -533,9 +552,9 @@ class _AgentLayerTreatment:
                         f"claude mcp get agent-layer > {REMOTE_CLAUDE_MCP_PREFLIGHT} && "
                         f"grep -Eq '^[[:space:]]*Status: .* Connected$' "
                         f"{REMOTE_CLAUDE_MCP_PREFLIGHT} && "
-                        "jq -e '.mcpServers[\"agent-layer\"] as $s | "
-                        f"{agent_layer_mcp_launcher_jq('$s')}' .mcp.json >/dev/null || "
+                        f"jq -e '{AGENT_LAYER_MCP_PREFLIGHT_JQ['file']}' .mcp.json >/dev/null || "
                         f"{{ echo 'Claude Agent Dispatch MCP preflight failed' >&2; "
+                        "cat .mcp.json >&2; "
                         f"test ! -f {REMOTE_CLAUDE_MCP_PREFLIGHT} || "
                         f"cat {REMOTE_CLAUDE_MCP_PREFLIGHT} >&2; exit 1; }}"
                     ),
@@ -550,8 +569,7 @@ class _AgentLayerTreatment:
                     command=(
                         f"cd {REMOTE_WORKSPACE} && "
                         f"cp .agy/antigravity-cli/mcp_config.json {REMOTE_ANTIGRAVITY_MCP_PREFLIGHT} && "
-                        "jq -e '.mcpServers[\"agent-layer\"] as $s | "
-                        f"{agent_layer_mcp_launcher_jq('$s')}' "
+                        f"jq -e '{AGENT_LAYER_MCP_PREFLIGHT_JQ['file']}' "
                         f"{REMOTE_ANTIGRAVITY_MCP_PREFLIGHT} >/dev/null || "
                         f"{{ echo 'Antigravity Agent Dispatch MCP preflight failed' >&2; "
                         f"test ! -f {REMOTE_ANTIGRAVITY_MCP_PREFLIGHT} || "
@@ -564,10 +582,7 @@ class _AgentLayerTreatment:
                     command=(
                         f"cd {REMOTE_WORKSPACE} && grok mcp list --json "
                         f"> {REMOTE_GROK_MCP_PREFLIGHT} && "
-                        "jq -e 'any(.[]?; (.name // .id) == \"agent-layer\" and "
-                        "({command: (.command // .transport.command // \"\"), "
-                        "args: (.args // .transport.args)} as $s | "
-                        f"{agent_layer_mcp_launcher_jq('$s')}))' "
+                        f"jq -e '{AGENT_LAYER_MCP_PREFLIGHT_JQ['grok']}' "
                         f"{REMOTE_GROK_MCP_PREFLIGHT} >/dev/null || "
                         f"{{ echo 'Grok Agent Dispatch MCP preflight failed' >&2; "
                         f"test ! -f {REMOTE_GROK_MCP_PREFLIGHT} || "

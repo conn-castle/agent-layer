@@ -298,9 +298,10 @@ with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8") as stream:
 	}
 }
 
-// TestMCPPreflightAcceptsGeneratedLaunchers runs the adapter's launcher
-// predicate through jq against the launchers a staged treatment bundle
-// actually contains, in each provider's preflight shape (#514).
+// TestMCPPreflightAcceptsGeneratedLaunchers runs the adapter's preflight jq
+// programs against the launchers a staged treatment bundle actually contains,
+// in each provider's preflight shape, and against launchers that break one
+// required property (#514).
 func TestMCPPreflightAcceptsGeneratedLaunchers(t *testing.T) {
 	root := t.TempDir()
 	configPath := writeStudyTreatmentConfig(t, root)
@@ -368,8 +369,12 @@ func TestMCPPreflightAcceptsGeneratedLaunchers(t *testing.T) {
 			t.Fatalf("staged launcher is not rooted at %s: %+v", treatmentContainerRoot, launcher)
 		}
 	}
-	foreign := server{Command: claude.Command, Args: append([]string(nil), claude.Args...)}
-	foreign.Args[3] = root
+	// Each mutant breaks one property the predicate requires.
+	mutant := func(index int, value string) server {
+		changed := server{Command: claude.Command, Args: append([]string(nil), claude.Args...)}
+		changed.Args[index] = value
+		return changed
+	}
 	bare := server{Command: "al", Args: []string{"dispatch", "mcp-server"}}
 	codexShape := func(s server) any {
 		return map[string]any{"enabled": true, "transport": map[string]any{"type": "stdio", "command": s.Command, "args": s.Args}}
@@ -381,7 +386,12 @@ func TestMCPPreflightAcceptsGeneratedLaunchers(t *testing.T) {
 		{"name": "grok", "kind": "grok", "want": true, "document": []any{map[string]any{"name": "agent-layer", "command": grok.Command, "args": grok.Args}}},
 		{"name": "grok transport", "kind": "grok", "want": true, "document": []any{map[string]any{"id": "agent-layer", "transport": map[string]any{"command": grok.Command, "args": grok.Args}}}},
 		{"name": "bare", "kind": "codex", "want": true, "document": codexShape(bare)},
-		{"name": "foreign root", "kind": "codex", "want": false, "document": codexShape(foreign)},
+		{"name": "foreign root", "kind": "codex", "want": false, "document": codexShape(mutant(3, root))},
+		{"name": "development executable", "kind": "codex", "want": false, "document": codexShape(mutant(4, "/host/al"))},
+		{"name": "argv0", "kind": "codex", "want": false, "document": codexShape(mutant(2, "other"))},
+		{"name": "script", "kind": "codex", "want": false, "document": codexShape(mutant(1, "exec /tmp/other dispatch mcp-server"))},
+		{"name": "command", "kind": "codex", "want": false, "document": codexShape(server{Command: "/bin/bash", Args: claude.Args})},
+		{"name": "missing", "kind": "file", "want": false, "document": map[string]any{"mcpServers": map[string]any{}}},
 	}
 	casesPath := filepath.Join(t.TempDir(), "cases.json")
 	data, err := json.Marshal(cases)
@@ -399,8 +409,6 @@ func TestMCPPreflightAcceptsGeneratedLaunchers(t *testing.T) {
 	if err := os.WriteFile(path, adapter, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	// The wrappers mirror the adapter's Codex, Claude/Antigravity and Grok
-	// preflight programs around the shared predicate.
 	script := `
 import importlib.util
 import json
@@ -410,12 +418,8 @@ import sys
 spec = importlib.util.spec_from_file_location("pier_agent_layer", sys.argv[1])
 module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(module)
-predicate = module.agent_layer_mcp_launcher_jq("$s")
-programs = {
-    "codex": f'.enabled == true and .transport.type == "stdio" and (.transport as $s | {predicate})',
-    "file": f'.mcpServers["agent-layer"] as $s | {predicate}',
-    "grok": f'any(.[]?; (.name // .id) == "agent-layer" and ({{command: (.command // .transport.command // ""), args: (.args // .transport.args)}} as $s | {predicate}))',
-}
+programs = module.AGENT_LAYER_MCP_PREFLIGHT_JQ
+assert not any("'" in program for program in programs.values()), programs
 for case in json.load(open(sys.argv[2])):
     result = subprocess.run(["jq", "-e", programs[case["kind"]]], input=json.dumps(case["document"]), text=True, capture_output=True)
     assert (result.returncode == 0) == case["want"], (case["name"], result.returncode, result.stderr)
