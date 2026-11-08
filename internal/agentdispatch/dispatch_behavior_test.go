@@ -115,7 +115,7 @@ func TestOptionsReportUnavailableProviderReasons(t *testing.T) {
 		want     string
 	}{
 		{"missing binary", func(string) (string, error) { return "", exec.ErrNotFound }, unexpectedLookup, "`codex` not found on PATH"},
-		{"relative PATH entry", func(string) (string, error) { return "bin/codex", &exec.Error{Name: "codex", Err: exec.ErrDot} }, unexpectedLookup, "`codex` found only through a relative PATH entry; use an absolute PATH entry"},
+		{"relative PATH entry", func(string) (string, error) { return "bin/codex", &exec.Error{Name: "codex", Err: exec.ErrDot} }, unexpectedLookup, relativeProviderReason("codex")},
 		{"version error", found, func(string, string) (string, error) { return "1.0.0", errors.New("probe failed") }, unverified},
 		{"empty version", found, func(string, string) (string, error) { return "", nil }, unverified},
 	} {

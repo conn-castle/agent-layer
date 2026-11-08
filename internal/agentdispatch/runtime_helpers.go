@@ -454,26 +454,36 @@ func installProviderSignalForwarder(requestTermination func()) (caught func() os
 		}
 }
 
+// providerStartError classifies a provider start failure. The worker resolves
+// the provider on PATH again, so a missing binary or one whose first PATH match
+// is under a relative entry reports the same unavailable message as preflight.
 func providerStartError(target string, err error) error {
-	if errors.Is(err, exec.ErrNotFound) {
+	if errors.Is(err, exec.ErrNotFound) || errors.Is(err, exec.ErrDot) {
 		meta, ok := lookupTarget(target)
 		binary := target
 		if ok {
 			binary = meta.Binary
 		}
-		return exitError(ExitUnavailable, providerNotFoundMessage(target, binary))
+		return exitError(ExitUnavailable, providerLookupMessage(target, binary, err))
 	}
 	return wrapExitError(ExitTargetFailure, fmt.Sprintf("start %s: %v", target, err), err)
 }
 
 // providerLookupMessage explains why PATH lookup did not select a provider
-// binary. exec.ErrDot means the binary exists only under a relative PATH entry,
-// which Go refuses to run, so installing it elsewhere is not the fix.
+// binary, including the PATH this process searched.
 func providerLookupMessage(target, binary string, err error) string {
 	if errors.Is(err, exec.ErrDot) {
-		return fmt.Sprintf("`al dispatch` target %s found `%s` only through a relative PATH entry (%v); replace that entry with an absolute directory in the PATH of the process that starts Agent Layer (for an MCP client, restart the client or reconnect the agent-layer MCP server afterward)", target, binary, err)
+		return fmt.Sprintf("`al dispatch` target %s cannot run `%s`: %s (PATH=%q; for an MCP client, restart the client or reconnect the agent-layer MCP server afterward)", target, binary, relativeProviderReason(binary), os.Getenv("PATH"))
 	}
 	return providerNotFoundMessage(target, binary)
+}
+
+// relativeProviderReason explains exec.ErrDot. LookPath stops at the first
+// match, so the first binary on PATH lies under a relative or empty entry and
+// later directories were not searched; making that entry absolute would still
+// select the same, possibly unintended, binary.
+func relativeProviderReason(binary string) string {
+	return fmt.Sprintf("the first `%s` on PATH is under a relative or empty PATH entry, which is refused; remove that entry from the PATH of the process that starts Agent Layer, or put the directory of the intended `%s` before it", binary, binary)
 }
 
 // providerNotFoundMessage names the missing provider binary and the PATH this

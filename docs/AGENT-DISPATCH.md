@@ -583,8 +583,10 @@ back to `al` on the client `PATH`; after reinstalling `al` elsewhere, re-run
 its own entry while that file exists. Provider CLIs (`codex`, `claude`, `agy`, `grok`, `muse`) must be on
 the client's `PATH` or in that `al` directory. Otherwise `dispatch_options`
 names the missing binary, and start and continue also report the `PATH` the
-server searched. A provider found only through a relative `PATH` entry is
-reported separately; replace that entry with an absolute directory. A project
+server searched. Provider lookup stops at the first match on `PATH`; when that
+match is under a relative or empty entry, which is refused, options, start and
+continue report it instead of a missing binary. Remove that entry or put the
+directory of the intended provider CLI before it. A project
 pinned to a release older than this launcher (#513) still generates the older
 launcher; run `al update`, then `al upgrade` in the project.
 

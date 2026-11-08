@@ -587,11 +587,25 @@ func materializeTreatmentInstructions(root string) error {
 	return fsutil.WriteFileAtomic(path, data, 0o600)
 }
 
+// treatmentMCPLauncherFiles are the staged paths where sync writes the built-in
+// Agent Dispatch launcher: Claude and Muse share .mcp.json, and Antigravity
+// writes its legacy or migrated path. Only these files are generated launcher
+// configuration; every other staged file is a study input left untouched.
+var treatmentMCPLauncherFiles = []string{
+	".mcp.json",
+	filepath.Join(".vscode", "mcp.json"),
+	filepath.Join(".codex", "config.toml"),
+	filepath.Join(".copilot", "mcp-config.json"),
+	filepath.Join(".grok", "config.toml"),
+	filepath.Join(".agy", "antigravity-cli", "mcp_config.json"),
+	filepath.Join(".agy", "config", "mcp_config.json"),
+}
+
 // omitHostInstalledExecutable replaces the host's installed al entry and its
 // directory, which generated MCP launchers record as adjacent arguments, with
-// empty arguments: the launcher's form when no installed entry is recorded.
-// Generated TOML quotes arguments like strconv.Quote and JSON like
-// json.Marshal, so both encodings of the pair are matched.
+// empty arguments: the launcher's form when no installed entry is recorded. It
+// rewrites only treatmentMCPLauncherFiles. Generated TOML quotes arguments like
+// strconv.Quote and JSON like json.Marshal, so both encodings are matched.
 func omitHostInstalledExecutable(root, entry string) error {
 	if entry == "" {
 		return nil
@@ -600,32 +614,23 @@ func omitHostInstalledExecutable(root, entry string) error {
 	for _, quote := range []func(string) string{strconv.Quote, jsonQuote} {
 		patterns = append(patterns, regexp.MustCompile(regexp.QuoteMeta(quote(entry))+`(\s*,\s*)`+regexp.QuoteMeta(quote(filepath.Dir(entry)))))
 	}
+	omit := func(data []byte) []byte {
+		for _, pattern := range patterns {
+			data = pattern.ReplaceAll(data, []byte(`""${1}""`))
+		}
+		return data
+	}
 	restricted, err := os.OpenRoot(root)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = restricted.Close() }()
-	return fs.WalkDir(restricted.FS(), ".", func(path string, dirEntry fs.DirEntry, walkErr error) error {
-		if walkErr != nil || !dirEntry.Type().IsRegular() {
-			return walkErr
-		}
-		data, err := restricted.ReadFile(path)
-		if err != nil {
+	for _, path := range treatmentMCPLauncherFiles {
+		if err := rewriteTreatmentFile(restricted, path, omit); err != nil && !errors.Is(err, fs.ErrNotExist) {
 			return err
 		}
-		rewritten := data
-		for _, pattern := range patterns {
-			rewritten = pattern.ReplaceAll(rewritten, []byte(`""${1}""`))
-		}
-		if bytes.Equal(data, rewritten) {
-			return nil
-		}
-		info, err := dirEntry.Info()
-		if err != nil {
-			return err
-		}
-		return restricted.WriteFile(path, rewritten, info.Mode().Perm())
-	})
+	}
+	return nil
 }
 
 // jsonQuote returns value as a JSON string literal.
@@ -634,6 +639,8 @@ func jsonQuote(value string) string {
 	return string(encoded)
 }
 
+// rewriteTreatmentProjectionRoot replaces the staging root, including its
+// symlink-resolved spelling, with the container root in every staged file.
 func rewriteTreatmentProjectionRoot(root, from, to string) error {
 	if strings.TrimSpace(from) == "" || strings.TrimSpace(to) == "" || from == to {
 		return fmt.Errorf("treatment projection root rewrite requires distinct non-empty paths")
@@ -653,33 +660,41 @@ func rewriteTreatmentProjectionRoot(root, from, to string) error {
 	}
 	sort.Slice(fromPaths, func(i, j int) bool { return len(fromPaths[i]) > len(fromPaths[j]) })
 	toBytes := []byte(filepath.ToSlash(to))
+	replaceRoot := func(data []byte) []byte {
+		for _, fromBytes := range fromPaths {
+			data = bytes.ReplaceAll(data, fromBytes, toBytes)
+		}
+		return data
+	}
 	return fs.WalkDir(restricted.FS(), ".", func(path string, entry fs.DirEntry, walkErr error) error {
-		if walkErr != nil {
+		if walkErr != nil || entry.IsDir() {
 			return walkErr
 		}
-		if entry.IsDir() {
-			return nil
-		}
-		if !entry.Type().IsRegular() {
-			return fmt.Errorf("treatment contains non-regular file %s", path)
-		}
-		data, err := restricted.ReadFile(path)
-		if err != nil {
-			return err
-		}
-		rewritten := data
-		for _, fromBytes := range fromPaths {
-			rewritten = bytes.ReplaceAll(rewritten, fromBytes, toBytes)
-		}
-		if bytes.Equal(data, rewritten) {
-			return nil
-		}
-		info, err := entry.Info()
-		if err != nil {
-			return err
-		}
-		return restricted.WriteFile(path, rewritten, info.Mode().Perm())
+		return rewriteTreatmentFile(restricted, path, replaceRoot)
 	})
+}
+
+// rewriteTreatmentFile applies rewrite to one staged file and writes it back
+// with its mode only when the bytes change. Staged treatments contain only
+// directories and regular files, so a symlink or other non-regular file is an
+// error; a missing file returns an error wrapping fs.ErrNotExist.
+func rewriteTreatmentFile(restricted *os.Root, path string, rewrite func([]byte) []byte) error {
+	info, err := restricted.Lstat(path)
+	if err != nil {
+		return err
+	}
+	if !info.Mode().IsRegular() {
+		return fmt.Errorf("treatment contains non-regular file %s", filepath.ToSlash(path))
+	}
+	data, err := restricted.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	rewritten := rewrite(bytes.Clone(data))
+	if bytes.Equal(data, rewritten) {
+		return nil
+	}
+	return restricted.WriteFile(path, rewritten, info.Mode().Perm())
 }
 
 func copyRequiredFile(source, destination string) error {

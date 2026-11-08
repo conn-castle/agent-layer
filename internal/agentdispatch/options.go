@@ -120,7 +120,7 @@ func buildTargetOptions(cfg config.Config, discovery agentoptions.DiscoveryReque
 func discoverTarget(ctx context.Context, target targetMeta, lookPath func(string) (string, error), lookup func(string, string) (string, error)) (string, bool, string) {
 	path, err := lookPath(target.Binary)
 	if errors.Is(err, exec.ErrDot) {
-		return "", false, fmt.Sprintf("`%s` found only through a relative PATH entry; use an absolute PATH entry", target.Binary)
+		return "", false, relativeProviderReason(target.Binary)
 	}
 	if err != nil {
 		return "", false, fmt.Sprintf("`%s` not found on PATH", target.Binary)
