@@ -46,7 +46,7 @@ func Launch(cfg *config.ProjectConfig, runInfo *run.Info, env []string, passArgs
 }
 
 // ConfigureEnvironment applies the Codex environment rules shared by the
-// interactive launcher and headless Agent Dispatch.
+// interactive launcher, headless Agent Dispatch, and model discovery.
 func ConfigureEnvironment(root string, env []string, cfg config.CodexConfig, warning io.Writer) []string {
 	if !config.CodexLocalConfigDirEnabled(cfg) {
 		return env
@@ -73,7 +73,8 @@ func ConfigureEnvironment(root string, env []string, cfg config.CodexConfig, war
 // EnsureSelectedHome creates the repo-local CODEX_HOME when local config is
 // enabled and env selects it, because native Codex refuses to start with a
 // missing home. Existing homes, including symlinked directories, are left
-// unchanged; inherited homes elsewhere are never created.
+// unchanged; inherited homes elsewhere are never created. Callers pass the
+// environment ConfigureEnvironment returned.
 func EnsureSelectedHome(root string, env []string, cfg config.CodexConfig) error {
 	home := filepath.Join(root, homeDirName)
 	// Compare parents: symlink resolution cannot match aliases of a missing leaf.
