@@ -3,10 +3,14 @@
 package benchmark
 
 import (
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
+
+	"github.com/pelletier/go-toml/v2"
 )
 
 func TestBareCustomProviderLoadsThroughPinnedPierFactory(t *testing.T) {
@@ -291,5 +295,133 @@ with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8") as stream:
 	command := exec.CommandContext(t.Context(), "uvx", "--from", "datacurve-pier=="+PierVersion, "python", "-c", script, path) // #nosec G204 -- embedded test loads the checked-in adapter against its pinned runtime.
 	if output, err := command.CombinedOutput(); err != nil {
 		t.Fatalf("offline Grok retained-stream validation failed: %v\n%s", err, output)
+	}
+}
+
+// TestMCPPreflightAcceptsGeneratedLaunchers runs the adapter's launcher
+// predicate through jq against the launchers a staged treatment bundle
+// actually contains, in each provider's preflight shape (#514).
+func TestMCPPreflightAcceptsGeneratedLaunchers(t *testing.T) {
+	root := t.TempDir()
+	configPath := writeStudyTreatmentConfig(t, root)
+	configData, err := os.ReadFile(configPath) // #nosec G304 -- configPath is created inside this test's private temporary directory.
+	if err != nil {
+		t.Fatal(err)
+	}
+	configData = []byte(strings.ReplaceAll(string(configData), "enabled = false", "enabled = true"))
+	if err := os.WriteFile(configPath, configData, 0o600); err != nil { // #nosec G703 -- configPath is the test-owned fixture returned above.
+		t.Fatal(err)
+	}
+	model, effort, err := ParseModelSelection("luna:low")
+	if err != nil {
+		t.Fatal(err)
+	}
+	bundle, err := BuildStudyTreatmentBundle(root, preparedStudyExperiment{
+		studyExperiment: studyExperiment{Config: filepath.Base(configPath)},
+		model:           model,
+		effort:          effort,
+		inputs:          studyExperimentInputs{Config: configPath},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(bundle.Root) })
+
+	type server struct {
+		Command string   `json:"command" toml:"command"`
+		Args    []string `json:"args" toml:"args"`
+	}
+	readJSON := func(path string) server {
+		t.Helper()
+		var document struct {
+			MCPServers map[string]server `json:"mcpServers"`
+		}
+		data, err := os.ReadFile(filepath.Join(bundle.Root, path)) // #nosec G304 -- path is a fixed launcher file inside the test-owned bundle.
+		if err == nil {
+			err = json.Unmarshal(data, &document)
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		return document.MCPServers["agent-layer"]
+	}
+	readTOML := func(path string) server {
+		t.Helper()
+		var document struct {
+			MCPServers map[string]server `toml:"mcp_servers"`
+		}
+		data, err := os.ReadFile(filepath.Join(bundle.Root, path)) // #nosec G304 -- path is a fixed launcher file inside the test-owned bundle.
+		if err == nil {
+			err = toml.Unmarshal(data, &document)
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		return document.MCPServers["agent-layer"]
+	}
+	claude := readJSON(".mcp.json")
+	antigravity := readJSON(filepath.Join(".agy", "antigravity-cli", "mcp_config.json"))
+	codex := readTOML(filepath.Join(".codex", "config.toml"))
+	grok := readTOML(filepath.Join(".grok", "config.toml"))
+	for _, launcher := range []server{claude, antigravity, codex, grok} {
+		if launcher.Command != "/bin/sh" || len(launcher.Args) < 4 || launcher.Args[3] != treatmentContainerRoot {
+			t.Fatalf("staged launcher is not rooted at %s: %+v", treatmentContainerRoot, launcher)
+		}
+	}
+	foreign := server{Command: claude.Command, Args: append([]string(nil), claude.Args...)}
+	foreign.Args[3] = root
+	bare := server{Command: "al", Args: []string{"dispatch", "mcp-server"}}
+	codexShape := func(s server) any {
+		return map[string]any{"enabled": true, "transport": map[string]any{"type": "stdio", "command": s.Command, "args": s.Args}}
+	}
+	cases := []map[string]any{
+		{"name": "claude", "kind": "file", "want": true, "document": map[string]any{"mcpServers": map[string]any{"agent-layer": claude}}},
+		{"name": "antigravity", "kind": "file", "want": true, "document": map[string]any{"mcpServers": map[string]any{"agent-layer": antigravity}}},
+		{"name": "codex", "kind": "codex", "want": true, "document": codexShape(codex)},
+		{"name": "grok", "kind": "grok", "want": true, "document": []any{map[string]any{"name": "agent-layer", "command": grok.Command, "args": grok.Args}}},
+		{"name": "grok transport", "kind": "grok", "want": true, "document": []any{map[string]any{"id": "agent-layer", "transport": map[string]any{"command": grok.Command, "args": grok.Args}}}},
+		{"name": "bare", "kind": "codex", "want": true, "document": codexShape(bare)},
+		{"name": "foreign root", "kind": "codex", "want": false, "document": codexShape(foreign)},
+	}
+	casesPath := filepath.Join(t.TempDir(), "cases.json")
+	data, err := json.Marshal(cases)
+	if err == nil {
+		err = os.WriteFile(casesPath, data, 0o600)
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	adapter, err := treatmentAssets.ReadFile("assets/pier_agent_layer.py")
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "pier_agent_layer.py")
+	if err := os.WriteFile(path, adapter, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// The wrappers mirror the adapter's Codex, Claude/Antigravity and Grok
+	// preflight programs around the shared predicate.
+	script := `
+import importlib.util
+import json
+import subprocess
+import sys
+
+spec = importlib.util.spec_from_file_location("pier_agent_layer", sys.argv[1])
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+predicate = module.agent_layer_mcp_launcher_jq("$s")
+programs = {
+    "codex": f'.enabled == true and .transport.type == "stdio" and (.transport as $s | {predicate})',
+    "file": f'.mcpServers["agent-layer"] as $s | {predicate}',
+    "grok": f'any(.[]?; (.name // .id) == "agent-layer" and ({{command: (.command // .transport.command // ""), args: (.args // .transport.args)}} as $s | {predicate}))',
+}
+for case in json.load(open(sys.argv[2])):
+    result = subprocess.run(["jq", "-e", programs[case["kind"]]], input=json.dumps(case["document"]), text=True, capture_output=True)
+    assert (result.returncode == 0) == case["want"], (case["name"], result.returncode, result.stderr)
+`
+	command := exec.CommandContext(t.Context(), "uvx", "--from", "datacurve-pier=="+PierVersion, "python", "-c", script, path, casesPath) // #nosec G204 -- embedded test loads the checked-in adapter against its pinned runtime.
+	if output, err := command.CombinedOutput(); err != nil {
+		t.Fatalf("MCP preflight rejected a generated launcher: %v\n%s", err, output)
 	}
 }
