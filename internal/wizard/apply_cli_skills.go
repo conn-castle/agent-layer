@@ -30,7 +30,6 @@ const memoryInstructionName = "memory.md"
 // step and the rewrite preview.
 type skillsChangeSet struct {
 	importSelectors []string
-	adoptLegacy     []string
 	removeSelectors []string
 	importPreview   []string
 	// catalogSkillsToAdd holds catalog ids that are selected but missing on disk.
@@ -68,17 +67,6 @@ var standardInstructionBasenames = []string{
 	"01_memory.md",
 }
 
-// legacyInstructionBasenames are instruction files shipped by releases before
-// the 0.16.0 consolidation. They are no longer seeded, but their presence still
-// counts as instruction evidence so a repo that has not run `al upgrade`
-// yet is not re-prompted to seed instruction files it already has.
-var legacyInstructionBasenames = []string{
-	"01_base.md",
-	"02_memory.md",
-	"03_tools.md",
-	"04_conventions.md",
-}
-
 // computeSkillsChangeSet inspects the on-disk layout and the wizard's choices
 // to derive the set of directory adds, directory removes, and memory file
 // changes the apply path will perform. Order in each slice is sorted for
@@ -94,7 +82,7 @@ func computeSkillsChangeSet(ctx context.Context, root string, choices *Choices) 
 			}
 			continue
 		}
-		stateID := catalogSkillStateIDOnDisk(root, entry)
+		stateID := entry.ID
 		exists := catalogSkillExistsOnDisk(root, stateID)
 		managed := catalogSkillIsManagedOnDisk(root, entry)
 		missingFiles := false
@@ -150,9 +138,6 @@ func computeSkillsChangeSet(ctx context.Context, root string, choices *Choices) 
 					if member.Problem != "" {
 						note += " " + member.Problem
 					}
-					if member.Legacy {
-						note += " Preserve the legacy tree; reconcile selector coverage with al skills commands before wizard legacy adoption."
-					}
 					out.importPreview = append(out.importPreview, note)
 				}
 			}
@@ -181,31 +166,17 @@ func appendRemoteCatalogChanges(ctx context.Context, root string, entry template
 	}
 	wasSelected, initialized := initial[entry.ID]
 	unchanged := initialized && wasSelected == selected
-	// A conflicted bundle row is a note on an unchanged run, including its
-	// otherwise valid legacy siblings. Do not request a partial conversion.
-	preserveRow := false
-	if unchanged {
-		for _, member := range members {
-			preserveRow = preserveRow || member.Problem != "" || (member.Legacy && (member.Configured || member.AddBlocked != ""))
-		}
-	}
+
 	for _, member := range members {
 		if member.Problem != "" {
 			if unchanged {
 				out.importPreview = append(out.importPreview, "Catalog note: "+member.Name+": "+member.Problem+" (wizard leaves it unchanged)")
 				continue
 			}
-			return fmt.Errorf("catalog %s: %s", member.Name, member.Problem)
+			return fmt.Errorf(messages.CatalogMemberProblemFmt, member.Name, member.Problem)
 		}
 		if selected {
-			if preserveRow && member.Legacy {
-				out.importPreview = append(out.importPreview, "Catalog note: preserve legacy "+member.Name+"; resolve this row's catalog conflicts with al skills commands before adoption (wizard leaves it unchanged)")
-				continue
-			}
 			if member.Configured {
-				if member.Legacy {
-					return fmt.Errorf("catalog %s has configured import coverage and a legacy local copy; resolve with al skills commands before adoption", member.Name)
-				}
 				if !member.Imported {
 					out.importPreview = append(out.importPreview, "Missing configured import "+member.Selector+"; use al skills pull/status to repair (wizard leaves it unchanged)")
 				}
@@ -214,27 +185,22 @@ func appendRemoteCatalogChanges(ctx context.Context, root string, entry template
 				}
 				continue
 			}
-			if unchanged && !member.Legacy {
+			if unchanged {
 				out.importPreview = append(out.importPreview, fmt.Sprintf("Missing bundle member %s; add explicitly with al skills add %s %s (wizard leaves it unchanged)", member.Name, entry.Repository, member.Selector))
 				if member.AddBlocked != "" {
 					out.importPreview = append(out.importPreview, "Catalog note: "+member.AddBlocked)
 				}
 				continue
 			}
+			if member.Local {
+				return fmt.Errorf(messages.CatalogLocalConflictFmt, member.Name)
+			}
 			if member.AddBlocked != "" {
-				return fmt.Errorf("catalog %s: %s", member.Name, member.AddBlocked)
+				return fmt.Errorf(messages.CatalogMemberProblemFmt, member.Name, member.AddBlocked)
 			}
 			out.importSelectors = append(out.importSelectors, member.Selector)
-			if member.Legacy {
-				out.adoptLegacy = append(out.adoptLegacy, member.Selector)
-				out.importPreview = append(out.importPreview, "Adopt legacy .agent-layer/skills/"+member.Name+" into .agent-layer/skills-imported/"+member.Name+" from "+entry.Repository+" path "+member.Selector+" (network required); preserve the complete local tree, including older defaults, as modified when it differs from fetched upstream; retire the local slot atomically")
-			} else {
-				out.importPreview = append(out.importPreview, "Import missing "+member.Selector+" from "+entry.Repository+" (network required)")
-			}
+			out.importPreview = append(out.importPreview, fmt.Sprintf(messages.WizardImportMissingFmt, member.Selector, entry.Repository))
 		} else {
-			if member.Legacy {
-				out.importPreview = append(out.importPreview, "Preserve legacy local "+member.Name+" (deselection never deletes it)")
-			}
 			if member.DefaultExact {
 				out.removeSelectors = append(out.removeSelectors, member.Selector)
 				out.importPreview = append(out.importPreview, "Remove exact import selector "+member.Selector+"; local modifications block the whole removal; remaining selectors may require a repository fetch")
@@ -297,18 +263,17 @@ func appendMissingInstructionFiles(root string, names []string, out *skillsChang
 			continue
 		}
 		legacy := skilljournal.LegacyInstruction(name)
-		legacyPath := filepath.Join(config.DefaultPaths(root).InstructionsDir, legacy)
-		if info, err := os.Lstat(legacyPath); err == nil {
-			if !info.Mode().IsRegular() {
-				return fmt.Errorf("instruction %s exists but is not a regular file; use an unlinked source before adoption", legacyPath)
+		if legacy != "" {
+			source := filepath.Join(config.DefaultPaths(root).InstructionsDir, legacy)
+			if _, err := os.Lstat(source); err == nil {
+				return fmt.Errorf(messages.LegacyInstructionConflictFmt, source)
+			} else if !errors.Is(err, os.ErrNotExist) {
+				return err
 			}
-		} else if errors.Is(err, os.ErrNotExist) {
-			legacy = ""
-		} else {
-			return err
 		}
+
 		opts := instructionAddOptions(name)
-		preview, err = config.AddInstructionImport(preview, config.SkillImport{Repository: opts.Repository, Selectors: opts.Selectors}, opts.Order, legacy)
+		preview, err = config.AddInstructionImport(preview, config.SkillImport{Repository: opts.Repository, Selectors: opts.Selectors}, opts.Order)
 		if err != nil {
 			if strings.Contains(err.Error(), "duplicate instruction order") {
 				return fmt.Errorf("%w; choose precedence explicitly with al instructions add --order N or edit instruction orders in .agent-layer/config.toml", err)
@@ -316,7 +281,7 @@ func appendMissingInstructionFiles(root string, names []string, out *skillsChang
 			return err
 		}
 		out.instructionImports = append(out.instructionImports, filepath.ToSlash(filepath.Join(".agent-layer", "instructions-imported", name)))
-		out.importPreview = append(out.importPreview, "Import/adopt "+name+" from "+templates.GeneralSkillsRepository+" instructions/"+name+" (network required); preserve legacy bytes and order, retire the old slot atomically")
+		out.importPreview = append(out.importPreview, fmt.Sprintf(messages.WizardImportInstructionFmt, name, templates.GeneralSkillsRepository, name))
 	}
 
 	return nil
@@ -327,7 +292,7 @@ func instructionAddOptions(name string) skillimport.AddOptions {
 	if name == memoryInstructionName {
 		order = 10
 	}
-	return skillimport.AddOptions{Repository: templates.GeneralSkillsRepository, Selectors: []string{"instructions/" + name}, Order: &order, AdoptLegacy: true}
+	return skillimport.AddOptions{Repository: templates.GeneralSkillsRepository, Selectors: []string{"instructions/" + name}, Order: &order}
 }
 
 // applySkillsChanges materializes the change set on disk. Each catalog skill
@@ -379,7 +344,7 @@ func applySkillsChanges(ctx context.Context, root string, changes skillsChangeSe
 	}
 
 	if len(changes.importSelectors) > 0 {
-		report, err := skillimport.NewSourceOnly(root).InstallCatalog(ctx, changes.importSelectors, changes.adoptLegacy)
+		report, err := skillimport.NewSourceOnly(root).InstallCatalog(ctx, changes.importSelectors)
 		if err != nil {
 			return fmt.Errorf("catalog installation failed; prior wizard config/env writes may already be applied; import source state remains coherent: %w%s", err, catalogFailureReport(report, "catalog installation"))
 		}

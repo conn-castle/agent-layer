@@ -5,31 +5,24 @@ import (
 	"os"
 	"path"
 
+	"path/filepath"
+
 	"github.com/conn-castle/agent-layer/internal/config"
+	"github.com/conn-castle/agent-layer/internal/messages"
 	"github.com/conn-castle/agent-layer/internal/skilljournal"
-	"github.com/conn-castle/agent-layer/internal/skilltree"
 )
 
 // instructionAddConfig prepares exact-file adoption for the shared add transaction.
-func instructionAddConfig(st *state, opts AddOptions, block config.SkillImport, legacy map[string]skilltree.Tree) (string, error) {
+func instructionAddConfig(st *state, opts AddOptions, block config.SkillImport) (string, error) {
 	name := path.Base(opts.Selectors[0])
-	localName := ""
 	old := skilljournal.LegacyInstruction(name)
 	if old != "" {
-		source := pathSetFor(st).LocalPath(name)
+		source := filepath.Join(st.paths.InstructionsDir, old)
 		if _, err := os.Lstat(source); err == nil {
-			if !opts.AdoptLegacy {
-				return "", fmt.Errorf("legacy %s exists; run al wizard to adopt it from the default upstream without duplicating instructions. To import %s from another repository, manually rename .agent-layer/instructions/%s and update its [[instructions.local]] selector, or remove both the file and its [[instructions.local]] block in .agent-layer/config.toml", old, name, old)
-			}
-			tree, err := skilltree.ReadFileNode(skilltree.OSFS{}, source, name)
-			if err != nil {
-				return "", err
-			}
-			localName = old
-			legacy[name] = tree
+			return "", fmt.Errorf(messages.LegacyInstructionConflictFmt, source)
 		} else if !os.IsNotExist(err) {
 			return "", err
 		}
 	}
-	return config.AddInstructionImport(st.configRaw, block, opts.Order, localName)
+	return config.AddInstructionImport(st.configRaw, block, opts.Order)
 }

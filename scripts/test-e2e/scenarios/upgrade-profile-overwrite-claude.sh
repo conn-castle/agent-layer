@@ -1,11 +1,10 @@
 #!/usr/bin/env bash
-# Upgrade from old version with transport-incompatible MCP fields. The managed
-# upgrade should clean those fields, then a clean wizard profile verifies the
-# upgraded config remains overwriteable and usable. This does not exercise the
-# interactive wizard sanitizer path.
+# Upgrade a supported project with transport-incompatible MCP fields, then
+# verify a clean wizard profile repairs those fields. This does not exercise
+# the interactive wizard sanitizer path.
 
 run_scenario_upgrade_profile_overwrite_claude() {
-  section "Upgrade cleans polluted MCP fields + wizard profile + al claude"
+  section "Upgrade + wizard profile repairs polluted MCP fields + al claude"
 
   if skip_if_no_oldest_binary; then return; fi
   E2E_UPGRADE_SCENARIO_COUNT=$((E2E_UPGRADE_SCENARIO_COUNT + 1))
@@ -22,13 +21,25 @@ run_scenario_upgrade_profile_overwrite_claude() {
   #   - github (HTTP): add stdio-only fields (command, args)
   local config="$repo_dir/.agent-layer/config.toml"
 
-  # Verify MCP server blocks exist before injection (if they're missing,
-  # the sed injections silently no-op and the "not contains" assertions
-  # after wizard trivially pass — a false green).
-  assert_file_contains "$config" 'id = "context7"' \
-    "config has context7 block before injection"
-  assert_file_contains "$config" 'id = "github"' \
-    "config has github block before injection"
+  # Bare 1.0.0 installs have no MCP servers. Seed the fixture explicitly.
+  cat >> "$config" <<'MCP_EOF'
+
+[[mcp.servers]]
+id = "context7"
+enabled = false
+transport = "stdio"
+command = "npx"
+args = ["-y", "@upstash/context7-mcp@2.1.1"]
+env = { CONTEXT7_API_KEY = "${AL_CONTEXT7_API_KEY}" }
+
+[[mcp.servers]]
+id = "github"
+enabled = false
+transport = "http"
+http_transport = "streamable"
+url = "https://api.githubcopilot.com/mcp/"
+headers = { Authorization = "Bearer ${AL_GITHUB_PERSONAL_ACCESS_TOKEN}" }
+MCP_EOF
 
   # Inject HTTP-only fields into context7 (stdio server)
   sed -i.bak '/^id = "context7"/,/^\[\[mcp/ {
@@ -79,40 +90,6 @@ args = ["-y", "example-github-mcp"]
     "MCP-clean upgrade output says successful"
 
   assert_al_version_content "$repo_dir" "$AL_E2E_VERSION_NO_V"
-  local context7_after_upgrade
-  context7_after_upgrade=$(awk '
-    /^\[\[mcp\.servers\]\]/ { in_block = 0 }
-    /^id = "context7"/ { in_block = 1 }
-    in_block { print }
-  ' "$config")
-  if printf '%s\n' "$context7_after_upgrade" | grep -Fq 'headers = { Authorization'; then
-    fail "upgrade removes polluted context7 headers before profile overwrite"
-  else
-    pass "upgrade removes polluted context7 headers before profile overwrite"
-  fi
-  if printf '%s\n' "$context7_after_upgrade" | grep -Fq 'url = "https://example.com/context7"'; then
-    fail "upgrade removes polluted context7 url before profile overwrite"
-  else
-    pass "upgrade removes polluted context7 url before profile overwrite"
-  fi
-
-  local github_after_upgrade
-  github_after_upgrade=$(awk '
-    /^\[\[mcp\.servers\]\]/ { in_block = 0 }
-    /^id = "github"/ { in_block = 1 }
-    in_block { print }
-  ' "$config")
-  if printf '%s\n' "$github_after_upgrade" | grep -Fq 'command = "npx"'; then
-    fail "upgrade removes polluted github command before profile overwrite"
-  else
-    pass "upgrade removes polluted github command before profile overwrite"
-  fi
-  if printf '%s\n' "$github_after_upgrade" | grep -Fq 'args = ["-y", "example-github-mcp"]'; then
-    fail "upgrade removes polluted github args before profile overwrite"
-  else
-    pass "upgrade removes polluted github args before profile overwrite"
-  fi
-
   # Write env values needed for MCP server resolution
   cat > "$repo_dir/.agent-layer/.env" <<'ENVEOF'
 AL_CONTEXT7_API_KEY=e2e-test

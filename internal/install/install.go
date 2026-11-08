@@ -72,7 +72,6 @@ type installer struct {
 	migrationConfigMigrations []ConfigKeyMigration
 	migrationReport           UpgradeMigrationReport
 	migrationsPrepared        bool
-	skillsMigrationConfirmed  bool
 	sys                       System
 }
 
@@ -114,7 +113,7 @@ func Run(root string, opts Options) error {
 	}
 
 	if opts.Overwrite && root != "" && opts.System != nil {
-		return skillmigration.WithRecoveredContext(opts.Context, root, func() error {
+		return skillmigration.WithCheckedRecovery(opts.Context, root, func() error { return CheckUpgradeSource(root, opts.System) }, func() error {
 			if err := skillmigration.CheckVersionLocked(root, opts.PinVersion); err != nil {
 				return err
 			}
@@ -159,7 +158,7 @@ func run(root string, opts Options) error {
 		inst.pinVersion = normalized
 	}
 	if overwrite {
-		if _, err := inst.instructionOrderPreview(); err != nil {
+		if err := config.ValidateInstructionRootsFS(os.DirFS(root), root); err != nil {
 			return err
 		}
 		// Overwrite upgrades need unknowns scanned before snapshot capture so the
@@ -168,9 +167,6 @@ func run(root string, opts Options) error {
 			return err
 		}
 		if err := inst.prepareUpgradeMigrations(); err != nil {
-			return err
-		}
-		if err := inst.preflightAndConfirmSkillsMigration(); err != nil {
 			return err
 		}
 		if err := inst.ctx.Err(); err != nil {
@@ -233,7 +229,6 @@ type transactionStep struct {
 func (inst upgradeOrchestrator) upgradeTransactionSteps(catalogDirs []templateDir) []transactionStep {
 	return []transactionStep{
 		{name: "runMigrations", run: inst.runMigrations, rollbackTargets: inst.runMigrationsTargetPaths},
-		{name: "instructionOrder", run: inst.migrateInstructionOrder, rollbackTargets: func() []string { return []string{filepath.Join(inst.root, ".agent-layer", "config.toml")} }},
 		{name: "writeVersionFile", run: inst.writeVersionFile, rollbackTargets: inst.writeVersionFileTargetPaths},
 		{name: "writeTemplateFiles", run: inst.templates().writeTemplateFiles, rollbackTargets: inst.writeTemplateFilesTargetPaths},
 		{name: "writeTemplateDirs", run: inst.templates().writeTemplateDirs, rollbackTargets: func() []string { return inst.writeTemplateDirsTargetPaths(catalogDirs) }},

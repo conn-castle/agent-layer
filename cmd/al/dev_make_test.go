@@ -44,6 +44,38 @@ func TestMakeSourceCommandBypassesInheritedVersionSelection(t *testing.T) {
 	}
 }
 
+// TestMakeSourceTargetsStripInstalledExecutable proves source Make targets drop
+// the installed al entry a parent release MCP server exported, so a nested
+// source sync cannot record that release entry. A stub go publishes a stub al
+// that reports what it inherited.
+func TestMakeSourceTargetsStripInstalledExecutable(t *testing.T) {
+	stubDir := t.TempDir()
+	stub := "#!/bin/sh\nwhile [ \"$#\" -gt 0 ]; do\n  if [ \"$1\" = -o ]; then out=$2; fi\n  shift\ndone\n" +
+		"printf '%s\\n' '#!/bin/sh' 'printf \"%s\" \"${AL_INSTALLED_EXECUTABLE-stripped}\"' > \"$out\" && chmod 755 \"$out\"\n"
+	if err := os.WriteFile(filepath.Join(stubDir, "go"), []byte(stub), 0o755); err != nil { //nolint:gosec // The stub go must be executable.
+		t.Fatal(err)
+	}
+	// "=" in the checkout path must stay part of the command word, not become
+	// an environment assignment.
+	devDir := filepath.Join(t.TempDir(), "dev=bin")
+	cache := t.TempDir()
+	// al-upgrade shares al-sync's AL_RUN recipe but also edits this checkout's
+	// keep list, so al-sync stands in for it.
+	for _, target := range []string{"al-sync", "al-wizard", "al-doctor"} {
+		t.Run(target, func(t *testing.T) {
+			cmd := devMakeCommand(devDir, target, "GO_CACHE="+cache, "GO_MOD_CACHE="+cache)
+			cmd.Env = append(cmd.Env, "PATH="+stubDir+string(os.PathListSeparator)+os.Getenv("PATH"), "AL_INSTALLED_EXECUTABLE=/parent/release/bin/al")
+			output, err := cmd.CombinedOutput()
+			if err != nil {
+				t.Fatalf("make %s: %v\n%s", target, err, output)
+			}
+			if !strings.HasSuffix(string(output), "stripped") {
+				t.Fatalf("make %s kept AL_INSTALLED_EXECUTABLE:\n%s", target, output)
+			}
+		})
+	}
+}
+
 func TestMakeDevBuildPreservesUnchangedExecutable(t *testing.T) {
 	// A stub go writes chosen bytes so the test controls whether output changes.
 	stubDir := t.TempDir()

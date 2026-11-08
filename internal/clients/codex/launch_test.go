@@ -225,3 +225,177 @@ func TestConfigureEnvironmentCodexHomeWarnsOnMismatchWhenEnabled(t *testing.T) {
 		t.Fatalf("expected stderr to contain warning %q, got %q", wantWarning, stderr)
 	}
 }
+
+func TestEnsureSelectedHome(t *testing.T) {
+	enabled, disabled := true, false
+	for _, tc := range []struct {
+		name     string
+		enabled  *bool
+		external bool
+		alias    bool
+		trailing bool
+		existing os.FileMode
+		create   bool
+	}{
+		{name: "creates missing selected home", enabled: &enabled, create: true},
+		{name: "creates selected home with trailing separator", enabled: &enabled, trailing: true, create: true},
+		{name: "keeps existing selected home", enabled: &enabled, existing: 0o755},
+		{name: "keeps existing home with trailing separator", enabled: &enabled, trailing: true, existing: 0o755},
+		{name: "disabled does not create inherited project home", enabled: &disabled},
+		{name: "disabled does not create home with trailing separator", enabled: &disabled, trailing: true},
+		{name: "unset option does not create home with trailing separator", trailing: true},
+		{name: "external inherited home is not created", enabled: &enabled, external: true},
+		{name: "external home with trailing separator is not created", enabled: &enabled, external: true, trailing: true},
+		{name: "creates home selected through a root alias", enabled: &enabled, alias: true, create: true},
+		{name: "creates home through a root alias with trailing separator", enabled: &enabled, alias: true, trailing: true, create: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root := t.TempDir()
+			home := filepath.Join(root, ".codex")
+			selected := home
+			if tc.external {
+				selected = filepath.Join(t.TempDir(), ".codex")
+			}
+			if tc.alias {
+				link := filepath.Join(t.TempDir(), "alias")
+				if err := os.Symlink(root, link); err != nil {
+					t.Fatal(err)
+				}
+				selected = filepath.Join(link, ".codex")
+			}
+			if tc.trailing {
+				selected += string(filepath.Separator)
+			}
+			if tc.existing != 0 {
+				if err := os.Mkdir(home, tc.existing); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Chmod(home, tc.existing); err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			if err := EnsureSelectedHome(root, []string{"CODEX_HOME=" + selected}, config.CodexConfig{LocalConfigDir: tc.enabled}); err != nil {
+				t.Fatal(err)
+			}
+
+			info, err := os.Lstat(home)
+			switch {
+			case tc.create:
+				if err != nil || !info.IsDir() || info.Mode().Perm() != 0o700 {
+					t.Fatalf("home=%v err=%v, want 0700 directory", info, err)
+				}
+			case tc.existing != 0:
+				if err != nil || info.Mode().Perm() != tc.existing {
+					t.Fatalf("existing home=%v err=%v, want mode %v unchanged", info, err, tc.existing)
+				}
+			default:
+				if !os.IsNotExist(err) {
+					t.Fatalf("home was created: %v", err)
+				}
+			}
+			if tc.external {
+				if _, err := os.Lstat(selected); !os.IsNotExist(err) {
+					t.Fatalf("external home was created: %v", err)
+				}
+			}
+		})
+	}
+}
+
+func TestEnsureSelectedHomeRejectsBlockingEntry(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		plant func(home string) error
+	}{
+		{name: "regular file", plant: func(home string) error { return os.WriteFile(home, []byte("user bytes"), 0o600) }},
+		{name: "dangling symlink", plant: func(home string) error { return os.Symlink(filepath.Join(filepath.Dir(home), "missing"), home) }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root := t.TempDir()
+			home := filepath.Join(root, ".codex")
+			if err := tc.plant(home); err != nil {
+				t.Fatal(err)
+			}
+			before, err := os.Lstat(home)
+			if err != nil {
+				t.Fatal(err)
+			}
+			enabled := true
+
+			err = EnsureSelectedHome(root, []string{"CODEX_HOME=" + home}, config.CodexConfig{LocalConfigDir: &enabled})
+			if err == nil || err.Error() != fmt.Sprintf(messages.ClientsCodexHomeNotDirectoryFmt, home) {
+				t.Fatalf("error=%v", err)
+			}
+			after, err := os.Lstat(home)
+			if err != nil || after.Mode() != before.Mode() || after.Size() != before.Size() {
+				t.Fatalf("blocking entry changed: %v %v", after, err)
+			}
+		})
+	}
+}
+
+func TestConfigureEnvironmentCodexHomeRelativeValues(t *testing.T) {
+	localConfigDir := true
+	cfg := config.CodexConfig{LocalConfigDir: &localConfigDir}
+
+	cases := []struct {
+		name       string
+		cwd        string
+		value      string
+		nestedHome bool
+		viaAlias   bool
+		// keep is the root-relative user home that must be passed on, with a
+		// warning; empty means the project home without a warning.
+		keep string
+	}{
+		{name: "root-relative from subfolder", cwd: "subfolder", value: ".codex"},
+		{name: "unclean root-relative from nested subfolder", cwd: "subfolder/nested", value: "./subfolder/../.codex"},
+		{name: "caller-relative from subfolder", cwd: "subfolder", value: "../.codex"},
+		{name: "caller-relative through root alias", cwd: "subfolder", value: "../.codex", viaAlias: true},
+		{name: "from root", cwd: ".", value: ".codex"},
+		{name: "existing caller-relative home kept", cwd: "subfolder", value: ".codex", nestedHome: true, keep: "subfolder/.codex"},
+		{name: "other relative home kept", cwd: "subfolder", value: "other-home", keep: "subfolder/other-home"},
+		{name: "nonlocal value naming home from root kept", cwd: "subfolder", value: "../{base}/.codex", keep: "{base}/.codex"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			root := t.TempDir()
+			expected := filepath.Join(root, ".codex")
+			if err := os.MkdirAll(filepath.Join(root, "subfolder", "nested"), 0o700); err != nil {
+				t.Fatalf("mkdir subfolder: %v", err)
+			}
+			if tc.nestedHome {
+				if err := os.Mkdir(filepath.Join(root, "subfolder", ".codex"), 0o700); err != nil {
+					t.Fatalf("mkdir nested home: %v", err)
+				}
+			}
+			callerRoot := root
+			if tc.viaAlias {
+				callerRoot = filepath.Join(t.TempDir(), "alias")
+				if err := os.Symlink(root, callerRoot); err != nil {
+					t.Fatalf("symlink root: %v", err)
+				}
+			}
+			t.Chdir(filepath.Join(callerRoot, tc.cwd))
+			current := strings.ReplaceAll(tc.value, "{base}", filepath.Base(root))
+			var warning strings.Builder
+
+			out := ConfigureEnvironment(root, []string{"CODEX_HOME=" + current}, cfg, &warning)
+
+			value, _ := clients.GetEnv(out, "CODEX_HOME")
+			if tc.keep == "" {
+				if value != expected || warning.Len() != 0 {
+					t.Fatalf("expected CODEX_HOME %s without warning, got %q with warning %q", expected, value, warning.String())
+				}
+				return
+			}
+			want := filepath.Join(root, strings.ReplaceAll(tc.keep, "{base}", filepath.Base(root)))
+			wantWarning := fmt.Sprintf(messages.ClientsCodexHomeWarningFmt, current, expected)
+			if value != want || warning.String() != wantWarning {
+				t.Fatalf("expected CODEX_HOME %s with warning %q, got %q with warning %q", want, wantWarning, value, warning.String())
+			}
+		})
+	}
+}

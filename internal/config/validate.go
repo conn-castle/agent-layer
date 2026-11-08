@@ -59,6 +59,11 @@ func (c *Config) Validate(path string) error {
 		return fmt.Errorf(messages.ConfigApprovalsModeInvalidFmt, path)
 	}
 
+	// Retired model state must remain visible to transition gates even when
+	// required enabled fields are missing from a partially configured project.
+	if err := validateAntigravityModelSource(path, c.Agents.Antigravity); err != nil {
+		return err
+	}
 	if c.Agents.Antigravity.Enabled == nil {
 		return fmt.Errorf(messages.ConfigAntigravityEnabledRequiredFmt, path)
 	}
@@ -79,9 +84,6 @@ func (c *Config) Validate(path string) error {
 	}
 	if c.Agents.Grok.Enabled == nil {
 		return fmt.Errorf(messages.ConfigGrokEnabledRequiredFmt, path)
-	}
-	if err := validateAntigravityModelSource(path, c.Agents.Antigravity); err != nil {
-		return err
 	}
 	if err := validateGrokAgentSpecific(path, c.Agents.Grok); err != nil {
 		return err
@@ -169,7 +171,7 @@ func (c *Config) Validate(path string) error {
 		return err
 	}
 
-	if err := validateInstructions(path, c.Instructions); err != nil {
+	if err := ValidateInstructions(path, c.Instructions); err != nil {
 		return err
 	}
 	if err := validateSkills(path, c.Skills); err != nil {

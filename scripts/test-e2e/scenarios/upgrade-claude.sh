@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Upgrade from v0.8.0 (oldest supported), al claude works.
+# Upgrade from v1.0.0 (oldest supported), al claude works.
 
 run_scenario_upgrade_claude() {
   section "Upgrade from old version + al claude"
@@ -13,10 +13,15 @@ run_scenario_upgrade_claude() {
   setup_old_version_via_binary "$repo_dir" "$E2E_OLDEST_BINARY"
   assert_al_version_content "$repo_dir" "$E2E_OLDEST_VERSION"
 
-  local expected
-  expected="$(mktemp -d "$E2E_TMP_ROOT/instruction-evidence.XXXXXX")"
-  cp -p "$repo_dir/.agent-layer/instructions/02_rules.md" "$expected/rules.md"
-  cp -p "$repo_dir/.agent-layer/instructions/01_memory.md" "$expected/memory.md"
+  local expected="$E2E_TMP_ROOT/custom-instruction.md"
+  printf 'Project-owned instructions.\n' > "$expected"
+  cp "$expected" "$repo_dir/.agent-layer/instructions/project.md"
+  cat >> "$repo_dir/.agent-layer/config.toml" <<'CONFIG_EOF'
+
+[[instructions.local]]
+selectors = ["project.md"]
+order = 0
+CONFIG_EOF
 
   # Capture upgrade output to verify it prints expected messages
   local upgrade_output rc=0
@@ -40,21 +45,14 @@ run_scenario_upgrade_claude() {
   # Non-interactive `--yes` upgrade must stay minimal: it must not enable the new
   # status lines or seed their editable sources. Status lines are opt-in via
   # `al wizard` or interactive `al upgrade` only.
-  assert_file_not_contains "$repo_dir/.agent-layer/config.toml" "statusline = true" \
-    "non-interactive upgrade does not enable a status line"
+  assert_exit_zero "non-interactive upgrade does not enable a status line" \
+    awk '/^[[:space:]]*statusline[[:space:]]*=[[:space:]]*true/ { found=1 } END { exit found }' "$repo_dir/.agent-layer/config.toml"
   assert_file_not_exists "$repo_dir/.agent-layer/claude-statusline.sh" \
     "non-interactive upgrade does not seed the Claude status line source"
   assert_file_not_exists "$repo_dir/.agent-layer/codex-statusline.toml" \
     "non-interactive upgrade does not seed the Codex status line source"
   assert_file_not_exists "$repo_dir/.claude/claude-statusline.sh" \
     "non-interactive upgrade does not project a Claude status line"
-
-  # Verify upgrade actually updated template files (not just version)
-  # docs/agent-layer/ should have been created by upgrade (memory templates)
-  assert_dir_exists "$repo_dir/docs/agent-layer" \
-    "upgrade created docs/agent-layer/ memory directory"
-  assert_file_exists "$repo_dir/docs/agent-layer/COMMANDS.md" \
-    "upgrade created docs/agent-layer/COMMANDS.md"
 
   install_mock_claude "$repo_dir"
 
@@ -65,23 +63,10 @@ run_scenario_upgrade_claude() {
   assert_claude_mock_env_non_empty "$MOCK_CLAUDE_LOG" "AL_RUN_ID"
   assert_generated_artifacts "$repo_dir"
 
-  # Upgrade preserves legacy instruction sources and records explicit ordering.
-  assert_exit_zero "upgrade preserves instructions/00_rules.md bytes" \
-    cmp "$expected/rules.md" "$repo_dir/.agent-layer/instructions/00_rules.md"
-
-  # The historical memory rename preserves its original content.
-  assert_exit_zero "upgrade preserves memory bytes through historical renames" \
-    cmp "$expected/memory.md" "$repo_dir/.agent-layer/instructions/01_memory.md"
-  assert_file_not_exists "$repo_dir/.agent-layer/instructions/02_memory.md" \
-    "upgrade leaves no instructions/02_memory.md behind after the rename"
-
-  # Historical fragments remain local even with deletion-enabled upgrades.
-  for name in 01_base.md 03_tools.md; do
-    assert_file_exists "$repo_dir/.agent-layer/instructions/$name" \
-      "--apply-deletions preserves ordered local instructions/$name"
-  done
-  assert_file_contains "$repo_dir/.agent-layer/config.toml" '[[instructions.local]]' \
-    "upgrade establishes explicit local instruction ordering offline"
+  assert_exit_zero "upgrade preserves user instruction bytes" \
+    cmp "$expected" "$repo_dir/.agent-layer/instructions/project.md"
+  assert_file_contains "$repo_dir/.claude/CLAUDE.md" 'BEGIN: project.md' \
+    "configured user instruction is projected"
 
   cleanup_scenario_dir "$repo_dir"
 }

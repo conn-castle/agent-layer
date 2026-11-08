@@ -22,11 +22,6 @@ func TestWizardCatalogApplyRefusesUnpreviewedLegacyCopies(t *testing.T) {
 			root := t.TempDir()
 			setupRemoteRepo(t, root)
 			choices, _ := remoteChoices(t, "development-skills")
-			if alreadyApproved {
-				tree, err := skilltree.Read(skilltree.OSFS{}, filepath.Join(source, "skills/development/ship-pr"))
-				require.NoError(t, err)
-				require.NoError(t, skilltree.Materialize(tree, filepath.Join(root, ".agent-layer", "skills", "ship-pr")))
-			}
 			changes, err := computeSkillsChangeSet(context.Background(), root, choices)
 			require.NoError(t, err)
 			require.NotEmpty(t, changes.importSelectors)
@@ -43,7 +38,7 @@ func TestWizardCatalogApplyRefusesUnpreviewedLegacyCopies(t *testing.T) {
 				t.Fatal("unapproved adoption must fail before sync")
 				return nil, nil
 			}, io.Discard)
-			require.ErrorContains(t, err, "review adoption")
+			require.ErrorContains(t, err, "already owns")
 			require.NotContains(t, err.Error(), "succeeded: 0 skills")
 			require.Equal(t, before, testutil.SnapshotEvidence(t, roots...))
 			require.NoFileExists(t, filepath.Join(root, ".agent-layer", "skills.lock.json"))

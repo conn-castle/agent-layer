@@ -120,6 +120,10 @@ func TestEffectiveServersKeepUserServersIntact(t *testing.T) {
 // do not depend on a client's choice of server working directory. The root is
 // what lets the global shim find and honor this repository's version pin.
 func TestEffectiveDispatchServerCarriesRepoRoot(t *testing.T) {
+	clearLauncherEnv(t)
+	installedDir := t.TempDir()
+	installed := writeExecutable(t, filepath.Join(installedDir, "al"), "#!/bin/sh\n")
+	t.Setenv("PATH", installedDir)
 	cfg := dispatchCallerConfig(ClientClaude)
 	root := "/workspace/older-pinned-repo"
 	resolved, err := EffectiveMCPServers(cfg, map[string]string{
@@ -134,7 +138,7 @@ func TestEffectiveDispatchServerCarriesRepoRoot(t *testing.T) {
 	if resolved[0].Command != "/bin/sh" {
 		t.Fatalf("built-in command = %q, want /bin/sh", resolved[0].Command)
 	}
-	want := []string{"-c", `AL_MCP_WORKING_DIR=$PWD; export AL_MCP_WORKING_DIR; cd "$1" || exit; if [ -n "$2" ]; then AL_DEV_EXECUTABLE=$2; AL_DEV_BYPASS_VERSION_DISPATCH=1; AL_DEV_SOURCE_ROOT=$1; export AL_DEV_EXECUTABLE AL_DEV_BYPASS_VERSION_DISPATCH AL_DEV_SOURCE_ROOT; exec "$2" dispatch mcp-server; else unset AL_DEV_EXECUTABLE AL_DEV_BYPASS_VERSION_DISPATCH AL_DEV_SOURCE_ROOT; exec al dispatch mcp-server; fi`, "agent-layer-mcp", root, versiondispatch.DevelopmentExecutable(root)}
+	want := []string{"-c", `AL_MCP_WORKING_DIR=$PWD; export AL_MCP_WORKING_DIR; cd "$1" || exit; if [ -n "$2" ]; then AL_DEV_EXECUTABLE=$2; AL_DEV_BYPASS_VERSION_DISPATCH=1; AL_DEV_SOURCE_ROOT=$1; export AL_DEV_EXECUTABLE AL_DEV_BYPASS_VERSION_DISPATCH AL_DEV_SOURCE_ROOT; exec "$2" dispatch mcp-server; fi; unset AL_DEV_EXECUTABLE AL_DEV_BYPASS_VERSION_DISPATCH AL_DEV_SOURCE_ROOT; if [ -x "$3" ]; then case ":$PATH:" in *":$4:"*) ;; "::") PATH=$4 ;; *) PATH=$PATH:$4 ;; esac; AL_INSTALLED_EXECUTABLE=$3; export PATH AL_INSTALLED_EXECUTABLE; exec "$3" dispatch mcp-server; fi; exec al dispatch mcp-server`, "agent-layer-mcp", root, versiondispatch.DevelopmentExecutable(root), installed, installedDir}
 	if len(resolved[0].Args) != len(want) {
 		t.Fatalf("built-in args = %q, want %q", resolved[0].Args, want)
 	}
@@ -148,9 +152,12 @@ func TestEffectiveDispatchServerCarriesRepoRoot(t *testing.T) {
 // TestEffectiveDispatchInvocationSelectsRepoBeforeAl proves the wrapper's
 // observable boundary: the unchanged legacy al arguments run from the pinned
 // repository even when the MCP client starts elsewhere.
+//
+// No al is on the generating PATH, so nothing is recorded and the launcher
+// keeps resolving al through the client's PATH.
 func TestEffectiveDispatchInvocationSelectsRepoBeforeAl(t *testing.T) {
-	t.Setenv("AL_DEV_BYPASS_VERSION_DISPATCH", "")
-	t.Setenv("AL_DEV_EXECUTABLE", "")
+	clearLauncherEnv(t)
+	t.Setenv("PATH", "")
 	cfg := dispatchCallerConfig(ClientClaude)
 	root := filepath.Join(t.TempDir(), "repo with spaces")
 	if err := os.Mkdir(root, 0o750); err != nil {
@@ -263,6 +270,8 @@ func TestDispatchLauncherDevelopmentExecutableSelection(t *testing.T) {
 		{"missing explicit executable fails", "1", filepath.Join(bin, "missing"), ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv(versiondispatch.EnvInstalledExecutable, "")
+			t.Setenv("PATH", bin)
 			t.Setenv("AL_DEV_BYPASS_VERSION_DISPATCH", tc.bypass)
 			t.Setenv("AL_DEV_EXECUTABLE", tc.executable)
 			t.Setenv("AL_DEV_SOURCE_ROOT", root)
@@ -447,6 +456,8 @@ func TestEveryProjectedDevelopmentLauncherWorksWithoutParentSelection(t *testing
 	if err := os.WriteFile(filepath.Join(releaseDir, "al"), []byte("#!/bin/sh\n[ -z \"$AL_DEV_EXECUTABLE$AL_DEV_BYPASS_VERSION_DISPATCH$AL_DEV_SOURCE_ROOT\" ] || exit 2\nprintf release\n"), 0700); err != nil { // #nosec G304 G306 -- test-owned synthetic fixture paths and executables.
 		t.Fatal(err)
 	}
+	clearLauncherEnv(t)
+	t.Setenv("PATH", releaseDir)
 	t.Setenv("AL_DEV_EXECUTABLE", source)
 	t.Setenv("AL_DEV_SOURCE_ROOT", root)
 	t.Setenv("AL_DEV_BYPASS_VERSION_DISPATCH", "1")
@@ -485,5 +496,183 @@ func TestEveryProjectedDevelopmentLauncherWorksWithoutParentSelection(t *testing
 	out, err := cmd.CombinedOutput()
 	if err != nil || string(out) != "release" {
 		t.Fatalf("release projection: %q %v", out, err)
+	}
+}
+
+func clearLauncherEnv(t *testing.T) {
+	t.Helper()
+	for _, name := range []string{
+		versiondispatch.EnvInstalledExecutable, versiondispatch.EnvShimActive,
+		versiondispatch.EnvDevelopmentExecutable, versiondispatch.EnvDevelopmentBypassVersionDispatch, versiondispatch.EnvDevelopmentSourceRoot,
+	} {
+		t.Setenv(name, "")
+	}
+}
+
+func writeExecutable(t *testing.T, path, content string) string {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(content), 0o700); err != nil { // #nosec G306 -- test-owned executable fixture.
+		t.Fatal(err)
+	}
+	return path
+}
+
+// TestReleaseLauncherRunsRecordedEntryWithoutClientPath reproduces a GUI
+// client whose PATH lacks the al install directory (#513). The launcher runs
+// the entry sync resolved, appends its directory once so nested al calls find
+// the same entry, and exports it for in-server regeneration.
+func TestReleaseLauncherRunsRecordedEntryWithoutClientPath(t *testing.T) {
+	clearLauncherEnv(t)
+	base := t.TempDir()
+	root := filepath.Join(base, "repo")
+	if err := os.Mkdir(root, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	installDir := filepath.Join(base, "install $() `false` ; space")
+	installed := writeExecutable(t, filepath.Join(installDir, "al"), "#!/bin/sh\nprintf '%s\\n' \"$PATH\" \"$PWD\" \"$AL_INSTALLED_EXECUTABLE\" \"$@\"\n")
+	t.Setenv("PATH", installDir)
+	server, _ := RootedBuiltInDispatchServer(dispatchCallerConfig(ClientCodex), ClientCodex, root)
+	for _, arg := range server.Args {
+		if strings.Contains(arg, "${") {
+			t.Fatalf("client-interpretable argv: %s", arg)
+		}
+	}
+	for _, tc := range []struct{ clientPath, wantPath string }{
+		{"/usr/bin:/bin", "/usr/bin:/bin:" + installDir},
+		{"/usr/bin:" + installDir + ":/bin", "/usr/bin:" + installDir + ":/bin"},
+		{"", installDir},
+	} {
+		cmd := exec.Command(server.Command, server.Args...) // #nosec G204 -- generated launcher under test.
+		cmd.Dir = base
+		cmd.Env = []string{"PATH=" + tc.clientPath}
+		out, err := cmd.Output()
+		want := strings.Join([]string{tc.wantPath, root, installed, "dispatch", "mcp-server", ""}, "\n")
+		if err != nil || string(out) != want {
+			t.Fatalf("client PATH %q: output %q, error %v; want %q", tc.clientPath, out, err, want)
+		}
+	}
+}
+
+// TestReleaseLauncherFallsBackWhenRecordedEntryIsGone proves a moved or
+// uninstalled al degrades to today's PATH lookup instead of failing outright.
+func TestReleaseLauncherFallsBackWhenRecordedEntryIsGone(t *testing.T) {
+	clearLauncherEnv(t)
+	root := t.TempDir()
+	installed := writeExecutable(t, filepath.Join(t.TempDir(), "al"), "#!/bin/sh\nprintf recorded\n")
+	fallbackDir := t.TempDir()
+	writeExecutable(t, filepath.Join(fallbackDir, "al"), "#!/bin/sh\nprintf fallback\n")
+	t.Setenv("PATH", filepath.Dir(installed))
+	server, _ := RootedBuiltInDispatchServer(dispatchCallerConfig(ClientCodex), ClientCodex, root)
+	run := func() string {
+		cmd := exec.Command(server.Command, server.Args...) // #nosec G204 -- generated launcher under test.
+		cmd.Env = []string{"PATH=" + fallbackDir}
+		out, err := cmd.Output()
+		if err != nil {
+			t.Fatalf("launcher: %v", err)
+		}
+		return string(out)
+	}
+	if got := run(); got != "recorded" {
+		t.Fatalf("recorded entry output = %q", got)
+	}
+	if err := os.Chmod(installed, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got := run(); got != "fallback" {
+		t.Fatalf("non-executable recorded entry output = %q, want fallback", got)
+	}
+	if err := os.Remove(installed); err != nil {
+		t.Fatal(err)
+	}
+	if got := run(); got != "fallback" {
+		t.Fatalf("missing recorded entry output = %q, want fallback", got)
+	}
+}
+
+func TestInstalledExecutableSelection(t *testing.T) {
+	base := t.TempDir()
+	exported := writeExecutable(t, filepath.Join(base, "exported", "al"), "#!/bin/sh\n")
+	first := writeExecutable(t, filepath.Join(base, "first", "al"), "#!/bin/sh\n")
+	second := writeExecutable(t, filepath.Join(base, "second", "al"), "#!/bin/sh\n")
+	invoked := writeExecutable(t, filepath.Join(base, "invoked", "al"), "#!/bin/sh\n")
+	wrapped := writeExecutable(t, filepath.Join(base, "wrapped", "al-real"), "#!/bin/sh\n")
+	goRun := writeExecutable(t, filepath.Join(base, "go-build123", "b001", "exe", "al"), "#!/bin/sh\n")
+	writeExecutable(t, filepath.Join(base, "relative", "al"), "#!/bin/sh\n")
+	placeholder := writeExecutable(t, filepath.Join(base, "x${HOME}", "al"), "#!/bin/sh\n")
+	if err := os.MkdirAll(filepath.Join(base, "directory", "al"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(writeExecutable(t, filepath.Join(base, "plain", "al"), ""), 0o644); err != nil { // #nosec G302 -- test-owned fixture mode under test.
+		t.Fatal(err)
+	}
+	// Executable by group and others but not by this user.
+	if err := os.Chmod(writeExecutable(t, filepath.Join(base, "others", "al"), ""), 0o655); err != nil { // #nosec G302 -- test-owned fixture mode under test.
+		t.Fatal(err)
+	}
+	// Package managers such as Homebrew install al as a symlink into a
+	// versioned directory; the symlink itself is the stable entry.
+	linked := filepath.Join(base, "linked", "al")
+	if err := os.MkdirAll(filepath.Dir(linked), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(second, linked); err != nil {
+		t.Fatal(err)
+	}
+	devLink := filepath.Join(base, "dev", "al")
+	if err := os.MkdirAll(filepath.Dir(devLink), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(first, devLink); err != nil {
+		t.Fatal(err)
+	}
+	path := func(dirs ...string) string { return strings.Join(dirs, string(os.PathListSeparator)) }
+	dir := filepath.Dir
+	for _, tc := range []struct {
+		name, exported, path, dev, argv0, shim, want string
+		unprivileged                                 bool
+	}{
+		{name: "exported entry wins over PATH", exported: exported, path: path(dir(first)), want: exported},
+		{name: "exported wrapper target falls back to PATH", exported: wrapped, path: path(dir(first)), want: first},
+		{name: "stale exported entry falls back to PATH", exported: filepath.Join(base, "gone", "al"), path: path(dir(first)), want: first},
+		{name: "first PATH entry", path: path(dir(first), dir(second)), want: first},
+		{name: "relative and empty PATH entries skipped", path: path("", ".", "relative", dir(second)), want: second},
+		{name: "development executable skipped", path: path(dir(first), dir(second)), dev: first, want: second},
+		{name: "development executable symlink skipped", path: path(dir(first), dir(second)), dev: devLink, want: second},
+		{name: "exported development executable skipped", exported: first, path: path(dir(second)), dev: first, want: second},
+		{name: "placeholder path rejected", exported: placeholder, path: path(dir(placeholder), dir(second)), want: second},
+		{name: "directories and non-executables skipped", path: path(filepath.Join(base, "directory"), filepath.Join(base, "plain"), dir(second)), want: second},
+		{name: "entry this user cannot execute skipped", path: path(filepath.Join(base, "others"), dir(second)), want: second, unprivileged: true},
+		{name: "symlinked entry recorded unresolved", path: path(dir(linked)), want: linked},
+		{name: "absolute invocation path", path: "/nonexistent", argv0: invoked, want: invoked},
+		{name: "relative invocation path", argv0: "./invoked/al", want: invoked},
+		{name: "bare invocation name ignored", argv0: "al"},
+		{name: "other invocation name ignored", argv0: filepath.Join(base, "invoked", "al-other")},
+		{name: "version-dispatched invocation ignored", argv0: invoked, shim: "1"},
+		{name: "go run invocation ignored", path: "/nonexistent", argv0: goRun},
+		{name: "nothing qualifies"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if tc.unprivileged && os.Geteuid() == 0 {
+				t.Skip("root may execute files with any execute bit")
+			}
+			clearLauncherEnv(t)
+			t.Chdir(base)
+			t.Setenv(versiondispatch.EnvInstalledExecutable, tc.exported)
+			t.Setenv(versiondispatch.EnvDevelopmentExecutable, tc.dev)
+			t.Setenv(versiondispatch.EnvShimActive, tc.shim)
+			t.Setenv("PATH", tc.path)
+			args := os.Args
+			t.Cleanup(func() { os.Args = args })
+			os.Args = []string{os.Args[0]}
+			if tc.argv0 != "" {
+				os.Args[0] = tc.argv0
+			}
+			if got := InstalledExecutable(); got != tc.want {
+				t.Fatalf("InstalledExecutable() = %q, want %q", got, tc.want)
+			}
+		})
 	}
 }

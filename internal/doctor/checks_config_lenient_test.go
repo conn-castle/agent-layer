@@ -182,7 +182,7 @@ enabled = false
 	}
 }
 
-func TestCheckConfig_LenientFallback_UnknownKeysGuidance_SuggestsRename(t *testing.T) {
+func TestCheckConfig_LenientFallback_LegacyClaudeVSCodeAliasNeedsUpgrade(t *testing.T) {
 	root := t.TempDir()
 	configDir := filepath.Join(root, ".agent-layer")
 	if err := os.MkdirAll(configDir, 0o700); err != nil {
@@ -237,8 +237,8 @@ enabled = false
 	if !strings.Contains(result.Message, `unrecognized config keys: agents["claude-vscode"]`) {
 		t.Fatalf("expected unknown key summary in message, got: %s", result.Message)
 	}
-	if !strings.Contains(result.Recommendation, "did you mean agents.claude_vscode?") {
-		t.Fatalf("expected key-rename suggestion, got: %s", result.Recommendation)
+	if !strings.Contains(result.Recommendation, messages.TransitionRecoveryGuidance) {
+		t.Fatalf("expected v1.0.0 recovery guidance for the legacy alias, got: %s", result.Recommendation)
 	}
 }
 
@@ -294,10 +294,10 @@ enabled = true
 	if !strings.Contains(result.Message, "unrecognized config keys: agents.gemini") {
 		t.Fatalf("expected legacy key summary in message, got: %s", result.Message)
 	}
-	if !strings.Contains(result.Recommendation, "Run `al upgrade`") {
+	if !strings.Contains(result.Recommendation, messages.TransitionRecoveryGuidance) {
 		t.Fatalf("expected upgrade recommendation, got: %s", result.Recommendation)
 	}
-	if strings.Contains(result.Recommendation, "al wizard") {
+	if strings.Contains(result.Recommendation, "Run `al wizard`") {
 		t.Fatalf("must not recommend wizard for migration-only config, got: %s", result.Recommendation)
 	}
 }

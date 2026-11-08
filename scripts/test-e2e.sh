@@ -143,7 +143,7 @@ if [[ "$AL_E2E_VERSION_NO_V" != "0.0.0" ]]; then
   section "Resolve upgrade binaries"
 
   # --- Oldest supported version (pinned) ---
-  E2E_OLDEST_VERSION="0.8.0"
+  E2E_OLDEST_VERSION="1.0.0"
   E2E_OLDEST_BINARY="$(download_or_cache_binary "$E2E_OLDEST_VERSION")" || true
   if [[ -n "$E2E_OLDEST_BINARY" && -x "$E2E_OLDEST_BINARY" ]]; then
     pass "v${E2E_OLDEST_VERSION} binary available"
@@ -157,13 +157,15 @@ if [[ "$AL_E2E_VERSION_NO_V" != "0.0.0" ]]; then
   fi
 
   # --- Latest release version ---
+  # A candidate may retain the latest release label until release metadata is
+  # created. Its bytes still need coverage against the published binary.
   # Use explicit pin if provided, otherwise resolve from GitHub API (online only).
   E2E_LATEST_VERSION="${AL_E2E_LATEST_VERSION:-}"
   if [[ -z "$E2E_LATEST_VERSION" ]]; then
     E2E_LATEST_VERSION="$(resolve_latest_release_version)" || true
   fi
 
-  if [[ -n "$E2E_LATEST_VERSION" && "$E2E_LATEST_VERSION" != "$AL_E2E_VERSION_NO_V" ]]; then
+  if [[ -n "$E2E_LATEST_VERSION" ]]; then
     E2E_LATEST_BINARY="$(download_or_cache_binary "$E2E_LATEST_VERSION")" || true
     if [[ -n "$E2E_LATEST_BINARY" && -x "$E2E_LATEST_BINARY" ]]; then
       pass "v${E2E_LATEST_VERSION} (latest release) binary available"
@@ -175,11 +177,6 @@ if [[ "$AL_E2E_VERSION_NO_V" != "0.0.0" ]]; then
         warn "v${E2E_LATEST_VERSION} binary not cached; latest-release upgrade scenarios will skip"
       fi
     fi
-  elif [[ -n "$E2E_LATEST_VERSION" ]]; then
-    # Latest release IS the current build version — no upgrade to test.
-    E2E_LATEST_VERSION=""
-    E2E_LATEST_BINARY=""
-    warn "latest release matches build version; skipping latest-release upgrade tests"
   else
     if [[ "${AL_E2E_REQUIRE_UPGRADE:-}" == "1" ]]; then
       fail "latest release version unknown (set AL_E2E_LATEST_VERSION or run with AL_E2E_ONLINE=1)"
@@ -188,6 +185,11 @@ if [[ "$AL_E2E_VERSION_NO_V" != "0.0.0" ]]; then
     fi
   fi
 fi
+
+# Explicit historical binaries for the retirement boundary scenario.
+E2E_PREFLOOR_BINARY="$(download_or_cache_binary "0.24.3")" || true
+E2E_TRANSITION_BINARY="$(download_or_cache_binary "1.0.0")" || true
+export E2E_PREFLOOR_BINARY E2E_TRANSITION_BINARY
 
 export E2E_OLDEST_VERSION E2E_OLDEST_BINARY
 export E2E_LATEST_VERSION E2E_LATEST_BINARY

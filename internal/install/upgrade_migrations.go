@@ -20,6 +20,7 @@ import (
 
 	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/messages"
+	"github.com/conn-castle/agent-layer/internal/skillmigration"
 	"github.com/conn-castle/agent-layer/internal/templates"
 	"github.com/conn-castle/agent-layer/internal/version"
 )
@@ -170,7 +171,7 @@ func (inst *installer) planUpgradeMigrations() (migrationPlan, error) {
 	}
 	resolution := inst.resolveUpgradeMigrationSourceVersion()
 
-	targetVersion, err := inst.upgradeMigrationTargetVersion(resolution)
+	targetVersion, err := inst.upgradeMigrationTargetVersion()
 	if err != nil {
 		return migrationPlan{}, err
 	}
@@ -180,25 +181,21 @@ func (inst *installer) planUpgradeMigrations() (migrationPlan, error) {
 
 	// Always load and validate the target manifest first. This ensures a
 	// missing target manifest fails loudly regardless of source resolution.
-	targetManifest, _, err := loadUpgradeMigrationManifestByVersion(targetVersion)
+	_, _, err = loadUpgradeMigrationManifestByVersion(targetVersion)
 	if err != nil {
 		return migrationPlan{}, err
 	}
 
+	plan.report.TargetVersion = targetVersion
 	plan.report.SourceVersion = resolution.version
 	plan.report.SourceVersionOrigin = resolution.origin
 	plan.report.SourceResolutionNotes = dedupSortedStrings(resolution.notes)
 
-	// Determine which manifests to load: when source is known, chain all
-	// intermediate manifests (source, target]; when unknown, use the target
-	// manifest's supported prior range and plan only source-agnostic operations.
-	sourceKnown := resolution.origin != UpgradeMigrationSourceUnknown
-	var manifests []chainedManifest
-	if sourceKnown {
-		manifests, err = collectMigrationChain(resolution.version, targetVersion)
-	} else {
-		manifests, err = collectMigrationChainFromVersionThroughTarget(targetManifest.MinPriorVersion, targetVersion)
+	sourceVersion := resolution.version
+	if resolution.origin == UpgradeMigrationSourceUnknown {
+		sourceVersion = skillmigration.MinimumCLI
 	}
+	manifests, err := collectMigrationChain(sourceVersion, targetVersion)
 	if err != nil {
 		return migrationPlan{}, err
 	}
@@ -232,11 +229,14 @@ func (inst *installer) planUpgradeMigrations() (migrationPlan, error) {
 			}
 			seenOpIDs[op.ID] = struct{}{}
 
+			if err := checkExecutableMigration(op); err != nil {
+				return migrationPlan{}, err
+			}
 			entry := migrationEntryFromOperation(op)
 			status := UpgradeMigrationStatusPlanned
 			skipReason := ""
 			if !op.SourceAgnostic {
-				if resolution.version == string(UpgradeMigrationSourceUnknown) {
+				if resolution.origin == UpgradeMigrationSourceUnknown {
 					status = UpgradeMigrationStatusSkippedUnknownSource
 					skipReason = "source version is unknown"
 				} else {
@@ -250,16 +250,7 @@ func (inst *installer) planUpgradeMigrations() (migrationPlan, error) {
 					}
 				}
 			}
-			if status == UpgradeMigrationStatusPlanned {
-				skip, reason, conditionalErr := inst.shouldSkipConditionalMigration(op, resolution)
-				if conditionalErr != nil {
-					return migrationPlan{}, conditionalErr
-				}
-				if skip {
-					status = UpgradeMigrationStatusNoop
-					skipReason = reason
-				}
-			}
+
 			entry.Status = status
 			entry.SkipReason = skipReason
 			entries = append(entries, entry)
@@ -300,12 +291,10 @@ func (inst *installer) planUpgradeMigrations() (migrationPlan, error) {
 	return plan, nil
 }
 
-// upgradeMigrationTargetVersion returns the migration manifest target for the
-// current upgrade. Release builds use the explicit pin. Unpinned dev upgrades
-// use the newest embedded manifest only when source evidence or known legacy
-// config proves there is migration work to do, keeping user-owned config files
-// untouched during ordinary overwrite runs.
-func (inst *installer) upgradeMigrationTargetVersion(resolution sourceVersionResolution) (string, error) {
+// upgradeMigrationTargetVersion uses an explicit target or the newest embedded
+// manifest for dev upgrades. Unknown sources only schedule source-agnostic
+// operations above the supported floor.
+func (inst *installer) upgradeMigrationTargetVersion() (string, error) {
 	if strings.TrimSpace(inst.pinVersion) != "" {
 		return inst.pinVersion, nil
 	}
@@ -317,125 +306,8 @@ func (inst *installer) upgradeMigrationTargetVersion(resolution sourceVersionRes
 		return "", nil
 	}
 	targetVersion := versions[len(versions)-1]
-	if resolution.origin == UpgradeMigrationSourceUnknown {
-		triggered, err := inst.hasUnpinnedMigrationTrigger(targetVersion)
-		if err != nil {
-			return "", err
-		}
-		if !triggered {
-			return "", nil
-		}
-	}
+
 	return targetVersion, nil
-}
-
-func (inst *installer) hasUnpinnedMigrationTrigger(targetVersion string) (bool, error) {
-	targetManifest, _, err := loadUpgradeMigrationManifestByVersion(targetVersion)
-	if err != nil {
-		return false, err
-	}
-	manifests, err := collectMigrationChainFromVersionThroughTarget(targetManifest.MinPriorVersion, targetVersion)
-	if err != nil {
-		return false, err
-	}
-	for _, cm := range manifests {
-		for _, op := range cm.manifest.Operations {
-			if !op.SourceAgnostic {
-				continue
-			}
-			switch op.Kind {
-			case upgradeMigrationKindRenameFile, upgradeMigrationKindRenameGeneratedArtifact:
-			default:
-				continue
-			}
-			fromPath, pathErr := snapshotEntryAbsPath(inst.root, op.From)
-			if pathErr != nil {
-				return false, pathErr
-			}
-			if _, statErr := inst.sys.Stat(fromPath); statErr == nil {
-				return true, nil
-			} else if !errors.Is(statErr, os.ErrNotExist) {
-				return false, fmt.Errorf(messages.InstallFailedStatFmt, fromPath, statErr)
-			}
-		}
-	}
-
-	data, err := inst.sys.ReadFile(filepath.Join(inst.root, filepath.FromSlash(upgradeMigrationConfigPath)))
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return false, nil
-		}
-		return false, fmt.Errorf(messages.InstallFailedReadFmt, upgradeMigrationConfigPath, err)
-	}
-	if config.HasLegacyGeminiConfig(data) || config.HasLegacyDispatchConfig(data) || config.HasLegacyAntigravityAgentSpecificModel(data) || hasLegacyGeminiMCPClient(data) {
-		return true, nil
-	}
-	return inst.hasMissingUnpinnedSourceAgnosticDefault(data, targetVersion)
-}
-
-func (inst *installer) hasMissingUnpinnedSourceAgnosticDefault(data []byte, targetVersion string) (bool, error) {
-	targetManifest, _, err := loadUpgradeMigrationManifestByVersion(targetVersion)
-	if err != nil {
-		return false, err
-	}
-	manifests, err := collectMigrationChainFromVersionThroughTarget(targetManifest.MinPriorVersion, targetVersion)
-	if err != nil {
-		return false, err
-	}
-	var cfg map[string]any
-	if err := tomlv2.Unmarshal(data, &cfg); err != nil {
-		return false, fmt.Errorf("decode config %s for migration: %w", upgradeMigrationConfigPath, err)
-	}
-	for _, cm := range manifests {
-		for _, op := range cm.manifest.Operations {
-			if op.Kind != upgradeMigrationKindConfigSetDefault || !op.SourceAgnostic {
-				continue
-			}
-			parts, splitErr := splitMigrationKeyPath(op.Key)
-			if splitErr != nil {
-				return false, splitErr
-			}
-			if _, exists, getErr := getNestedConfigValue(cfg, parts); getErr != nil {
-				return false, getErr
-			} else if !exists {
-				return true, nil
-			}
-		}
-	}
-	return false, nil
-}
-
-func hasLegacyGeminiMCPClient(data []byte) bool {
-	var cfg map[string]any
-	if err := tomlv2.Unmarshal(data, &cfg); err != nil {
-		return false
-	}
-	parts, err := splitMigrationValuePath("mcp.servers[].clients[]")
-	if err != nil {
-		return false
-	}
-	changed, err := replaceStringAtMigrationValuePath(cfg, parts, "gemini", agentAntigravity)
-	return err == nil && changed
-}
-
-func (inst *installer) shouldSkipConditionalMigration(op upgradeMigrationOperation, resolution sourceVersionResolution) (bool, string, error) {
-	if op.ID != deleteOldAntigravityAgentsOpID {
-		return false, "", nil
-	}
-	if resolution.origin != UpgradeMigrationSourceUnknown && strings.TrimSpace(inst.pinVersion) != "" {
-		return false, "", nil
-	}
-	data, err := inst.sys.ReadFile(filepath.Join(inst.root, filepath.FromSlash(upgradeMigrationConfigPath)))
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return true, "legacy agents.gemini table is absent", nil
-		}
-		return false, "", fmt.Errorf(messages.InstallFailedReadFmt, upgradeMigrationConfigPath, err)
-	}
-	if !config.HasLegacyGeminiConfig(data) {
-		return true, "legacy agents.gemini table is absent", nil
-	}
-	return false, "", nil
 }
 
 func (inst *installer) runMigrations() error {
@@ -538,7 +410,7 @@ func writeUpgradeMigrationReport(out io.Writer, report UpgradeMigrationReport) e
 
 func (inst *installer) executeUpgradeMigrationOperation(op upgradeMigrationOperation) (bool, error) {
 	switch op.Kind {
-	case upgradeMigrationKindRenameFile, upgradeMigrationKindRenameGeneratedArtifact:
+	case upgradeMigrationKindRenameFile:
 		return inst.executeRenameMigration(op.From, op.To)
 	case upgradeMigrationKindDeleteFile:
 		return inst.executeDeleteMigration(op.Path, false)
@@ -548,16 +420,8 @@ func (inst *installer) executeUpgradeMigrationOperation(op upgradeMigrationOpera
 		return inst.executeConfigRenameKeyMigration(op.From, op.To)
 	case upgradeMigrationKindConfigDeleteKey:
 		return inst.executeConfigDeleteKeyMigration(op.Key)
-	case upgradeMigrationKindConfigReplaceString:
-		return inst.executeConfigReplaceStringMigration(op)
 	case upgradeMigrationKindConfigSetDefault:
 		return inst.executeConfigSetDefaultMigration(op)
-	case upgradeMigrationKindMigrateSkillsFormat:
-		return inst.executeMigrateSkillsFormat(op.Path)
-	case upgradeMigrationKindAppendToFile:
-		return inst.executeAppendToFile(op)
-	case upgradeMigrationKindClaimSkillRoots:
-		return false, nil
 	default:
 		return false, fmt.Errorf("unsupported migration kind %q", op.Kind)
 	}
@@ -754,16 +618,6 @@ func (inst *installer) executeConfigDeleteKeyMigration(key string) (bool, error)
 	})
 }
 
-func (inst *installer) executeConfigReplaceStringMigration(op upgradeMigrationOperation) (bool, error) {
-	return inst.mutateMigrationConfig(func(cfg map[string]any) (bool, error) {
-		parts, err := splitMigrationValuePath(op.Key)
-		if err != nil {
-			return false, err
-		}
-		return replaceStringAtMigrationValuePath(cfg, parts, op.From, op.To)
-	})
-}
-
 func (inst *installer) executeConfigSetDefaultMigration(op upgradeMigrationOperation) (bool, error) {
 	keyPath := op.Key
 	return inst.mutateMigrationConfig(func(cfg map[string]any) (bool, error) {
@@ -793,75 +647,6 @@ func (inst *installer) executeConfigSetDefaultMigration(op upgradeMigrationOpera
 		}
 		return true, nil
 	})
-}
-
-// executeAppendToFile appends content to a file. The content is JSON-encoded
-// in op.Value. If op.From is non-empty, it is used as a duplicate-detection
-// match string: when the string is already present in the file the operation
-// is a no-op. If the target file does not exist it is created.
-func (inst *installer) executeAppendToFile(op upgradeMigrationOperation) (bool, error) {
-	absPath, err := snapshotEntryAbsPath(inst.root, op.Path)
-	if err != nil {
-		return false, err
-	}
-
-	// Decode the content to append from Value (JSON string).
-	var content string
-	if err := json.Unmarshal(op.Value, &content); err != nil {
-		return false, fmt.Errorf("decode append_to_file content for %s: %w", op.Path, err)
-	}
-
-	existing, err := inst.sys.ReadFile(absPath)
-	if err != nil {
-		if !errors.Is(err, os.ErrNotExist) {
-			return false, fmt.Errorf(messages.InstallFailedReadFmt, absPath, err)
-		}
-		// File doesn't exist. If a template exists for this path, seed the
-		// full template first so the user gets the complete file rather than
-		// a partial stub containing only the appended snippet.
-		base := ""
-		templatePath := strings.TrimPrefix(filepath.ToSlash(op.Path), ".agent-layer/")
-		if tpl, tplErr := templates.Read(templatePath); tplErr == nil {
-			base = string(tpl)
-		}
-		if mkErr := inst.sys.MkdirAll(filepath.Dir(absPath), 0o755); mkErr != nil {
-			return false, fmt.Errorf(messages.InstallFailedCreateDirForFmt, absPath, mkErr)
-		}
-		// If the template already contains the match string, the append
-		// content is already present — just seed the template as-is.
-		if base != "" && op.From != "" && strings.Contains(base, op.From) {
-			if wErr := inst.sys.WriteFileAtomic(absPath, []byte(base), 0o644); wErr != nil {
-				return false, fmt.Errorf(messages.InstallFailedWriteFmt, absPath, wErr)
-			}
-			return true, nil
-		}
-		// Seed template (if any) plus appended content.
-		merged := base
-		if merged != "" && !strings.HasSuffix(merged, "\n") {
-			merged += "\n"
-		}
-		merged += content
-		if wErr := inst.sys.WriteFileAtomic(absPath, []byte(merged), 0o644); wErr != nil {
-			return false, fmt.Errorf(messages.InstallFailedWriteFmt, absPath, wErr)
-		}
-		return true, nil
-	}
-
-	// Duplicate detection: if match string is present, skip.
-	if op.From != "" && strings.Contains(string(existing), op.From) {
-		return false, nil // no_op
-	}
-
-	// Append content to file.
-	merged := string(existing)
-	if !strings.HasSuffix(merged, "\n") {
-		merged += "\n"
-	}
-	merged += content
-	if wErr := inst.sys.WriteFileAtomic(absPath, []byte(merged), 0o644); wErr != nil {
-		return false, fmt.Errorf(messages.InstallFailedWriteFmt, absPath, wErr)
-	}
-	return true, nil
 }
 
 // mutateMigrationConfig applies mutate to the decoded config.toml map and
@@ -1040,156 +825,16 @@ func splitMigrationValuePath(raw string) ([]configValuePathSegment, error) {
 	return parts, nil
 }
 
-func replaceStringAtMigrationValuePath(current map[string]any, parts []configValuePathSegment, from string, to string) (bool, error) {
-	if len(parts) == 0 {
-		return false, fmt.Errorf("migration config value path is required")
-	}
-	part := parts[0]
-	value, ok := current[part.name]
-	if !ok {
-		return false, nil
-	}
-	if part.array {
-		updated, changed, err := replaceStringInMigrationArray(value, parts[1:], from, to, part.name)
-		if err != nil {
-			return false, err
-		}
-		if changed {
-			current[part.name] = updated
-		}
-		return changed, nil
-	}
-	if len(parts) == 1 {
-		valueString, ok := value.(string)
-		if !ok {
-			return false, fmt.Errorf("config value path %s is not a string", part.name)
-		}
-		if valueString != from {
-			return false, nil
-		}
-		current[part.name] = to
-		return true, nil
-	}
-	nested, ok := asStringAnyMap(value)
-	if !ok {
-		return false, fmt.Errorf("config value path %s traverses non-table value", part.name)
-	}
-	return replaceStringAtMigrationValuePath(nested, parts[1:], from, to)
-}
-
-func replaceStringInMigrationArray(value any, rest []configValuePathSegment, from string, to string, pathName string) (any, bool, error) {
-	switch typed := value.(type) {
-	case []any:
-		changed := false
-		if len(rest) == 0 {
-			for idx, item := range typed {
-				itemString, ok := item.(string)
-				if !ok {
-					return nil, false, fmt.Errorf("config value path %s[] contains non-string value", pathName)
-				}
-				if itemString == from {
-					typed[idx] = to
-					changed = true
-				}
-			}
-			// Dedupe only when a replacement happened, otherwise return the
-			// original slice unchanged. Unconditional dedupe was a hidden
-			// side effect that could collapse pre-existing duplicates a user
-			// kept intentionally; the parent caller also writes back only on
-			// changed, so the prior code was effectively no-op-on-no-change
-			// but the behaviour was undocumented and easy to regress.
-			if !changed {
-				return typed, false, nil
-			}
-			return dedupeMigrationStringArray(typed), changed, nil
-		}
-		for _, item := range typed {
-			nested, ok := asStringAnyMap(item)
-			if !ok {
-				return nil, false, fmt.Errorf("config value path %s[] traverses non-table value", pathName)
-			}
-			itemChanged, err := replaceStringAtMigrationValuePath(nested, rest, from, to)
-			if err != nil {
-				return nil, false, err
-			}
-			changed = changed || itemChanged
-		}
-		return typed, changed, nil
-	case []string:
-		if len(rest) != 0 {
-			return nil, false, fmt.Errorf("config value path %s[] traverses string array", pathName)
-		}
-		changed := false
-		for idx, item := range typed {
-			if item == from {
-				typed[idx] = to
-				changed = true
-			}
-		}
-		if !changed {
-			return typed, false, nil
-		}
-		return dedupeStringSlice(typed), changed, nil
-	case []map[string]any:
-		if len(rest) == 0 {
-			return nil, false, fmt.Errorf("config value path %s[] contains table values, not strings", pathName)
-		}
-		changed := false
-		for _, item := range typed {
-			itemChanged, err := replaceStringAtMigrationValuePath(item, rest, from, to)
-			if err != nil {
-				return nil, false, err
-			}
-			changed = changed || itemChanged
-		}
-		return typed, changed, nil
-	default:
-		return nil, false, fmt.Errorf("config value path %s is not an array", pathName)
-	}
-}
-
-func dedupeMigrationStringArray(in []any) []any {
-	seen := make(map[string]struct{}, len(in))
-	out := make([]any, 0, len(in))
-	for _, item := range in {
-		itemString, ok := item.(string)
-		if !ok {
-			out = append(out, item)
-			continue
-		}
-		if _, exists := seen[itemString]; exists {
-			continue
-		}
-		seen[itemString] = struct{}{}
-		out = append(out, itemString)
-	}
-	return out
-}
-
-func dedupeStringSlice(in []string) []string {
-	seen := make(map[string]struct{}, len(in))
-	out := make([]string, 0, len(in))
-	for _, item := range in {
-		if _, exists := seen[item]; exists {
-			continue
-		}
-		seen[item] = struct{}{}
-		out = append(out, item)
-	}
-	return out
-}
-
 func isConfigMigrationKind(kind upgradeMigrationOperationKind) bool {
 	return kind == upgradeMigrationKindConfigRenameKey ||
 		kind == upgradeMigrationKindConfigDeleteKey ||
-		kind == upgradeMigrationKindConfigReplaceString ||
 		kind == upgradeMigrationKindConfigSetDefault
 }
 
 func migrationCoveredPaths(op upgradeMigrationOperation) []string {
 	paths := make([]string, 0, 2)
 	switch op.Kind {
-	case upgradeMigrationKindRenameFile, upgradeMigrationKindRenameGeneratedArtifact:
+	case upgradeMigrationKindRenameFile:
 		from := migrationRelPath(op.From)
 		to := migrationRelPath(op.To)
 		if strings.TrimSpace(from) != "" {
@@ -1203,29 +848,15 @@ func migrationCoveredPaths(op upgradeMigrationOperation) []string {
 		if strings.TrimSpace(pathValue) != "" {
 			paths = append(paths, pathValue)
 		}
-	case upgradeMigrationKindMigrateSkillsFormat:
-		pathValue := migrationRelPath(op.Path)
-		if strings.TrimSpace(pathValue) != "" {
-			paths = append(paths, pathValue)
-		}
-	case upgradeMigrationKindAppendToFile:
-		pathValue := migrationRelPath(op.Path)
-		if strings.TrimSpace(pathValue) != "" {
-			paths = append(paths, pathValue)
-		}
 	}
 	return dedupSortedStrings(paths)
 }
 
 // migrationWillCoverPath returns true when the planned operation will handle
-// relPath at execution time, or when the migration subsumes template changes
-// under the same path (e.g., skills format migration covers all skill content
-// updates). This prevents filterCoveredUpgradeChanges from hiding template
-// changes when a migration would no-op, while allowing migrations that own an
-// entire directory to suppress noisy per-file diffs in the plan output.
+// relPath at execution time. No-op migrations must not hide template changes.
 func migrationWillCoverPath(sys System, root string, op upgradeMigrationOperation, relPath string) bool {
 	switch op.Kind {
-	case upgradeMigrationKindRenameFile, upgradeMigrationKindRenameGeneratedArtifact:
+	case upgradeMigrationKindRenameFile:
 		fromRel := migrationRelPath(op.From)
 		toRel := migrationRelPath(op.To)
 		if fromRel == toRel {
@@ -1252,15 +883,6 @@ func migrationWillCoverPath(sys System, root string, op upgradeMigrationOperatio
 			return false
 		}
 		return true
-	case upgradeMigrationKindMigrateSkillsFormat:
-		// Always cover the skills directory when this migration is planned.
-		// Even if no flat-format files exist, the template writer updates
-		// skill content (frontmatter, quoting) as part of the same release,
-		// and those diffs are noise alongside the migration description.
-		return true
-	case upgradeMigrationKindAppendToFile:
-		// Append migrations always cover their target path.
-		return true
 	default:
 		// Config migrations don't cover file paths in the template sense.
 		return false
@@ -1278,8 +900,6 @@ func configMigrationFromOperation(op upgradeMigrationOperation) (ConfigKeyMigrat
 		// can drop user-set values (e.g. the 0.10.2 removal of legacy
 		// agents.gemini.{model,reasoning_effort}).
 		return ConfigKeyMigration{Key: op.Key, From: "(existing)", To: "(removed)"}, true
-	case upgradeMigrationKindConfigReplaceString:
-		return ConfigKeyMigration{Key: op.Key, From: op.From, To: op.To}, true
 	case upgradeMigrationKindConfigSetDefault:
 		to := strings.TrimSpace(string(op.Value))
 		if to == "" {
@@ -1292,7 +912,7 @@ func configMigrationFromOperation(op upgradeMigrationOperation) (ConfigKeyMigrat
 }
 
 func isRenameMigrationKind(kind upgradeMigrationOperationKind) bool {
-	return kind == upgradeMigrationKindRenameFile || kind == upgradeMigrationKindRenameGeneratedArtifact
+	return kind == upgradeMigrationKindRenameFile
 }
 
 func hasRenameMigration(ops []upgradeMigrationOperation) bool {
@@ -1564,30 +1184,17 @@ func listMigrationManifestVersions() ([]string, error) {
 // collectMigrationChain loads all migration manifests between sourceVersion
 // (exclusive) and targetVersion (inclusive), returning them in ascending order.
 func collectMigrationChain(sourceVersion string, targetVersion string) ([]chainedManifest, error) {
-	return collectMigrationChainThroughTarget("source", sourceVersion, false, targetVersion)
-}
-
-// collectMigrationChainFromVersionThroughTarget loads all migration manifests
-// between startVersion and targetVersion (both inclusive) in ascending order.
-func collectMigrationChainFromVersionThroughTarget(startVersion string, targetVersion string) ([]chainedManifest, error) {
-	return collectMigrationChainThroughTarget("start", startVersion, true, targetVersion)
-}
-
-// collectMigrationChainThroughTarget loads migration manifests above
-// lowerVersion, or also at it when includeLower is set, through targetVersion
-// (inclusive) in ascending order. lowerLabel names lowerVersion in errors.
-func collectMigrationChainThroughTarget(lowerLabel string, lowerVersion string, includeLower bool, targetVersion string) ([]chainedManifest, error) {
 	allVersions, err := listMigrationManifestVersions()
 	if err != nil {
 		return nil, err
 	}
 	var chain []chainedManifest
 	for _, ver := range allVersions {
-		cmpLower, cmpErr := version.Compare(ver, lowerVersion)
+		cmpLower, cmpErr := version.Compare(ver, sourceVersion)
 		if cmpErr != nil {
-			return nil, fmt.Errorf("compare migration version %s with %s %s: %w", ver, lowerLabel, lowerVersion, cmpErr)
+			return nil, fmt.Errorf("compare migration version %s with source %s: %w", ver, sourceVersion, cmpErr)
 		}
-		if cmpLower < 0 || (cmpLower == 0 && !includeLower) {
+		if cmpLower <= 0 {
 			continue
 		}
 		cmpTarget, cmpErr := version.Compare(ver, targetVersion)
@@ -1715,6 +1322,15 @@ func validateUpgradeMigrationOperation(op upgradeMigrationOperation) error {
 		// inspection before init or upgrade replaces them.
 	default:
 		return fmt.Errorf("migration %s has unsupported kind %q", op.ID, op.Kind)
+	}
+	return nil
+}
+
+// checkExecutableMigration separates historical schema recognition from execution.
+func checkExecutableMigration(op upgradeMigrationOperation) error {
+	switch op.Kind {
+	case upgradeMigrationKindMigrateSkillsFormat, upgradeMigrationKindAppendToFile, upgradeMigrationKindConfigReplaceString, upgradeMigrationKindClaimSkillRoots, upgradeMigrationKindRenameGeneratedArtifact:
+		return fmt.Errorf("%w: "+messages.TransitionRetiredOperationFmt, ErrUnsupportedSource, op.ID, op.Kind)
 	}
 	return nil
 }

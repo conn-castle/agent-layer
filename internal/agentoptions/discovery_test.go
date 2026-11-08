@@ -99,6 +99,14 @@ func runModelHarness(mode string) {
 		runCopilotHarness(mode)
 		return
 	}
+	if strings.HasPrefix(mode, "codex") {
+		// Native Codex refuses to start when its selected CODEX_HOME is absent.
+		if home := os.Getenv("CODEX_HOME"); home != "" {
+			if info, err := os.Stat(home); err != nil || !info.IsDir() { // #nosec G703 -- test harness checks its own CODEX_HOME.
+				os.Exit(4)
+			}
+		}
+	}
 	if mode == "environment" {
 		cwd, _ := os.Getwd()
 		if os.Getenv("GROK_HOME") != filepath.Join(cwd, ".grok-config") || os.Getenv("AL_TEST_PROJECT_VALUE") != "project-value" || os.Getenv("AL_DISPATCH_ACTIVE") != "" {
@@ -617,6 +625,43 @@ func TestDiscoveryUsesProjectLaunchContextWithoutSync(t *testing.T) {
 				t.Fatalf("discovery created sync/run state: %v", err)
 			}
 		})
+	}
+}
+
+func TestCodexDiscoveryPreparesSelectedLocalHomeWithoutSync(t *testing.T) {
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	localConfigDir := true
+	project := &config.ProjectConfig{Root: root, Config: config.Config{Agents: config.AgentsConfig{Codex: config.CodexConfig{LocalConfigDir: &localConfigDir}}}}
+	home := filepath.Join(root, ".codex")
+
+	missing := DiscoveryRequest{Env: []string{}, Project: project, LookPath: func(string) (string, error) { return "", os.ErrNotExist }}
+	if _, err := DiscoverModels("codex", missing); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("missing binary error=%v", err)
+	}
+	if _, err := os.Lstat(home); !os.IsNotExist(err) {
+		t.Fatalf("missing binary created Codex home: %v", err)
+	}
+
+	req := harnessRequest(t, "codex")
+	req.Project = project
+	got, err := DiscoverModels("codex", req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{"future-codex", "another-codex"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("models=%v want=%v", got, want)
+	}
+	info, err := os.Lstat(home)
+	if err != nil || !info.IsDir() || info.Mode().Perm() != 0o700 {
+		t.Fatalf("Codex home=%v err=%v, want 0700 directory", info, err)
+	}
+	for _, path := range []string{filepath.Join(home, "config.toml"), filepath.Join(root, ".agent-layer")} {
+		if _, err := os.Lstat(path); !os.IsNotExist(err) {
+			t.Fatalf("discovery created sync state %s: %v", path, err)
+		}
 	}
 }
 

@@ -41,22 +41,6 @@ func TestCatalogSkillIsManagedOnDiskRequiresConfiguredOwnershipMarker(t *testing
 	assert.True(t, catalogSkillIsManagedOnDisk(root, entry), "catalog template carries its ownership marker")
 }
 
-func TestLegacyDispatchAgentDirectoryRemainsCatalogStateUntilMigration(t *testing.T) {
-	root := t.TempDir()
-	entry := templates.CLISkillCatalogEntry{ID: "dispatch-agent", Name: "Agent dispatch"}
-	require.NoError(t, os.MkdirAll(filepath.Join(root, ".agent-layer", "skills", legacyDispatchAgentCatalogID), 0o750))
-
-	assert.Equal(t, legacyDispatchAgentCatalogID, catalogSkillStateIDOnDisk(root, entry))
-	assert.True(t, catalogSkillIsManagedOnDisk(root, entry))
-
-	require.NoError(t, os.Rename(
-		filepath.Join(root, ".agent-layer", "skills", legacyDispatchAgentCatalogID),
-		filepath.Join(root, ".agent-layer", "skills", entry.ID),
-	))
-	assert.Equal(t, entry.ID, catalogSkillStateIDOnDisk(root, entry))
-	assert.True(t, catalogSkillIsManagedOnDisk(root, entry))
-}
-
 func TestAgentLayerDiskEvidenceTreatsStatErrorsAsPresent(t *testing.T) {
 	t.Run("live memory stat error", func(t *testing.T) {
 		root := t.TempDir()
@@ -127,30 +111,17 @@ func TestDetectInstructionEvidenceFromDisk(t *testing.T) {
 		assert.True(t, detectInstructionEvidenceFromDisk(root))
 	})
 
-	t.Run("offers adoption when a standard instruction file exists", func(t *testing.T) {
+	t.Run("offers instruction imports with customized standard filenames", func(t *testing.T) {
 		root := t.TempDir()
 		require.NoError(t, os.MkdirAll(filepath.Join(root, ".agent-layer", "instructions"), 0o750))
 		require.NoError(t, os.WriteFile(filepath.Join(root, ".agent-layer", "instructions", "00_rules.md"), []byte("x"), 0o600))
-		assert.False(t, detectInstructionEvidenceFromDisk(root))
+		assert.True(t, detectInstructionEvidenceFromDisk(root))
 		require.NoError(t, os.WriteFile(filepath.Join(root, ".agent-layer", "config.toml"), []byte(`[[instructions.imports]]
 repository = "local-repo"
 selectors = ["instructions/memory.md"]
 order = 10
 `), 0o600))
-		assert.False(t, detectInstructionEvidenceFromDisk(root), "remaining legacy slot must keep adoption available after a partial import")
-	})
-
-	// A repo installed before the 0.16.0 instruction consolidation still holds
-	// the pre-consolidation filenames until `al upgrade` runs. Treating those as
-	// evidence keeps the wizard from offering to seed instruction files over
-	// files the user already has.
-	t.Run("returns true when only a pre-consolidation instruction file exists", func(t *testing.T) {
-		for _, name := range legacyInstructionBasenames {
-			root := t.TempDir()
-			require.NoError(t, os.MkdirAll(filepath.Join(root, ".agent-layer", "instructions"), 0o750))
-			require.NoError(t, os.WriteFile(filepath.Join(root, ".agent-layer", "instructions", name), []byte("legacy instructions"), 0o600))
-			assert.True(t, detectInstructionEvidenceFromDisk(root), "%s should count as instruction evidence", name)
-		}
+		assert.True(t, detectInstructionEvidenceFromDisk(root), "configured local sources suppress import offers")
 	})
 
 	t.Run("offers adoption when managed instruction file exists", func(t *testing.T) {
@@ -158,14 +129,14 @@ order = 10
 		require.NoError(t, os.MkdirAll(filepath.Join(root, ".agent-layer", "instructions"), 0o750))
 		rulesTemplate := []byte("legacy rules fixture\n")
 		require.NoError(t, os.WriteFile(filepath.Join(root, ".agent-layer", "instructions", "00_rules.md"), rulesTemplate, 0o600))
-		assert.False(t, detectInstructionEvidenceFromDisk(root))
+		assert.True(t, detectInstructionEvidenceFromDisk(root))
 	})
 
 	t.Run("offers adoption when edited managed instruction exists", func(t *testing.T) {
 		root := t.TempDir()
 		require.NoError(t, os.MkdirAll(filepath.Join(root, ".agent-layer", "instructions"), 0o750))
 		require.NoError(t, os.WriteFile(filepath.Join(root, ".agent-layer", "instructions", "00_rules.md"), []byte("custom rules"), 0o600))
-		assert.False(t, detectInstructionEvidenceFromDisk(root))
+		assert.True(t, detectInstructionEvidenceFromDisk(root))
 	})
 
 	t.Run("returns true on instruction read errors", func(t *testing.T) {

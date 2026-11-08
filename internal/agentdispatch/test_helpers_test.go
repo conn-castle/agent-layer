@@ -124,7 +124,7 @@ func executeContinueDispatch(req dispatchExecRequest, handle string) error {
 	}
 	path, err := lookPath(target.Binary)
 	if err != nil {
-		return exitError(ExitUnavailable, fmt.Sprintf("`al dispatch` target %s requires `%s` on PATH", target.Name, target.Binary))
+		return exitError(ExitUnavailable, providerLookupMessage(target.Name, target.Binary, path, err))
 	}
 	target, version, err := compatibleTargetVersionCached(req.Root, path, target, req.VersionLookup)
 	if err != nil {

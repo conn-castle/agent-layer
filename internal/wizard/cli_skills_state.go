@@ -10,11 +10,6 @@ import (
 	"github.com/conn-castle/agent-layer/internal/templates"
 )
 
-const (
-	dispatchAgentCatalogID       = "dispatch-agent"
-	legacyDispatchAgentCatalogID = "agent-dispatch"
-)
-
 // catalogSkillExistsOnDisk reports whether a CLI catalog skill directory is
 // present at .agent-layer/skills/<id>/. It is used both for default-from-state
 // in initializeChoices and for the apply path's add/remove diff.
@@ -30,31 +25,20 @@ func catalogSkillExistsOnDisk(root string, id string) bool {
 	return info.IsDir()
 }
 
-// catalogSkillStateIDOnDisk returns the directory id that currently represents
-// a catalog entry. Repositories installed before 0.16 keep the dispatch skill
-// under its legacy id until the upgrade migration renames it. The wizard must
-// preserve that state instead of creating the renamed directory alongside it.
-func catalogSkillStateIDOnDisk(root string, entry templates.CLISkillCatalogEntry) string {
-	if entry.ID == dispatchAgentCatalogID && catalogSkillExistsOnDisk(root, legacyDispatchAgentCatalogID) {
-		return legacyDispatchAgentCatalogID
-	}
-	return entry.ID
-}
-
 // catalogSkillIsManagedOnDisk reports whether the directory at a catalog
 // embedded entry's path is safe for the wizard to claim and remove. Entries without an ownership marker
 // retain the legacy directory-presence behavior. Marked entries must contain
 // their marker in SKILL.md so a user-authored same-name skill is not mistaken
 // for catalog-installed content.
 func catalogSkillIsManagedOnDisk(root string, entry templates.CLISkillCatalogEntry) bool {
-	stateID := catalogSkillStateIDOnDisk(root, entry)
+	stateID := entry.ID
 	if !catalogSkillExistsOnDisk(root, stateID) {
 		return false
 	}
 	if entry.OwnershipMarker == "" {
 		return true
 	}
-	data, err := os.ReadFile(filepath.Join(root, ".agent-layer", "skills", stateID, "SKILL.md")) // #nosec G304 -- root is the project root and catalogSkillStateIDOnDisk returns a validated catalog id.
+	data, err := os.ReadFile(filepath.Join(root, ".agent-layer", "skills", stateID, "SKILL.md")) // #nosec G304 -- root is the project root and entry.ID is a validated catalog id.
 	if err != nil {
 		return false
 	}
@@ -67,22 +51,13 @@ func catalogSkillIsManagedOnDisk(root string, entry templates.CLISkillCatalogEnt
 // `.agent-layer/instructions/` directory with no memory files maps to false.
 //
 // The result controls whether the install-only instruction prompt is shown.
-// Standard or legacy managed instruction files, live memory docs, and memory
-// templates suppress the prompt because the wizard does not refresh them.
-// User-authored fragments do not count; standard legacy slots are offered for
-// explicit adoption. Configured imports suppress repeated selection. Development skills on
-// disk do not count; they are selected independently on the skills catalog
-// screen.
+// Standard local instruction files, configured imports and memory files suppress
+// repeated selection. Other local fragments and skills are configured separately.
 func detectInstructionEvidenceFromDisk(root string) bool {
 	if root == "" {
 		return true
 	}
-	for _, name := range standardInstructionBasenames {
-		info, err := os.Lstat(filepath.Join(root, ".agent-layer", "instructions", name))
-		if err == nil && info.Mode().IsRegular() {
-			return false
-		}
-	}
+
 	cfg, err := config.LoadConfigLenient(config.DefaultPaths(root).ConfigPath)
 	if err == nil && len(cfg.Instructions.Imports) > 0 {
 		return true
@@ -120,12 +95,10 @@ func hasAnyTemplateMemoryFile(root string) bool {
 }
 
 func hasAnyStandardInstructionFile(root string) bool {
-	for _, names := range [][]string{standardInstructionBasenames, legacyInstructionBasenames} {
-		for _, name := range names {
-			path := filepath.Join(root, ".agent-layer", "instructions", name)
-			if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
-				return true
-			}
+	for _, name := range standardInstructionBasenames {
+		path := filepath.Join(root, ".agent-layer", "instructions", name)
+		if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
+			return true
 		}
 	}
 	return false
