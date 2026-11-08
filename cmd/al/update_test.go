@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"runtime"
 	"strconv"
@@ -637,7 +638,13 @@ func TestUpdateCommandCancellationStopsDownloadChild(t *testing.T) {
 						// Exercise terminal signals with the existing live/exited fixtures.
 						switch mode {
 						case "grace":
-							_ = syscall.Kill(os.Getpid(), syscall.SIGHUP)
+							// An inherited ignored hangup (nohup) deliberately stays
+							// ignored, so grace then uses the always-handled quit.
+							terminal := syscall.SIGHUP
+							if signal.Ignored(syscall.SIGHUP) {
+								terminal = syscall.SIGQUIT
+							}
+							_ = syscall.Kill(os.Getpid(), terminal)
 						case "exited":
 							_ = syscall.Kill(os.Getpid(), syscall.SIGQUIT)
 						default:

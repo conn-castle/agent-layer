@@ -34,7 +34,7 @@ type conflictState struct {
 
 // Resolve applies the staged Git index of a skill conflict workspace.
 func (s *Service) Resolve(ctx context.Context, name string) (*Report, error) {
-	return s.withLockedReport(func(st *state, report *Report) error {
+	return s.withLockedReport(ctx, func(st *state, report *Report) error {
 		entry, ok := st.lock.Entry(name)
 		if !ok {
 			return fmt.Errorf("imported skill %q has no lock entry", name)

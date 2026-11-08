@@ -157,12 +157,17 @@ func TestUnsetEnvEmptySlice(t *testing.T) {
 	}
 }
 
+// TestBuildEnvStripsShimActive also covers the installed-entry marker a
+// release MCP launcher exports: provider children may run another al
+// installation, which must record its own entry rather than the server's.
 func TestBuildEnvStripsShimActive(t *testing.T) {
-	base := []string{"PATH=/bin", versiondispatch.EnvShimActive + "=1", "OTHER=data"}
+	base := []string{"PATH=/bin", versiondispatch.EnvShimActive + "=1", versiondispatch.EnvInstalledExecutable + "=/opt/a/al", "OTHER=data"}
 	env := BuildEnv(base, nil, nil)
 
-	if _, ok := GetEnv(env, versiondispatch.EnvShimActive); ok {
-		t.Fatalf("expected %s to be stripped from environment", versiondispatch.EnvShimActive)
+	for _, key := range []string{versiondispatch.EnvShimActive, versiondispatch.EnvInstalledExecutable} {
+		if _, ok := GetEnv(env, key); ok {
+			t.Fatalf("expected %s to be stripped from environment", key)
+		}
 	}
 	if value, ok := GetEnv(env, "PATH"); !ok || value != "/bin" {
 		t.Fatalf("expected PATH to remain, got %v", value)

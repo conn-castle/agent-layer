@@ -1,6 +1,7 @@
 package wizard
 
 import (
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
@@ -33,7 +34,7 @@ func TestRun_WarningsConfirmError(t *testing.T) {
 		},
 	}
 
-	err := Run(root, ui, func(string) (*alsync.Result, error) { return &alsync.Result{}, nil }, "")
+	err := Run(root, ui, func(context.Context, string) (*alsync.Result, error) { return &alsync.Result{}, nil }, "")
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "warnings confirm error")
 }
@@ -60,7 +61,7 @@ func TestRun_WarningsEnabled_UsesDefaultsWithoutThresholdPrompts(t *testing.T) {
 		},
 	}
 
-	err := Run(root, ui, func(string) (*alsync.Result, error) { return &alsync.Result{}, nil }, "")
+	err := Run(root, ui, func(context.Context, string) (*alsync.Result, error) { return &alsync.Result{}, nil }, "")
 	require.NoError(t, err)
 	assert.Equal(t, 0, inputCalls, "wizard should not prompt for warning threshold values")
 
@@ -97,7 +98,7 @@ func TestRun_WarningsDisabled_RemovesWarningsSection(t *testing.T) {
 		},
 	}
 
-	err := Run(root, ui, func(string) (*alsync.Result, error) { return &alsync.Result{}, nil }, "")
+	err := Run(root, ui, func(context.Context, string) (*alsync.Result, error) { return &alsync.Result{}, nil }, "")
 	require.NoError(t, err)
 
 	data, readErr := os.ReadFile(filepath.Join(configDir, "config.toml"))

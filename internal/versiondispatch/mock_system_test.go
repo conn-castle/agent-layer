@@ -15,7 +15,7 @@ var errNotMocked = errors.New("testSystem: method not mocked")
 // testSystem provides a mock System for unit tests.
 //
 // Fallback behavior:
-//   - UserCacheDir, ExecBinary: Return errNotMocked (fail-fast). These operations
+//   - UserCacheDir, ExecBinary, LookPath: Return errNotMocked (fail-fast). These operations
 //     have side effects or return values that should never come from the real OS
 //     in tests.
 //   - ReadFile, Getenv, Environ, FindAgentLayerRoot: Fall back to RealSystem.
@@ -40,6 +40,7 @@ type testSystem struct {
 	GetenvFunc             func(key string) string
 	EnvironFunc            func() []string
 	ExecBinaryFunc         func(path string, args []string, env []string) error
+	LookPathFunc           func(file string) (string, error)
 	FindAgentLayerRootFunc func(start string) (string, bool, error)
 	StderrFunc             func() io.Writer
 	StatFunc               func(name string) (os.FileInfo, error)
@@ -86,6 +87,13 @@ func (s *testSystem) ExecBinary(path string, args []string, env []string) error 
 		return s.ExecBinaryFunc(path, args, env)
 	}
 	return fmt.Errorf("%w: ExecBinary", errNotMocked)
+}
+
+func (s *testSystem) LookPath(file string) (string, error) {
+	if s.LookPathFunc != nil {
+		return s.LookPathFunc(file)
+	}
+	return "", fmt.Errorf("%w: LookPath", errNotMocked)
 }
 
 func (s *testSystem) FindAgentLayerRoot(start string) (string, bool, error) {

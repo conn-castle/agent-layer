@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/conn-castle/agent-layer/internal/messages"
@@ -26,12 +27,20 @@ const (
 	EnvDevelopmentExecutable = "AL_DEV_EXECUTABLE"
 	// EnvDevelopmentSourceRoot scopes persistent source selection to one configuration root.
 	EnvDevelopmentSourceRoot = "AL_DEV_SOURCE_ROOT"
+	// EnvInstalledExecutable carries the installed al entry a generated release
+	// MCP launcher executed, or the entry a pinned re-exec was invoked through,
+	// so regeneration in that process records it again.
+	EnvInstalledExecutable = "AL_INSTALLED_EXECUTABLE"
 
 	// sourceCurrent and sourcePin label the origin of the resolved version.
 	sourceCurrent = "current"
 	sourcePin     = "pin"
 
 	quietFlagMinVersion = "0.8.7"
+
+	// installedEntryName is the only executable name recorded as an installed
+	// entry; generated launchers and nested calls invoke al by this name.
+	installedEntryName = "al"
 )
 
 // ErrDispatched signals that execution has been handed off to another binary.
@@ -106,7 +115,7 @@ func maybeExec(ctx context.Context, sys System, args []string, currentVersion st
 	}
 
 	if found {
-		if err := skillmigration.CheckVersion(rootDir, requested); err != nil {
+		if err := skillmigration.CheckVersion(ctx, rootDir, requested); err != nil {
 			return err
 		}
 	}
@@ -124,11 +133,79 @@ func maybeExec(ctx context.Context, sys System, args []string, currentVersion st
 
 	dispatchArgs := argsForRequestedVersion(args, requested)
 	env := append(sys.Environ(), fmt.Sprintf("%s=1", EnvShimActive))
+	// The cached binary's argv[0] is its cache path, so pass the stable entry
+	// that generated MCP launchers record (overriding an inherited one). Source
+	// builds such as go run and cached binaries are not installations.
+	if current != "dev" {
+		if entry := invokingEntry(sys, args[0], cacheRoot); entry != "" {
+			env = append(withoutEnv(env, EnvInstalledExecutable), EnvInstalledExecutable+"="+entry)
+		}
+	}
 	execArgs := append([]string{path}, dispatchArgs[1:]...)
 	if err := sys.ExecBinary(path, execArgs, env); err != nil {
 		return err
 	}
 	return ErrDispatched
+}
+
+// invokingEntry returns the absolute al entry this process was invoked
+// through, or "" when it cannot be determined, lies in the version cache, or is
+// not named al. The name rule matches the entries generated launchers record:
+// a wrapper's target (such as a benchmark gate's al-real) or a renamed binary
+// must not replace the al entry that wraps it.
+func invokingEntry(sys System, argv0 string, cacheRoot string) string {
+	if filepath.Base(argv0) != installedEntryName {
+		return ""
+	}
+	entry := ""
+	if strings.ContainsRune(argv0, filepath.Separator) {
+		if abs, err := filepath.Abs(argv0); err == nil {
+			entry = abs
+		}
+	} else if found, err := sys.LookPath(argv0); err == nil && filepath.IsAbs(found) {
+		entry = found
+	}
+	if entry == "" || withinDir(cacheRoot, entry) {
+		return ""
+	}
+	return entry
+}
+
+// withinDir reports whether path lies inside dir. It compares absolute paths
+// and, when both exist, their symlink-resolved forms, so a relative or
+// symlinked cache directory still matches. Only the entry's parent directory
+// is resolved: an entry that is itself a symlink is judged by its own path.
+func withinDir(dir string, path string) bool {
+	if dir == "" {
+		return false
+	}
+	absDir, err := filepath.Abs(dir)
+	if err != nil {
+		return false
+	}
+	if pathWithin(absDir, path) {
+		return true
+	}
+	resolvedDir, err := filepath.EvalSymlinks(absDir)
+	if err != nil {
+		return false
+	}
+	resolvedParent, err := filepath.EvalSymlinks(filepath.Dir(path))
+	if err != nil {
+		return false
+	}
+	return pathWithin(resolvedDir, filepath.Join(resolvedParent, filepath.Base(path)))
+}
+
+// pathWithin reports whether the absolute path lies inside the absolute dir.
+func pathWithin(dir string, path string) bool {
+	rel, err := filepath.Rel(dir, path)
+	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
+}
+
+// withoutEnv removes every key=value entry for key, reusing env's backing array.
+func withoutEnv(env []string, key string) []string {
+	return slices.DeleteFunc(env, func(entry string) bool { return strings.HasPrefix(entry, key+"=") })
 }
 
 func argsForRequestedVersion(args []string, requested string) []string {

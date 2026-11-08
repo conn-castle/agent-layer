@@ -26,8 +26,8 @@ import (
 
 	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/fsutil"
+	"github.com/conn-castle/agent-layer/internal/messages"
 	"github.com/conn-castle/agent-layer/internal/skilltree"
-	"github.com/conn-castle/agent-layer/internal/templates"
 )
 
 // Version is the journal schema version. A journal recording a different
@@ -66,6 +66,9 @@ const (
 // recovery. Recovery fails loudly rather than deleting or restoring content on
 // a guess.
 var ErrMalformed = errors.New("skill import journal is malformed")
+
+// ErrAdoptionJournal identifies recovery evidence requiring Agent Layer v1.0.0.
+var ErrAdoptionJournal = errors.New("unfinished adoption journal")
 
 // WriteIntent is one skill the transaction replaces or creates.
 type WriteIntent struct {
@@ -117,6 +120,9 @@ func StagingRoot(importedSkillsDir string) string {
 // file backups are staged and before the first live path changes. Tree backups
 // are created by the subsequent live renames.
 func Write(stagingRoot string, doc Document) error {
+	if doc.Version == AdoptionVersion || len(doc.LocalRetirements) > 0 {
+		return fmt.Errorf("%w: "+messages.AdoptionJournalFmt, ErrAdoptionJournal, stagingRoot)
+	}
 	if doc.Version == 0 {
 		doc.Version = Version
 	}
@@ -175,12 +181,6 @@ func Recover(targets Targets) error {
 		}
 		return err
 	}
-	if len(doc.LocalRetirements) > 0 && targets.LocalSkillsDir == "" {
-		return fmt.Errorf("local recovery root is missing; preserve adoption journal %s", stagingRoot)
-	}
-	if err := validateRetirements(targets, doc); err != nil {
-		return err
-	}
 	if err := validateBackups(stagingRoot, targets, doc, nil, !doc.Committed); err != nil {
 		return err
 	}
@@ -196,11 +196,10 @@ func Recover(targets Targets) error {
 // retain whether an original moved, so missing backups cannot be mistaken for
 // originals that were never changed.
 type Progress struct {
-	Writes           []WriteIntent
-	Deletes          []string
-	LocalRetirements []string
-	Config           bool
-	Lock             bool
+	Writes  []WriteIntent
+	Deletes []string
+	Config  bool
+	Lock    bool
 }
 
 // Rollback shares restart recovery's restore engine, but restores only touched
@@ -220,9 +219,6 @@ func Rollback(targets Targets, applied Progress, writeFile func(string, []byte, 
 	if err != nil {
 		return err
 	}
-	if len(doc.LocalRetirements) > 0 && targets.LocalSkillsDir == "" {
-		return fmt.Errorf("local recovery root is missing; preserve adoption journal %s", stagingRoot)
-	}
 	var moved []string
 	for _, write := range applied.Writes {
 		if write.Existed {
@@ -232,16 +228,10 @@ func Rollback(targets Targets, applied Progress, writeFile func(string, []byte, 
 	for _, name := range applied.Deletes {
 		moved = append(moved, DeleteBackupPrefix+name)
 	}
-	for _, name := range applied.LocalRetirements {
-		moved = append(moved, LocalBackupPrefix+name)
-	}
-	if err := validateRetirements(targets, doc); err != nil {
-		return err
-	}
 	if err := validateBackups(stagingRoot, targets, doc, moved, true); err != nil {
 		return err
 	}
-	doc.Writes, doc.Deletes, doc.LocalRetirements = applied.Writes, applied.Deletes, applied.LocalRetirements
+	doc.Writes, doc.Deletes = applied.Writes, applied.Deletes
 	doc.Config = applied.Config
 	return rollback(stagingRoot, targets, doc, writeFile, applied.Lock)
 }
@@ -298,6 +288,9 @@ func recoveryDirectoryExists(dir string) (bool, error) {
 }
 
 func read(stagingRoot string) (Document, error) {
+	if err := CheckAdoptionStaging(stagingRoot); err != nil {
+		return Document{}, err
+	}
 	path := filepath.Join(stagingRoot, FileName)
 	info, err := os.Lstat(path)
 	if err != nil {
@@ -320,27 +313,8 @@ func read(stagingRoot string) (Document, error) {
 	if err := decoder.Decode(new(any)); err != io.EOF {
 		return Document{}, fmt.Errorf("%w: %s: expected one complete JSON document", ErrMalformed, path)
 	}
-	if doc.Version != Version && doc.Version != AdoptionVersion {
-		return Document{}, fmt.Errorf("%w: %s: unsupported schema version %d (this Agent Layer supports %d and %d)", ErrMalformed, path, doc.Version, Version, AdoptionVersion)
-	}
-	if doc.Version == Version && len(doc.LocalRetirements) > 0 {
-		return Document{}, fmt.Errorf("%w: local retirements require adoption version", ErrMalformed)
-	}
-	seenLocal := map[string]bool{}
-	for _, name := range doc.LocalRetirements {
-		if (!templates.IsRetiredSkill(name) && LegacyInstruction(name) == "") || seenLocal[name] {
-			return Document{}, fmt.Errorf("%w: invalid local retirement %q", ErrMalformed, name)
-		}
-		seenLocal[name] = true
-		found := false
-		for _, w := range doc.Writes {
-			if w.Name == name && !w.Existed {
-				found = true
-			}
-		}
-		if !found {
-			return Document{}, fmt.Errorf("%w: retirement %q requires a new imported write", ErrMalformed, name)
-		}
+	if doc.Version != Version {
+		return Document{}, fmt.Errorf("%w: %s: unsupported schema version %d", ErrMalformed, path, doc.Version)
 	}
 	names := append([]string{}, doc.Deletes...)
 	for _, write := range doc.Writes {
@@ -415,11 +389,6 @@ func validateBackups(stagingRoot string, targets Targets, doc Document, movedBac
 			return err
 		}
 	}
-	for _, name := range doc.LocalRetirements {
-		if err := check(LocalBackupPrefix+name, targets.LocalPath(name), !targets.ExactFiles, true); err != nil {
-			return err
-		}
-	}
 	if doc.Config {
 		if err := check(ConfigBackupName, "", false, true); err != nil {
 			return err
@@ -475,9 +444,6 @@ func rollback(stagingRoot string, targets Targets, doc Document, writeFile func(
 		target := filepath.Join(targets.ImportedSkillsDir, name)
 		backup := filepath.Join(stagingRoot, DeleteBackupPrefix+name)
 		note(restoreTree(backup, target, false))
-	}
-	for _, name := range doc.LocalRetirements {
-		note(restoreTree(filepath.Join(stagingRoot, LocalBackupPrefix+name), targets.LocalPath(name), false))
 	}
 	if doc.Config {
 		note(restoreFile(filepath.Join(stagingRoot, ConfigBackupName), targets.ConfigPath, writeFile))
@@ -556,24 +522,6 @@ func LegacyInstruction(name string) string {
 	return ""
 }
 
-// LocalPath maps only trusted standard instruction names to their legacy slots.
-func (t Targets) LocalPath(name string) string {
-	if t.ExactFiles {
-		if old := LegacyInstruction(name); old != "" {
-			name = old
-		}
-	}
-	return filepath.Join(t.LocalSkillsDir, name)
-}
-func validateRetirements(t Targets, d Document) error {
-	for _, name := range d.LocalRetirements {
-		if (t.ExactFiles && LegacyInstruction(name) == "") || (!t.ExactFiles && !templates.IsRetiredSkill(name)) {
-			return fmt.Errorf("%w: invalid retirement for this import tier", ErrMalformed)
-		}
-	}
-	return nil
-}
-
 // RecoverBoth uses trusted coordinates for both kinds before any source consumer.
 func RecoverBoth(root string) error {
 	base := filepath.Join(root, ".agent-layer")
@@ -584,6 +532,9 @@ func RecoverBoth(root string) error {
 	for _, kind := range []string{"skills", "instructions"} {
 		target := Targets{ImportedSkillsDir: filepath.Join(base, kind+"-imported"), LocalSkillsDir: filepath.Join(base, kind), SkillsLockPath: filepath.Join(base, kind+".lock.json"), ConfigPath: filepath.Join(base, "config.toml"), ExactFiles: kind == "instructions"}
 		if err := validateRecoveryRoots(target, false); err != nil {
+			return err
+		}
+		if err := CheckAdoptionStaging(StagingRoot(target.ImportedSkillsDir)); err != nil {
 			return err
 		}
 		targets = append(targets, target)

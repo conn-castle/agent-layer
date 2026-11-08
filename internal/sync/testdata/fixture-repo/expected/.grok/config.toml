@@ -8,7 +8,7 @@ allow = ["Bash(git status:*)", "Bash(ls:*)", "mcp__agent-layer__*"]
 
 [mcp_servers."agent-layer"]
 command = "/bin/sh"
-args = ["-c", "AL_MCP_WORKING_DIR=$PWD; export AL_MCP_WORKING_DIR; cd \"$1\" || exit; if [ -n \"$2\" ]; then AL_DEV_EXECUTABLE=$2; AL_DEV_BYPASS_VERSION_DISPATCH=1; AL_DEV_SOURCE_ROOT=$1; export AL_DEV_EXECUTABLE AL_DEV_BYPASS_VERSION_DISPATCH AL_DEV_SOURCE_ROOT; exec \"$2\" dispatch mcp-server; else unset AL_DEV_EXECUTABLE AL_DEV_BYPASS_VERSION_DISPATCH AL_DEV_SOURCE_ROOT; exec al dispatch mcp-server; fi", "agent-layer-mcp", "__REPO_ROOT__", ""]
+args = ["-c", "AL_MCP_WORKING_DIR=$PWD; export AL_MCP_WORKING_DIR; cd \"$1\" || exit; if [ -n \"$2\" ]; then AL_DEV_EXECUTABLE=$2; AL_DEV_BYPASS_VERSION_DISPATCH=1; AL_DEV_SOURCE_ROOT=$1; export AL_DEV_EXECUTABLE AL_DEV_BYPASS_VERSION_DISPATCH AL_DEV_SOURCE_ROOT; exec \"$2\" dispatch mcp-server; fi; unset AL_DEV_EXECUTABLE AL_DEV_BYPASS_VERSION_DISPATCH AL_DEV_SOURCE_ROOT; if [ -x \"$3\" ]; then case \":$PATH:\" in *\":$4:\"*) ;; \"::\") PATH=$4 ;; *) PATH=$PATH:$4 ;; esac; AL_INSTALLED_EXECUTABLE=$3; export PATH AL_INSTALLED_EXECUTABLE; exec \"$3\" dispatch mcp-server; fi; exec al dispatch mcp-server", "agent-layer-mcp", "__REPO_ROOT__", "", "__INSTALLED_AL_DIR__/al", "__INSTALLED_AL_DIR__"]
 tool_timeout_sec = 2400
 
 [mcp_servers."example"]

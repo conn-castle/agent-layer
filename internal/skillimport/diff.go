@@ -33,7 +33,7 @@ func (s *Service) Diff(ctx context.Context, name string, from string, to string)
 	}
 
 	var output []byte
-	err := s.withLockedState(func(st *state) error {
+	err := s.withLockedState(ctx, func(st *state) error {
 		entry, ok := st.lock.Entry(name)
 		if !ok {
 			return fmt.Errorf("imported skill %q has no lock entry", name)

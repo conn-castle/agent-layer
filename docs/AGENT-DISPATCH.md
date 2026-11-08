@@ -571,6 +571,25 @@ Source Make workflows embed the stable development executable in launcher argv,
 scoped to the configuration root by `AL_DEV_SOURCE_ROOT`. The client parent
 needs no development environment. Ordinary release sync restores release selection.
 
+GUI and background MCP clients, such as a Codex app daemon, often start servers
+with a shorter `PATH` than a terminal. The release launcher therefore records
+the `al` entry that `al sync` resolved (the first `al` on its `PATH`, else the
+absolute path it was invoked by), executes it directly, exports it so
+in-server regeneration records the same entry, and appends its directory to the
+server `PATH`. Nested `al` calls from providers reach that entry only when
+no other `al` precedes it on the client `PATH`. If that entry is moved or removed, the launcher falls
+back to `al` on the client `PATH`; after reinstalling `al` elsewhere, re-run
+`al sync` and reconnect the server, because a running server keeps recording
+its own entry while that file exists. Provider CLIs (`codex`, `claude`, `agy`, `grok`, `muse`) must be on
+the client's `PATH` or in that `al` directory. Otherwise `dispatch_options`
+names the missing binary, and start and continue also report the `PATH` the
+server searched. Provider lookup stops at the first match on `PATH`; when that
+match is under a relative or empty entry, which is refused, options, start and
+continue report it instead of a missing binary. Remove that entry or put the
+directory of the intended provider CLI before it. A project
+pinned to a release older than this launcher (#513) still generates the older
+launcher; run `al update`, then `al upgrade` in the project.
+
 Running MCP servers keep their code until reconnected. After a pin change,
 executable replacement or source rebuild, `dispatch_options`, `dispatch_start`
 and `dispatch_continue` refuse new provider work if the selected code differs
@@ -579,14 +598,16 @@ launch environment also requires reconnecting; the running server cannot detect
 those projection changes. Wait, inspect, output and cancel remain available for existing runs. Already admitted work finishes on its original
 image; a rebuild does not cancel or replay it. On Linux detached workers use
 that same image; on macOS replacement before worker publication fails cleanly.
-Even a same-byte atomic rebuild requires reconnecting.
+Even a same-byte atomic replacement requires reconnecting; source wrappers
+keep the existing development executable when rebuilt output is unchanged, so
+no reconnect is needed then.
 
 For release updates, run `al update`, then `al upgrade` in each repository and
 reconnect the `agent-layer` MCP server once. In Claude Code use `/mcp` to
 reconnect; for a persistent Codex app restart the app or reload MCP configuration.
 A new chat can reuse an existing server. Source workflows use `make al-sync` or
 `make al-upgrade` to build and project source despite an older repository pin;
-reconnect after rebuilding. Do not edit the pin manually to select source.
+reconnect when a rebuild replaces the executable. Do not edit the pin manually to select source.
 Servers from before the freshness guard need this reconnect once to acquire it.
 `al sync` updates launch configuration without replacing a running server.
 Timeout configuration changes also require reconnecting and reloading projected

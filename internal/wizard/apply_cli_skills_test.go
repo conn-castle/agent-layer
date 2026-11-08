@@ -26,45 +26,12 @@ func TestComputeSkillsChangeSet_CatalogAddAndRemove(t *testing.T) {
 	choices.EnabledCLISkills["dispatch-agent"] = false // existing → remove
 	choices.EnabledCLISkills["skill-sync"] = true      // missing → add
 
-	cs, err := computeSkillsChangeSet(root, choices)
+	cs, err := computeSkillsChangeSet(context.Background(), root, choices)
 	require.NoError(t, err)
 	assert.Equal(t, []string{"skill-sync"}, cs.catalogSkillsToAdd)
 	assert.Equal(t, []string{"dispatch-agent"}, cs.catalogSkillsToRemove)
 	assert.Empty(t, cs.memoryFilesToCreate)
 	assert.NotEmpty(t, buildSkillsPreview(cs))
-}
-
-func TestComputeSkillsChangeSet_LegacyDispatchAgentState(t *testing.T) {
-	entry := templates.CLISkillCatalogEntry{ID: "dispatch-agent", Name: "Agent dispatch"}
-
-	t.Run("selected legacy installation is preserved for migration", func(t *testing.T) {
-		root := t.TempDir()
-		require.NoError(t, os.MkdirAll(filepath.Join(root, ".agent-layer", "skills", legacyDispatchAgentCatalogID), 0o750))
-		choices := NewChoices()
-		choices.CLISkillsCatalog = []templates.CLISkillCatalogEntry{entry}
-		choices.EnabledCLISkills[entry.ID] = true
-
-		changes, err := computeSkillsChangeSet(root, choices)
-		require.NoError(t, err)
-		assert.Empty(t, changes.catalogSkillsToAdd)
-		assert.Empty(t, changes.catalogSkillsToRepair)
-		assert.Empty(t, changes.catalogSkillsToRemove)
-		assert.NoDirExists(t, filepath.Join(root, ".agent-layer", "skills", entry.ID))
-	})
-
-	t.Run("deselected legacy installation is removable", func(t *testing.T) {
-		root := t.TempDir()
-		legacyDir := filepath.Join(root, ".agent-layer", "skills", legacyDispatchAgentCatalogID)
-		require.NoError(t, os.MkdirAll(legacyDir, 0o750))
-		choices := NewChoices()
-		choices.CLISkillsCatalog = []templates.CLISkillCatalogEntry{entry}
-
-		changes, err := computeSkillsChangeSet(root, choices)
-		require.NoError(t, err)
-		assert.Equal(t, []string{legacyDispatchAgentCatalogID}, changes.catalogSkillsToRemove)
-		require.NoError(t, applySkillsChanges(context.Background(), root, changes))
-		assert.NoDirExists(t, legacyDir)
-	})
 }
 
 func TestComputeSkillsChangeSet_CatalogRepairMissingFiles(t *testing.T) {
@@ -77,7 +44,7 @@ func TestComputeSkillsChangeSet_CatalogRepairMissingFiles(t *testing.T) {
 	choices.CLISkillsCatalog = []templates.CLISkillCatalogEntry{{ID: "benchmark", Name: "Playwright"}}
 	choices.EnabledCLISkills["benchmark"] = true
 
-	cs, err := computeSkillsChangeSet(root, choices)
+	cs, err := computeSkillsChangeSet(context.Background(), root, choices)
 	require.NoError(t, err)
 	assert.Empty(t, cs.catalogSkillsToAdd)
 	assert.Equal(t, []string{"benchmark"}, cs.catalogSkillsToRepair)
@@ -93,7 +60,7 @@ func TestComputeSkillsChangeSet_CatalogRemoveIgnoresMalformedMissingFiles(t *tes
 	choices := NewChoices()
 	choices.CLISkillsCatalog = []templates.CLISkillCatalogEntry{{ID: "benchmark", Name: "Playwright"}}
 
-	cs, err := computeSkillsChangeSet(root, choices)
+	cs, err := computeSkillsChangeSet(context.Background(), root, choices)
 	require.NoError(t, err)
 	assert.Empty(t, cs.catalogSkillsToAdd)
 	assert.Empty(t, cs.catalogSkillsToRepair)
@@ -113,12 +80,12 @@ func TestComputeSkillsChangeSet_PreservesUserOwnedCatalogPath(t *testing.T) {
 
 	choices := NewChoices()
 	choices.CLISkillsCatalog = []templates.CLISkillCatalogEntry{entry}
-	changes, err := computeSkillsChangeSet(root, choices)
+	changes, err := computeSkillsChangeSet(context.Background(), root, choices)
 	require.NoError(t, err)
 	assert.Empty(t, changes.catalogSkillsToRemove)
 
 	choices.EnabledCLISkills[entry.ID] = true
-	_, err = computeSkillsChangeSet(root, choices)
+	_, err = computeSkillsChangeSet(context.Background(), root, choices)
 	require.ErrorContains(t, err, "already exists and is not catalog-managed")
 	assert.FileExists(t, filepath.Join(skillDir, "SKILL.md"))
 
@@ -126,7 +93,7 @@ func TestComputeSkillsChangeSet_PreservesUserOwnedCatalogPath(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, os.WriteFile(filepath.Join(skillDir, "SKILL.md"), template, 0o600))
 	choices.EnabledCLISkills[entry.ID] = false
-	changes, err = computeSkillsChangeSet(root, choices)
+	changes, err = computeSkillsChangeSet(context.Background(), root, choices)
 	require.NoError(t, err)
 	assert.Equal(t, []string{"skill-sync"}, changes.catalogSkillsToRemove)
 }
@@ -154,7 +121,7 @@ func TestComputeSkillsChangeSet_InstructionNoneDoesNotPrune(t *testing.T) {
 	choices.InstructionSet = InstructionSetNone
 	choices.InstructionSetTouched = true
 
-	cs, err := computeSkillsChangeSet(root, choices)
+	cs, err := computeSkillsChangeSet(context.Background(), root, choices)
 	require.NoError(t, err)
 	assert.Empty(t, cs.memoryFilesToCreate)
 	assert.Empty(t, cs.templateMemoryFilesToCreate)
@@ -171,7 +138,7 @@ func TestComputeSkillsChangeSet_NoChanges(t *testing.T) {
 	choices.CLISkillsCatalog = []templates.CLISkillCatalogEntry{{ID: "dispatch-agent", Name: "Tavily"}}
 	choices.EnabledCLISkills["dispatch-agent"] = false
 
-	cs, err := computeSkillsChangeSet(root, choices)
+	cs, err := computeSkillsChangeSet(context.Background(), root, choices)
 	require.NoError(t, err)
 	assert.Empty(t, buildSkillsPreview(cs))
 }
@@ -361,7 +328,7 @@ func TestComputeSkillsChangeSet_CreateReportsBlockedPaths(t *testing.T) {
 		choices.InstructionSetTouched = true
 		choices.InstructionSet = InstructionSetRulesAndMemory
 
-		_, err := computeSkillsChangeSet(root, choices)
+		_, err := computeSkillsChangeSet(context.Background(), root, choices)
 		require.Error(t, err)
 	})
 
@@ -374,7 +341,7 @@ func TestComputeSkillsChangeSet_CreateReportsBlockedPaths(t *testing.T) {
 		choices.InstructionSetTouched = true
 		choices.InstructionSet = InstructionSetRulesAndMemory
 
-		_, err := computeSkillsChangeSet(root, choices)
+		_, err := computeSkillsChangeSet(context.Background(), root, choices)
 		require.Error(t, err)
 	})
 }
@@ -399,7 +366,7 @@ func TestListMissingManagedFilesReportStatErrors(t *testing.T) {
 		choices.InstructionSetTouched = true
 		choices.InstructionSet = InstructionSetRulesAndMemory
 
-		_, err := computeSkillsChangeSet(root, choices)
+		_, err := computeSkillsChangeSet(context.Background(), root, choices)
 		require.Error(t, err)
 	})
 
@@ -419,8 +386,8 @@ func TestListMissingManagedFilesReportStatErrors(t *testing.T) {
 		choices.InstructionSetTouched = true
 		choices.InstructionSet = InstructionSetRulesAndMemory
 
-		_, err := computeSkillsChangeSet(root, choices)
-		require.ErrorContains(t, err, "exists but is not a regular file")
+		_, err := computeSkillsChangeSet(context.Background(), root, choices)
+		require.ErrorContains(t, err, "already exists")
 	})
 
 }
@@ -467,7 +434,7 @@ func TestWizardInstructionOptionsUseImportsAndPreserveLocalFiles(t *testing.T) {
 			choices := NewChoices()
 			choices.InstructionSetTouched = true
 			choices.InstructionSet = set
-			changes, err := computeSkillsChangeSet(root, choices)
+			changes, err := computeSkillsChangeSet(context.Background(), root, choices)
 			require.NoError(t, err)
 			require.NoError(t, applySkillsChanges(context.Background(), root, changes))
 			cfg, err := config.LoadConfigLenient(paths.ConfigPath)
@@ -495,30 +462,4 @@ func TestWizardInstructionOptionsUseImportsAndPreserveLocalFiles(t *testing.T) {
 			require.Equal(t, set == InstructionSetRulesAndMemory, err == nil)
 		})
 	}
-}
-
-func TestWizardInstructionPreviewValidatesCombinedAdoptionOrdersOffline(t *testing.T) {
-	root := t.TempDir()
-	paths := config.DefaultPaths(root)
-	require.NoError(t, os.MkdirAll(paths.InstructionsDir, 0o750))
-	raw := []byte("[[instructions.local]]\nselectors = [\"00_rules.md\"]\norder = 10\n")
-	require.NoError(t, os.WriteFile(paths.ConfigPath, raw, 0o600))
-	legacy := filepath.Join(paths.InstructionsDir, "00_rules.md")
-	body := []byte("customized legacy rules\n")
-	require.NoError(t, os.WriteFile(legacy, body, 0o600))
-	choices := NewChoices()
-	choices.InstructionSetTouched = true
-	choices.InstructionSet = InstructionSetRulesAndMemory
-
-	_, err := computeSkillsChangeSet(root, choices)
-	require.ErrorContains(t, err, "duplicate instruction order 10")
-	require.ErrorContains(t, err, "al instructions add --order N")
-	require.ErrorContains(t, err, ".agent-layer/config.toml")
-	actual, err := os.ReadFile(paths.ConfigPath)
-	require.NoError(t, err)
-	require.Equal(t, raw, actual)
-	actual, err = os.ReadFile(legacy)
-	require.NoError(t, err)
-	require.Equal(t, body, actual)
-	require.NoDirExists(t, paths.ImportedInstructionsDir)
 }

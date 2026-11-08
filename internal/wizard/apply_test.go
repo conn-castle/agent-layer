@@ -43,13 +43,16 @@ mode = "none"
 		tmpDir, configPath, envPath := setup(t)
 
 		syncCalled := false
-		mockSync := func(root string) (*alsync.Result, error) {
+		ctx, cancel := context.WithCancel(t.Context())
+		defer cancel()
+		mockSync := func(gotCtx context.Context, root string) (*alsync.Result, error) {
+			require.Same(t, ctx, gotCtx)
 			syncCalled = true
 			assert.Equal(t, tmpDir, root)
 			return &alsync.Result{}, nil
 		}
 
-		err := applyChanges(context.Background(), tmpDir, configPath, envPath, choices, mockSync, io.Discard)
+		err := applyChanges(ctx, tmpDir, configPath, envPath, choices, mockSync, io.Discard)
 		require.NoError(t, err)
 		assert.True(t, syncCalled)
 
@@ -72,7 +75,7 @@ mode = "none"
 		err := os.Mkdir(filepath.Join(filepath.Dir(configPath), ".agent-layer", "state", "wizard-backups", "config.toml.bak"), 0700)
 		require.NoError(t, err)
 
-		mockSync := func(root string) (*alsync.Result, error) { return &alsync.Result{}, nil }
+		mockSync := func(_ context.Context, root string) (*alsync.Result, error) { return &alsync.Result{}, nil }
 		err = applyChanges(context.Background(), tmpDir, configPath, envPath, choices, mockSync, io.Discard)
 
 		assert.Error(t, err)
@@ -86,7 +89,7 @@ mode = "none"
 		err := os.Mkdir(filepath.Join(filepath.Dir(envPath), ".agent-layer", "state", "wizard-backups", ".env.bak"), 0700)
 		require.NoError(t, err)
 
-		mockSync := func(root string) (*alsync.Result, error) { return &alsync.Result{}, nil }
+		mockSync := func(_ context.Context, root string) (*alsync.Result, error) { return &alsync.Result{}, nil }
 		err = applyChanges(context.Background(), tmpDir, configPath, envPath, choices, mockSync, io.Discard)
 
 		assert.Error(t, err)
@@ -99,7 +102,7 @@ mode = "none"
 	t.Run("sync failure", func(t *testing.T) {
 		tmpDir, configPath, envPath := setup(t)
 
-		mockSync := func(root string) (*alsync.Result, error) {
+		mockSync := func(_ context.Context, root string) (*alsync.Result, error) {
 			return nil, errors.New("sync exploded")
 		}
 
@@ -112,11 +115,23 @@ mode = "none"
 		assert.Contains(t, string(newConfig), `mode = "all"`)
 	})
 
+	t.Run("sync canceled", func(t *testing.T) {
+		tmpDir, configPath, envPath := setup(t)
+
+		mockSync := func(context.Context, string) (*alsync.Result, error) {
+			return nil, context.Canceled
+		}
+
+		err := applyChanges(context.Background(), tmpDir, configPath, envPath, choices, mockSync, io.Discard)
+		assert.ErrorIs(t, err, context.Canceled)
+		assert.ErrorContains(t, err, "run al sync to finish")
+	})
+
 	t.Run("env file missing", func(t *testing.T) {
 		tmpDir, configPath, envPath := setup(t)
 		require.NoError(t, os.Remove(envPath)) // Env file missing
 
-		mockSync := func(root string) (*alsync.Result, error) { return &alsync.Result{}, nil }
+		mockSync := func(_ context.Context, root string) (*alsync.Result, error) { return &alsync.Result{}, nil }
 		err := applyChanges(context.Background(), tmpDir, configPath, envPath, choices, mockSync, io.Discard)
 		require.NoError(t, err)
 
@@ -137,7 +152,7 @@ mode = "none"
 		require.NoError(t, os.WriteFile(filepath.Join(filepath.Dir(configPath), ".agent-layer", "state", "wizard-backups", "config.toml.bak"), []byte("old-backup"), 0600))
 		require.NoError(t, os.WriteFile(filepath.Join(filepath.Dir(envPath), ".agent-layer", "state", "wizard-backups", ".env.bak"), []byte("old-backup"), 0600))
 
-		mockSync := func(root string) (*alsync.Result, error) { return &alsync.Result{}, nil }
+		mockSync := func(_ context.Context, root string) (*alsync.Result, error) { return &alsync.Result{}, nil }
 		err := applyChanges(context.Background(), tmpDir, configPath, envPath, choices, mockSync, io.Discard)
 		require.NoError(t, err)
 
@@ -153,7 +168,7 @@ mode = "none"
 		// Config does not exist
 		require.NoError(t, os.WriteFile(envPath, []byte(initialEnv), 0600))
 
-		mockSync := func(root string) (*alsync.Result, error) { return &alsync.Result{}, nil }
+		mockSync := func(_ context.Context, root string) (*alsync.Result, error) { return &alsync.Result{}, nil }
 		err := applyChanges(context.Background(), tmpDir, configPath, envPath, choices, mockSync, io.Discard)
 		assert.Error(t, err)
 	})
@@ -171,7 +186,7 @@ mode = "none"
 		// Write a file inside so we can't read configPath as file
 		require.NoError(t, os.WriteFile(filepath.Join(configPath, "dummy"), []byte(""), 0600))
 
-		mockSync := func(root string) (*alsync.Result, error) { return &alsync.Result{}, nil }
+		mockSync := func(_ context.Context, root string) (*alsync.Result, error) { return &alsync.Result{}, nil }
 		err := applyChanges(context.Background(), tmpDir, configPath, envPath, choices, mockSync, io.Discard)
 		assert.Error(t, err)
 	})
@@ -183,7 +198,7 @@ mode = "none"
 		require.NoError(t, os.Mkdir(envPath, 0700))
 		require.NoError(t, os.WriteFile(filepath.Join(envPath, "dummy"), []byte(""), 0600))
 
-		mockSync := func(root string) (*alsync.Result, error) { return &alsync.Result{}, nil }
+		mockSync := func(_ context.Context, root string) (*alsync.Result, error) { return &alsync.Result{}, nil }
 		err := applyChanges(context.Background(), tmpDir, configPath, envPath, choices, mockSync, io.Discard)
 		assert.Error(t, err)
 		// No config backup is written before the env read fails
@@ -196,7 +211,7 @@ mode = "none"
 		require.NoError(t, os.Chmod(envPath, 0000))
 		t.Cleanup(func() { _ = os.Chmod(envPath, 0600) })
 
-		mockSync := func(root string) (*alsync.Result, error) { return &alsync.Result{}, nil }
+		mockSync := func(_ context.Context, root string) (*alsync.Result, error) { return &alsync.Result{}, nil }
 		err := applyChanges(context.Background(), tmpDir, configPath, envPath, choices, mockSync, io.Discard)
 		assert.Error(t, err)
 		// No config backup is written before the env read fails
@@ -215,7 +230,7 @@ mode = "none"
 			return origWrite(path, data, perm)
 		}
 
-		mockSync := func(root string) (*alsync.Result, error) { return &alsync.Result{}, nil }
+		mockSync := func(_ context.Context, root string) (*alsync.Result, error) { return &alsync.Result{}, nil }
 		err := applyChanges(context.Background(), tmpDir, configPath, envPath, choices, mockSync, io.Discard)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "failed to write config")
@@ -233,7 +248,7 @@ mode = "none"
 			return origWrite(path, data, perm)
 		}
 
-		mockSync := func(root string) (*alsync.Result, error) { return &alsync.Result{}, nil }
+		mockSync := func(_ context.Context, root string) (*alsync.Result, error) { return &alsync.Result{}, nil }
 		err := applyChanges(context.Background(), tmpDir, configPath, envPath, choices, mockSync, io.Discard)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "failed to write .env")
@@ -258,7 +273,7 @@ mode = "none"
 			return origWrite(path, data, perm)
 		}
 
-		mockSync := func(root string) (*alsync.Result, error) { return &alsync.Result{}, nil }
+		mockSync := func(_ context.Context, root string) (*alsync.Result, error) { return &alsync.Result{}, nil }
 		err := applyChanges(context.Background(), tmpDir, configPath, envPath, choices, mockSync, io.Discard)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "also failed to rollback config")
@@ -273,7 +288,7 @@ mode = "none"
 		require.NoError(t, os.WriteFile(envRoot, []byte("not a dir"), 0600))
 		envPath := filepath.Join(envRoot, ".env")
 
-		mockSync := func(root string) (*alsync.Result, error) { return &alsync.Result{}, nil }
+		mockSync := func(_ context.Context, root string) (*alsync.Result, error) { return &alsync.Result{}, nil }
 		err := applyChanges(context.Background(), tmpDir, configPath, envPath, choices, mockSync, io.Discard)
 		assert.Error(t, err)
 		assert.NoFileExists(t, filepath.Join(filepath.Dir(configPath), ".agent-layer", "state", "wizard-backups", "config.toml.bak"))
@@ -432,7 +447,7 @@ func TestApplyChanges_AbortRestoresPreviousBackups(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, want, string(data))
 	}
-	syncOK := func(string) (*alsync.Result, error) { return &alsync.Result{}, nil }
+	syncOK := func(context.Context, string) (*alsync.Result, error) { return &alsync.Result{}, nil }
 
 	t.Run("env backup failure", func(t *testing.T) {
 		root, configPath, envPath := setup(t)
@@ -556,7 +571,7 @@ func TestApplyChanges_WritesOnlyChangedDocuments(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, want, string(data))
 	}
-	syncOK := func(string) (*alsync.Result, error) { return &alsync.Result{}, nil }
+	syncOK := func(context.Context, string) (*alsync.Result, error) { return &alsync.Result{}, nil }
 
 	t.Run("unchanged documents keep files and backups", func(t *testing.T) {
 		root, configPath, envPath := setup(t)
@@ -649,7 +664,7 @@ broken toml`
 	require.NoError(t, os.WriteFile(configPath, []byte(invalidConfig), 0600))
 	require.NoError(t, os.WriteFile(envPath, []byte("KEY=val"), 0600))
 
-	mockSync := func(root string) (*alsync.Result, error) { return &alsync.Result{}, nil }
+	mockSync := func(_ context.Context, root string) (*alsync.Result, error) { return &alsync.Result{}, nil }
 	err := applyChanges(context.Background(), tmpDir, configPath, envPath, choices, mockSync, io.Discard)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to patch config")
@@ -667,7 +682,7 @@ func TestApplyChanges_WritesAntigravityModel(t *testing.T) {
 	choices := NewChoices()
 	choices.AgentModels[AgentAntigravity] = AgentModelChoice{ModelTouched: true, Model: "Gemini 3.5 Flash (High)"}
 
-	err := applyChanges(context.Background(), root, configPath, envPath, choices, func(string) (*alsync.Result, error) {
+	err := applyChanges(context.Background(), root, configPath, envPath, choices, func(context.Context, string) (*alsync.Result, error) {
 		return &alsync.Result{}, nil
 	}, io.Discard)
 	require.NoError(t, err)
@@ -693,7 +708,7 @@ mode = "none"
 	require.NoError(t, os.WriteFile(envPath, []byte(""), 0600))
 
 	// Return warnings from sync
-	mockSync := func(root string) (*alsync.Result, error) {
+	mockSync := func(_ context.Context, root string) (*alsync.Result, error) {
 		return &alsync.Result{Warnings: []warnings.Warning{
 			{Code: "TEST_WARNING", Subject: "test", Message: "Test warning message"},
 		}}, nil

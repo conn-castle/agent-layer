@@ -184,9 +184,14 @@ enabled = true
 		t.Fatalf("write profile: %v", err)
 	}
 
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
 	called := false
-	runWizardProfile = func(gotRoot string, _ string, gotPath string, apply bool, _ io.Writer) error {
+	runWizardProfile = func(gotCtx context.Context, gotRoot string, _ string, gotPath string, apply bool, _ io.Writer) error {
 		called = true
+		if gotCtx != ctx {
+			t.Fatal("profile did not receive the command context")
+		}
 		if gotRoot != canonicalPath(root) {
 			t.Fatalf("expected root %q, got %q", canonicalPath(root), gotRoot)
 		}
@@ -200,6 +205,7 @@ enabled = true
 	}
 
 	cmd := newWizardCmd()
+	cmd.SetContext(ctx)
 	cmd.SetArgs([]string{"--profile", profilePath, "--yes"})
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("wizard profile execute error: %v", err)

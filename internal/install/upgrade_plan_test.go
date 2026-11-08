@@ -43,6 +43,7 @@ func TestBuildUpgradePlan_ListsUserPathsAndPreviewsNonRegularRemovals(t *testing
 				require.NoError(t, os.Remove(filepath.Join(root, ".agent-layer", "commands.allow")))
 			}
 
+			configureLocalInstructions(t, root, "10_project.md")
 			plan, err := BuildUpgradePlan(root, UpgradePlanOptions{System: sys})
 			require.NoError(t, err)
 			for _, path := range []string{skill} {
@@ -93,6 +94,7 @@ func TestBuildUpgradePlan_UnknownDeletionsMatchApplyScan(t *testing.T) {
 	for _, path := range nonTmp {
 		expected = append(expected, filepath.ToSlash(inst.relativePath(path)))
 	}
+	configureLocalInstructions(t, root, "10_project.md")
 	plan, err := BuildUpgradePlan(root, UpgradePlanOptions{System: RealSystem{}})
 	require.NoError(t, err)
 	actual := make([]string, 0, len(plan.TemplateRemovalsOrOrphans))
@@ -164,9 +166,6 @@ func TestPlanUnknownDeletions_ReportsWhereMigrationsLeaveUnknownPaths(t *testing
 		{Kind: upgradeMigrationKindRenameFile, From: ".agent-layer/skills/playwright-cli", To: ".agent-layer/skills/playwright"},
 		// Keeping a path does not keep the destination a migration moves it to.
 		{Kind: upgradeMigrationKindRenameFile, From: ".agent-layer/skills/kept-old", To: ".agent-layer/skills/kept-new"},
-		{Kind: upgradeMigrationKindMigrateSkillsFormat, Path: ".agent-layer/skills"},
-		{Kind: upgradeMigrationKindAppendToFile, Path: ".agent-layer/instructions/appended.md"},
-		{Kind: upgradeMigrationKindAppendToFile, Path: ".agent-layer/instructions/04_conventions.md"},
 	})
 	require.NoError(t, err)
 	changes, err := inst.planUnknownDeletions(nil, nil, effects, upgradeKeepList{".agent-layer/skills/kept-old": {}})
@@ -176,7 +175,7 @@ func TestPlanUnknownDeletions_ReportsWhereMigrationsLeaveUnknownPaths(t *testing
 		paths = append(paths, change.path)
 	}
 	require.ElementsMatch(t, []string{
-		".agent-layer/skills/flat",
+		".agent-layer/skills/flat.md",
 		".agent-layer/skills/kept-new",
 		".agent-layer/skills/new-name",
 	}, paths)
@@ -184,11 +183,12 @@ func TestPlanUnknownDeletions_ReportsWhereMigrationsLeaveUnknownPaths(t *testing
 
 func TestBuildUpgradePlan_ListsRenamedSkillThatApplyWouldDelete(t *testing.T) {
 	root := t.TempDir()
-	require.NoError(t, Run(root, Options{System: RealSystem{}, PinVersion: "0.12.0"}))
+	require.NoError(t, Run(root, Options{System: RealSystem{}, PinVersion: "1.0.0"}))
 	skill := filepath.Join(root, ".agent-layer", "skills", "review-scope", "SKILL.md")
 	require.NoError(t, os.MkdirAll(filepath.Dir(skill), 0o700))
 	require.NoError(t, os.WriteFile(skill, []byte("legacy review skill\n"), 0o600))
 
+	withMigrationManifestOverride(t, "1.1.0", `{"schema_version":1,"target_version":"1.1.0","min_prior_version":"1.0.0","operations":[{"id":"rename-user","kind":"rename_file","rationale":"test","from":".agent-layer/skills/review-scope","to":".agent-layer/skills/review-uncommitted-code"}]}`)
 	plan, err := BuildUpgradePlan(root, UpgradePlanOptions{System: RealSystem{}})
 	require.NoError(t, err)
 	require.NotNil(t, findUpgradeChange(plan.TemplateRemovalsOrOrphans, ".agent-layer/skills/review-uncommitted-code"))
@@ -199,8 +199,8 @@ func TestBuildUpgradePlan_ListsRenamedSkillThatApplyWouldDelete(t *testing.T) {
 
 func TestBuildUpgradePlan_ListsDanglingRenameSourceThatApplyWouldDelete(t *testing.T) {
 	root := t.TempDir()
-	require.NoError(t, Run(root, Options{System: RealSystem{}, PinVersion: "0.12.0"}))
-	require.NoError(t, os.Remove(filepath.Join(root, ".agent-layer", "config.toml")))
+	require.NoError(t, Run(root, Options{System: RealSystem{}, PinVersion: "1.0.0"}))
+	require.NoError(t, os.WriteFile(filepath.Join(root, ".agent-layer", "config.toml"), []byte("[[instructions.local]]\nselectors = [\"10_project.md\"]\norder = 0\n"), 0o600))
 	source := ".agent-layer/skills/review-scope"
 	sourcePath := filepath.Join(root, filepath.FromSlash(source))
 	require.NoError(t, os.Symlink("missing-target", sourcePath))
@@ -227,7 +227,7 @@ func TestBuildUpgradePlan_ListsDanglingRenameSourceThatApplyWouldDelete(t *testi
 }
 
 func TestPlanMigrationPathEffects_RenameSourceStatSemantics(t *testing.T) {
-	for _, kind := range []upgradeMigrationOperationKind{upgradeMigrationKindRenameFile, upgradeMigrationKindRenameGeneratedArtifact} {
+	for _, kind := range []upgradeMigrationOperationKind{upgradeMigrationKindRenameFile} {
 		t.Run(string(kind), func(t *testing.T) {
 			root := t.TempDir()
 			dir := filepath.Join(root, ".agent-layer", "skills", "old")
@@ -324,7 +324,7 @@ func TestBuildUpgradePlan_DetectsCategoriesAndRename(t *testing.T) {
 	}
 
 	plan, err := BuildUpgradePlan(root, UpgradePlanOptions{
-		TargetPinVersion: "0.7.0",
+		TargetPinVersion: "1.1.0",
 		System:           RealSystem{},
 	})
 	if err != nil {
@@ -337,7 +337,7 @@ func TestBuildUpgradePlan_DetectsCategoriesAndRename(t *testing.T) {
 	if plan.PinVersionChange.Action != UpgradePinActionUpdate {
 		t.Fatalf("expected pin update action, got %s", plan.PinVersionChange.Action)
 	}
-	if plan.PinVersionChange.Current != "1.2.3" || plan.PinVersionChange.Target != "0.7.0" {
+	if plan.PinVersionChange.Current != "1.2.3" || plan.PinVersionChange.Target != "1.1.0" {
 		t.Fatalf("unexpected pin transition: %#v", plan.PinVersionChange)
 	}
 
@@ -515,7 +515,7 @@ func TestBuildUpgradePlan_InvalidPinWithoutBaselinePreviewsRepair(t *testing.T) 
 				t.Fatalf("write custom allowlist: %v", err)
 			}
 
-			plan, err := BuildUpgradePlan(root, UpgradePlanOptions{System: RealSystem{}, TargetPinVersion: "0.7.0"})
+			plan, err := BuildUpgradePlan(root, UpgradePlanOptions{System: RealSystem{}, TargetPinVersion: "1.1.0"})
 			if err != nil {
 				t.Fatalf("build upgrade plan: %v", err)
 			}
@@ -523,7 +523,7 @@ func TestBuildUpgradePlan_InvalidPinWithoutBaselinePreviewsRepair(t *testing.T) 
 			if allowUpdate == nil {
 				t.Fatal("expected commands.allow update in plan")
 			}
-			want := UpgradePinVersionDiff{Current: strings.TrimSpace(pin), Target: "0.7.0", Action: UpgradePinActionUpdate}
+			want := UpgradePinVersionDiff{Current: strings.TrimSpace(pin), Target: "1.1.0", Action: UpgradePinActionUpdate}
 			if plan.PinVersionChange != want {
 				t.Fatalf("pin change = %#v, want %#v", plan.PinVersionChange, want)
 			}
@@ -538,7 +538,7 @@ func TestBuildUpgradePlan_StatErrorOnTemplateEntry(t *testing.T) {
 	sys.statErrs[normalizePath(allowPath)] = errors.New("stat boom")
 
 	_, err := BuildUpgradePlan(root, UpgradePlanOptions{
-		TargetPinVersion: "0.7.0",
+		TargetPinVersion: "1.1.0",
 		System:           sys,
 	})
 	if err == nil || !strings.Contains(err.Error(), "failed to stat") {
@@ -570,14 +570,14 @@ func TestBuildUpgradePlan_WalkTemplateOrphansErrors(t *testing.T) {
 		t.Fatalf("write instruction evidence: %v", err)
 	}
 	sys.statErrs[normalizePath(rulesPath)] = errors.New("permission denied")
-	_, err = BuildUpgradePlan(root, UpgradePlanOptions{System: sys, TargetPinVersion: "0.7.0"})
+	_, err = BuildUpgradePlan(root, UpgradePlanOptions{System: sys, TargetPinVersion: "1.1.0"})
 	if err == nil || !strings.Contains(err.Error(), "failed to stat") {
 		t.Fatalf("expected stat error from orphan root, got %v", err)
 	}
 
 	delete(sys.statErrs, normalizePath(rulesPath))
 	sys.walkErrs[normalizePath(instructionsRoot)] = errors.New("walk failed")
-	_, err = BuildUpgradePlan(root, UpgradePlanOptions{System: sys, TargetPinVersion: "0.7.0"})
+	_, err = BuildUpgradePlan(root, UpgradePlanOptions{System: sys, TargetPinVersion: "1.1.0"})
 	if err == nil || !strings.Contains(err.Error(), "walk failed") {
 		t.Fatalf("expected walk error, got %v", err)
 	}
@@ -756,12 +756,12 @@ func TestPinVersionDiff_RemoveNoneAndReadError(t *testing.T) {
 }
 
 func TestBuildUpgradePlan_RemovalsMatchApplyDeletionsAcrossMigrations(t *testing.T) {
-	for _, source := range []string{"0.8.0", "0.12.0", "0.14.0"} {
+	for _, source := range []string{"1.0.0", "1.1.0"} {
 		t.Run(source, func(t *testing.T) {
 			root := t.TempDir()
 			require.NoError(t, Run(root, Options{System: RealSystem{}, PinVersion: source}))
 			// Current config keys conflict with old config migrations; file parity does not need config.
-			require.NoError(t, os.Remove(filepath.Join(root, ".agent-layer", "config.toml")))
+			require.NoError(t, os.WriteFile(filepath.Join(root, ".agent-layer", "config.toml"), []byte("[[instructions.local]]\nselectors = [\"10_project.md\"]\norder = 0\n"), 0o600))
 			for _, path := range []string{
 				".agent-layer/skills/my-workflow/SKILL.md",
 				".agent-layer/skills/flat-user.md",
@@ -794,7 +794,6 @@ func TestBuildUpgradePlan_RemovalsMatchApplyDeletionsAcrossMigrations(t *testing
 				}
 				return true, nil
 			}
-			prompter.ConfirmSkillsMigrationFunc = func([]string, []SkillsMigrationConflict) (bool, error) { return true, nil }
 			require.NoError(t, Run(root, Options{System: RealSystem{}, Overwrite: true, Prompter: prompter}))
 			require.ElementsMatch(t, deleted, planned)
 			require.NotEmpty(t, planned)
@@ -814,20 +813,20 @@ func TestUpgradeChangeAt_OutOfRange(t *testing.T) {
 
 func TestBuildUpgradePlan_ManagedDiffWithPinnedManifestEvidence(t *testing.T) {
 	root := t.TempDir()
-	if err := Run(root, Options{System: RealSystem{}, PinVersion: "0.7.0"}); err != nil {
+	if err := Run(root, Options{System: RealSystem{}, PinVersion: "1.1.0"}); err != nil {
 		t.Fatalf("seed repo: %v", err)
 	}
 	if err := os.Remove(filepath.Join(root, ".agent-layer", "state", "managed-baseline.json")); err != nil {
 		t.Fatalf("remove canonical baseline: %v", err)
 	}
 
-	manifest, err := loadTemplateManifestByVersion("0.7.0")
+	manifest, err := loadTemplateManifestByVersion("1.1.0")
 	if err != nil {
-		t.Fatalf("load 0.7.0 manifest: %v", err)
+		t.Fatalf("load 1.1.0 manifest: %v", err)
 	}
 	allowEntry, ok := manifestFileMap(manifest.Files)[commandsAllowRelPath]
 	if !ok {
-		t.Fatal("0.7.0 manifest missing commands.allow")
+		t.Fatal("1.1.0 manifest missing commands.allow")
 	}
 	payload, err := parseAllowlistPolicyPayload(allowEntry.PolicyPayload)
 	if err != nil {
@@ -843,7 +842,7 @@ func TestBuildUpgradePlan_ManagedDiffWithPinnedManifestEvidence(t *testing.T) {
 		t.Fatalf("build current allowlist comparable: %v", err)
 	}
 	if currentComp.AllowHash == payload.UpstreamSetHash {
-		t.Skip("current commands.allow matches 0.7.0 manifest allowlist; cannot exercise upstream delta inference")
+		t.Skip("current commands.allow matches 1.1.0 manifest allowlist; cannot exercise upstream delta inference")
 	}
 
 	localContent := strings.Join(payload.UpstreamSet, "\n") + "\n"
@@ -851,7 +850,7 @@ func TestBuildUpgradePlan_ManagedDiffWithPinnedManifestEvidence(t *testing.T) {
 		t.Fatalf("write local commands.allow from manifest set: %v", err)
 	}
 
-	plan, err := BuildUpgradePlan(root, UpgradePlanOptions{System: RealSystem{}, TargetPinVersion: "0.7.0"})
+	plan, err := BuildUpgradePlan(root, UpgradePlanOptions{System: RealSystem{}, TargetPinVersion: "1.1.0"})
 	if err != nil {
 		t.Fatalf("build upgrade plan: %v", err)
 	}

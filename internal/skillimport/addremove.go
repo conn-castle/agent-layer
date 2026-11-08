@@ -6,7 +6,6 @@ import (
 
 	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/skilllock"
-	"github.com/conn-castle/agent-layer/internal/skilltree"
 	"github.com/conn-castle/agent-layer/internal/templates"
 )
 
@@ -25,7 +24,6 @@ type AddOptions struct {
 	PushRepository string
 	PushBranch     string
 	Order          *int
-	AdoptLegacy    bool
 }
 
 // importBlock carries the shared policy for either source kind.
@@ -50,12 +48,12 @@ func (o AddOptions) importBlock(exactFile bool) config.SkillImport {
 // together. A projection failure afterwards is reported without discarding that
 // valid source state.
 func (s *Service) Add(ctx context.Context, opts AddOptions) (*Report, error) {
-	return s.withLockedReport(func(st *state, report *Report) error {
-		return s.addLocked(ctx, st, opts, report, nil)
+	return s.withLockedReport(ctx, func(st *state, report *Report) error {
+		return s.addLocked(ctx, st, opts, report)
 	})
 }
 
-func (s *Service) addLocked(ctx context.Context, st *state, opts AddOptions, report *Report, legacy map[string]skilltree.Tree) error {
+func (s *Service) addLocked(ctx context.Context, st *state, opts AddOptions, report *Report) error {
 	if len(opts.Selectors) == 0 {
 		return fmt.Errorf("at least one selector is required")
 	}
@@ -80,8 +78,7 @@ func (s *Service) addLocked(ctx context.Context, st *state, opts AddOptions, rep
 	var nextConfig string
 	var err error
 	if st.instructions {
-		legacy = map[string]skilltree.Tree{}
-		nextConfig, err = instructionAddConfig(st, opts, requested, legacy)
+		nextConfig, err = instructionAddConfig(st, opts, requested)
 	} else {
 		if !hasExisting && !hasPositiveSelector(opts.Selectors) {
 			return fmt.Errorf("an exclusion-only addition must extend an existing block that already has a positive selector; no block matches this repository and policy")
@@ -121,9 +118,6 @@ func (s *Service) addLocked(ctx context.Context, st *state, opts AddOptions, rep
 
 	txn := s.newTransaction(pathSetFor(st), st.lock)
 	txn.SetConfig(nextConfig)
-	for name, tree := range legacy {
-		txn.RetireLocal(name, tree)
-	}
 	return s.applySelectorEdit(ctx, st, txn, selectorEdit{
 		op:            selectorEditAdd,
 		blockIndex:    blockIndex,
@@ -137,7 +131,7 @@ func (s *Service) addLocked(ctx context.Context, st *state, opts AddOptions, rep
 // existing entry on its own lock evidence, imports newly revealed membership
 // at the current resolved target, and projects the result.
 func (s *Service) Remove(ctx context.Context, repository string, selector string) (*Report, error) {
-	return s.withLockedReport(func(st *state, report *Report) error {
+	return s.withLockedReport(ctx, func(st *state, report *Report) error {
 		return s.removeLocked(ctx, st, repository, selector, report)
 	})
 }
@@ -158,7 +152,7 @@ func (s *Service) removeLocked(ctx context.Context, st *state, repository string
 // The complete retirement set commits together; absent targets are no-ops.
 func (s *Service) RemoveCatalogSelectors(ctx context.Context, selectors []string) (*Report, error) {
 	identity := (config.SkillImport{Repository: templates.GeneralSkillsRepository}).Identity()
-	return s.withLockedReport(func(st *state, report *Report) error {
+	return s.withLockedReport(ctx, func(st *state, report *Report) error {
 		if err := requireCatalogPolicy(st); err != nil {
 			return err
 		}

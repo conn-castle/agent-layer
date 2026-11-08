@@ -218,3 +218,18 @@ func withMigrationManifestChainOverride(t *testing.T, manifests map[string]strin
 		templates.WalkFunc = origWalk
 	})
 }
+
+func configureLocalInstructions(t *testing.T, root string, names ...string) {
+	t.Helper()
+	path := filepath.Join(root, ".agent-layer", "config.toml")
+	raw, err := os.ReadFile(path) // #nosec G304 -- test-owned project configuration.
+	if err != nil && !os.IsNotExist(err) {
+		t.Fatal(err)
+	}
+	for i, name := range names {
+		raw = append(raw, []byte(fmt.Sprintf("\n[[instructions.local]]\nselectors = [%q]\norder = %d\n", name, i*10))...)
+	}
+	if err := os.WriteFile(path, raw, 0o600); err != nil { // #nosec G703 -- fixture path is rooted in t.TempDir.
+		t.Fatal(err)
+	}
+}

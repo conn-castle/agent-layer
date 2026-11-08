@@ -101,6 +101,10 @@ func BuildUpgradePlan(root string, opts UpgradePlanOptions) (UpgradePlan, error)
 		return UpgradePlan{}, err
 	}
 
+	if err := CheckUpgradeSource(root, opts.System); err != nil {
+		return UpgradePlan{}, err
+	}
+
 	targetPinVersion := strings.TrimSpace(opts.TargetPinVersion)
 	if targetPinVersion != "" {
 		normalized, err := version.Normalize(targetPinVersion)
@@ -160,11 +164,7 @@ func BuildUpgradePlan(root string, opts UpgradePlanOptions) (UpgradePlan, error)
 	if err != nil {
 		return UpgradePlan{}, err
 	}
-	instructionMigrations, err := inst.planInstructionOrder(effects)
-	if err != nil {
-		return UpgradePlan{}, err
-	}
-	migrationPlan.configMigrations = append(migrationPlan.configMigrations, instructionMigrations...)
+
 	additions, updates, err = inst.movedFileUpdates(migrationPlan, effects, additions, updates)
 	if err != nil {
 		return UpgradePlan{}, err
@@ -494,7 +494,7 @@ func (inst *installer) planMigrationPathEffects(ops []upgradeMigrationOperation)
 					delete(origins, path)
 				}
 			}
-		case upgradeMigrationKindRenameFile, upgradeMigrationKindRenameGeneratedArtifact:
+		case upgradeMigrationKindRenameFile:
 			from, to := migrationRelPath(op.From), migrationRelPath(op.To)
 			if _, ok := paths[from]; !ok || from == to {
 				continue
@@ -520,26 +520,6 @@ func (inst *installer) planMigrationPathEffects(ops []upgradeMigrationOperation)
 			for path, isDir := range moved {
 				paths[path] = isDir
 				origins[path] = movedOrigins[path]
-			}
-		case upgradeMigrationKindMigrateSkillsFormat:
-			dir := migrationRelPath(op.Path)
-			for path, isDir := range paths {
-				name, ok := strings.CutPrefix(path, dir+"/")
-				if !ok || isDir || strings.Contains(name, "/") || strings.HasPrefix(name, ".") || !strings.HasSuffix(name, ".md") {
-					continue
-				}
-				delete(paths, path)
-				delete(origins, path)
-				skillDir := dir + "/" + strings.TrimSuffix(name, ".md")
-				paths[skillDir] = true
-				paths[skillDir+"/"+skillManifestFileName] = false
-				delete(origins, skillDir)
-				delete(origins, skillDir+"/"+skillManifestFileName)
-			}
-		case upgradeMigrationKindAppendToFile:
-			target := migrationRelPath(op.Path)
-			if _, ok := paths[target]; !ok {
-				paths[target] = false
 			}
 		}
 	}

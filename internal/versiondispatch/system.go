@@ -4,6 +4,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"os/exec"
 	"runtime"
 	"syscall"
 	"time"
@@ -23,6 +24,7 @@ type System interface {
 	Getenv(key string) string
 	Environ() []string
 	ExecBinary(path string, args []string, env []string) error
+	LookPath(file string) (string, error)
 	FindAgentLayerRoot(start string) (string, bool, error)
 	Stderr() io.Writer
 	Stat(name string) (os.FileInfo, error)
@@ -68,6 +70,11 @@ func (RealSystem) Environ() []string {
 // ExecBinary replaces the current process with the provided binary.
 func (RealSystem) ExecBinary(path string, args []string, env []string) error {
 	return syscall.Exec(path, args, env) // #nosec G204 -- path is the checksum-verified cached release binary resolved by dispatch.
+}
+
+// LookPath searches PATH for an executable named file.
+func (RealSystem) LookPath(file string) (string, error) {
+	return exec.LookPath(file)
 }
 
 // FindAgentLayerRoot searches upwards from start for an .agent-layer directory.

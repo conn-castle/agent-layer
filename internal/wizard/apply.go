@@ -14,12 +14,13 @@ import (
 	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/envfile"
 	"github.com/conn-castle/agent-layer/internal/fsutil"
+	"github.com/conn-castle/agent-layer/internal/install"
 	"github.com/conn-castle/agent-layer/internal/messages"
 	"github.com/conn-castle/agent-layer/internal/skillmigration"
 	"github.com/conn-castle/agent-layer/internal/sync"
 )
 
-type syncer func(root string) (*sync.Result, error)
+type syncer func(ctx context.Context, root string) (*sync.Result, error)
 
 var writeFileAtomic = fsutil.WriteFileAtomic
 
@@ -36,7 +37,7 @@ func applyChanges(ctx context.Context, root, configPath, envPath string, c *Choi
 		out = os.Stdout
 	}
 
-	if err := skillmigration.WithRecovered(root, func() error {
+	if err := skillmigration.WithCheckedRecovery(ctx, root, func() error { return install.CheckWizardSource(root, install.RealSystem{}) }, func() error {
 		return writeConfigEnv(root, configPath, envPath, c)
 	}); err != nil {
 		return err
@@ -44,12 +45,9 @@ func applyChanges(ctx context.Context, root, configPath, envPath string, c *Choi
 
 	// Skills, instruction imports, and memory file seeds.
 	// Run before sync so sync sees the final on-disk layout.
-	skillsChangeSet, err := computeSkillsChangeSet(root, c)
+	skillsChangeSet, err := computeSkillsChangeSet(ctx, root, c)
 	if err != nil {
 		return fmt.Errorf(messages.WizardApplySkillsFailedFmt+"; config/env writes were applied; gitignore block updates, statusline source updates, and sync were not run", err)
-	}
-	if c.previewedSkills != nil {
-		skillsChangeSet.adoptLegacy = c.previewedSkills.adoptLegacy
 	}
 	if err := applySkillsChanges(ctx, root, skillsChangeSet); err != nil {
 		return fmt.Errorf(messages.WizardApplySkillsFailedFmt+"; config/env writes were applied; gitignore block updates, statusline source updates, and sync were not run", err)
@@ -74,7 +72,10 @@ func applyChanges(ctx context.Context, root, configPath, envPath string, c *Choi
 
 	// Sync
 	_, _ = fmt.Fprintln(out, messages.WizardRunningSync)
-	result, err := runSync(root)
+	result, err := runSync(ctx, root)
+	if errors.Is(err, context.Canceled) {
+		return fmt.Errorf(messages.WizardSyncCanceledAfterWritesFmt, err)
+	}
 	if err != nil {
 		return err
 	}

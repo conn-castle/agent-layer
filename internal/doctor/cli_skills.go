@@ -61,7 +61,7 @@ func CheckCLISkills(ctx context.Context, cfg *config.ProjectConfig) []Result {
 				if member.Problem != "" && !member.ForeignOwned {
 					results = append(results, Result{Status: StatusFail, CheckName: messages.DoctorCheckNameCLISkills, Message: member.Name + ": " + member.Problem, Recommendation: "Preserve both tiers and resolve ownership with al skills commands; doctor does not fetch."})
 				}
-				if member.Imported || member.Legacy || member.ForeignOwned {
+				if member.Imported || member.Local || member.ForeignOwned {
 					installed = true
 				}
 			}

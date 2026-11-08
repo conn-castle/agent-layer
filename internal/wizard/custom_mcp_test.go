@@ -1,6 +1,7 @@
 package wizard
 
 import (
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
@@ -381,7 +382,7 @@ args = ["--something"]
 		NoteFunc: func(title, body string) error { return nil },
 	}
 
-	mockSync := func(string) (*alsync.Result, error) { return &alsync.Result{}, nil }
+	mockSync := func(context.Context, string) (*alsync.Result, error) { return &alsync.Result{}, nil }
 
 	require.NoError(t, Run(root, ui, mockSync, ""))
 	assert.True(t, sawCustomStep, "wizard must present the custom MCP server step when a custom server exists")

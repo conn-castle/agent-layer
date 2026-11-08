@@ -157,7 +157,8 @@ func newUpgradeRollbackCmd() *cobra.Command {
 			}
 			snapshotID := strings.TrimSpace(args[0])
 			if err := installRollbackUpgradeSnapshot(root, snapshotID, install.RollbackUpgradeSnapshotOptions{
-				System: install.RealSystem{},
+				Context: commandContext(cmd),
+				System:  install.RealSystem{},
 			}); err != nil {
 				return err
 			}
@@ -436,17 +437,6 @@ func buildUpgradePrompter(cmd *cobra.Command, policy upgradeApplyPolicy) *instal
 				return false, nil
 			}
 			return promptYesNo(stdinReader, cmd.OutOrStdout(), messages.UpgradeDeleteUnknownTmpDestructiveConfirmPrompt, false)
-		},
-		ConfirmSkillsMigrationFunc: func(flatSkills []string, conflicts []install.SkillsMigrationConflict) (bool, error) {
-			// Conflicts always block, even in headless mode.
-			if len(conflicts) > 0 {
-				return false, nil
-			}
-			if policy.yes {
-				return true, nil
-			}
-			prompt := fmt.Sprintf(messages.UpgradeSkillsMigrationPromptFmt, len(flatSkills))
-			return promptYesNo(stdinReader, cmd.OutOrStdout(), prompt, true)
 		},
 	}
 }

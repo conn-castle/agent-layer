@@ -2,7 +2,6 @@ package skillimport
 
 import (
 	"context"
-	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -10,6 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/conn-castle/agent-layer/internal/gitrepo"
+	"github.com/conn-castle/agent-layer/internal/testutil"
 )
 
 func TestCatalogDiagnosticsAreScopedUntilTierRootIsUnsafe(t *testing.T) {
@@ -19,32 +19,31 @@ func TestCatalogDiagnosticsAreScopedUntilTierRootIsUnsafe(t *testing.T) {
 		require.NoError(t, os.MkdirAll(filepath.Join(proj.paths.ImportedSkillsDir, name), 0o750))
 	}
 	require.NoError(t, os.WriteFile(filepath.Join(proj.paths.ImportedSkillsDir, "Implement"), []byte("preserve"), 0o600))
-	members, err := CatalogState(proj.root, developmentEntry(t))
+	members, err := CatalogState(context.Background(), proj.root, developmentEntry(t))
 	require.NoError(t, err)
 	for _, member := range members {
 		require.Equal(t, member.Name == "implement", member.Problem != "")
 	}
 	require.NoError(t, os.Rename(proj.paths.SkillsDir, filepath.Join(t.TempDir(), "saved-tier")))
 	require.NoError(t, os.Symlink(t.TempDir(), proj.paths.SkillsDir))
-	members, err = CatalogState(proj.root, developmentEntry(t))
+	members, err = CatalogState(context.Background(), proj.root, developmentEntry(t))
 	require.NoError(t, err)
 	for _, member := range members {
 		require.Contains(t, member.Problem, "symbolic link")
 	}
 }
-func TestAdoptionRefusesIgnoredRawContentBeforeFetching(t *testing.T) {
+
+func TestInstallCatalogRefusesOrdinaryLocalNameBeforeFetching(t *testing.T) {
 	proj := newProject(t)
-	writeLegacy(t, proj, "ship-pr")
-	ignored := filepath.Join(proj.paths.SkillsDir, "ship-pr", "references", ".git")
-	require.NoError(t, os.Symlink(filepath.Join(t.TempDir(), "missing-history"), ignored))
+	proj.WriteUserSkill("ship-pr")
 	service := New(proj.root)
 	service.newRunner = func(map[string]string) (*gitrepo.Runner, error) {
-		t.Fatal("ignored history reached fetch")
-		return nil, errors.New("unexpected fetch")
+		t.Fatal("local conflict reached fetch")
+		return nil, nil
 	}
-	_, err := service.InstallCatalog(context.Background(), []string{"skills/development/ship-pr"}, []string{"skills/development/ship-pr"})
-	require.ErrorContains(t, err, "move and preserve")
-	_, err = os.Lstat(ignored)
-	require.NoError(t, err)
-	require.Nil(t, proj.Lock())
+	require.NoError(t, os.WriteFile(filepath.Join(proj.root, ".agent-layer/sync.lock"), nil, 0o600))
+	before := testutil.SnapshotEvidence(t, proj.root)
+	_, err := service.InstallCatalog(t.Context(), []string{"skills/development/ship-pr"})
+	require.Error(t, err)
+	require.Equal(t, before, testutil.SnapshotEvidence(t, proj.root))
 }

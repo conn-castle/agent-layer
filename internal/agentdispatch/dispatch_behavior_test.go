@@ -114,7 +114,8 @@ func TestOptionsReportUnavailableProviderReasons(t *testing.T) {
 		lookup   func(string, string) (string, error)
 		want     string
 	}{
-		{"missing binary", func(string) (string, error) { return "", exec.ErrNotFound }, unexpectedLookup, "provider binary not found"},
+		{"missing binary", func(string) (string, error) { return "", exec.ErrNotFound }, unexpectedLookup, "`codex` not found on PATH"},
+		{"relative PATH entry", func(string) (string, error) { return "bin/codex", &exec.Error{Name: "codex", Err: exec.ErrDot} }, unexpectedLookup, "the first `codex` found (\"bin/codex\") is relative to the current directory, which is refused; remove the relative or empty PATH entry that matched it, or put an absolute directory containing the intended `codex` earlier on the PATH of the process that starts Agent Layer"},
 		{"version error", found, func(string, string) (string, error) { return "1.0.0", errors.New("probe failed") }, unverified},
 		{"empty version", found, func(string, string) (string, error) { return "", nil }, unverified},
 	} {

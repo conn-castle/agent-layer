@@ -46,10 +46,6 @@ var preferredWizardSectionOrder = []string{
 	warningsSection,
 }
 
-var legacySectionAliases = map[string]string{
-	"agents.claude-vscode": claudeVSCodeSection,
-}
-
 // PatchConfig applies wizard choices to TOML config content.
 // content is the current config; choices holds selections; returns updated content or error.
 func PatchConfig(content string, choices *Choices) (string, error) {
@@ -71,7 +67,6 @@ func PatchConfig(content string, choices *Choices) (string, error) {
 
 	templateDoc := tomlpatch.ParseDocument(templateContent)
 	currentDoc := tomlpatch.ParseDocument(content)
-	normalizeLegacySectionAliases(&currentDoc)
 	if err := applyCodexAppsUpdate(&currentDoc, choices); err != nil {
 		return "", err
 	}
@@ -837,60 +832,6 @@ func hasUncommentedKeyLine(lines []string, key string) bool {
 		return tomlpatch.LineWalkResult{}
 	})
 	return found
-}
-
-func normalizeLegacySectionAliases(doc *tomlpatch.Document) {
-	for legacyName, canonicalName := range legacySectionAliases {
-		legacyBlock, hasLegacy := doc.Sections[legacyName]
-		if !hasLegacy {
-			continue
-		}
-
-		if _, hasCanonical := doc.Sections[canonicalName]; !hasCanonical {
-			migrated := cloneBlock(legacyBlock)
-			migrated.Name = canonicalName
-			if len(migrated.Lines) > 0 {
-				migrated.Lines[0] = rewriteSectionHeaderLine(migrated.Lines[0], canonicalName)
-			}
-			doc.Sections[canonicalName] = migrated
-		}
-
-		delete(doc.Sections, legacyName)
-		doc.Order = applyLegacyAliasToOrder(doc.Order, legacyName, canonicalName)
-	}
-}
-
-func rewriteSectionHeaderLine(line string, sectionName string) string {
-	leading := line[:len(line)-len(strings.TrimLeft(line, " \t"))]
-	trimmed := strings.TrimSpace(line)
-	commentPos, _ := tomlpatch.ScanLineForComment(trimmed, tomlpatch.StateNone)
-	comment := ""
-	if commentPos >= 0 {
-		comment = strings.TrimSpace(trimmed[commentPos:])
-	}
-	rewritten := "[" + sectionName + "]"
-	if comment != "" {
-		rewritten += " " + comment
-	}
-	return leading + rewritten
-}
-
-func applyLegacyAliasToOrder(order []string, legacyName string, canonicalName string) []string {
-	normalized := make([]string, 0, len(order))
-	canonicalSeen := false
-	for _, name := range order {
-		switch name {
-		case legacyName, canonicalName:
-			if canonicalSeen {
-				continue
-			}
-			normalized = append(normalized, canonicalName)
-			canonicalSeen = true
-		default:
-			normalized = append(normalized, name)
-		}
-	}
-	return normalized
 }
 
 // cloneBlock returns a deep copy of a block, including its lines and sub-tables.

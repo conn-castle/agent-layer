@@ -56,8 +56,8 @@ type blockContext struct {
 // state is always loaded from a coherent generation of configuration, imported
 // trees, and lock file. Orphaned imported directories fail every operation
 // before fn runs.
-func (s *Service) withLockedState(fn func(st *state) error) error {
-	return projectlock.With(s.sys, s.root, func() error {
+func (s *Service) withLockedState(ctx context.Context, fn func(st *state) error) error {
+	return projectlock.WithContext(ctx, s.sys, s.root, func() error {
 		if err := sync.RecoverInterruptedImport(s.root); err != nil {
 			return err
 		}
@@ -79,9 +79,9 @@ func (s *Service) withLockedState(fn func(st *state) error) error {
 
 // withLockedReport runs fn under withLockedState and returns the sorted report
 // it filled, alongside any error.
-func (s *Service) withLockedReport(fn func(st *state, report *Report) error) (*Report, error) {
+func (s *Service) withLockedReport(ctx context.Context, fn func(st *state, report *Report) error) (*Report, error) {
 	report := &Report{instructions: s.instructions}
-	err := s.withLockedState(func(st *state) error {
+	err := s.withLockedState(ctx, func(st *state) error {
 		return fn(st, report)
 	})
 	report.Sort()

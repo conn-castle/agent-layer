@@ -36,10 +36,10 @@ func TestWizardInputReadersRefuseFIFO(t *testing.T) {
 				switch reader {
 				case "profile":
 					path = filepath.Join(root, "fifo-profile.toml")
-					read = func() error { return RunProfile(root, nil, "", path, false, nil) }
+					read = func() error { return RunProfile(context.Background(), root, nil, "", path, false, nil) }
 				case "profile-current-config":
 					path = configPath
-					read = func() error { return RunProfile(root, nil, "", profilePath, false, nil) }
+					read = func() error { return RunProfile(context.Background(), root, nil, "", profilePath, false, nil) }
 				case "answers":
 					path = filepath.Join(root, "answers.json")
 					read = func() error { _, err := NewScriptedUIFromFile(path); return err }

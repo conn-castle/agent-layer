@@ -10,7 +10,6 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/conn-castle/agent-layer/internal/skilljournal"
 	"github.com/conn-castle/agent-layer/internal/skilllock"
 	"github.com/conn-castle/agent-layer/internal/skillmigration"
 	"github.com/conn-castle/agent-layer/internal/templates"
@@ -90,38 +89,6 @@ func TestMigrationGuardsRefuseBeforeChangingInstalledState(t *testing.T) {
 			require.Error(t, RollbackUpgradeSnapshot(root, "migration-guard", RollbackUpgradeSnapshotOptions{System: RealSystem{}}))
 			require.Equal(t, before, testutil.SnapshotEvidence(t, root))
 		})
-	}
-}
-
-func TestInstallAndRollbackRecoverBeforeMutation(t *testing.T) {
-	for _, operation := range []string{"install", "rollback"} {
-		for _, future := range []bool{false, true} {
-			root := t.TempDir()
-			stage := skilljournal.StagingRoot(filepath.Join(root, ".agent-layer", "skills-imported"))
-			require.NoError(t, os.MkdirAll(stage, 0o750))
-			raw := "{\"version\":1,\"committed\":true}"
-			if future {
-				raw = "{\"version\":3}"
-			}
-			require.NoError(t, os.WriteFile(filepath.Join(stage, skilljournal.FileName), []byte(raw), 0o600))
-			require.NoError(t, os.WriteFile(filepath.Join(root, ".agent-layer", SyncLockFileName), nil, 0o600))
-			before := testutil.SnapshotEvidence(t, root)
-			var err error
-			if operation == "install" {
-				err = Run(root, Options{System: RealSystem{}, Overwrite: true, Prompter: autoApprovePrompter(), PinVersion: skillmigration.MinimumCLI})
-			} else {
-				err = RollbackUpgradeSnapshot(root, "absent", RollbackUpgradeSnapshotOptions{System: RealSystem{}})
-			}
-			if future {
-				require.ErrorContains(t, err, "unsupported schema version 3")
-				require.Equal(t, before, testutil.SnapshotEvidence(t, root))
-			} else {
-				require.NoDirExists(t, stage)
-				if operation == "install" {
-					require.NoError(t, err)
-				}
-			}
-		}
 	}
 }
 

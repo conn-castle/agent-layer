@@ -1,6 +1,7 @@
 package skillimport
 
 import (
+	"context"
 	"fmt"
 	"sort"
 	"strings"
@@ -47,7 +48,7 @@ type Status struct {
 // Status reports local skill import state without contacting any remote.
 func (s *Service) Status() (*Status, error) {
 	var status *Status
-	err := s.withLockedState(func(st *state) error {
+	err := s.withLockedState(context.Background(), func(st *state) error {
 		built, buildErr := buildStatus(st)
 		if buildErr != nil {
 			return buildErr

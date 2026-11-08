@@ -22,12 +22,7 @@ func TestWizardCatalogApplyRefusesUnpreviewedLegacyCopies(t *testing.T) {
 			root := t.TempDir()
 			setupRemoteRepo(t, root)
 			choices, _ := remoteChoices(t, "development-skills")
-			if alreadyApproved {
-				tree, err := skilltree.Read(skilltree.OSFS{}, filepath.Join(source, "skills/development/ship-pr"))
-				require.NoError(t, err)
-				require.NoError(t, skilltree.Materialize(tree, filepath.Join(root, ".agent-layer", "skills", "ship-pr")))
-			}
-			changes, err := computeSkillsChangeSet(root, choices)
+			changes, err := computeSkillsChangeSet(context.Background(), root, choices)
 			require.NoError(t, err)
 			require.NotEmpty(t, changes.importSelectors)
 			choices.previewedSkills = &changes
@@ -39,11 +34,11 @@ func TestWizardCatalogApplyRefusesUnpreviewedLegacyCopies(t *testing.T) {
 			require.NoError(t, os.MkdirAll(roots[1], 0o750))
 			before := testutil.SnapshotEvidence(t, roots...)
 			t.Setenv("GIT_CONFIG_KEY_0", "url."+filepath.Join(t.TempDir(), "unavailable")+".insteadOf")
-			err = applyChanges(context.Background(), root, filepath.Join(root, ".agent-layer", "config.toml"), filepath.Join(root, ".agent-layer", ".env"), choices, func(string) (*alsync.Result, error) {
+			err = applyChanges(context.Background(), root, filepath.Join(root, ".agent-layer", "config.toml"), filepath.Join(root, ".agent-layer", ".env"), choices, func(context.Context, string) (*alsync.Result, error) {
 				t.Fatal("unapproved adoption must fail before sync")
 				return nil, nil
 			}, io.Discard)
-			require.ErrorContains(t, err, "review adoption")
+			require.ErrorContains(t, err, "already owns")
 			require.NotContains(t, err.Error(), "succeeded: 0 skills")
 			require.Equal(t, before, testutil.SnapshotEvidence(t, roots...))
 			require.NoFileExists(t, filepath.Join(root, ".agent-layer", "skills.lock.json"))

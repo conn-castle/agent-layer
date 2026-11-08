@@ -28,7 +28,7 @@ const (
 	DoctorConfigLoadFailedFmt         = "Failed to load configuration: %v"
 	DoctorConfigLoadRecommend         = "Check .agent-layer/ for missing or malformed files (config.toml, .env, instructions/, skills/, commands.allow)."
 	DoctorConfigLoadLenientRecommend  = "Run 'al wizard' to fix or 'al upgrade' to apply missing fields."
-	DoctorConfigNeedsUpgradeRecommend = "Run `al upgrade` to migrate config.toml, then re-run `al doctor`."
+	DoctorConfigNeedsUpgradeRecommend = TransitionRecoveryGuidance
 	DoctorConfigLoaded                = "Configuration loaded successfully"
 
 	DoctorMissingSecretFmt           = "Missing secret: %s"
@@ -67,7 +67,7 @@ const (
 	DoctorCheckNameFlatSkills = "FlatSkills"
 
 	DoctorSkillFlatFormatDetectedFmt   = "Found flat-format skill file %q in .agent-layer/skills/; flat format is no longer supported."
-	DoctorSkillFlatFormatRecommend     = "Run 'al upgrade' to migrate flat-format skills to directory format (<name>/SKILL.md)."
+	DoctorSkillFlatFormatRecommend     = "Convert flat-format skills to directory format (<name>/SKILL.md). " + TransitionRecoveryGuidance
 	DoctorSkillFlatFormatScanFailedFmt = "Failed to scan %s for flat-format skills: %v"
 	DoctorSkillFlatFormatScanRecommend = "Ensure .agent-layer/skills/ exists and is readable, then run 'al doctor' again."
 

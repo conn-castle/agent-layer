@@ -30,7 +30,12 @@ func wantBuiltInDispatchInvocation(t *testing.T, command string, args []string, 
 	if command != "/bin/sh" {
 		t.Fatalf("built-in dispatch command = %q, want /bin/sh", command)
 	}
-	want := []string{"-c", `AL_MCP_WORKING_DIR=$PWD; export AL_MCP_WORKING_DIR; cd "$1" || exit; if [ -n "$2" ]; then AL_DEV_EXECUTABLE=$2; AL_DEV_BYPASS_VERSION_DISPATCH=1; AL_DEV_SOURCE_ROOT=$1; export AL_DEV_EXECUTABLE AL_DEV_BYPASS_VERSION_DISPATCH AL_DEV_SOURCE_ROOT; exec "$2" dispatch mcp-server; else unset AL_DEV_EXECUTABLE AL_DEV_BYPASS_VERSION_DISPATCH AL_DEV_SOURCE_ROOT; exec al dispatch mcp-server; fi`, "agent-layer-mcp", root, versiondispatch.DevelopmentExecutable(root)}
+	// Parallel tests cannot pin PATH; the process PATH is stable meanwhile.
+	installed, installedDir := projection.InstalledExecutable(), ""
+	if installed != "" {
+		installedDir = filepath.Dir(installed)
+	}
+	want := []string{"-c", `AL_MCP_WORKING_DIR=$PWD; export AL_MCP_WORKING_DIR; cd "$1" || exit; if [ -n "$2" ]; then AL_DEV_EXECUTABLE=$2; AL_DEV_BYPASS_VERSION_DISPATCH=1; AL_DEV_SOURCE_ROOT=$1; export AL_DEV_EXECUTABLE AL_DEV_BYPASS_VERSION_DISPATCH AL_DEV_SOURCE_ROOT; exec "$2" dispatch mcp-server; fi; unset AL_DEV_EXECUTABLE AL_DEV_BYPASS_VERSION_DISPATCH AL_DEV_SOURCE_ROOT; if [ -x "$3" ]; then case ":$PATH:" in *":$4:"*) ;; "::") PATH=$4 ;; *) PATH=$PATH:$4 ;; esac; AL_INSTALLED_EXECUTABLE=$3; export PATH AL_INSTALLED_EXECUTABLE; exec "$3" dispatch mcp-server; fi; exec al dispatch mcp-server`, "agent-layer-mcp", root, versiondispatch.DevelopmentExecutable(root), installed, installedDir}
 	if strings.Join(args, "\x00") != strings.Join(want, "\x00") {
 		t.Fatalf("built-in dispatch args = %q, want %q", args, want)
 	}

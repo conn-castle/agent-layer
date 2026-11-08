@@ -357,19 +357,27 @@ dev: ## Fast local formatting and lint loop
 # Source commands must bypass release pins even outside an agent dev session.
 # Shell words for explicit paths must also preserve literal $, backticks and quotes.
 al_shell_quote = '$(subst ','"'"',$(1))'
-AL_RUN = $(AL_DEV_LAUNCH_ENV) $(call al_shell_quote,$(AL_DEV_BIN))
+# Source sync, upgrade and wizard keep the caller's environment, including the
+# dispatch context sync reads, but never the installed al entry a parent release
+# MCP server exported: sync would record it. AL_RUN starts each recipe line.
+AL_RUN = unset AL_INSTALLED_EXECUTABLE; $(AL_DEV_LAUNCH_ENV) $(call al_shell_quote,$(AL_DEV_BIN))
 AL_DEV_BIN_DIR := $(ROOT_DIR)/.agent-layer/tmp/dev-bin
 AL_DEV_BIN := $(AL_DEV_BIN_DIR)/al
 AL_DEV_LAUNCH_ENV := PATH=$(call al_shell_quote,$(AL_DEV_BIN_DIR)):"$$PATH" AL_DEV_BYPASS_VERSION_DISPATCH=1 AL_DEV_EXECUTABLE=$(call al_shell_quote,$(AL_DEV_BIN)) AL_DEV_SOURCE_ROOT=$(call al_shell_quote,$(ROOT_DIR))
-AL_MANAGED_AGENT_ENV := AL_RUN_DIR AL_RUN_ID AL_DISPATCH_CALLER_AGENT AL_DISPATCH_ACTIVE AL_SHIM_ACTIVE AL_DEV_BYPASS_VERSION_DISPATCH AL_DEV_EXECUTABLE AL_DEV_SOURCE_ROOT CODEX_HOME CLAUDE_CONFIG_DIR AGY_CLI_DISABLE_AUTO_UPDATE GROK_HOME
+AL_MANAGED_AGENT_ENV := AL_RUN_DIR AL_RUN_ID AL_DISPATCH_CALLER_AGENT AL_DISPATCH_ACTIVE AL_SHIM_ACTIVE AL_DEV_BYPASS_VERSION_DISPATCH AL_DEV_EXECUTABLE AL_DEV_SOURCE_ROOT AL_INSTALLED_EXECUTABLE CODEX_HOME CLAUDE_CONFIG_DIR AGY_CLI_DISABLE_AUTO_UPDATE GROK_HOME
 
 .PHONY: al-dev-build
 al-dev-build: ## Build source al for development commands that launch child processes
 	@mkdir -p $(call al_shell_quote,$(AL_DEV_BIN_DIR))
 	@dev_tmp=$$(mktemp $(call al_shell_quote,$(AL_DEV_BIN).build-XXXXXX)) || exit $$?; \
 	trap 'rm -f "$$dev_tmp"' EXIT; \
-	GOCACHE=$(call al_shell_quote,$(GO_CACHE)) GOMODCACHE=$(call al_shell_quote,$(GO_MOD_CACHE)) go build -o "$$dev_tmp" ./cmd/al && mv -f "$$dev_tmp" $(call al_shell_quote,$(AL_DEV_BIN))
-	@echo "Running MCP servers keep their code until reconnected; stale servers refuse new dispatch work."
+	GOCACHE=$(call al_shell_quote,$(GO_CACHE)) GOMODCACHE=$(call al_shell_quote,$(GO_MOD_CACHE)) go build -o "$$dev_tmp" ./cmd/al || exit $$?; \
+	if [ -x $(call al_shell_quote,$(AL_DEV_BIN)) ] && cmp -s "$$dev_tmp" $(call al_shell_quote,$(AL_DEV_BIN)); then \
+	  echo "Development executable unchanged; MCP servers already running it need no reconnect."; \
+	else \
+	  mv -f "$$dev_tmp" $(call al_shell_quote,$(AL_DEV_BIN)) || exit $$?; \
+	  echo "Development executable replaced; running MCP servers keep their code until reconnected and refuse new dispatch work."; \
+	fi
 
 # Tracked repo sources that upgrade would otherwise offer to delete as unknown.
 # This repo tracks issues on GitHub, so al-upgrade drops the unmodified ledger

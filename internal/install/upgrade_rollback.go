@@ -1,6 +1,7 @@
 package install
 
 import (
+	"context"
 	"encoding/base64"
 	"errors"
 	"fmt"
@@ -18,7 +19,8 @@ const manualRollbackFailureStep = "manual_rollback"
 
 // RollbackUpgradeSnapshotOptions controls manual rollback behavior.
 type RollbackUpgradeSnapshotOptions struct {
-	System System
+	Context context.Context
+	System  System
 }
 
 // RollbackUpgradeSnapshot restores a previously captured managed-file snapshot by ID.
@@ -29,7 +31,26 @@ func RollbackUpgradeSnapshot(root string, snapshotID string, opts RollbackUpgrad
 	if err := validateUpgradeStateDirs(root, opts.System); err != nil {
 		return err
 	}
-	return skillmigration.WithRecovered(root, func() error { return rollbackUpgradeSnapshot(root, snapshotID, opts) })
+	ctx := opts.Context
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	check := func() error {
+		snapshotDir := filepath.Join(root, filepath.FromSlash(upgradeSnapshotDirRelPath))
+		snapshotPath := filepath.Join(snapshotDir, snapshotID+".json")
+		if _, err := opts.System.Stat(snapshotPath); err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				return fmt.Errorf(messages.InstallUpgradeRollbackSnapshotNotFoundFmt, snapshotID, snapshotDir)
+			}
+			return fmt.Errorf(messages.InstallFailedStatFmt, snapshotPath, err)
+		}
+		snapshot, err := readUpgradeSnapshot(snapshotPath, opts.System)
+		if err != nil {
+			return err
+		}
+		return checkRollbackSource(snapshot)
+	}
+	return skillmigration.WithCheckedRecovery(ctx, root, check, func() error { return rollbackUpgradeSnapshot(root, snapshotID, opts) })
 }
 
 func rollbackUpgradeSnapshot(root string, snapshotID string, opts RollbackUpgradeSnapshotOptions) error {
@@ -98,21 +119,6 @@ func rollbackUpgradeSnapshot(root string, snapshotID string, opts RollbackUpgrad
 				}
 				if err := skillmigration.CheckConfig(data, active); err != nil {
 					return err
-				}
-			}
-			if clean == pinVersionRelPath && entry.Kind == upgradeSnapshotEntryKindFile {
-				bytes, err := base64.StdEncoding.DecodeString(entry.ContentBase64)
-				if err != nil {
-					return err
-				}
-				pin, ok, err := version.ParsePin(bytes)
-				if err != nil {
-					return err
-				}
-				if ok {
-					if err := skillmigration.CheckVersionLocked(root, pin); err != nil {
-						return err
-					}
 				}
 			}
 		}
@@ -608,4 +614,32 @@ func rollbackTargetRelativeDepth(root string, target string) (string, int) {
 	}
 	rel = normalizeRelPath(filepath.Clean(rel))
 	return rel, strings.Count(rel, "/")
+}
+
+func checkRollbackSource(snapshot upgradeSnapshot) error {
+	for _, entry := range snapshot.Entries {
+		if normalizeRelPath(filepath.Clean(filepath.FromSlash(entry.Path))) != pinVersionRelPath || entry.Kind != upgradeSnapshotEntryKindFile {
+			continue
+		}
+		data, err := base64.StdEncoding.DecodeString(entry.ContentBase64)
+		if err != nil {
+			return err
+		}
+		pin, ok, err := version.ParsePin(data)
+		if err != nil {
+			// A malformed captured pin is not a known pre-floor version.
+			continue
+		}
+		if !ok {
+			continue
+		}
+		cmp, err := version.Compare(pin, skillmigration.MinimumCLI)
+		if err != nil {
+			return err
+		}
+		if cmp < 0 {
+			return fmt.Errorf("%w: "+messages.TransitionRollbackFmt, ErrUnsupportedSource, snapshot.SnapshotID, pin)
+		}
+	}
+	return nil
 }

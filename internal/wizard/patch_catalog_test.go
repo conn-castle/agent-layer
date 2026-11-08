@@ -1,6 +1,7 @@
 package wizard
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -343,7 +344,7 @@ env = { CONTEXT7_API_KEY = "${AL_CONTEXT7_API_KEY}" }
 		NoteFunc: func(title, body string) error { return nil },
 	}
 
-	mockSync := func(string) (*alsync.Result, error) { return &alsync.Result{}, nil }
+	mockSync := func(context.Context, string) (*alsync.Result, error) { return &alsync.Result{}, nil }
 
 	err := Run(root, ui, mockSync, "")
 	require.NoError(t, err)
