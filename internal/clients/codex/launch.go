@@ -19,6 +19,9 @@ import (
 // execFunc is overridable for tests; on success it never returns.
 var execFunc = clients.ExecHandoff
 
+// homeDirName is the repo-local CODEX_HOME directory under the project root.
+const homeDirName = ".codex"
+
 // Launch starts the Codex CLI with the configured options.
 func Launch(cfg *config.ProjectConfig, runInfo *run.Info, env []string, passArgs []string) error {
 	args := append([]string{}, passArgs...)
@@ -49,7 +52,7 @@ func ConfigureEnvironment(root string, env []string, cfg config.CodexConfig, war
 		return env
 	}
 
-	expected := filepath.Join(root, ".codex")
+	expected := filepath.Join(root, homeDirName)
 	current, ok := clients.GetEnv(env, "CODEX_HOME")
 	if !ok || current == "" {
 		return clients.SetEnv(env, "CODEX_HOME", expected)
@@ -72,11 +75,11 @@ func ConfigureEnvironment(root string, env []string, cfg config.CodexConfig, war
 // missing home. Existing homes, including symlinked directories, are left
 // unchanged; inherited homes elsewhere are never created.
 func EnsureSelectedHome(root string, env []string, cfg config.CodexConfig) error {
-	home := filepath.Join(root, ".codex")
+	home := filepath.Join(root, homeDirName)
 	// Compare parents: symlink resolution cannot match aliases of a missing leaf.
 	current, ok := clients.GetEnv(env, "CODEX_HOME")
 	current = filepath.Clean(current)
-	if !config.CodexLocalConfigDirEnabled(cfg) || !ok || filepath.Base(current) != ".codex" || !clients.SamePath(filepath.Dir(current), root) {
+	if !config.CodexLocalConfigDirEnabled(cfg) || !ok || filepath.Base(current) != homeDirName || !clients.SamePath(filepath.Dir(current), root) {
 		return nil
 	}
 	err := os.Mkdir(home, 0o700)
@@ -101,16 +104,16 @@ func EnsureSelectedHome(root string, env []string, cfg config.CodexConfig) error
 // Because al runs from any project subfolder, .codex also selects the project
 // home when nothing exists at the caller-relative path.
 func relativeHome(root, current string) string {
-	expected := filepath.Join(root, ".codex")
+	expected := filepath.Join(root, homeDirName)
 	home, err := filepath.Abs(current)
 	if err != nil {
 		return current
 	}
 	// Compare parents: symlink resolution cannot match aliases of a missing leaf.
-	if filepath.Base(home) == ".codex" && clients.SamePath(filepath.Dir(home), root) {
+	if filepath.Base(home) == homeDirName && clients.SamePath(filepath.Dir(home), root) {
 		return expected
 	}
-	if filepath.Clean(current) == ".codex" {
+	if filepath.Clean(current) == homeDirName {
 		if _, err := os.Lstat(home); errors.Is(err, fs.ErrNotExist) {
 			return expected
 		}
