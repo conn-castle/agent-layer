@@ -19,8 +19,9 @@ import (
 // installer holds the project lock, has recovered interrupted imports, and owns
 // the upgrade snapshot; implementations must not take the lock again.
 type PristineConverter interface {
-	// Prepare fetches and validates every import the items need without writing
-	// to the project.
+	// Prepare fetches and validates every import the non-DeleteOnly items need
+	// without writing to the project. It plans them as the commit will see the
+	// project: with the DeleteOnly items' local copies already removed.
 	Prepare(ctx context.Context, root string, items []PristineConversion) (PreparedConversion, error)
 }
 
@@ -62,7 +63,6 @@ func (inst *installer) preparePristineConversions() error {
 	var conversions []PristineConversion
 	for _, item := range items {
 		if item.DeleteOnly {
-			_, _ = fmt.Fprintf(inst.warnOutput(), messages.UpgradeConvertPristineLeftoverFmt, item.Path, item.Selector)
 			conversions = append(conversions, item)
 		}
 	}
@@ -71,11 +71,17 @@ func (inst *installer) preparePristineConversions() error {
 		if inst.converter == nil {
 			return errors.New("converting unmodified shipped copies requires an import converter")
 		}
-		prepared, err := inst.converter.Prepare(inst.ctx, inst.root, imports)
+		prepared, err := inst.converter.Prepare(inst.ctx, inst.root, conversions)
 		if err != nil {
 			return fmt.Errorf(messages.UpgradeConvertPristineFetchFmt, len(imports), err)
 		}
 		inst.preparedConversion = prepared
+	}
+	// Announce leftover removals only once the preflight can no longer fail.
+	for _, item := range conversions {
+		if item.DeleteOnly {
+			_, _ = fmt.Fprintf(inst.warnOutput(), messages.UpgradeConvertPristineLeftoverFmt, item.Path, item.Selector)
+		}
 	}
 	inst.conversions = conversions
 	return nil
@@ -117,7 +123,7 @@ func (inst *installer) convertPristineCopies() error {
 			return err
 		}
 		if err := intactImport(inst.root, cfg, item); err != nil {
-			return fmt.Errorf(messages.UpgradeConvertPristineNotActive, item.Path)
+			return fmt.Errorf(messages.UpgradeConvertPristineNotActiveFmt, item.Path, err)
 		}
 		return inst.removePristineCopy(item)
 	}
@@ -346,7 +352,8 @@ func (r conversionRestore) covers(name string) bool {
 }
 
 // conversionRestoredImports reports the imports a snapshot fully reverses: it
-// restores configuration and both lock files to their pre-conversion bytes and
+// restores configuration (or its absence, when the conversion seeded it) and
+// both lock files to their pre-conversion state and
 // captures the import's whole tier, so rollback removes every import committed
 // after it. Only these imports may have their local slots recreated by a
 // manual rollback.
@@ -358,7 +365,8 @@ func conversionRestoredImports(snapshot upgradeSnapshot) conversionRestore {
 		entries[normalizeRelPath(filepath.Clean(filepath.FromSlash(entry.Path)))] = entry
 	}
 	restore := conversionRestore{tiers: map[string]map[string]bool{}}
-	if entries[rel(paths.ConfigPath)].Kind != upgradeSnapshotEntryKindFile {
+	// An absent configuration was seeded by the conversion; rollback removes it.
+	if kind := entries[rel(paths.ConfigPath)].Kind; kind != upgradeSnapshotEntryKindFile && kind != upgradeSnapshotEntryKindAbsent {
 		return restore
 	}
 	for _, lock := range []string{paths.SkillsLockPath, paths.InstructionsLockPath} {

@@ -155,6 +155,43 @@ func TestUpgradeConversionPreflightChecksProjectStateWithoutWrites(t *testing.T)
 	require.Equal(t, before, testutil.SnapshotEvidence(t, root), "no snapshot or other write precedes the refusal")
 }
 
+// Without config.toml the preflight plans against the template configuration
+// the step seeds, so state refusals still precede every write and the
+// conversion itself succeeds.
+func TestUpgradeConversionPreflightPlansSeededConfigWhenMissing(t *testing.T) {
+	testutil.CatalogGitFixture(t)
+	missingConfig := func(t *testing.T) string {
+		t.Helper()
+		root := pristineConversionProject(t)
+		paths := config.DefaultPaths(root)
+		for _, path := range []string{paths.ConfigPath, filepath.Join(paths.InstructionsDir, "00_rules.md"), filepath.Join(paths.InstructionsDir, "01_memory.md")} {
+			require.NoError(t, os.Remove(path))
+		}
+		require.NoError(t, os.WriteFile(filepath.Join(root, ".agent-layer/sync.lock"), nil, 0o600))
+		return root
+	}
+	t.Run("orphan refused before writes", func(t *testing.T) {
+		root := missingConfig(t)
+		orphan := filepath.Join(config.DefaultPaths(root).ImportedSkillsDir, "orphan")
+		require.NoError(t, os.MkdirAll(orphan, 0o700))
+		require.NoError(t, os.WriteFile(filepath.Join(orphan, "SKILL.md"), []byte("---\nname: orphan\ndescription: Unowned.\n---\n"), 0o600))
+		before := testutil.SnapshotEvidence(t, root)
+		err := upgradeWith(root, UpgradeConverter{})
+		require.ErrorContains(t, err, "could not prepare github.com/nicholasjconn/skills imports to convert 2 unmodified shipped copies: ")
+		require.ErrorContains(t, err, "imported skill directories have no entry in")
+		require.Equal(t, before, testutil.SnapshotEvidence(t, root), "no snapshot or seeded config precedes the refusal")
+	})
+	t.Run("converts", func(t *testing.T) {
+		root := missingConfig(t)
+		require.NoError(t, upgradeWith(root, UpgradeConverter{}))
+		paths := config.DefaultPaths(root)
+		for _, name := range []string{"implement", "ship-pr"} {
+			require.NoDirExists(t, filepath.Join(paths.SkillsDir, name))
+			require.FileExists(t, filepath.Join(paths.ImportedSkillsDir, name, "SKILL.md"))
+		}
+	})
+}
+
 // seamConverter injects transaction behavior into the real conversion.
 type seamConverter struct {
 	newTransaction func(pathSet, *skilllock.File) *transaction

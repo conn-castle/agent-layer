@@ -368,7 +368,11 @@ name or the default catalog block is manually managed (wildcards or
 exclusions). Upgrade converts them (#522): consent and a write-free preflight
 run under the project lock before the snapshot. The preflight fetches the
 catalog and plans every import with the same state checks the commit applies,
-treating leftover copies the step deletes first as already removed. Then the
+treating leftover copies the step deletes first as already removed and a
+missing `config.toml` as the template the step seeds. Supported sources
+(1.0.0 and later) have no migration operations, so the migrations that run in
+between do not change what the preflight planned; the commit re-plans anyway
+and rolls back on divergence. Then the
 `convertPristineCopies`
 step commits journaled imports through the lock-held `skillimport` conversion
 API (injected from `cmd/al` as `install.PristineConverter`, because `install`
@@ -376,14 +380,16 @@ cannot import `skillimport`) and deletes each local copy only after its import
 commits, before the pin advances. Deletion renames the copy into
 `.agent-layer/tmp/upgrade-conversion-<id>/` and re-verifies it there; a copy
 edited during the upgrade stays there, out of the rollback's reach, and fails the
-step; if it cannot be moved, the automatic rollback leaves that path untouched.
+step; if it cannot be moved, the automatic rollback skips that path and its
+subtree (splitting any target that contains it) and restores everything else.
 The step seeds a missing `config.toml` before importing. The snapshot captures configuration, both lock files and both imported
 tiers whole, because an import also materializes other exact selectors already
 in its block. A leftover local copy completes as delete-only only when
 configuration owns its import and the imported tree matches its lock entry;
 otherwise upgrade refuses before mutation. The snapshot records deleted
-leftovers, and manual rollback does not recreate them beside still-active
-imports. Upgrade also refuses an unconfigured
+leftovers, and manual rollback neither resets nor recreates those paths while
+their imports stay active. A snapshot taken without `config.toml` removes the
+seeded file along with the imports. Upgrade also refuses an unconfigured
 local instruction file, which sync would refuse after the pin advanced.
 Customized copies remain user content. The source
 floor uses `skillmigration.MinimumCLI`; unknown clean sources receive only

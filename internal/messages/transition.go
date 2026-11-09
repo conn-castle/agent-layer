@@ -39,7 +39,7 @@ const (
 	UpgradeConvertPristineInconsistentFmt      = "%s is an unmodified shipped copy, but its import of %s is not intact (%v); this upgrade changed nothing. Inspect it with al %s status --all, move the local copy out of the project, repair or remove the import with al %s commands, then rerun al upgrade"
 	UpgradeConvertPristineEditedFmt            = "%s changed during the upgrade, so it was not deleted; your edited copy is preserved at %s and the rollback restores the unmodified copy at the original path. Move your copy back to keep your changes, then rerun al upgrade"
 	UpgradeConvertPristineEditedUnpreservedFmt = "%s changed during the upgrade and could not be moved out of the rollback's reach (%v); the rollback leaves your edited copy at that path untouched"
-	UpgradeConvertPristineNotActive            = "%s was not imported as expected; its local copy is preserved"
+	UpgradeConvertPristineNotActiveFmt         = "%s was not imported as expected (%w); its local copy is preserved"
 	UpgradeConvertPristineMoveFmt              = "could not move %s out of the project to remove it atomically (%v); its local copy is preserved"
 	UpgradePlanSectionConversions              = "Unmodified shipped copies to convert to Git imports (requires network access to github.com/nicholasjconn/skills)"
 	UpgradePlanConversionItemFmt               = "  - %s -> %s\n"

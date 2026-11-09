@@ -71,16 +71,26 @@ type state struct {
 // loadState reads configuration, lock state, and every imported directory.
 // Callers must already hold the project lock.
 func loadState(root string, instructions bool) (*state, error) {
-	return loadStateWithout(root, instructions, nil)
+	return loadStateAs(root, instructions, stateView{})
 }
 
-// loadStateWithout reads state as if the named local sources were already
-// removed. Conversion preflights use it for leftover copies that the upgrade
-// deletes before its imports commit.
-func loadStateWithout(root string, instructions bool, removed map[string]bool) (*state, error) {
+// stateView describes the project a conversion preflight plans against: the
+// state the commit sees after the upgrade's earlier writes in its step.
+type stateView struct {
+	// removed names local sources deleted first (leftover shipped copies).
+	removed map[string]bool
+	// seedConfig is read when config.toml is missing; the step seeds it.
+	seedConfig []byte
+}
+
+// loadStateAs reads state as view describes it.
+func loadStateAs(root string, instructions bool, view stateView) (*state, error) {
 	paths := config.DefaultPaths(root)
 
 	raw, err := fsutil.ReadRegularFile(paths.ConfigPath)
+	if errors.Is(err, os.ErrNotExist) && view.seedConfig != nil {
+		raw, err = view.seedConfig, nil
+	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to read %s: %w", paths.ConfigPath, err)
 	}
@@ -109,7 +119,7 @@ func loadStateWithout(root string, instructions bool, removed map[string]bool) (
 	if err != nil {
 		return nil, err
 	}
-	for name := range removed {
+	for name := range view.removed {
 		delete(userSkills, collisionName(name))
 	}
 

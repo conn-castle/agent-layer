@@ -7,7 +7,6 @@ import (
 	"os"
 	"path"
 	"path/filepath"
-	"strings"
 
 	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/messages"
@@ -43,12 +42,7 @@ func catalogBlockEditable(block config.SkillImport, repository string) bool {
 	if block.Identity() != (config.SkillImport{Repository: repository}).Identity() {
 		return false
 	}
-	for _, selector := range block.Selectors {
-		if config.IsSkillExclusionSelector(selector) || strings.ContainsAny(config.NormalizeSkillSelector(selector), "*?[") {
-			return false
-		}
-	}
-	return true
+	return !config.ManualSkillSelectors(block.Selectors)
 }
 
 // requireCatalogPolicy is called on freshly recovered state under the project lock.

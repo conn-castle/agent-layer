@@ -142,10 +142,15 @@ func findImportBlocks(lines []string, table string) ([]skillImportBlockSpan, err
 
 // removeSkillImportBlockLines drops a block and the blank separator lines that
 // immediately precede it, so removing a block never leaves a growing run of
-// blank lines behind.
+// blank lines behind. Comments documenting the next table stay, with the
+// separator in front of them (see nextTableComments).
 func removeSkillImportBlockLines(lines []string, span skillImportBlockSpan) []string {
+	end := span.end
+	if span.end < len(lines) {
+		end = nextTableComments(lines, span)
+	}
 	start := span.start
-	for start > 0 && strings.TrimSpace(lines[start-1]) == "" {
+	for end == span.end && start > 0 && strings.TrimSpace(lines[start-1]) == "" {
 		start--
 	}
 	if start == 0 {
@@ -155,7 +160,7 @@ func removeSkillImportBlockLines(lines []string, span skillImportBlockSpan) []st
 	}
 	out := make([]string, 0, len(lines))
 	out = append(out, lines[:start]...)
-	out = append(out, lines[span.end:]...)
+	out = append(out, lines[end:]...)
 	// Splitting on "\n" represents a document's final newline as a trailing
 	// empty element. Removing the block that ends the document consumes it, so
 	// it is restored to keep the rewritten file's final newline.

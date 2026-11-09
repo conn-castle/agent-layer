@@ -98,11 +98,12 @@ func rollbackUpgradeSnapshot(root string, snapshotID string, opts RollbackUpgrad
 	if err != nil {
 		return err
 	}
-	// restore is the snapshot this rollback applies; deleted leftovers of
-	// still-active imports are left out of it rather than refusing.
+	// Deleted leftovers of still-active imports are neither reset nor
+	// recreated: the rollback leaves those paths alone rather than refusing.
+	leftovers := convertedLeftovers(root, snapshot, active)
 	restore := snapshot
 	if len(active) > 0 {
-		restore.Entries = withoutConvertedLeftovers(snapshot, active)
+		restore.Entries = entriesOutside(root, snapshot.Entries, leftovers)
 		// A conversion snapshot may recreate local copies because it also
 		// restores the configuration and lock files and removes the imports.
 		restored := conversionRestoredImports(snapshot)
@@ -115,7 +116,9 @@ func rollbackUpgradeSnapshot(root string, snapshotID string, opts RollbackUpgrad
 		for _, entry := range restore.Entries {
 			clean := normalizeRelPath(filepath.Clean(filepath.FromSlash(entry.Path)))
 			if entry.Kind == upgradeSnapshotEntryKindAbsent {
-				if clean == ".agent-layer/config.toml" {
+				// Removing configuration is safe only when the rollback also
+				// removes every active import, as for a conversion that seeded it.
+				if clean == ".agent-layer/config.toml" && len(owned) > 0 {
 					return fmt.Errorf("rollback %s would remove configuration owning active converted imports", snapshotID)
 				}
 				continue
@@ -139,6 +142,9 @@ func rollbackUpgradeSnapshot(root string, snapshotID string, opts RollbackUpgrad
 	}
 	targets, err := rollbackTargetsForSnapshot(root, snapshot)
 	if err != nil {
+		return err
+	}
+	if targets, err = withoutRollbackKeep(sys, root, snapshot.Entries, targets, leftovers); err != nil {
 		return err
 	}
 	if len(snapshot.RollbackTargets) == 0 && len(targets) > 0 {
@@ -171,36 +177,37 @@ func rollbackUpgradeSnapshot(root string, snapshotID string, opts RollbackUpgrad
 	return nil
 }
 
-// withoutConvertedLeftovers drops the entries of leftover local copies the
-// upgrade deleted beside their intact imports, while those imports are still
-// active. Recreating them would restore a project that sync refuses; their
-// content is the unmodified shipped copy the import already holds.
-func withoutConvertedLeftovers(snapshot upgradeSnapshot, active map[string]bool) []upgradeSnapshotEntry {
-	if len(snapshot.ConvertedLeftovers) == 0 {
-		return snapshot.Entries
-	}
-	skip := map[string]bool{}
+// convertedLeftovers returns the absolute local slots of leftover copies the
+// upgrade deleted beside intact imports that are still active. Recreating them
+// would restore a project that sync refuses; their content is the unmodified
+// shipped copy the import already holds.
+func convertedLeftovers(root string, snapshot upgradeSnapshot, active map[string]bool) []string {
+	var leftovers []string
 	for name := range active {
-		slot := skillmigration.LocalSlot(name)
-		if slices.Contains(snapshot.ConvertedLeftovers, slot) {
-			skip[slot] = true
+		if slot := skillmigration.LocalSlot(name); slices.Contains(snapshot.ConvertedLeftovers, slot) {
+			leftovers = append(leftovers, filepath.Join(root, filepath.FromSlash(slot)))
 		}
 	}
-	entries := make([]upgradeSnapshotEntry, 0, len(snapshot.Entries))
-	for _, entry := range snapshot.Entries {
-		clean := normalizeRelPath(filepath.Clean(filepath.FromSlash(entry.Path)))
-		dropped := false
-		for leftover := range skip {
-			if clean == leftover || strings.HasPrefix(clean, leftover+"/") {
-				dropped = true
-				break
-			}
+	return leftovers
+}
+
+// entriesOutside drops entries at or below any of the absolute paths.
+func entriesOutside(root string, entries []upgradeSnapshotEntry, paths []string) []upgradeSnapshotEntry {
+	if len(paths) == 0 {
+		return entries
+	}
+	out := make([]upgradeSnapshotEntry, 0, len(entries))
+	for _, entry := range entries {
+		abs := filepath.Join(root, filepath.Clean(filepath.FromSlash(entry.Path)))
+		inside := false
+		for _, path := range paths {
+			inside = inside || abs == path || strings.HasPrefix(abs, path+string(filepath.Separator))
 		}
-		if !dropped {
-			entries = append(entries, entry)
+		if !inside {
+			out = append(out, entry)
 		}
 	}
-	return entries
+	return out
 }
 
 func rollbackTargetsForSnapshot(root string, snapshot upgradeSnapshot) ([]string, error) {

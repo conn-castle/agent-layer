@@ -500,3 +500,20 @@ func TestSetSkillImportSelectorsWritesUnicodeOnlyRefs(t *testing.T) {
 		t.Fatalf("rendered block lost Unicode-only refs: %+v\n%s", block, updated)
 	}
 }
+
+// TestSetSkillImportSelectorsRemovalKeepsNextTableComments proves removing an
+// import block keeps the comment documenting the next table and its separator.
+func TestSetSkillImportSelectorsRemovalKeepsNextTableComments(t *testing.T) {
+	t.Parallel()
+	const prefix = "[agents.claude]\nenabled = true\n\n"
+	const removed = "[[skills.imports]]\nrepository = \"https://example.test/skills.git\"\nselectors = [\"skills/a\"]\n# selectors = [\"skills/b\"]\n\n"
+	const next = "# Project MCP servers.\n[[mcp.servers]]\nid = \"one\"\n"
+	identity := SkillImport{Repository: "https://example.test/skills.git"}.Identity()
+	updated, err := SetSkillImportSelectors(prefix+removed+next, identity, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := prefix + next; updated != want {
+		t.Fatalf("removal = %q, want %q", updated, want)
+	}
+}

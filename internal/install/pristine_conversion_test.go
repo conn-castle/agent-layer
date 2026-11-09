@@ -342,7 +342,7 @@ func TestUpgradeRefusesToDeleteLocalCopyWithoutActiveImport(t *testing.T) {
 	converter := &fakeConverter{t: t, root: root}
 	err := Run(root, Options{System: RealSystem{}, Overwrite: true, Prompter: autoApprovePrompter(), PinVersion: "1.1.0", WarnWriter: &bytes.Buffer{},
 		Converter: noImportConverter{converter}})
-	require.ErrorContains(t, err, ".agent-layer/skills/implement was not imported as expected")
+	require.ErrorContains(t, err, ".agent-layer/skills/implement was not imported as expected (configuration does not own the import)", "the cause is kept")
 	require.DirExists(t, filepath.Join(root, ".agent-layer/skills/implement"))
 }
 
@@ -393,11 +393,19 @@ func TestUpgradeCompletesInterruptedConversionAsDeleteOnly(t *testing.T) {
 	snapshots, err := ListUpgradeSnapshots(root, RealSystem{})
 	require.NoError(t, err)
 	writeTransitionFile(t, root, ".agent-layer/al.version", []byte("1.2.0\n"))
+	// Content put back at a leftover path is neither reset nor replaced.
+	writeTransitionFile(t, root, ".agent-layer/skills/ship-pr/notes.md", []byte("mine\n"))
 	require.NoError(t, RollbackUpgradeSnapshot(root, snapshots[0].ID, RollbackUpgradeSnapshotOptions{System: RealSystem{}}))
 	pin, err := readCurrentPinVersion(root, RealSystem{})
 	require.NoError(t, err)
 	require.Equal(t, "1.1.0", pin, "unrelated paths are restored")
 	for _, item := range items {
+		if item.Path == ".agent-layer/skills/ship-pr" {
+			entries, err := os.ReadDir(filepath.Join(root, item.Path))
+			require.NoError(t, err)
+			require.Len(t, entries, 1, "only the user's file is there")
+			continue
+		}
 		_, err := os.Lstat(filepath.Join(root, item.Path))
 		require.ErrorIs(t, err, os.ErrNotExist, item.Path)
 	}
@@ -758,6 +766,49 @@ func TestUpgradeRollbackLeavesUnpreservableEditedCopyInPlace(t *testing.T) {
 	cfg, err := config.LoadConfigLenient(config.DefaultPaths(root).ConfigPath)
 	require.NoError(t, err)
 	require.Len(t, cfg.Instructions.Local, 2, "configuration still owns the kept file")
+	// The persisted targets leave the kept path alone on a manual retry.
+	snapshots, err := ListUpgradeSnapshots(root, RealSystem{})
+	require.NoError(t, err)
+	snapshot, err := readUpgradeSnapshot(filepath.Join(root, upgradeSnapshotDirRelPath, snapshots[0].ID+".json"), RealSystem{})
+	require.NoError(t, err)
+	require.Contains(t, snapshot.RollbackTargets, ".agent-layer/config.toml")
+	require.NotContains(t, snapshot.RollbackTargets, rel)
+}
+
+// A rollback target containing a kept path is split into its other children:
+// everything else is still reset and restored, and nothing is refused.
+func TestWithoutRollbackKeepSplitsContainingTargets(t *testing.T) {
+	root := t.TempDir()
+	skills := filepath.Join(root, ".agent-layer", "skills")
+	for _, name := range []string{"a", "kept", "b"} {
+		writeTransitionFile(t, root, ".agent-layer/skills/"+name+"/SKILL.md", []byte(name))
+	}
+	entries := []upgradeSnapshotEntry{{Path: ".agent-layer/skills/gone/SKILL.md", Kind: upgradeSnapshotEntryKindFile}}
+	cfgPath := filepath.Join(root, ".agent-layer", "config.toml")
+	kept := filepath.Join(skills, "kept")
+	got, err := withoutRollbackKeep(RealSystem{}, root, entries, []string{skills, cfgPath, filepath.Join(kept, "SKILL.md")}, []string{kept})
+	require.NoError(t, err)
+	require.ElementsMatch(t, []string{cfgPath, filepath.Join(skills, "a"), filepath.Join(skills, "b"), filepath.Join(skills, "gone")}, got)
+}
+
+// The leftover notice appears only once the preflight succeeded; a failed
+// preflight changed nothing and must not claim a removal.
+func TestUpgradeLeftoverNoticeFollowsSuccessfulPreflight(t *testing.T) {
+	root := pristineProject(t, "1.0.0")
+	items, err := PlanPristineConversions(root, RealSystem{})
+	require.NoError(t, err)
+	for _, item := range items {
+		if item.Path == ".agent-layer/skills/ship-pr" {
+			writeFakeImport(t, root, item)
+		}
+	}
+	warn := &bytes.Buffer{}
+	converter := &fakeConverter{t: t, root: root, prepareErr: errors.New("network is unreachable")}
+	require.ErrorContains(t, conversionUpgrade(root, converter, autoApprovePrompter(), warn), "This upgrade changed nothing")
+	require.NotContains(t, warn.String(), "Removing leftover")
+	require.Len(t, converter.prepared, 1)
+	require.Contains(t, converter.prepared[0], PristineConversion{Kind: PristineConversionSkill, Path: ".agent-layer/skills/ship-pr", Name: "ship-pr", Selector: "skills/development/ship-pr", DeleteOnly: true},
+		"the preflight plans with the leftover already removed")
 }
 
 // A project without config.toml is seeded inside the snapshotted conversion
@@ -776,6 +827,14 @@ func TestUpgradeConvertsSkillsWhenConfigIsMissing(t *testing.T) {
 	cfg, err := config.LoadConfigLenient(config.DefaultPaths(root).ConfigPath)
 	require.NoError(t, err)
 	require.Len(t, cfg.Skills.Imports, 1)
+
+	// The snapshot also removes the seeded configuration with both imports.
+	snapshots, err := ListUpgradeSnapshots(root, RealSystem{})
+	require.NoError(t, err)
+	require.NoError(t, RollbackUpgradeSnapshot(root, snapshots[0].ID, RollbackUpgradeSnapshotOptions{System: RealSystem{}}))
+	require.NoFileExists(t, config.DefaultPaths(root).ConfigPath)
+	require.NoDirExists(t, config.DefaultPaths(root).ImportedSkillsDir)
+	require.DirExists(t, filepath.Join(root, ".agent-layer/skills/implement"))
 }
 
 func TestPlanPristineConversionsKeepsCopiesWhoseImportWouldConflict(t *testing.T) {

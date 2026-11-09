@@ -25,14 +25,17 @@ type UpgradeConverter struct{}
 
 // Prepare fetches the catalog repository once, validates every requested
 // import at the resolved commit, and runs the project-state checks the
-// imports apply, so a refusal happens before any project write. It writes only
-// to a temporary directory outside the project.
+// imports apply, so a refusal happens before any project write. DeleteOnly
+// items are not imported; their local copies are planned as already removed.
+// It writes only to a temporary directory outside the project.
 func (UpgradeConverter) Prepare(ctx context.Context, root string, items []install.PristineConversion) (install.PreparedConversion, error) {
 	var skills, instructions []string
 	for _, item := range items {
-		if item.Kind == install.PristineConversionSkill {
+		switch {
+		case item.DeleteOnly:
+		case item.Kind == install.PristineConversionSkill:
 			skills = append(skills, item.Selector)
-		} else {
+		default:
 			instructions = append(instructions, item.Selector)
 		}
 	}
@@ -47,36 +50,37 @@ func (UpgradeConverter) Prepare(ctx context.Context, root string, items []instal
 	return prepared, nil
 }
 
-// checkState plans every import against the current project without writing,
-// treating leftover copies the upgrade deletes first as already removed. A
-// missing configuration is skipped: the upgrade seeds the template
-// configuration, which holds no imports, before the imports commit.
+// checkState plans every import against the project as the commit will see
+// it: leftover copies deleted first, and the template configuration seeded
+// when config.toml is missing.
 func (c *ConversionSource) checkState(items []install.PristineConversion) error {
-	if _, err := os.Lstat(config.DefaultPaths(c.root).ConfigPath); errors.Is(err, os.ErrNotExist) {
-		return nil
-	} else if err != nil {
-		return err
-	}
-	planned, err := install.PlanPristineConversions(c.root, install.RealSystem{})
+	seed, err := templates.Read("config.toml")
 	if err != nil {
 		return err
 	}
-	leftovers := map[install.PristineConversionKind]map[string]bool{install.PristineConversionSkill: {}, install.PristineConversionInstruction: {}}
-	for _, item := range planned {
+	views := map[install.PristineConversionKind]stateView{
+		install.PristineConversionSkill:       {removed: map[string]bool{}, seedConfig: seed},
+		install.PristineConversionInstruction: {removed: map[string]bool{}, seedConfig: seed},
+	}
+	for _, item := range items {
 		if item.DeleteOnly {
-			leftovers[item.Kind][path.Base(item.Path)] = true
+			views[item.Kind].removed[path.Base(item.Path)] = true
 		}
 	}
 	var selectors []string
 	for _, item := range items {
-		if item.Kind == install.PristineConversionSkill {
+		switch {
+		case item.DeleteOnly:
+		case item.Kind == install.PristineConversionSkill:
 			selectors = append(selectors, item.Selector)
-		} else if _, _, err := c.planInstruction(item.Selector, item.LocalName, leftovers[item.Kind]); err != nil {
-			return err
+		default:
+			if _, _, err := c.planInstruction(item.Selector, item.LocalName, views[item.Kind]); err != nil {
+				return err
+			}
 		}
 	}
 	if len(selectors) > 0 {
-		if _, _, err := c.planSkills(selectors, leftovers[install.PristineConversionSkill]); err != nil {
+		if _, _, err := c.planSkills(selectors, views[install.PristineConversionSkill]); err != nil {
 			return err
 		}
 	}
@@ -206,7 +210,7 @@ func (c *ConversionSource) Import(ctx context.Context, items []install.PristineC
 // verified unmodified shipped copies, which it removes after this commits; they
 // do not block the import. The caller holds the project lock.
 func (c *ConversionSource) ImportSkillsLocked(ctx context.Context, selectors []string) error {
-	st, plan, err := c.planSkills(selectors, nil)
+	st, plan, err := c.planSkills(selectors, stateView{})
 	if err != nil {
 		return err
 	}
@@ -214,10 +218,10 @@ func (c *ConversionSource) ImportSkillsLocked(ctx context.Context, selectors []s
 	return withReportDetail(c.service(NewSourceOnly(c.root)).commitAdd(ctx, st, plan, report), report)
 }
 
-// planSkills runs every check ImportSkillsLocked applies before its commit;
-// removed names local skills to treat as already deleted.
-func (c *ConversionSource) planSkills(selectors []string, removed map[string]bool) (*state, addPlan, error) {
-	st, err := loadStateWithout(c.root, false, removed)
+// planSkills runs every check ImportSkillsLocked applies before its commit,
+// against the project as view describes it.
+func (c *ConversionSource) planSkills(selectors []string, view stateView) (*state, addPlan, error) {
+	st, err := loadStateAs(c.root, false, view)
 	if err != nil {
 		return nil, addPlan{}, err
 	}
@@ -247,7 +251,7 @@ func (c *ConversionSource) planSkills(selectors []string, removed map[string]boo
 // transaction. The caller holds the project lock and removes the local file
 // after this commits.
 func (c *ConversionSource) ImportInstructionLocked(ctx context.Context, selector, localName string) error {
-	st, plan, err := c.planInstruction(selector, localName, nil)
+	st, plan, err := c.planInstruction(selector, localName, stateView{})
 	if err != nil {
 		return err
 	}
@@ -256,12 +260,12 @@ func (c *ConversionSource) ImportInstructionLocked(ctx context.Context, selector
 }
 
 // planInstruction runs every check ImportInstructionLocked applies before its
-// commit; removed names local instruction files to treat as already deleted.
-func (c *ConversionSource) planInstruction(selector, localName string, removed map[string]bool) (*state, addPlan, error) {
+// commit, against the project as view describes it.
+func (c *ConversionSource) planInstruction(selector, localName string, view stateView) (*state, addPlan, error) {
 	if err := config.ValidateInstructionRootsFS(os.DirFS(c.root), c.root); err != nil {
 		return nil, addPlan{}, err
 	}
-	st, err := loadStateWithout(c.root, true, removed)
+	st, err := loadStateAs(c.root, true, view)
 	if err != nil {
 		return nil, addPlan{}, err
 	}

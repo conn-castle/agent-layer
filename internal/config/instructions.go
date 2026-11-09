@@ -228,16 +228,9 @@ func RemoveLocalInstruction(content, name string) (string, *int, error) {
 		local := cfg.Instructions.Local[0]
 		if len(local.Selectors) == 1 && local.Selectors[0] == name {
 			if span.end < len(lines) {
-				// The span runs to the next header. Comments in the trailing
-				// run of blank and comment lines document that next table, so
-				// they stay; the separator before the removed header is kept.
-				end := span.end
-				for end > span.start+1 && (strings.TrimSpace(lines[end-1]) == "" || strings.HasPrefix(strings.TrimSpace(lines[end-1]), "#")) {
-					end--
-				}
-				for end < span.end && strings.TrimSpace(lines[end]) == "" {
-					end++
-				}
+				// The span runs to the next header. Comments documenting that
+				// table stay; the separator before the removed header is kept.
+				end := nextTableComments(lines, span)
 				return strings.Join(append(lines[:span.start:span.start], lines[end:]...), "\n"), local.Order, nil
 			}
 			return strings.Join(removeSkillImportBlockLines(lines, span), "\n"), local.Order, nil
@@ -253,6 +246,33 @@ func RemoveLocalInstruction(content, name string) (string, *int, error) {
 		}
 	}
 	return content, nil, nil
+}
+
+// nextTableComments returns where the comments documenting the table after
+// span begin, or span.end when there are none. Only whole-line comments and
+// blank lines that start outside TOML strings count, so a multiline value is
+// never split. A comment group directly after the block's last line belongs to
+// the removed block; a group separated from it by a blank line documents the
+// next table.
+func nextTableComments(lines []string, span skillImportBlockSpan) int {
+	outside := map[int]bool{}
+	tomlpatch.WalkLinesOutsideMultiline(lines[span.start:span.end], func(i int, _ string, _ tomlpatch.StringState) tomlpatch.LineWalkResult {
+		outside[span.start+i] = true
+		return tomlpatch.LineWalkResult{}
+	})
+	blank := func(i int) bool { return strings.TrimSpace(lines[i]) == "" }
+	comment := func(i int) bool { return strings.HasPrefix(strings.TrimSpace(lines[i]), "#") }
+	end := span.end
+	for end > span.start+1 && outside[end-1] && (blank(end-1) || comment(end-1)) {
+		end--
+	}
+	for end < span.end && !blank(end) {
+		end++
+	}
+	for end < span.end && blank(end) {
+		end++
+	}
+	return end
 }
 
 // MigrateInstructionOrderFS is an offline, read-only preview of legacy ordering.

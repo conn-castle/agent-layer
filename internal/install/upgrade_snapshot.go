@@ -363,7 +363,7 @@ func readUpgradeSnapshotIfValid(path string, sys System) (upgradeSnapshot, bool)
 }
 
 func (inst *installer) rollbackUpgradeSnapshot(snapshot *upgradeSnapshot, targets []string) error {
-	targets, err := withoutRollbackKeep(targets, inst.rollbackKeep)
+	targets, err := withoutRollbackKeep(inst.sys, inst.root, snapshot.Entries, targets, inst.rollbackKeep)
 	if err != nil {
 		return err
 	}
@@ -378,32 +378,82 @@ func (inst *installer) rollbackUpgradeSnapshot(snapshot *upgradeSnapshot, target
 	return rollbackUpgradeSnapshotState(inst.root, inst.sys, *snapshot, targets)
 }
 
-// withoutRollbackKeep drops targets at or below a kept path, so the rollback
-// neither resets nor restores it. A target above a kept path would reset it
-// too, so the rollback stops instead and the project is left for manual
-// recovery.
-func withoutRollbackKeep(targets, keep []string) ([]string, error) {
+// withoutRollbackKeep returns the targets to roll back while leaving each kept
+// path and everything below it untouched. A target at or below a kept path is
+// dropped. A target containing one is replaced by its children, those on disk
+// and those the snapshot holds, recursively, so everything else is still reset
+// and restored. The result is persistable, so a manual retry also leaves the
+// kept paths alone.
+func withoutRollbackKeep(sys System, root string, entries []upgradeSnapshotEntry, targets, keep []string) ([]string, error) {
 	if len(keep) == 0 {
 		return targets, nil
 	}
+	sep := string(filepath.Separator)
 	out := make([]string, 0, len(targets))
-	for _, target := range targets {
-		clean, skip := filepath.Clean(target), false
+	pending := slices.Clone(targets)
+	for len(pending) > 0 {
+		target := filepath.Clean(pending[0])
+		pending = pending[1:]
+		dropped, contains := false, false
 		for _, kept := range keep {
 			kept = filepath.Clean(kept)
-			if clean == kept || strings.HasPrefix(clean, kept+string(filepath.Separator)) {
-				skip = true
-				break
-			}
-			if strings.HasPrefix(kept, clean+string(filepath.Separator)) {
-				return nil, fmt.Errorf("rollback would reset %s, which holds edited local content that could not be preserved; nothing was rolled back", target)
-			}
+			dropped = dropped || target == kept || strings.HasPrefix(target, kept+sep)
+			contains = contains || strings.HasPrefix(kept, target+sep)
 		}
-		if !skip {
+		switch {
+		case dropped:
+		case contains:
+			children, err := rollbackTargetChildren(sys, root, entries, target)
+			if err != nil {
+				return nil, err
+			}
+			pending = append(pending, children...)
+		default:
 			out = append(out, target)
 		}
 	}
 	return out, nil
+}
+
+// rollbackTargetChildren lists the direct children of dir on disk and in the
+// snapshot entries.
+func rollbackTargetChildren(sys System, root string, entries []upgradeSnapshotEntry, dir string) ([]string, error) {
+	names := map[string]bool{}
+	err := sys.WalkDir(dir, func(path string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				return nil
+			}
+			return err
+		}
+		if path == dir {
+			return nil
+		}
+		names[entry.Name()] = true
+		if entry.IsDir() {
+			return fs.SkipDir
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	rel, err := filepath.Rel(root, dir)
+	if err != nil {
+		return nil, err
+	}
+	prefix := normalizeRelPath(filepath.Clean(rel)) + "/"
+	for _, entry := range entries {
+		if name, ok := strings.CutPrefix(normalizeRelPath(filepath.Clean(filepath.FromSlash(entry.Path))), prefix); ok {
+			names[strings.SplitN(name, "/", 2)[0]] = true
+		}
+	}
+	children := make([]string, 0, len(names))
+	for name := range names {
+		children = append(children, filepath.Join(dir, name))
+	}
+	sort.Strings(children)
+	return children, nil
 }
 
 func (inst *installer) captureUpgradeSnapshotEntries() ([]upgradeSnapshotEntry, error) {

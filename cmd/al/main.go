@@ -161,6 +161,9 @@ func shouldBypassDispatch(args []string) bool {
 // on that path and may appear anywhere before a "--" terminator, as cobra
 // parses it; arguments after the terminator are positional.
 func isDispatchMCPServer(args []string) bool {
+	if len(args) < 2 {
+		return false
+	}
 	var path []string
 	for idx, arg := range args[1:] {
 		if arg == "--" {

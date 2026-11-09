@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/pelletier/go-toml/v2"
 	"github.com/stretchr/testify/require"
 )
 
@@ -141,16 +142,31 @@ func TestRemoveLocalInstructionKeepsNeighborSeparators(t *testing.T) {
 	}
 }
 
-// Comments above the next table document that table and survive removal.
+// Comments above the next table document that table and survive removal;
+// comments attached to the removed block and multiline values go with it, and
+// the result always stays valid TOML.
 func TestRemoveLocalInstructionKeepsNextBlockComments(t *testing.T) {
-	for _, separator := range []string{"\n", "\n\n"} {
-		content := "[[instructions.local]]\nselectors = [\"00_rules.md\"]\norder = 0\n\n# project memory notes" + separator + "[[instructions.local]]\nselectors = [\"01_memory.md\"]\norder = 10\n"
-		got, _, err := RemoveLocalInstruction(content, "00_rules.md")
-		if err != nil {
-			t.Fatal(err)
-		}
-		if want := "# project memory notes" + separator + "[[instructions.local]]\nselectors = [\"01_memory.md\"]\norder = 10\n"; got != want {
-			t.Fatalf("removal = %q, want %q", got, want)
-		}
+	const next = "[[instructions.local]]\nselectors = [\"01_memory.md\"]\norder = 10\n"
+	const removed = "[[instructions.local]]\nselectors = [\"00_rules.md\"]\norder = 0\n"
+	for _, scenario := range []struct{ name, between, want string }{
+		{"comment above the next header", "\n# project memory notes\n", "# project memory notes\n"},
+		{"comment separated from the next header", "\n# project memory notes\n\n", "# project memory notes\n\n"},
+		{"commented-out key of the removed block", "# order = 3\n\n", ""},
+		{"multiline value closing on a comment-like line", "note = \"\"\"\ntext\n\n# note\"\"\"\n\n", ""},
+		{"multiline value then a separate comment", "note = '''\n# inside\n'''\n\n# project memory notes\n", "# project memory notes\n"},
+	} {
+		t.Run(scenario.name, func(t *testing.T) {
+			got, order, err := RemoveLocalInstruction(removed+scenario.between+next, "00_rules.md")
+			if err != nil || order == nil || *order != 0 {
+				t.Fatalf("RemoveLocalInstruction = %v, %v", order, err)
+			}
+			if want := scenario.want + next; got != want {
+				t.Fatalf("removal = %q, want %q", got, want)
+			}
+			var cfg Config
+			if err := toml.Unmarshal([]byte(got), &cfg); err != nil {
+				t.Fatalf("removal produced invalid TOML: %v\n%s", err, got)
+			}
+		})
 	}
 }

@@ -438,19 +438,14 @@ func localInstructionNamed(root string, cfg *config.Config, name string, sys Sys
 	return transitionPathExists(root, ".agent-layer/instructions/"+name, sys)
 }
 
-// catalogBlockEditable mirrors the import policy: a default-policy catalog
-// block with wildcards or exclusions is manually managed, so conversion never
-// edits it and its shipped copies stay user-managed.
+// catalogBlockEditable applies the import policy (config.ManualSkillSelectors):
+// conversion never edits a manually managed default-policy catalog block, so
+// its shipped copies stay user-managed.
 func catalogBlockEditable(cfg *config.Config) bool {
 	identity := config.SkillImport{Repository: templates.GeneralSkillsRepository}.Identity()
 	for _, imp := range cfg.Skills.Imports {
-		if imp.Identity() != identity {
-			continue
-		}
-		for _, selector := range imp.Selectors {
-			if config.IsSkillExclusionSelector(selector) || strings.ContainsAny(config.NormalizeSkillSelector(selector), "*?[") {
-				return false
-			}
+		if imp.Identity() == identity && config.ManualSkillSelectors(imp.Selectors) {
+			return false
 		}
 	}
 	return true
@@ -636,9 +631,7 @@ func checkUnconfiguredInstructions(root string, sys System) error {
 	}
 	configured := map[string]bool{}
 	for _, local := range instructions.Local {
-		for _, selector := range local.Selectors {
-			configured[selector] = true
-		}
+		configured[local.Selectors[0]] = true // Validated: exactly one selector.
 	}
 	// Sync loads only configured local instructions, so an unconfigured file
 	// (even an unmodified shipped one) would fail after the pin advanced. Only a
