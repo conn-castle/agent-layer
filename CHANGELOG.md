@@ -1,7 +1,7 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
-## Unreleased
+## v1.2.0 - 2026-11-09
 
 ### Changed
 - Installed projects must complete the v1.0.0 transition before using v1.2.0 upgrade or wizard/profile mutation. Known pre-1.0 sources, pristine shipped transition files, legacy config and adoption-v2 recovery evidence are preserved and refused before mutation with guidance to install or run the v1.0.0 executable itself for `al upgrade`, then its `al wizard` to adopt or recover. Manual rollback to pre-1.0 pins requires v1.0.0 or v1.1.0. Customized local content and clean unpinned projects remain supported (#428).

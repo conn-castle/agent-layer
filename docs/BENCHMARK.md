@@ -16,10 +16,10 @@ Run all commands from the project root.
 
 ### Install the companion
 
-With Go 1.27 or newer, install the companion at the same release as your core CLI. For example, after `v1.1.0` is published:
+With Go 1.27 or newer, install the companion at the same release as your core CLI. For example, after `v1.2.0` is published:
 
 ```bash
-go install github.com/conn-castle/agent-layer/cmd/al-benchmark@v1.1.0
+go install github.com/conn-castle/agent-layer/cmd/al-benchmark@v1.2.0
 al-benchmark --version
 ```
 
