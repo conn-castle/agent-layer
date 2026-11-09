@@ -526,6 +526,8 @@ The `al` CLI syncs repo-local configuration and launches your chosen client. Thi
 
 The command set is intentionally small. Most of the time you only need one rhythm: `al init` once, `al <client>` every day, `al doctor` when something feels off.
 
+The first interrupt (Ctrl-C) stops `al sync`, `al wizard`, `al upgrade rollback`, and `al doctor` catalog inspection while they wait for the project lock, and stops the `al init` wizard prompt and skill or instruction confirmations without waiting for more input; an answer already typed ahead is not applied. Commands that read project documents, wizard profiles or answers, native client config, upgrade snapshots, or dispatch metadata refuse a FIFO or other non-regular file at that path, including a symlink to one, instead of blocking on it; symlinks to regular files keep working.
+
 ### Command map
 
 | Command | Purpose |
