@@ -526,7 +526,7 @@ The `al` CLI syncs repo-local configuration and launches your chosen client. Thi
 
 The command set is intentionally small. Most of the time you only need one rhythm: `al init` once, `al <client>` every day, `al doctor` when something feels off.
 
-The first interrupt (Ctrl-C) stops `al sync`, `al wizard`, `al upgrade rollback`, and `al doctor` catalog inspection while they wait for the project lock, and stops the `al init` wizard prompt and skill or instruction confirmations without waiting for more input; an answer already typed ahead is not applied. Commands that read project documents, wizard profiles or answers, upgrade snapshots, dispatch metadata, or the native `.codex/config.toml`, `.grok-config/trusted_folders.toml`, and `.vscode/settings.json` refuse a FIFO or other non-regular file at that path, including a symlink to one, instead of blocking on it; symlinks to regular files at those paths keep working. `al sync` refuses any symlink at the Antigravity and Muse settings files, even one to a regular file.
+The first interrupt (Ctrl-C) stops `al sync`, `al wizard`, `al upgrade rollback`, and `al doctor` catalog inspection while they wait for the project lock, and stops the `al init` wizard prompt and skill or instruction confirmations without waiting for more input; an answer already typed ahead is not applied. Agent Layer refuses a FIFO or other special file, including a symlink to one, where it reads a project document, wizard profile or answers, native client config, upgrade snapshot, or dispatch metadata, instead of blocking on it. Symlinks to regular files still work for project documents and wizard inputs; some native client config paths refuse any symlink, and `al sync` names the path when it does.
 
 ### Command map
 
