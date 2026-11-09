@@ -28,6 +28,9 @@ type Service struct {
 	// newTransaction lets add/remove tests inject publication failures into a
 	// real transaction while retaining its journal and rollback behavior.
 	newTransaction func(pathSet, *skilllock.File) *transaction
+	// prepared supplies an already fetched catalog source for lock-held
+	// conversions, so selector edits import its exact preflighted commit.
+	prepared *ConversionSource
 }
 
 // New returns a service bound to a repository root.

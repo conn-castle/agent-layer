@@ -114,7 +114,7 @@ func loadState(root string, instructions bool) (*state, error) {
 		}
 		for name, source := range userSkills {
 			if !configured[name] {
-				return nil, config.UnconfiguredLocalInstruction(source, cfg.Instructions)
+				return nil, config.UnconfiguredLocalInstruction(source)
 			}
 		}
 	}

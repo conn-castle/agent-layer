@@ -15,6 +15,7 @@ import (
 	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/install"
 	"github.com/conn-castle/agent-layer/internal/messages"
+	"github.com/conn-castle/agent-layer/internal/skillimport"
 	"github.com/conn-castle/agent-layer/internal/versiondispatch"
 	"github.com/conn-castle/agent-layer/internal/wizard"
 )
@@ -86,6 +87,7 @@ func newUpgradeCmd() *cobra.Command {
 				PinVersion:   targetPin,
 				DiffMaxLines: diffLines,
 				System:       install.RealSystem{},
+				Converter:    skillimport.UpgradeConverter{},
 			}
 			opts.Prompter = buildUpgradePrompter(cmd, policy)
 			if err := installRun(root, opts); err != nil {
@@ -438,6 +440,21 @@ func buildUpgradePrompter(cmd *cobra.Command, policy upgradeApplyPolicy) *instal
 			}
 			return promptYesNo(stdinReader, cmd.OutOrStdout(), messages.UpgradeDeleteUnknownTmpDestructiveConfirmPrompt, false)
 		},
+		ConvertPristineCopiesFunc: func(items []install.PristineConversion) (bool, error) {
+			ew := &errWriter{w: cmd.OutOrStdout()}
+			ew.printf(messages.UpgradeConvertPristineHeaderFmt, len(items))
+			for _, item := range items {
+				writePristineConversionItem(ew, item, messages.UpgradeConvertPristineItemFmt, messages.UpgradeConvertPristineDeleteFmt)
+			}
+			if ew.err != nil {
+				return false, ew.err
+			}
+			// Non-interactive runs require --yes with an apply flag, which accepts.
+			if policy.yes || !policy.interactive {
+				return true, nil
+			}
+			return promptYesNo(stdinReader, cmd.OutOrStdout(), fmt.Sprintf(messages.UpgradeConvertPristinePromptFmt, len(items)), true)
+		},
 	}
 }
 
@@ -650,7 +667,19 @@ func renderUpgradePlanText(out io.Writer, plan install.UpgradePlan, previews map
 	writeMigrationReportSection(ew, plan.MigrationReport)
 	writePinVersionSection(ew, plan.PinVersionChange)
 	writeReadinessSection(ew, plan.ReadinessChecks)
+	ew.printf(messages.UpgradePlanSectionTitleFmt, messages.UpgradePlanSectionConversions)
+	writeUpgradePlanItems(ew, plan.PristineConversions, func(item install.PristineConversion) {
+		writePristineConversionItem(ew, item, messages.UpgradePlanConversionItemFmt, messages.UpgradePlanConversionDeleteFmt)
+	})
 	return ew.err
+}
+
+func writePristineConversionItem(ew *errWriter, item install.PristineConversion, convertFmt, deleteFmt string) {
+	format := convertFmt
+	if item.DeleteOnly {
+		format = deleteFmt
+	}
+	ew.printf(format, item.Path, item.Selector)
 }
 
 // writeUpgradePlanItems writes each item of a plan section, or the "(none)"

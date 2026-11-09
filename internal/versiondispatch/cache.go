@@ -3,7 +3,6 @@ package versiondispatch
 import (
 	"bufio"
 	"context"
-	"crypto/sha256"
 	"errors"
 	"fmt"
 	"io"
@@ -417,17 +416,10 @@ func downloadHTTPClientWithSystem(sys System) *http.Client {
 
 // verifyChecksum computes the SHA-256 of path and compares it to expected.
 func verifyChecksum(path string, expected string) error {
-	file, err := os.Open(path) //nolint:gosec // path is an internally-resolved cache file
+	actual, err := fileSHA256(path)
 	if err != nil {
-		return fmt.Errorf(messages.DispatchOpenFileFmt, path, err)
+		return err
 	}
-	defer func() { _ = file.Close() }()
-
-	hasher := sha256.New()
-	if _, err := io.Copy(hasher, file); err != nil {
-		return fmt.Errorf(messages.DispatchHashFileFmt, path, err)
-	}
-	actual := fmt.Sprintf("%x", hasher.Sum(nil))
 	if actual != expected {
 		return fmt.Errorf(messages.DispatchChecksumMismatchFmt, path, expected, actual)
 	}

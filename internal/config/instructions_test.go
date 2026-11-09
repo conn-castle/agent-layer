@@ -115,3 +115,28 @@ func TestInstructionEditorPreservesOrderAndRejectsHiddenDeclarations(t *testing.
 		}
 	}
 }
+
+func TestRemoveLocalInstructionKeepsNeighborSeparators(t *testing.T) {
+	content := "# comment\n\n[[instructions.local]]\nselectors = [\"00_rules.md\"]\norder = 0\n\n[[instructions.local]]\nselectors = [\"01_memory.md\"]\norder = 10\n"
+	got, order, err := RemoveLocalInstruction(content, "00_rules.md")
+	if err != nil || order == nil || *order != 0 {
+		t.Fatalf("RemoveLocalInstruction = %v, %v", order, err)
+	}
+	if want := "# comment\n\n[[instructions.local]]\nselectors = [\"01_memory.md\"]\norder = 10\n"; got != want {
+		t.Fatalf("middle removal = %q, want %q", got, want)
+	}
+	got, order, err = RemoveLocalInstruction(got, "01_memory.md")
+	if err != nil || order == nil || *order != 10 {
+		t.Fatalf("RemoveLocalInstruction = %v, %v", order, err)
+	}
+	if want := "# comment\n"; got != want {
+		t.Fatalf("final removal = %q, want %q", got, want)
+	}
+	unchanged, order, err := RemoveLocalInstruction(got, "00_rules.md")
+	if err != nil || order != nil || unchanged != got {
+		t.Fatalf("missing block = %q, %v, %v", unchanged, order, err)
+	}
+	if _, _, err := RemoveLocalInstruction("instructions.local = [{selectors = [\"00_rules.md\"], order = 0}]\n", "00_rules.md"); err == nil {
+		t.Fatal("inline local instruction was edited")
+	}
+}

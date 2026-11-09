@@ -16,6 +16,16 @@ import (
 func instructionAddConfig(st *state, opts AddOptions, block config.SkillImport) (string, error) {
 	name := path.Base(opts.Selectors[0])
 	old := skilljournal.LegacyInstruction(name)
+	if old != "" && opts.replaceLocal == old {
+		// Conversion: the caller verified the local file as an unmodified shipped
+		// copy and removes it after this transaction commits. Dropping its block
+		// here keeps the journaled config edit atomic with the import.
+		content, _, err := config.RemoveLocalInstruction(st.configRaw, old)
+		if err != nil {
+			return "", err
+		}
+		return config.AddInstructionImport(content, block, opts.Order)
+	}
 	if old != "" {
 		source := filepath.Join(st.paths.InstructionsDir, old)
 		if _, err := os.Lstat(source); err == nil {

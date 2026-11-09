@@ -189,7 +189,8 @@ fi
 # Explicit historical binaries for the retirement boundary scenario.
 E2E_PREFLOOR_BINARY="$(download_or_cache_binary "0.24.3")" || true
 E2E_TRANSITION_BINARY="$(download_or_cache_binary "1.0.0")" || true
-export E2E_PREFLOOR_BINARY E2E_TRANSITION_BINARY
+E2E_V110_BINARY="$(download_or_cache_binary "1.1.0")" || true
+export E2E_PREFLOOR_BINARY E2E_TRANSITION_BINARY E2E_V110_BINARY
 
 export E2E_OLDEST_VERSION E2E_OLDEST_BINARY
 export E2E_LATEST_VERSION E2E_LATEST_BINARY

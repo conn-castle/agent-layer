@@ -24,6 +24,9 @@ type AddOptions struct {
 	PushRepository string
 	PushBranch     string
 	Order          *int
+	// replaceLocal names the standard local instruction whose
+	// [[instructions.local]] block this import replaces during conversion.
+	replaceLocal string
 }
 
 // importBlock carries the shared policy for either source kind.
@@ -247,14 +250,19 @@ type selectorEdit struct {
 // any local state changes, so one unusable newly selected match fails the
 // command rather than applying part of it.
 func (s *Service) applySelectorEdit(ctx context.Context, st *state, txn *transaction, edit selectorEdit, report *Report) error {
-	runner, workRoot, cleanup, err := s.gitWorkspace(st, edit.op)
-	if err != nil {
-		return err
-	}
-	defer cleanup()
-
 	block := edit.block
-	blockCtx, err := s.openBlock(ctx, runner, workRoot, edit.blockIndex, block)
+	var blockCtx *blockContext
+	var err error
+	if s.prepared != nil {
+		blockCtx, err = s.prepared.blockContext(block)
+	} else {
+		runner, workRoot, cleanup, workspaceErr := s.gitWorkspace(st, edit.op)
+		if workspaceErr != nil {
+			return workspaceErr
+		}
+		defer cleanup()
+		blockCtx, err = s.openBlock(ctx, runner, workRoot, edit.blockIndex, block)
+	}
 	if err != nil {
 		return err
 	}

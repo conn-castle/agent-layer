@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"syscall"
@@ -635,5 +636,37 @@ func TestRunMainRefreshBypassesDispatchAndProjectCommands(t *testing.T) {
 	}
 	if out.Len() != 0 {
 		t.Fatalf("fork emitted output: %q", out.String())
+	}
+}
+
+func TestRunMainRoutesOnlyMCPServerToImageDispatch(t *testing.T) {
+	origPlain, origMCP := maybeExecFunc, maybeExecMCPServerFunc
+	t.Cleanup(func() { maybeExecFunc, maybeExecMCPServerFunc = origPlain, origMCP })
+	var routed []string
+	maybeExecFunc = func(context.Context, []string, string, string, io.Writer) error {
+		routed = append(routed, "plain")
+		return versiondispatch.ErrDispatched
+	}
+	maybeExecMCPServerFunc = func(context.Context, []string, string, string, io.Writer) error {
+		routed = append(routed, "mcp-server")
+		return versiondispatch.ErrDispatched
+	}
+	for _, args := range [][]string{
+		{"al", "dispatch", "mcp-server"},
+		{"al", "--quiet", "dispatch", "mcp-server"},
+		{"al", "dispatch", "mcp-server", "--quiet"},
+		{"al", "-q", "dispatch", "-q", "mcp-server", "--quiet=true"},
+		{"al", "dispatch", "--quiet=false", "mcp-server"},
+		{"al", "dispatch", "start"},
+		{"al", "dispatch", "mcp-server", "extra"},
+		{"al", "mcp-server"},
+		{"al", "--verbose", "dispatch", "mcp-server"},
+		{"al", "--quiet=maybe", "dispatch", "mcp-server"},
+		{"al", "dispatch", "mcp-server", "--help"},
+	} {
+		runMain(context.Background(), args, io.Discard, io.Discard, func(int) {})
+	}
+	if want := []string{"mcp-server", "mcp-server", "mcp-server", "mcp-server", "mcp-server", "plain", "plain", "plain", "plain", "plain", "plain"}; !slices.Equal(routed, want) {
+		t.Fatalf("routed %v, want %v", routed, want)
 	}
 }

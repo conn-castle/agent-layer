@@ -67,7 +67,8 @@ const (
 // a guess.
 var ErrMalformed = errors.New("skill import journal is malformed")
 
-// ErrAdoptionJournal identifies recovery evidence requiring Agent Layer v1.0.0.
+// ErrAdoptionJournal identifies interrupted v1.0.0 or v1.1.0 adoption evidence,
+// which v1.1.0 recovers (AL_VERSION=1.1.0 al sync).
 var ErrAdoptionJournal = errors.New("unfinished adoption journal")
 
 // WriteIntent is one skill the transaction replaces or creates.

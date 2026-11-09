@@ -98,6 +98,15 @@ func rollbackUpgradeSnapshot(root string, snapshotID string, opts RollbackUpgrad
 		return err
 	}
 	if len(active) > 0 {
+		// A conversion snapshot may recreate local copies because it also
+		// restores the configuration and lock files and removes the imports.
+		restored := conversionRestoredImports(snapshot)
+		owned := map[string]bool{}
+		for name := range active {
+			if !restored.covers(name) {
+				owned[name] = true
+			}
+		}
 		for _, entry := range snapshot.Entries {
 			clean := normalizeRelPath(filepath.Clean(filepath.FromSlash(entry.Path)))
 			if entry.Kind == upgradeSnapshotEntryKindAbsent {
@@ -106,7 +115,7 @@ func rollbackUpgradeSnapshot(root string, snapshotID string, opts RollbackUpgrad
 				}
 				continue
 			}
-			for name := range active {
+			for name := range owned {
 				local := skillmigration.LocalSlot(name)
 				if clean == local || strings.HasPrefix(clean, local+"/") {
 					return fmt.Errorf("rollback %s would recreate converted local source %s alongside its active import; snapshot and imported modifications are preserved", snapshotID, name)
@@ -117,7 +126,7 @@ func rollbackUpgradeSnapshot(root string, snapshotID string, opts RollbackUpgrad
 				if err != nil {
 					return err
 				}
-				if err := skillmigration.CheckConfig(data, active); err != nil {
+				if err := skillmigration.CheckConfig(data, owned); err != nil {
 					return err
 				}
 			}

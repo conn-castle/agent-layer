@@ -35,12 +35,6 @@ func TestTransitionRefusalsPreserveProject(t *testing.T) {
 			state.BaselineVersion = "0.24.3"
 			require.NoError(t, writeManagedBaselineState(r, RealSystem{}, state))
 		}, ErrUnsupportedSource},
-		{"pristine skill", func(t *testing.T, r string) {
-			writeTransitionFile(t, r, ".agent-layer/skills/ship-pr/SKILL.md", testutil.TransitionFixture(t, "ship-pr.md"))
-		}, ErrUnfinishedTransition},
-		{"pristine instruction", func(t *testing.T, r string) {
-			writeTransitionFile(t, r, ".agent-layer/instructions/00_rules.md", testutil.TransitionFixture(t, "00_rules.md"))
-		}, ErrUnfinishedTransition},
 		{"gemini", func(t *testing.T, r string) {
 			writeTransitionFile(t, r, upgradeMigrationConfigPath, []byte("[agents.gemini]\nenabled=true\n"))
 		}, ErrUnfinishedTransition},
@@ -113,10 +107,10 @@ func TestUpgradeInstructionPreflightPreservesUnorderedSources(t *testing.T) {
 	writeTransitionFile(t, root, ".agent-layer/instructions/custom.md", []byte("custom"))
 	before := testutil.SnapshotEvidence(t, root)
 	_, err := BuildUpgradePlan(root, UpgradePlanOptions{System: RealSystem{}})
-	require.EqualError(t, err, config.UnconfiguredLocalInstruction(filepath.Join(root, ".agent-layer/instructions/custom.md"), config.InstructionsConfig{}).Error())
+	require.EqualError(t, err, config.UnconfiguredLocalInstruction(filepath.Join(root, ".agent-layer/instructions/custom.md")).Error())
 	require.Equal(t, before, testutil.SnapshotEvidence(t, root))
 	err = Run(root, Options{System: RealSystem{}, Overwrite: true, Prompter: autoApprovePrompter()})
-	require.EqualError(t, err, config.UnconfiguredLocalInstruction(filepath.Join(root, ".agent-layer/instructions/custom.md"), config.InstructionsConfig{}).Error())
+	require.EqualError(t, err, config.UnconfiguredLocalInstruction(filepath.Join(root, ".agent-layer/instructions/custom.md")).Error())
 	require.Equal(t, before, testutil.SnapshotEvidence(t, root))
 }
 
@@ -198,21 +192,16 @@ func TestRollbackFloorPrecedesRecovery(t *testing.T) {
 	}
 }
 
-func TestTransitionDetectorReportsAllPristineFindingsAndRefusesLinks(t *testing.T) {
+func TestTransitionDetectorRefusesLinkedSkillsRoot(t *testing.T) {
 	root := t.TempDir()
-	writeTransitionFile(t, root, ".agent-layer/skills/ship-pr/SKILL.md", testutil.TransitionFixture(t, "ship-pr.md"))
 	writeTransitionFile(t, root, ".agent-layer/instructions/00_rules.md", testutil.TransitionFixture(t, "00_rules.md"))
-	before := testutil.SnapshotEvidence(t, root)
-	var findings TransitionFindings
-	require.ErrorAs(t, CheckTransitionState(root, RealSystem{}), &findings)
-	require.Len(t, findings, 2)
-	require.Equal(t, before, testutil.SnapshotEvidence(t, root))
-	require.NoError(t, os.RemoveAll(filepath.Join(root, ".agent-layer/skills")))
 	outside := t.TempDir()
-	writeTransitionFile(t, outside, "ship-pr/SKILL.md", testutil.TransitionFixture(t, "ship-pr.md"))
-	require.NoError(t, os.Symlink(outside, filepath.Join(root, ".agent-layer/skills")))
-	before = testutil.SnapshotEvidence(t, root, outside)
-	require.Error(t, CheckTransitionState(root, RealSystem{}))
+	testutil.WriteTransitionSkill(t, outside, "implement")
+	require.NoError(t, os.Symlink(filepath.Join(outside, ".agent-layer/skills"), filepath.Join(root, ".agent-layer/skills")))
+	before := testutil.SnapshotEvidence(t, root, outside)
+	require.NoError(t, CheckTransitionState(root, RealSystem{}))
+	_, err := PlanPristineConversions(root, RealSystem{})
+	require.ErrorContains(t, err, "must be a real unlinked directory")
 	require.Equal(t, before, testutil.SnapshotEvidence(t, root, outside))
 }
 

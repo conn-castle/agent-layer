@@ -47,6 +47,7 @@ func newMCPTestTools(root string, env ...string) *dispatchToolServer {
 		env:         env,
 		waitTimeout: 200 * time.Millisecond,
 		toolTimeout: 30 * time.Second,
+		start:       selectRelease(root, "dev"),
 	}
 }
 

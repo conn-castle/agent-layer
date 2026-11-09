@@ -63,6 +63,7 @@ func TestMCPFreshnessReleaseSelection(t *testing.T) {
 	t.Setenv("AL_DEV_BYPASS_VERSION_DISPATCH", "")
 	t.Setenv("AL_VERSION", "")
 	t.Setenv("AL_NO_NETWORK", "1")
+	t.Setenv("AL_SHIM_ACTIVE", "")
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	bin, marker := t.TempDir(), filepath.Join(t.TempDir(), "native-access")
 	if err := os.WriteFile(filepath.Join(bin, AgentClaude), []byte("#!/bin/sh\ntouch \"$AL_TEST_NATIVE_MARKER\"\nexit 1\n"), 0o700); err != nil { // #nosec G306 -- synthetic native credential-access canary.
@@ -70,40 +71,70 @@ func TestMCPFreshnessReleaseSelection(t *testing.T) {
 	}
 	t.Setenv("PATH", testPath(bin))
 	t.Setenv("AL_TEST_NATIVE_MARKER", marker)
+	pin := filepath.Join(root, ".agent-layer", "al.version")
+	freshnessWrite(t, pin, "v1.2.3\n")
 	tools := newMCPTestTools(root)
 	tools.version = "v1.2.3"
+	tools.start = selectRelease(root, tools.version)
 	session := newMCPTestSession(t, tools)
-	pin := filepath.Join(root, ".agent-layer", "al.version")
-	freshnessWrite(t, pin, "1.2.4\n")
-	for _, override := range []string{"", "1.2.5", "invalid"} {
-		t.Setenv("AL_VERSION", override)
+	assertFresh := func(label string) {
+		t.Helper()
+		if result := callMCPTool(t, session, ToolOptions, OptionsInput{}); result.IsError {
+			t.Fatalf("%s: %s", label, toolResultText(result))
+		}
+		if _, err := os.Stat(marker); err != nil {
+			t.Fatalf("%s did not actually reach native discovery: %v", label, err)
+		}
+		if err := os.Remove(marker); err != nil {
+			t.Fatal(err)
+		}
+	}
+	assertFresh("unchanged pin")
+	// Every change of selected version or provenance is stale: pin changes,
+	// overrides (even of the same version), pin removal, and an empty or corrupt
+	// pin falling back to the running version.
+	for _, change := range []struct{ pin, override string }{
+		{pin: "1.2.4\n"},
+		{pin: "v1.2.3\n", override: "1.2.5"},
+		{pin: "v1.2.3\n", override: "invalid"},
+		{pin: "v1.2.3\n", override: "v1.2.3"},
+		{},
+		{pin: "\n"},
+		{pin: "not-a-version\n"},
+	} {
+		t.Setenv("AL_VERSION", change.override)
+		if change.pin == "" {
+			if err := os.Remove(pin); err != nil && !os.IsNotExist(err) {
+				t.Fatal(err)
+			}
+		} else {
+			freshnessWrite(t, pin, change.pin)
+		}
 		assertStaleProviderTools(t, session, "unknown")
 		assertStaleControls(t, session, root)
 	}
 	if _, err := os.Stat(marker); !os.IsNotExist(err) {
 		t.Fatalf("stale server accessed native provider/credentials: %v", err)
 	}
-	for _, recovery := range []string{"override", "restored pin"} {
-		if recovery == "override" {
-			t.Setenv("AL_VERSION", "v1.2.3") // Override takes precedence over the changed pin.
-		} else {
-			t.Setenv("AL_VERSION", "")
-			freshnessWrite(t, pin, "v1.2.3\n")
-		}
-		if result := callMCPTool(t, session, ToolOptions, OptionsInput{}); result.IsError {
-			t.Fatalf("%s failed to recover: %s", recovery, toolResultText(result))
-		}
-		if _, err := os.Stat(marker); err != nil {
-			t.Fatalf("recovery did not actually reach native discovery: %v", err)
-		}
-		if err := os.Remove(marker); err != nil {
-			t.Fatal(err)
-		}
-	}
-	// Required pin evidence that cannot be read fails closed, before config or native access.
+	t.Setenv("AL_VERSION", "")
+	freshnessWrite(t, pin, "1.2.3\n")
+	assertFresh("restored pin")
+
+	// An unpinned server started at the running version stays fresh until the
+	// project selects something else, including a pin of the same version.
 	if err := os.Remove(pin); err != nil {
 		t.Fatal(err)
 	}
+	tools.start = selectRelease(root, tools.version)
+	assertFresh("unpinned")
+	freshnessWrite(t, pin, "1.2.3\n")
+	assertStaleProviderTools(t, session, "unknown")
+	if err := os.Remove(pin); err != nil {
+		t.Fatal(err)
+	}
+	assertFresh("unpinned again")
+
+	// Required pin evidence that cannot be read fails closed, before config or native access.
 	if err := os.Mkdir(pin, 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -218,8 +249,132 @@ func TestMCPFreshnessRealImages(t *testing.T) {
 				t.Fatalf("pinned options: %s", toolResultText(result))
 			}
 			assertStaleControls(t, session, root)
+			// Removing or corrupting the pin falls back to the running version here,
+			// but a fresh launch would run the global executable instead.
+			for _, change := range []string{"", "not-a-version\n", "1.2.3\n"} {
+				pin := filepath.Join(root, ".agent-layer", "al.version")
+				if change == "" {
+					if err := os.Remove(pin); err != nil {
+						t.Fatal(err)
+					}
+					assertStaleProviderTools(t, session, "unknown")
+					continue
+				}
+				freshnessWrite(t, pin, change)
+				if change == "1.2.3\n" {
+					if result := callMCPTool(t, session, ToolOptions, OptionsInput{}); result.IsError {
+						t.Fatalf("restored pin: %s", toolResultText(result))
+					}
+					continue
+				}
+				assertStaleProviderTools(t, session, "unknown")
+			}
 		}
+	})
+	t.Run("pinned server survives global replacement", func(t *testing.T) {
+		root, bin, cache := writeDispatchRepo(t, dispatchRepoConfig{}), t.TempDir(), t.TempDir()
+		image := filepath.Join(t.TempDir(), "al")
+		copyImage(t, a, image)
+		pin := filepath.Join(root, ".agent-layer", "al.version")
+		freshnessWrite(t, pin, "1.2.3\n")
+		stub := fmt.Sprintf(`#!/bin/sh
+if [ "$1" = "--version" ]; then printf '%%s\n' %q; exit 0; fi
+cat >/dev/null
+printf '%%s\n' '{"type":"thread.started","thread_id":"11111111-1111-4111-8111-111111111111"}' '{"type":"item.completed","item":{"type":"agent_message","text":"pinned image"}}' '{"type":"turn.completed"}'
+`, supportedProviderVersions[AgentCodex])
+		if err := os.WriteFile(filepath.Join(bin, AgentCodex), []byte(stub), 0o700); err != nil {
+			t.Fatal(err)
+		} // #nosec G306 -- synthetic provider.
+		session := connect(t, root, image, bin, "AL_CACHE_DIR="+cache)
+		data, err := os.ReadFile(a) // #nosec G304 -- test-built CLI image.
+		if err != nil {
+			t.Fatal(err)
+		}
+		sum := sha256.Sum256(data)
+		copied := filepath.Join(cache, "images", hex.EncodeToString(sum[:]), "al")
+		if got, err := os.ReadFile(copied); err != nil || sha256.Sum256(got) != sum { // #nosec G304 G703 -- test cache path.
+			t.Fatalf("pinned server did not run from a verified image copy: %v", err)
+		}
+		if entries, _ := os.ReadDir(filepath.Join(cache, "versions")); len(entries) != 0 {
+			t.Fatalf("image handoff wrote the versions cache: %v", entries)
+		}
+		// al update replaces the installed entry; the unchanged pin keeps the server fresh.
+		if err := os.Rename(image, image+".old"); err != nil {
+			t.Fatal(err)
+		}
+		copyImage(t, b, image)
+		if err := os.Remove(image + ".old"); err != nil {
+			t.Fatal(err)
+		}
+		if result := callMCPTool(t, session, ToolOptions, OptionsInput{}); result.IsError {
+			t.Fatalf("pinned server went stale after global replacement: %s", toolResultText(result))
+		}
+		// Darwin relaunches workers from the image path, so admitted work must run A.
+		started := decodeToolResult(t, callMCPTool(t, session, ToolStart, StartInput{Agent: AgentCodex, Model: "gpt-test", Prompt: "fixture"}))
+		if finished := decodeToolResult(t, callMCPTool(t, session, ToolWait, WaitInput{Handle: started.Handle})); finished.State != dispatchStateCompleted {
+			t.Fatalf("worker after global replacement: %+v", finished)
+		}
+		record, err := loadRunRecord(root, started.InvocationID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if record.AgentLayerBuild.SHA256 != hex.EncodeToString(sum[:]) {
+			t.Fatalf("worker did not run the pinned image: %+v", record.AgentLayerBuild)
+		}
+		for _, change := range []string{"1.2.4\n", "", "not-a-version\n"} {
+			if change == "" {
+				if err := os.Remove(pin); err != nil {
+					t.Fatal(err)
+				}
+			} else {
+				freshnessWrite(t, pin, change)
+			}
+			assertStaleProviderTools(t, session, started.Handle)
+		}
+		freshnessWrite(t, pin, "1.2.3\n")
+		if result := callMCPTool(t, session, ToolOptions, OptionsInput{}); result.IsError {
+			t.Fatalf("restored pin: %s", toolResultText(result))
+		}
+		// Another server of the same release reuses the verified image entry.
+		other := filepath.Join(t.TempDir(), "al")
+		copyImage(t, a, other)
+		second := connect(t, root, other, bin, "AL_CACHE_DIR="+cache, "AL_VERSION=1.2.3")
+		if result := callMCPTool(t, second, ToolOptions, OptionsInput{}); result.IsError {
+			t.Fatalf("second pinned server: %s", toolResultText(result))
+		}
+		if entries, err := os.ReadDir(filepath.Join(cache, "images")); err != nil || len(entries) != 1 {
+			t.Fatalf("image entry was not reused: %v %v", entries, err)
+		}
+	})
+	t.Run("unpinned dispatched server tracks the installed entry", func(t *testing.T) {
+		root, bin := writeDispatchRepo(t, dispatchRepoConfig{}), t.TempDir()
+		runner, installed := filepath.Join(t.TempDir(), "al-cached"), filepath.Join(t.TempDir(), "al")
+		copyImage(t, a, runner)
+		copyImage(t, a, installed)
+		session := connect(t, root, runner, bin, "AL_SHIM_ACTIVE=1", "AL_INSTALLED_EXECUTABLE="+installed)
+		if result := callMCPTool(t, session, ToolOptions, OptionsInput{}); result.IsError {
+			t.Fatalf("unpinned dispatched server: %s", toolResultText(result))
+		}
+		if err := os.Rename(installed, installed+".old"); err != nil {
+			t.Fatal(err)
+		}
+		copyImage(t, b, installed)
+		assertStaleProviderTools(t, session, "unknown")
 
+		// Without the installed entry a global replacement is undetectable, so
+		// the server fails closed from the start.
+		for _, entry := range []string{"", "AL_INSTALLED_EXECUTABLE="} {
+			env := []string{"AL_SHIM_ACTIVE=1"}
+			if entry != "" {
+				env = append(env, entry)
+			}
+			unverifiable := connect(t, root, runner, bin, env...)
+			result := callMCPTool(t, unverifiable, ToolOptions, OptionsInput{})
+			if !result.IsError || !strings.Contains(toolResultText(result), "AL_INSTALLED_EXECUTABLE is unset") {
+				t.Fatalf("unverifiable unpinned server stayed fresh: %s", toolResultText(result))
+			}
+			assertStaleControls(t, unverifiable, root)
+		}
 	})
 	t.Run("admitted worker retains image after replacement", func(t *testing.T) {
 		root, bin := writeDispatchRepo(t, dispatchRepoConfig{}), t.TempDir()

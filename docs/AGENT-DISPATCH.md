@@ -590,10 +590,29 @@ directory of the intended provider CLI before it. A project
 pinned to a release older than this launcher (#513) still generates the older
 launcher; run `al update`, then `al upgrade` in the project.
 
-Running MCP servers keep their code until reconnected. After a pin change,
-executable replacement or source rebuild, `dispatch_options`, `dispatch_start`
-and `dispatch_continue` refuse new provider work if the selected code differs
-or freshness cannot be verified. Switching source/release mode or changing the
+Running MCP servers keep their code until reconnected. A release server whose
+project pin or `AL_VERSION` selects the running release first re-executes from an
+immutable content-addressed copy of its own image,
+`<cache root>/images/<sha256>/al` (default cache root `~/.cache/agent-layer`,
+or `AL_CACHE_DIR`). The copy is written through a synced temporary file, verified
+by SHA-256, and renamed into place under a file lock. An existing entry is reused
+only after it is re-hashed. The copy never goes into `versions/<v>`, which
+holds only checksum-verified downloads. If any step fails, the server runs in
+place after one stderr warning, and replacing the installed `al` then makes it
+stale as before. The server records its starting selection (version and
+source: pin, `AL_VERSION`, or current). `dispatch_options`, `dispatch_start`
+and `dispatch_continue` refuse new provider work when any of these hold:
+
+- that selection changes, including a pin change, pin removal or a corrupt pin
+  that falls back to the running version;
+- the selected code differs from the running code;
+- an unpinned server's executable, or the installed entry it was dispatched
+  through, is replaced;
+- a source rebuild replaces the development executable;
+- freshness cannot be verified.
+
+A pinned server therefore keeps accepting work after `al update` or `brew
+upgrade` replaces the global `al` while the pin still selects its release. Switching source/release mode or changing the
 launch environment also requires reconnecting; the running server cannot detect
 those projection changes. Wait, inspect, output and cancel remain available for existing runs. Already admitted work finishes on its original
 image; a rebuild does not cancel or replay it. On Linux detached workers use
@@ -603,7 +622,10 @@ keep the existing development executable when rebuilt output is unchanged, so
 no reconnect is needed then.
 
 For release updates, run `al update`, then `al upgrade` in each repository and
-reconnect the `agent-layer` MCP server once. In Claude Code use `/mcp` to
+reconnect the `agent-layer` MCP server once; the upgrade changes the pin.
+Servers started by v1.2.0 or earlier ran from the replaceable install path, so
+they refuse new work after the update that installs a newer release even
+before the project is upgraded. In Claude Code use `/mcp` to
 reconnect; for a persistent Codex app restart the app or reload MCP configuration.
 A new chat can reuse an existing server. Source workflows use `make al-sync` or
 `make al-upgrade` to build and project source despite an older repository pin;

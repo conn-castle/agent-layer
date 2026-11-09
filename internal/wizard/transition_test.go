@@ -23,9 +23,7 @@ func TestWizardAndProfileRefuseBeforeAnyMutationOrPrompt(t *testing.T) {
 				root := t.TempDir()
 				require.NoError(t, install.Run(root, install.Options{System: install.RealSystem{}, PinVersion: "1.1.0"}))
 				if scenario == "pristine skill" {
-					skill := filepath.Join(root, ".agent-layer/skills/ship-pr")
-					require.NoError(t, os.MkdirAll(skill, 0o750))
-					require.NoError(t, os.WriteFile(filepath.Join(skill, "SKILL.md"), testutil.TransitionFixture(t, "ship-pr.md"), 0o600))
+					testutil.WriteTransitionSkill(t, root, "ship-pr")
 					// Missing config proves the gate precedes ensureWizardConfig and profile install.
 					require.NoError(t, os.Remove(config.DefaultPaths(root).ConfigPath))
 				} else {
@@ -50,6 +48,10 @@ func TestWizardAndProfileRefuseBeforeAnyMutationOrPrompt(t *testing.T) {
 					err = RunProfile(t.Context(), root, runSync, "1.1.0", filepath.Join(root, "missing-profile.toml"), kind == "profile apply", io.Discard)
 				}
 				require.ErrorIs(t, err, install.ErrUnfinishedTransition)
+				if scenario == "pristine skill" {
+					require.ErrorContains(t, err, "Run al upgrade to convert them")
+					require.NotContains(t, err.Error(), "v1.0.0 executable")
+				}
 				require.Equal(t, before, testutil.SnapshotEvidence(t, root))
 			})
 		}

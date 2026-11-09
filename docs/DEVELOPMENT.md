@@ -359,14 +359,31 @@ for fresh and supported layouts. Sync never assigns orders or fetches content.
 ### Upgrade and migration internals
 
 v1.2.0 retires pre-1.0 migration execution and optional adoption (#428). The
-read-only install detector recognizes only published-hash pristine moved skills
-and standard instructions, needs-upgrade config, and adoption-v2 evidence.
-Customized copies remain user content. The source floor uses
-`skillmigration.MinimumCLI`; unknown clean sources receive only source-agnostic operations after 1.0.0.
-Upgrade and wizard/profile entry check before recovery and again under the
-project lock. Manual rollback checks its captured pin before recovery. Journal
-recovery preflights both tiers for v2 evidence before touching either; ordinary
-v1 recovery remains supported. Install or run the v1.0.0 executable itself: run its `al upgrade`, then its `al wizard` to adopt or recover before retrying.
+read-only install gate (`CheckTransitionState`) blocks only needs-upgrade config
+and adoption-v2 evidence. `PlanPristineConversions` lists unmodified shipped
+copies: a moved skill directory whose entire tree equals one manifest version,
+or a standard instruction with a published hash and its own local block.
+Upgrade converts them (#522): consent and a write-free network preflight run
+under the project lock before the snapshot, then the `convertPristineCopies`
+step commits journaled imports through the lock-held `skillimport` conversion
+API (injected from `cmd/al` as `install.PristineConverter`, because `install`
+cannot import `skillimport`) and deletes each local copy only after its import
+commits, before the pin advances. Deletion renames the copy into
+`.agent-layer/tmp/upgrade-conversion-<id>/` and re-verifies it there; a copy
+edited during the upgrade stays there, out of the rollback's reach, and fails the
+step. The snapshot captures configuration, both lock files and both imported
+tiers whole, because an import also materializes other exact selectors already
+in its block. A leftover local copy completes as delete-only only when
+configuration owns its import and the imported tree matches its lock entry;
+otherwise upgrade refuses before mutation. Upgrade also refuses an unconfigured
+local instruction file, which sync would refuse after the pin advanced.
+Customized copies remain user content. The source
+floor uses `skillmigration.MinimumCLI`; unknown clean sources receive only
+source-agnostic operations after 1.0.0. Upgrade and wizard/profile entry check
+before recovery and again under the project lock; the wizard refuses convertible
+copies and asks for `al upgrade`. Manual rollback checks its captured pin before
+recovery. Journal recovery preflights both tiers for v2 evidence before touching
+either; ordinary v1 recovery remains supported.
 
 Published template and migration manifests are immutable. Historical kinds still
 parse for release tooling and the required-field guardrail, but retired kinds

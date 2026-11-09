@@ -52,6 +52,11 @@ const (
 	DispatchInvalidPinnedVersionWarningFmt = "warning: invalid pinned version in %s: %v; ignoring (run al upgrade to repair)\n"
 	DispatchVersionSourceFmt               = "Agent Layer version source: %s (%s)\n"
 	DispatchVersionOverrideWarningFmt      = "warning: %s overrides repo pin %s from .agent-layer/al.version\n"
+	// DispatchMCPImageFallbackFmt reports a pinned MCP server that could not move
+	// to its immutable image copy and keeps running from the installed path.
+	DispatchMCPImageFallbackFmt = "warning: could not run the agent-layer MCP server from an immutable image copy (%v); running in place, so replacing the installed al (for example with al update) will require reconnecting this server\n"
+	DispatchImageMismatchFmt    = "image %s does not match the running executable"
+	DispatchImageChangedFmt     = "running executable changed while it was copied"
 
 	// RootStartPathRequired indicates start path is required for root resolution.
 	RootStartPathRequired   = "start path is required"
