@@ -61,7 +61,7 @@ func ConfigureEnvironment(root string, env []string, cfg config.CodexConfig, war
 	if !filepath.IsAbs(current) {
 		// Launch, dispatch, and discovery children run in different working
 		// directories, so a relative home is passed on as an absolute path.
-		selected = relativeHome(root, current)
+		selected = clients.ResolveRelativeHome(root, current, homeDirName)
 		env = clients.SetEnv(env, "CODEX_HOME", selected)
 	}
 	if !clients.SamePath(selected, expected) && warning != nil {
@@ -99,25 +99,4 @@ func EnsureSelectedHome(root string, env []string, cfg config.CodexConfig) error
 	}
 	// A non-directory or a dangling symlink occupies the home path.
 	return fmt.Errorf(messages.ClientsCodexHomeNotDirectoryFmt, home)
-}
-
-// relativeHome resolves a relative CODEX_HOME from the caller's directory.
-// Because al runs from any project subfolder, .codex also selects the project
-// home when nothing exists at the caller-relative path.
-func relativeHome(root, current string) string {
-	expected := filepath.Join(root, homeDirName)
-	home, err := filepath.Abs(current)
-	if err != nil {
-		return current
-	}
-	// Compare parents: symlink resolution cannot match aliases of a missing leaf.
-	if filepath.Base(home) == homeDirName && clients.SamePath(filepath.Dir(home), root) {
-		return expected
-	}
-	if filepath.Clean(current) == homeDirName {
-		if _, err := os.Lstat(home); errors.Is(err, fs.ErrNotExist) {
-			return expected
-		}
-	}
-	return home
 }
