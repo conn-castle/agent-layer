@@ -190,6 +190,22 @@ func TestUpgradeConversionPreflightPlansSeededConfigWhenMissing(t *testing.T) {
 			require.FileExists(t, filepath.Join(paths.ImportedSkillsDir, name, "SKILL.md"))
 		}
 	})
+	t.Run("converts beside shipped local instructions", func(t *testing.T) {
+		// Without configuration the shipped instruction files are not
+		// offered, and skill planning reads skills only, so they neither
+		// refuse the preflight nor change.
+		root := pristineConversionProject(t)
+		paths := config.DefaultPaths(root)
+		require.NoError(t, os.Remove(paths.ConfigPath))
+		require.NoError(t, os.WriteFile(filepath.Join(root, ".agent-layer/sync.lock"), nil, 0o600))
+		instructions := testutil.SnapshotEvidence(t, paths.InstructionsDir)
+		require.NoError(t, upgradeWith(root, UpgradeConverter{}))
+		for _, name := range []string{"implement", "ship-pr"} {
+			require.NoDirExists(t, filepath.Join(paths.SkillsDir, name))
+			require.FileExists(t, filepath.Join(paths.ImportedSkillsDir, name, "SKILL.md"))
+		}
+		require.Equal(t, instructions, testutil.SnapshotEvidence(t, paths.InstructionsDir))
+	})
 }
 
 // seamConverter injects transaction behavior into the real conversion.

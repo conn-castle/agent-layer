@@ -459,3 +459,28 @@ func TestSkillImportValidationUsesASCIIRefPadding(t *testing.T) {
 		})
 	}
 }
+
+func TestCatalogBlockEditable(t *testing.T) {
+	const repo = "github.com/example/skills"
+	block := func(selectors ...string) *Config {
+		return &Config{Skills: SkillsConfig{Imports: []SkillImport{{Repository: repo, Selectors: selectors}}}}
+	}
+	cases := []struct {
+		name string
+		cfg  *Config
+		want bool
+	}{
+		{"no block", &Config{}, true},
+		{"exact selectors", block("skills/a", "skills/b"), true},
+		{"wildcard", block("skills/a", "skills/*"), false},
+		{"character class", block("skills/[ab]"), false},
+		{"exclusion", block("skills/a", "!skills/b"), false},
+		{"other repository", &Config{Skills: SkillsConfig{Imports: []SkillImport{{Repository: "github.com/example/other", Selectors: []string{"skills/*"}}}}}, true},
+		{"pinned block", &Config{Skills: SkillsConfig{Imports: []SkillImport{{Repository: repo, Ref: "v1", Selectors: []string{"skills/*"}}}}}, true},
+	}
+	for _, tc := range cases {
+		if got := CatalogBlockEditable(tc.cfg, repo); got != tc.want {
+			t.Errorf("%s: CatalogBlockEditable = %v, want %v", tc.name, got, tc.want)
+		}
+	}
+}

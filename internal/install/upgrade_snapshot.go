@@ -56,18 +56,14 @@ type upgradeSnapshotEntry struct {
 }
 
 type upgradeSnapshot struct {
-	SchemaVersion   int                   `json:"schema_version"`
-	SnapshotID      string                `json:"snapshot_id"`
-	CreatedAtUTC    string                `json:"created_at_utc"`
-	Status          upgradeSnapshotStatus `json:"status"`
-	FailureStep     string                `json:"failure_step,omitempty"`
-	FailureError    string                `json:"failure_error,omitempty"`
-	RollbackTargets []string              `json:"rollback_targets,omitempty"`
-	// ConvertedLeftovers lists leftover local copies of already intact imports
-	// that the upgrade deletes. A manual rollback does not recreate them beside
-	// their still-active imports, which sync would refuse.
-	ConvertedLeftovers []string               `json:"converted_leftovers,omitempty"`
-	Entries            []upgradeSnapshotEntry `json:"entries"`
+	SchemaVersion   int                    `json:"schema_version"`
+	SnapshotID      string                 `json:"snapshot_id"`
+	CreatedAtUTC    string                 `json:"created_at_utc"`
+	Status          upgradeSnapshotStatus  `json:"status"`
+	FailureStep     string                 `json:"failure_step,omitempty"`
+	FailureError    string                 `json:"failure_error,omitempty"`
+	RollbackTargets []string               `json:"rollback_targets,omitempty"`
+	Entries         []upgradeSnapshotEntry `json:"entries"`
 }
 
 type upgradeSnapshotFile struct {
@@ -125,11 +121,6 @@ func (inst *installer) createUpgradeSnapshot() (upgradeSnapshot, error) {
 		CreatedAtUTC:  now.Format(time.RFC3339),
 		Status:        upgradeSnapshotStatusCreated,
 		Entries:       entries,
-	}
-	for _, item := range inst.conversions {
-		if item.DeleteOnly {
-			snapshot.ConvertedLeftovers = append(snapshot.ConvertedLeftovers, item.Path)
-		}
 	}
 	if err := inst.writeUpgradeSnapshot(snapshot, true); err != nil {
 		return upgradeSnapshot{}, err
@@ -363,10 +354,6 @@ func readUpgradeSnapshotIfValid(path string, sys System) (upgradeSnapshot, bool)
 }
 
 func (inst *installer) rollbackUpgradeSnapshot(snapshot *upgradeSnapshot, targets []string) error {
-	targets, err := withoutRollbackKeep(inst.sys, inst.root, snapshot.Entries, targets, inst.rollbackKeep)
-	if err != nil {
-		return err
-	}
 	rollbackTargets, err := rollbackTargetRelativePaths(inst.root, targets)
 	if err != nil {
 		return err
@@ -376,84 +363,6 @@ func (inst *installer) rollbackUpgradeSnapshot(snapshot *upgradeSnapshot, target
 		return fmt.Errorf("persist rollback targets before rollback: %w", err)
 	}
 	return rollbackUpgradeSnapshotState(inst.root, inst.sys, *snapshot, targets)
-}
-
-// withoutRollbackKeep returns the targets to roll back while leaving each kept
-// path and everything below it untouched. A target at or below a kept path is
-// dropped. A target containing one is replaced by its children, those on disk
-// and those the snapshot holds, recursively, so everything else is still reset
-// and restored. The result is persistable, so a manual retry also leaves the
-// kept paths alone.
-func withoutRollbackKeep(sys System, root string, entries []upgradeSnapshotEntry, targets, keep []string) ([]string, error) {
-	if len(keep) == 0 {
-		return targets, nil
-	}
-	sep := string(filepath.Separator)
-	out := make([]string, 0, len(targets))
-	pending := slices.Clone(targets)
-	for len(pending) > 0 {
-		target := filepath.Clean(pending[0])
-		pending = pending[1:]
-		dropped, contains := false, false
-		for _, kept := range keep {
-			kept = filepath.Clean(kept)
-			dropped = dropped || target == kept || strings.HasPrefix(target, kept+sep)
-			contains = contains || strings.HasPrefix(kept, target+sep)
-		}
-		switch {
-		case dropped:
-		case contains:
-			children, err := rollbackTargetChildren(sys, root, entries, target)
-			if err != nil {
-				return nil, err
-			}
-			pending = append(pending, children...)
-		default:
-			out = append(out, target)
-		}
-	}
-	return out, nil
-}
-
-// rollbackTargetChildren lists the direct children of dir on disk and in the
-// snapshot entries.
-func rollbackTargetChildren(sys System, root string, entries []upgradeSnapshotEntry, dir string) ([]string, error) {
-	names := map[string]bool{}
-	err := sys.WalkDir(dir, func(path string, entry fs.DirEntry, err error) error {
-		if err != nil {
-			if errors.Is(err, os.ErrNotExist) {
-				return nil
-			}
-			return err
-		}
-		if path == dir {
-			return nil
-		}
-		names[entry.Name()] = true
-		if entry.IsDir() {
-			return fs.SkipDir
-		}
-		return nil
-	})
-	if err != nil {
-		return nil, err
-	}
-	rel, err := filepath.Rel(root, dir)
-	if err != nil {
-		return nil, err
-	}
-	prefix := normalizeRelPath(filepath.Clean(rel)) + "/"
-	for _, entry := range entries {
-		if name, ok := strings.CutPrefix(normalizeRelPath(filepath.Clean(filepath.FromSlash(entry.Path))), prefix); ok {
-			names[strings.SplitN(name, "/", 2)[0]] = true
-		}
-	}
-	children := make([]string, 0, len(names))
-	for name := range names {
-		children = append(children, filepath.Join(dir, name))
-	}
-	sort.Strings(children)
-	return children, nil
 }
 
 func (inst *installer) captureUpgradeSnapshotEntries() ([]upgradeSnapshotEntry, error) {
@@ -632,9 +541,13 @@ func (inst *installer) writeTemplateDirsTargetPaths(catalogDirs []templateDir) [
 	for _, dir := range catalogDirs {
 		paths = append(paths, dir.destRoot)
 	}
-	// Failed template writes must reset legacy slots without resetting user skills.
+	// Failed template writes must reset legacy slots without resetting user
+	// skills. A delete-only conversion's slot is left out: no rollback
+	// recreates a leftover beside its committed import.
 	for _, name := range templates.RetiredSkillNames {
-		paths = append(paths, filepath.Join(inst.root, ".agent-layer", "skills", name))
+		if path := filepath.Join(inst.root, ".agent-layer", "skills", name); !inst.isDeleteOnlyConversion(path) {
+			paths = append(paths, path)
+		}
 	}
 	return uniqueNormalizedPaths(paths)
 }

@@ -148,17 +148,24 @@ func (imp SkillImport) SelectingPositiveSelector(candidate string) (string, bool
 	return selected, selected != ""
 }
 
-// ManualSkillSelectors reports selectors that make an import block manually
-// managed: any exclusion or wildcard pattern. Tools that edit exact catalog
-// selectors (the wizard and upgrade conversion) leave such a block to
-// explicit al skills commands.
-func ManualSkillSelectors(selectors []string) bool {
-	for _, selector := range selectors {
-		if IsSkillExclusionSelector(selector) || strings.ContainsAny(NormalizeSkillSelector(selector), "*?[") {
-			return true
+// CatalogBlockEditable reports whether tools that edit exact catalog selectors
+// (the wizard and upgrade conversion) may edit cfg's default-policy import
+// block for repository: true when there is none or every selector is exact.
+// Any exclusion or wildcard pattern makes the whole block manually managed,
+// left to explicit al skills commands.
+func CatalogBlockEditable(cfg *Config, repository string) bool {
+	identity := SkillImport{Repository: repository}.Identity()
+	for _, imp := range cfg.Skills.Imports {
+		if imp.Identity() != identity {
+			continue
+		}
+		for _, selector := range imp.Selectors {
+			if IsSkillExclusionSelector(selector) || strings.ContainsAny(NormalizeSkillSelector(selector), "*?[") {
+				return false
+			}
 		}
 	}
-	return false
+	return true
 }
 
 // IsSkillExclusionSelector reports whether a configured selector removes

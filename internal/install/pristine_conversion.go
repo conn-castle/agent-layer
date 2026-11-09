@@ -150,10 +150,11 @@ func (inst *installer) convertPristineCopies() error {
 
 // failConversion fails the step after moving every local copy edited during
 // the upgrade out of the rollback's reach. The snapshot predates those edits,
-// so restoring it would otherwise overwrite them.
+// so restoring it would otherwise overwrite them. Delete-only copies are not
+// rollback targets, so an edit to one is already left in place.
 func (inst *installer) failConversion(cause error) error {
 	var preserved []error
-	for _, item := range inst.conversions {
+	for _, item := range pendingImports(inst.conversions) {
 		path := inst.localCopyPath(item)
 		if _, err := inst.sys.Lstat(path); err != nil || inst.verifyPristineCopy(item, path) == nil {
 			continue
@@ -194,8 +195,9 @@ func (inst *installer) removePristineCopy(item PristineConversion) error {
 
 // preserveEditedCopy moves (or, across filesystems, copies) a local copy edited
 // during the upgrade into .agent-layer/tmp, which rollback never touches, and
-// returns the error that fails the step. When neither works the copy stays at
-// its path, and the automatic rollback is told to leave that path untouched.
+// returns the error that fails the step. The full rollback still runs, so when
+// neither works it restores the shipped copy and the edit is lost; the error
+// names the path.
 func (inst *installer) preserveEditedCopy(item PristineConversion) error {
 	src := inst.localCopyPath(item)
 	dest, err := inst.conversionRemovalPath(item)
@@ -205,7 +207,6 @@ func (inst *installer) preserveEditedCopy(item PristineConversion) error {
 		}
 	}
 	if err != nil {
-		inst.rollbackKeep = append(inst.rollbackKeep, src)
 		return fmt.Errorf(messages.UpgradeConvertPristineEditedUnpreservedFmt, item.Path, err)
 	}
 	inst.conversionPreserved = true
@@ -307,10 +308,23 @@ func (inst *installer) convertPristineCopiesTargetPaths() []string {
 	if len(pendingImports(inst.conversions)) > 0 {
 		targets = append(targets, paths.SkillsLockPath, paths.InstructionsLockPath, paths.ImportedSkillsDir, paths.ImportedInstructionsDir)
 	}
-	for _, item := range inst.conversions {
+	for _, item := range pendingImports(inst.conversions) {
 		targets = append(targets, inst.localCopyPath(item))
 	}
 	return uniqueNormalizedPaths(targets)
+}
+
+// isDeleteOnlyConversion reports whether path is the local copy of a
+// delete-only conversion. Such a copy is an unmodified leftover of an import
+// that already committed, so the upgrade neither snapshots it nor lets any
+// rollback recreate it beside that import.
+func (inst *installer) isDeleteOnlyConversion(path string) bool {
+	for _, item := range inst.conversions {
+		if item.DeleteOnly && filepath.Clean(inst.localCopyPath(item)) == filepath.Clean(path) {
+			return true
+		}
+	}
+	return false
 }
 
 func (inst *installer) closePreparedConversion() {

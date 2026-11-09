@@ -36,19 +36,9 @@ type CatalogMember struct {
 
 const catalogManualBlockMessage = "the default-policy import block is manually managed; the wizard cannot add or remove its selectors; use al skills add/remove/pull explicitly with the existing policy"
 
-// catalogBlockEditable applies eligibility to the entire block, not just the
-// selector being edited. Wildcards and exclusions make a block manually managed.
-func catalogBlockEditable(block config.SkillImport, repository string) bool {
-	if block.Identity() != (config.SkillImport{Repository: repository}).Identity() {
-		return false
-	}
-	return !config.ManualSkillSelectors(block.Selectors)
-}
-
 // requireCatalogPolicy is called on freshly recovered state under the project lock.
 func requireCatalogPolicy(st *state) error {
-	identity := (config.SkillImport{Repository: templates.GeneralSkillsRepository}).Identity()
-	if block, _, ok := findBlockByIdentity(st.cfg, identity); ok && !catalogBlockEditable(block, identity.Repository) {
+	if !config.CatalogBlockEditable(st.cfg, templates.GeneralSkillsRepository) {
 		return errors.New(catalogManualBlockMessage)
 	}
 	return nil
@@ -164,10 +154,10 @@ func catalogCandidateEntries(dir, name string) ([]os.DirEntry, error) {
 
 func catalogMember(st *state, repository, selector string) CatalogMember {
 	identity := config.SkillImport{Repository: repository}.Identity()
-	defaultBlock, _, hasDefaultBlock := findBlockByIdentity(st.cfg, identity)
+	editable := config.CatalogBlockEditable(st.cfg, repository)
 	name := path.Base(selector)
 	member := CatalogMember{Name: name, Selector: selector}
-	if hasDefaultBlock && !catalogBlockEditable(defaultBlock, repository) {
+	if !editable {
 		member.AddBlocked = catalogManualBlockMessage
 	}
 	_, localPresent := st.userSkills[collisionName(name)]
@@ -178,7 +168,7 @@ func catalogMember(st *state, repository, selector string) CatalogMember {
 		}
 		if _, selected := selectingPositiveSelector(block, selector); selected {
 			member.Configured = true
-			if catalogBlockEditable(block, repository) && containsSelector(block.Selectors, selector) {
+			if editable && block.Identity() == identity && containsSelector(block.Selectors, selector) {
 				member.DefaultExact = true
 			}
 		}

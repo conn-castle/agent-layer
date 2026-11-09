@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"slices"
 	"sort"
 	"strings"
 
@@ -98,12 +97,7 @@ func rollbackUpgradeSnapshot(root string, snapshotID string, opts RollbackUpgrad
 	if err != nil {
 		return err
 	}
-	// Deleted leftovers of still-active imports are neither reset nor
-	// recreated: the rollback leaves those paths alone rather than refusing.
-	leftovers := convertedLeftovers(root, snapshot, active)
-	restore := snapshot
 	if len(active) > 0 {
-		restore.Entries = entriesOutside(root, snapshot.Entries, leftovers)
 		// A conversion snapshot may recreate local copies because it also
 		// restores the configuration and lock files and removes the imports.
 		restored := conversionRestoredImports(snapshot)
@@ -113,7 +107,7 @@ func rollbackUpgradeSnapshot(root string, snapshotID string, opts RollbackUpgrad
 				owned[name] = true
 			}
 		}
-		for _, entry := range restore.Entries {
+		for _, entry := range snapshot.Entries {
 			clean := normalizeRelPath(filepath.Clean(filepath.FromSlash(entry.Path)))
 			if entry.Kind == upgradeSnapshotEntryKindAbsent {
 				// Removing configuration is safe only when the rollback also
@@ -144,9 +138,6 @@ func rollbackUpgradeSnapshot(root string, snapshotID string, opts RollbackUpgrad
 	if err != nil {
 		return err
 	}
-	if targets, err = withoutRollbackKeep(sys, root, snapshot.Entries, targets, leftovers); err != nil {
-		return err
-	}
 	if len(snapshot.RollbackTargets) == 0 && len(targets) > 0 {
 		snapshot.RollbackTargets, err = rollbackTargetRelativePaths(root, targets)
 		if err != nil {
@@ -156,7 +147,7 @@ func rollbackUpgradeSnapshot(root string, snapshotID string, opts RollbackUpgrad
 			return fmt.Errorf("persist rollback targets before rollback snapshot %s: %w", snapshotID, err)
 		}
 	}
-	if err := rollbackUpgradeSnapshotState(root, sys, restore, targets); err != nil {
+	if err := rollbackUpgradeSnapshotState(root, sys, snapshot, targets); err != nil {
 		if snapshot.Status == upgradeSnapshotStatusRollbackFailed && strings.TrimSpace(snapshot.FailureError) != "" {
 			snapshot.FailureError = fmt.Sprintf("%s; retry rollback failed: %v", snapshot.FailureError, err)
 		} else {
@@ -175,39 +166,6 @@ func rollbackUpgradeSnapshot(root string, snapshotID string, opts RollbackUpgrad
 		return fmt.Errorf("rollback snapshot %s succeeded but failed to persist manually_rolled_back state: %w", snapshotID, err)
 	}
 	return nil
-}
-
-// convertedLeftovers returns the absolute local slots of leftover copies the
-// upgrade deleted beside intact imports that are still active. Recreating them
-// would restore a project that sync refuses; their content is the unmodified
-// shipped copy the import already holds.
-func convertedLeftovers(root string, snapshot upgradeSnapshot, active map[string]bool) []string {
-	var leftovers []string
-	for name := range active {
-		if slot := skillmigration.LocalSlot(name); slices.Contains(snapshot.ConvertedLeftovers, slot) {
-			leftovers = append(leftovers, filepath.Join(root, filepath.FromSlash(slot)))
-		}
-	}
-	return leftovers
-}
-
-// entriesOutside drops entries at or below any of the absolute paths.
-func entriesOutside(root string, entries []upgradeSnapshotEntry, paths []string) []upgradeSnapshotEntry {
-	if len(paths) == 0 {
-		return entries
-	}
-	out := make([]upgradeSnapshotEntry, 0, len(entries))
-	for _, entry := range entries {
-		abs := filepath.Join(root, filepath.Clean(filepath.FromSlash(entry.Path)))
-		inside := false
-		for _, path := range paths {
-			inside = inside || abs == path || strings.HasPrefix(abs, path+string(filepath.Separator))
-		}
-		if !inside {
-			out = append(out, entry)
-		}
-	}
-	return out
 }
 
 func rollbackTargetsForSnapshot(root string, snapshot upgradeSnapshot) ([]string, error) {

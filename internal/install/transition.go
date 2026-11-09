@@ -171,7 +171,7 @@ func PlanPristineConversions(root string, sys System) ([]PristineConversion, err
 			item.DeleteOnly = true
 		case skillImportConfigured(cfg, item.Selector):
 			continue // Configured but not imported: ordinary import commands own it.
-		case !catalogBlockEditable(cfg):
+		case !config.CatalogBlockEditable(cfg, templates.GeneralSkillsRepository):
 			continue // Imports never edit a manually managed catalog block.
 		default:
 			if exists, err := transitionPathExists(root, ".agent-layer/skills-imported/"+item.Name, sys); err != nil {
@@ -436,19 +436,6 @@ func localInstructionNamed(root string, cfg *config.Config, name string, sys Sys
 		}
 	}
 	return transitionPathExists(root, ".agent-layer/instructions/"+name, sys)
-}
-
-// catalogBlockEditable applies the import policy (config.ManualSkillSelectors):
-// conversion never edits a manually managed default-policy catalog block, so
-// its shipped copies stay user-managed.
-func catalogBlockEditable(cfg *config.Config) bool {
-	identity := config.SkillImport{Repository: templates.GeneralSkillsRepository}.Identity()
-	for _, imp := range cfg.Skills.Imports {
-		if imp.Identity() == identity && config.ManualSkillSelectors(imp.Selectors) {
-			return false
-		}
-	}
-	return true
 }
 
 // instructionImportConfigured reports any instruction import, from any

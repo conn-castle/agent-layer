@@ -380,16 +380,18 @@ cannot import `skillimport`) and deletes each local copy only after its import
 commits, before the pin advances. Deletion renames the copy into
 `.agent-layer/tmp/upgrade-conversion-<id>/` and re-verifies it there; a copy
 edited during the upgrade stays there, out of the rollback's reach, and fails the
-step; if it cannot be moved, the automatic rollback skips that path and its
-subtree (splitting any target that contains it) and restores everything else.
+step. On any step failure, every edited copy still in place is renamed (or, if
+that fails, copied) there before the full rollback runs; if both fail, the step
+error names the path and the rollback restores the shipped copy, so an edit made
+during the upgrade is lost only when `.agent-layer/tmp` is unwritable.
 The step seeds a missing `config.toml` before importing. The snapshot captures configuration, both lock files and both imported
 tiers whole, because an import also materializes other exact selectors already
 in its block. A leftover local copy completes as delete-only only when
 configuration owns its import and the imported tree matches its lock entry;
-otherwise upgrade refuses before mutation. The snapshot records deleted
-leftovers, and manual rollback neither resets nor recreates those paths while
-their imports stay active. A snapshot taken without `config.toml` removes the
-seeded file along with the imports. Upgrade also refuses an unconfigured
+otherwise upgrade refuses before mutation. Leftover paths are neither
+snapshotted nor rollback targets, so no rollback recreates them beside their
+committed imports. A snapshot taken without `config.toml` removes the seeded
+file along with the imports. Upgrade also refuses an unconfigured
 local instruction file, which sync would refuse after the pin advanced.
 Customized copies remain user content. The source
 floor uses `skillmigration.MinimumCLI`; unknown clean sources receive only

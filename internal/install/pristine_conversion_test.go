@@ -388,12 +388,19 @@ func TestUpgradeCompletesInterruptedConversionAsDeleteOnly(t *testing.T) {
 	require.NoDirExists(t, filepath.Join(root, ".agent-layer/skills/ship-pr"))
 	require.NoFileExists(t, filepath.Join(root, ".agent-layer/instructions/00_rules.md"))
 
-	// Manual rollback restores the rest of the snapshot without recreating the
-	// leftovers beside their still-active imports.
+	// Leftovers are not snapshotted, so a manual rollback restores the rest of
+	// the snapshot without recreating them beside their still-active imports.
 	snapshots, err := ListUpgradeSnapshots(root, RealSystem{})
 	require.NoError(t, err)
+	snapshot, err := readUpgradeSnapshot(filepath.Join(root, upgradeSnapshotDirRelPath, snapshots[0].ID+".json"), RealSystem{})
+	require.NoError(t, err)
+	for _, entry := range snapshot.Entries {
+		for _, item := range items {
+			require.False(t, entry.Path == item.Path || strings.HasPrefix(entry.Path, item.Path+"/"), "leftover %s is snapshotted as %s", item.Path, entry.Path)
+		}
+	}
 	writeTransitionFile(t, root, ".agent-layer/al.version", []byte("1.2.0\n"))
-	// Content put back at a leftover path is neither reset nor replaced.
+	// Content put back at a leftover path is not a rollback target.
 	writeTransitionFile(t, root, ".agent-layer/skills/ship-pr/notes.md", []byte("mine\n"))
 	require.NoError(t, RollbackUpgradeSnapshot(root, snapshots[0].ID, RollbackUpgradeSnapshotOptions{System: RealSystem{}}))
 	pin, err := readCurrentPinVersion(root, RealSystem{})
@@ -745,50 +752,54 @@ func (failingRemovalDirSystem) MkdirAll(path string, perm os.FileMode) error {
 	return os.MkdirAll(path, perm)
 }
 
-// When an edited copy cannot be preserved, the automatic rollback leaves it in
-// place rather than restoring the snapshot's unmodified copy over the edit.
-func TestUpgradeRollbackLeavesUnpreservableEditedCopyInPlace(t *testing.T) {
+// When an edited copy can be neither moved nor copied into .agent-layer/tmp,
+// the full rollback still runs and restores the shipped copy; the error names
+// the path whose edit was lost.
+func TestUpgradeRollbackRestoresShippedCopyWhenEditCannotBePreserved(t *testing.T) {
 	root := pristineProject(t, "1.0.0")
 	rel := ".agent-layer/instructions/01_memory.md"
+	shipped, err := os.ReadFile(filepath.Join(root, rel)) // #nosec G304 -- test-owned project file.
+	require.NoError(t, err)
 	warn := &snapshotHookWriter{hook: func() {
 		writeTransitionFile(t, root, rel, []byte("edited after the snapshot\n"))
 	}}
-	err := Run(root, Options{System: failingRemovalDirSystem{}, Overwrite: true, Prompter: autoApprovePrompter(), PinVersion: "1.1.0", Converter: &fakeConverter{t: t, root: root}, WarnWriter: warn})
+	err = Run(root, Options{System: failingRemovalDirSystem{}, Overwrite: true, Prompter: autoApprovePrompter(), PinVersion: "1.1.0", Converter: &fakeConverter{t: t, root: root}, WarnWriter: warn})
 	require.True(t, warn.done)
-	require.ErrorContains(t, err, rel+" changed during the upgrade and could not be moved out of the rollback's reach")
-	require.ErrorContains(t, err, "rolled back")
+	require.ErrorContains(t, err, rel+" changed during the upgrade and the edit could not be preserved")
+	require.ErrorContains(t, err, "rolled back to pre-upgrade state")
 	data, err := os.ReadFile(filepath.Join(root, rel)) // #nosec G304 -- test-owned project file.
 	require.NoError(t, err)
-	require.Equal(t, "edited after the snapshot\n", string(data), "the edit survives the rollback")
+	require.Equal(t, string(shipped), string(data), "the full rollback restores the shipped copy")
 	pin, err := readCurrentPinVersion(root, RealSystem{})
 	require.NoError(t, err)
 	require.Equal(t, "1.0.0", pin)
 	cfg, err := config.LoadConfigLenient(config.DefaultPaths(root).ConfigPath)
 	require.NoError(t, err)
-	require.Len(t, cfg.Instructions.Local, 2, "configuration still owns the kept file")
-	// The persisted targets leave the kept path alone on a manual retry.
-	snapshots, err := ListUpgradeSnapshots(root, RealSystem{})
-	require.NoError(t, err)
-	snapshot, err := readUpgradeSnapshot(filepath.Join(root, upgradeSnapshotDirRelPath, snapshots[0].ID+".json"), RealSystem{})
-	require.NoError(t, err)
-	require.Contains(t, snapshot.RollbackTargets, ".agent-layer/config.toml")
-	require.NotContains(t, snapshot.RollbackTargets, rel)
+	require.Len(t, cfg.Instructions.Local, 2, "configuration still owns the restored file")
 }
 
-// A rollback target containing a kept path is split into its other children:
-// everything else is still reset and restored, and nothing is refused.
-func TestWithoutRollbackKeepSplitsContainingTargets(t *testing.T) {
-	root := t.TempDir()
-	skills := filepath.Join(root, ".agent-layer", "skills")
-	for _, name := range []string{"a", "kept", "b"} {
-		writeTransitionFile(t, root, ".agent-layer/skills/"+name+"/SKILL.md", []byte(name))
-	}
-	entries := []upgradeSnapshotEntry{{Path: ".agent-layer/skills/gone/SKILL.md", Kind: upgradeSnapshotEntryKindFile}}
-	cfgPath := filepath.Join(root, ".agent-layer", "config.toml")
-	kept := filepath.Join(skills, "kept")
-	got, err := withoutRollbackKeep(RealSystem{}, root, entries, []string{skills, cfgPath, filepath.Join(kept, "SKILL.md")}, []string{kept})
+// A leftover edited after the snapshot is not a rollback target, so the
+// failed step leaves the edit at its path instead of moving it aside.
+func TestUpgradeLeavesLeftoverEditedAfterSnapshotInPlace(t *testing.T) {
+	root := pristineProject(t, "1.0.0")
+	items, err := PlanPristineConversions(root, RealSystem{})
 	require.NoError(t, err)
-	require.ElementsMatch(t, []string{cfgPath, filepath.Join(skills, "a"), filepath.Join(skills, "b"), filepath.Join(skills, "gone")}, got)
+	for _, item := range items {
+		writeFakeImport(t, root, item)
+	}
+	rel := ".agent-layer/instructions/00_rules.md"
+	warn := &snapshotHookWriter{hook: func() {
+		writeTransitionFile(t, root, rel, []byte("edited after the snapshot\n"))
+	}}
+	err = Run(root, Options{System: RealSystem{}, Overwrite: true, Prompter: autoApprovePrompter(), PinVersion: "1.1.0", WarnWriter: warn})
+	require.True(t, warn.done)
+	require.ErrorContains(t, err, "rolled back to pre-upgrade state")
+	data, err := os.ReadFile(filepath.Join(root, rel)) // #nosec G304 -- test-owned project file.
+	require.NoError(t, err)
+	require.Equal(t, "edited after the snapshot\n", string(data))
+	matches, err := filepath.Glob(filepath.Join(root, ".agent-layer", "tmp", "upgrade-conversion-*"))
+	require.NoError(t, err)
+	require.Empty(t, matches, "nothing was moved aside")
 }
 
 // The leftover notice appears only once the preflight succeeded; a failed
