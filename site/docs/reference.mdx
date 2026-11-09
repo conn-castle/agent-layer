@@ -526,7 +526,7 @@ The `al` CLI syncs repo-local configuration and launches your chosen client. Thi
 
 The command set is intentionally small. Most of the time you only need one rhythm: `al init` once, `al <client>` every day, `al doctor` when something feels off.
 
-The first interrupt (Ctrl-C) stops `al sync`, `al wizard`, `al upgrade rollback`, and `al doctor` catalog inspection while they wait for the project lock, and stops the `al init` wizard prompt and skill or instruction confirmations without waiting for more input; an answer already typed ahead is not applied. Commands that read project documents, wizard profiles or answers, native client config, upgrade snapshots, or dispatch metadata refuse a FIFO or other non-regular file at that path, including a symlink to one, instead of blocking on it; symlinks to regular files keep working.
+The first interrupt (Ctrl-C) stops `al sync`, `al wizard`, `al upgrade rollback`, and `al doctor` catalog inspection while they wait for the project lock, and stops the `al init` wizard prompt and skill or instruction confirmations without waiting for more input; an answer already typed ahead is not applied. Commands that read project documents, wizard profiles or answers, upgrade snapshots, dispatch metadata, or the native `.codex/config.toml`, `.grok-config/trusted_folders.toml`, and `.vscode/settings.json` refuse a FIFO or other non-regular file at that path, including a symlink to one, instead of blocking on it; symlinks to regular files at those paths keep working. `al sync` refuses any symlink at the Antigravity and Muse settings files, even one to a regular file.
 
 ### Command map
 
@@ -959,7 +959,7 @@ for the complete lifecycle, MCP interface, timeout behavior, and configuration.
 
 ### Benchmark runner
 
-Benchmark execution requires the optional `al-benchmark` companion on `PATH`; `al benchmark` forwards its arguments to it. With Go 1.27+, install the matching published release, for example `go install github.com/conn-castle/agent-layer/cmd/al-benchmark@v1.1.0` after that version is published, and add Go's bin directory to `PATH`. The core CLI updater does not update the companion; handoff rejects a companion whose version differs from the active core CLI, including a repository-selected release. Existing studies, receipts, reports, and recovery evidence need no migration. Installing the companion pulls no Docker images; actual selected-task readiness and execution still depend on the upstream ECR registry. Core releases do not require ECR access.
+Benchmark execution requires the optional `al-benchmark` companion on `PATH`; `al benchmark` forwards its arguments to it. With Go 1.27+, install the matching published release, for example `go install github.com/conn-castle/agent-layer/cmd/al-benchmark@v1.2.0` after that version is published, and add Go's bin directory to `PATH`. The core CLI updater does not update the companion; handoff rejects a companion whose version differs from the active core CLI, including a repository-selected release. Existing studies, receipts, reports, and recovery evidence need no migration. Installing the companion pulls no Docker images; actual selected-task readiness and execution still depend on the upstream ECR registry. Core releases do not require ECR access.
 
 DeltaSelect exports a content-addressed `selection.json`. Use the CLI scaffolder to create a self-contained study with a benchmark-safe provider config and snapshots of the current instructions and projected skills. Then validate the complete study before authorizing provider calls:
 
