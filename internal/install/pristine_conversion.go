@@ -13,7 +13,6 @@ import (
 	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/messages"
 	"github.com/conn-castle/agent-layer/internal/skilljournal"
-	"github.com/conn-castle/agent-layer/internal/skillmigration"
 )
 
 // PristineConverter imports unmodified shipped copies during al upgrade. The
@@ -47,15 +46,26 @@ func (inst *installer) preparePristineConversions() error {
 	if err != nil || len(items) == 0 {
 		return err
 	}
-	accepted, err := inst.prompter.convertPristineCopies(items)
-	if err != nil {
-		return err
-	}
-	if !accepted {
-		_, _ = fmt.Fprintln(inst.warnOutput(), messages.UpgradeConvertPristineDeclined)
-		return nil
-	}
+	// Only new imports are a choice. A leftover copy of an intact import is
+	// always removed: sync cannot load it beside its import.
 	imports := pendingImports(items)
+	if len(imports) > 0 {
+		accepted, err := inst.prompter.convertPristineCopies(imports)
+		if err != nil {
+			return err
+		}
+		if !accepted {
+			_, _ = fmt.Fprintln(inst.warnOutput(), messages.UpgradeConvertPristineDeclined)
+			imports = nil
+		}
+	}
+	var conversions []PristineConversion
+	for _, item := range items {
+		if item.DeleteOnly {
+			conversions = append(conversions, item)
+		}
+	}
+	conversions = append(conversions, imports...)
 	if len(imports) > 0 {
 		if inst.converter == nil {
 			return errors.New("converting unmodified shipped copies requires an import converter")
@@ -66,7 +76,7 @@ func (inst *installer) preparePristineConversions() error {
 		}
 		inst.preparedConversion = prepared
 	}
-	inst.conversions = items
+	inst.conversions = conversions
 	return nil
 }
 
@@ -94,20 +104,16 @@ func (inst *installer) convertPristineCopies() error {
 	}
 	for _, item := range inst.conversions {
 		if verified[item.Path] != item {
-			// The snapshot predates the edit, so move the edited copy out of
-			// the rollback's reach before failing.
-			if _, err := inst.sys.Lstat(inst.localCopyPath(item)); err == nil && inst.verifyPristineCopy(item, inst.localCopyPath(item)) != nil {
-				return inst.preserveEditedCopy(item)
-			}
-			return fmt.Errorf(messages.UpgradeConvertPristineChangedFmt, item.Path)
+			return inst.failConversion(fmt.Errorf(messages.UpgradeConvertPristineChangedFmt, item.Path))
 		}
 	}
 	removeLocal := func(item PristineConversion) error {
-		active, err := skillmigration.ActiveNames(inst.root)
+		// Re-check the import right before deleting the only other copy.
+		cfg, err := loadTransitionConfig(inst.root, inst.sys)
 		if err != nil {
 			return err
 		}
-		if !active[item.Name] {
+		if err := intactImport(inst.root, cfg, item); err != nil {
 			return fmt.Errorf(messages.UpgradeConvertPristineNotActive, item.Path)
 		}
 		return inst.removePristineCopy(item)
@@ -115,16 +121,34 @@ func (inst *installer) convertPristineCopies() error {
 	for _, item := range inst.conversions {
 		if item.DeleteOnly {
 			if err := removeLocal(item); err != nil {
-				return err
+				return inst.failConversion(err)
 			}
 		}
 	}
 	if imports := pendingImports(inst.conversions); len(imports) > 0 {
 		if err := inst.preparedConversion.Import(inst.ctx, imports, removeLocal); err != nil {
-			return err
+			return inst.failConversion(err)
 		}
 	}
 	return nil
+}
+
+// failConversion fails the step after moving every local copy edited during
+// the upgrade out of the rollback's reach. The snapshot predates those edits,
+// so restoring it would otherwise overwrite them.
+func (inst *installer) failConversion(cause error) error {
+	var preserved []error
+	for _, item := range inst.conversions {
+		path := inst.localCopyPath(item)
+		if _, err := inst.sys.Lstat(path); err != nil || inst.verifyPristineCopy(item, path) == nil {
+			continue
+		}
+		preserved = append(preserved, inst.preserveEditedCopy(item))
+	}
+	if len(preserved) == 0 {
+		return cause
+	}
+	return errors.Join(append([]error{cause}, preserved...)...)
 }
 
 func (inst *installer) localCopyPath(item PristineConversion) string {
@@ -135,8 +159,8 @@ func (inst *installer) localCopyPath(item PristineConversion) string {
 // copy into .agent-layer/tmp, so an interruption never leaves a partial tree
 // at the original path, then re-verifies the moved copy against the shipped
 // content. A copy edited during the upgrade is kept there, outside the
-// rollback's reach, and the step fails. If the rename fails, the copy is
-// verified and deleted in place.
+// rollback's reach, and the step fails. Without an atomic rename the step
+// fails rather than deleting in place.
 func (inst *installer) removePristineCopy(item PristineConversion) error {
 	src := inst.localCopyPath(item)
 	dest, err := inst.conversionRemovalPath(item)
@@ -144,10 +168,7 @@ func (inst *installer) removePristineCopy(item PristineConversion) error {
 		err = inst.sys.Rename(src, dest)
 	}
 	if err != nil {
-		if inst.verifyPristineCopy(item, src) != nil {
-			return inst.preserveEditedCopy(item)
-		}
-		return inst.sys.RemoveAll(src)
+		return fmt.Errorf(messages.UpgradeConvertPristineMoveFmt, item.Path, err)
 	}
 	if inst.verifyPristineCopy(item, dest) != nil {
 		inst.conversionPreserved = true

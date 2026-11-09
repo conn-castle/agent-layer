@@ -158,10 +158,15 @@ func shouldBypassDispatch(args []string) bool {
 
 // isDispatchMCPServer reports whether args run the hidden MCP server command,
 // al dispatch mcp-server. The persistent --quiet flag is the only flag valid
-// on that path and may appear anywhere, as cobra parses it.
+// on that path and may appear anywhere before a "--" terminator, as cobra
+// parses it; arguments after the terminator are positional.
 func isDispatchMCPServer(args []string) bool {
 	var path []string
-	for _, arg := range args[1:] {
+	for idx, arg := range args[1:] {
+		if arg == "--" {
+			path = append(path, args[idx+2:]...)
+			break
+		}
 		if !isQuietFlagArg(arg) {
 			path = append(path, arg)
 		}
@@ -175,6 +180,9 @@ func isQuietFlagArg(arg string) bool {
 		return true
 	}
 	value, ok := strings.CutPrefix(arg, flagQuietPrefix)
+	if !ok {
+		value, ok = strings.CutPrefix(arg, flagQuietShort+"=")
+	}
 	if !ok {
 		return false
 	}

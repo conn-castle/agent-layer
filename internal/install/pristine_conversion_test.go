@@ -558,18 +558,55 @@ func (w *snapshotHookWriter) Write(p []byte) (int, error) {
 	return w.Buffer.Write(p)
 }
 
-func TestUpgradeConversionPreservesCopyEditedAfterSnapshot(t *testing.T) {
+func TestUpgradeConversionPreservesEveryCopyEditedAfterSnapshot(t *testing.T) {
 	root := pristineProject(t, "1.0.0")
-	rel := ".agent-layer/skills/ship-pr/SKILL.md"
-	warn := &snapshotHookWriter{hook: func() { writeTransitionFile(t, root, rel, []byte("edited after the snapshot\n")) }}
+	edits := map[string]string{
+		".agent-layer/skills/ship-pr":            "SKILL.md",
+		".agent-layer/skills/implement":          "SKILL.md",
+		".agent-layer/instructions/01_memory.md": "",
+	}
+	warn := &snapshotHookWriter{hook: func() {
+		for rel, file := range edits {
+			writeTransitionFile(t, root, strings.TrimSuffix(rel+"/"+file, "/"), []byte("edited after the snapshot\n"))
+		}
+	}}
 	converter := &fakeConverter{t: t, root: root}
 	err := Run(root, Options{System: RealSystem{}, Overwrite: true, Prompter: autoApprovePrompter(), PinVersion: "1.1.0", Converter: converter, WarnWriter: warn})
 	require.True(t, warn.done)
-	require.ErrorContains(t, err, ".agent-layer/skills/ship-pr changed during the upgrade, so it was not deleted")
-	data, err := os.ReadFile(filepath.Join(preservedCopy(t, root, ".agent-layer/skills/ship-pr"), "SKILL.md")) // #nosec G304 -- test-owned preserved copy.
-	require.NoError(t, err)
-	require.Equal(t, "edited after the snapshot\n", string(data))
+	for rel, file := range edits {
+		require.ErrorContains(t, err, rel+" changed during the upgrade, so it was not deleted")
+		data, err := os.ReadFile(filepath.Join(preservedCopy(t, root, rel), file)) // #nosec G304 -- test-owned preserved copy.
+		require.NoError(t, err)
+		require.Equal(t, "edited after the snapshot\n", string(data), "every edit survives the rollback")
+	}
 	require.NoFileExists(t, config.DefaultPaths(root).SkillsLockPath, "nothing was imported")
+}
+
+// Declining new conversions never keeps a leftover copy of an intact import:
+// sync cannot load it beside its import, so it is removed regardless.
+func TestUpgradeDeclineStillCompletesLeftoverCopies(t *testing.T) {
+	root := pristineProject(t, "1.0.0")
+	items, err := PlanPristineConversions(root, RealSystem{})
+	require.NoError(t, err)
+	for _, item := range items {
+		if item.Path == ".agent-layer/skills/ship-pr" {
+			writeFakeImport(t, root, item)
+		}
+	}
+	kept := testutil.SnapshotEvidence(t, filepath.Join(root, ".agent-layer/skills/implement"), filepath.Join(root, ".agent-layer/instructions"))
+	prompter := autoApprovePrompter()
+	var offered []PristineConversion
+	prompter.ConvertPristineCopiesFunc = func(items []PristineConversion) (bool, error) { offered = items; return false, nil }
+	converter := &fakeConverter{t: t, root: root}
+	require.NoError(t, conversionUpgrade(root, converter, prompter, &bytes.Buffer{}))
+	require.Len(t, offered, 3, "only new imports are offered")
+	for _, item := range offered {
+		require.False(t, item.DeleteOnly, item.Path)
+	}
+	require.Empty(t, converter.prepared)
+	require.NoDirExists(t, filepath.Join(root, ".agent-layer/skills/ship-pr"), "the leftover copy is removed")
+	require.DirExists(t, filepath.Join(config.DefaultPaths(root).ImportedSkillsDir, "ship-pr"))
+	require.Equal(t, kept, testutil.SnapshotEvidence(t, filepath.Join(root, ".agent-layer/skills/implement"), filepath.Join(root, ".agent-layer/instructions")))
 }
 
 // removalRecordingSystem records renames and deletions of local copies.
@@ -607,8 +644,21 @@ func TestUpgradeConversionMovesLocalCopiesAsideBeforeDeleting(t *testing.T) {
 	for _, failRename := range []bool{false, true} {
 		root := pristineProject(t, "1.0.0")
 		sys := &removalRecordingSystem{root: root, failRename: failRename}
-		require.NoError(t, Run(root, Options{System: sys, Overwrite: true, Prompter: autoApprovePrompter(), PinVersion: "1.1.0", Converter: &fakeConverter{t: t, root: root}, WarnWriter: &bytes.Buffer{}}))
-		for _, rel := range []string{".agent-layer/skills/implement", ".agent-layer/skills/ship-pr", ".agent-layer/instructions/00_rules.md", ".agent-layer/instructions/01_memory.md"} {
+		err := Run(root, Options{System: sys, Overwrite: true, Prompter: autoApprovePrompter(), PinVersion: "1.1.0", Converter: &fakeConverter{t: t, root: root}, WarnWriter: &bytes.Buffer{}})
+		locals := []string{".agent-layer/skills/implement", ".agent-layer/skills/ship-pr", ".agent-layer/instructions/00_rules.md", ".agent-layer/instructions/01_memory.md"}
+		if failRename {
+			// Without an atomic rename nothing is deleted in place: a kill
+			// mid-delete would leave a partial tree. The upgrade rolls back.
+			require.ErrorContains(t, err, "to remove it atomically")
+			require.ErrorContains(t, err, "rolled back to pre-upgrade state")
+			for _, rel := range locals {
+				_, statErr := os.Lstat(filepath.Join(root, rel))
+				require.NoError(t, statErr, "%s is intact after the rollback", rel)
+			}
+			continue
+		}
+		require.NoError(t, err)
+		for _, rel := range locals {
 			require.NoFileExists(t, filepath.Join(root, rel))
 			require.NoDirExists(t, filepath.Join(root, rel))
 			renamed := -1
@@ -618,12 +668,7 @@ func TestUpgradeConversionMovesLocalCopiesAsideBeforeDeleting(t *testing.T) {
 				}
 			}
 			require.GreaterOrEqual(t, renamed, 0, "%s is moved into .agent-layer/tmp first: %v", rel, sys.ops)
-			if failRename {
-				// Only an unusable rename falls back to deleting in place.
-				require.Contains(t, sys.ops[renamed+1:], "remove "+rel)
-			} else {
-				require.NotContains(t, sys.ops, "remove "+rel, "a kill mid-delete must not leave a partial tree at %s", rel)
-			}
+			require.NotContains(t, sys.ops, "remove "+rel, "a kill mid-delete must not leave a partial tree at %s", rel)
 		}
 		matches, err := filepath.Glob(filepath.Join(root, ".agent-layer", "tmp", "upgrade-conversion-*"))
 		require.NoError(t, err)

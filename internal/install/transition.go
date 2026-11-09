@@ -216,6 +216,19 @@ func PlanPristineConversions(root string, sys System) ([]PristineConversion, err
 	return conversions, nil
 }
 
+// loadTransitionConfig reads the project configuration leniently; a missing
+// file yields an empty configuration.
+func loadTransitionConfig(root string, sys System) (*config.Config, error) {
+	raw, err := transitionReadFile(root, upgradeMigrationConfigPath, sys)
+	if errors.Is(err, os.ErrNotExist) {
+		return &config.Config{}, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return config.ParseConfigLenient(raw, upgradeMigrationConfigPath)
+}
+
 // requireIntactImport refuses deleting a local copy unless configuration owns
 // its import and the imported content still equals the locked tree, so the
 // deletion can never leave a project that sync refuses.
@@ -485,9 +498,38 @@ func checkSupportedSource(root string, sys System) error {
 	return CheckTransitionState(root, sys)
 }
 
-// CheckUpgradeSource checks an installed project's boundary before recovery or writes.
-// Unmodified shipped copies do not block: upgrade converts them.
+// CheckUpgradeSource checks an installed project's boundary and its local
+// instruction files. Unmodified shipped copies do not block: upgrade converts
+// them.
 func CheckUpgradeSource(root string, sys System) error {
+	if err := checkUpgradeBoundary(root, sys); err != nil {
+		return err
+	}
+	return checkUnconfiguredInstructions(root, sys)
+}
+
+// checkUpgradeSourceBeforeRecovery refuses before the project lock is created
+// whenever no import transaction awaits recovery. A pending transaction may
+// have removed a converted file's local block, so its instruction check waits
+// for recovery under the lock.
+func checkUpgradeSourceBeforeRecovery(root string, sys System) error {
+	if err := checkUpgradeBoundary(root, sys); err != nil {
+		return err
+	}
+	paths := config.DefaultPaths(root)
+	for _, tier := range []string{paths.ImportedSkillsDir, paths.ImportedInstructionsDir} {
+		if _, err := sys.Lstat(skilljournal.StagingRoot(tier)); err == nil {
+			return nil
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+	}
+	return checkUnconfiguredInstructions(root, sys)
+}
+
+// checkUpgradeBoundary checks the source version and instruction configuration
+// before recovery or writes.
+func checkUpgradeBoundary(root string, sys System) error {
 	if err := checkSupportedSource(root, sys); err != nil {
 		return err
 	}
@@ -510,10 +552,31 @@ func CheckUpgradeSource(root string, sys System) error {
 	}
 	instructions := cfg.Instructions
 	if len(instructions.Local)+len(instructions.Imports) > 0 {
-		if err := config.ValidateInstructions(upgradeMigrationConfigPath, instructions); err != nil {
-			return err
-		}
+		return config.ValidateInstructions(upgradeMigrationConfigPath, instructions)
 	}
+	return nil
+}
+
+// checkUnconfiguredInstructions refuses local instruction files that sync would
+// reject after the pin advanced. An interrupted import transaction can leave a
+// file whose local block it already removed, so upgrade runs this only after
+// journal recovery restores the configuration.
+func checkUnconfiguredInstructions(root string, sys System) error {
+	if _, err := sys.Lstat(filepath.Join(root, ".agent-layer")); errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	raw, err := transitionReadFile(root, upgradeMigrationConfigPath, sys)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	cfg, err := config.ParseConfigLenient(raw, upgradeMigrationConfigPath)
+	if err != nil {
+		return err
+	}
+	instructions := cfg.Instructions
 	configured := map[string]bool{}
 	for _, local := range instructions.Local {
 		configured[local.Selectors[0]] = true

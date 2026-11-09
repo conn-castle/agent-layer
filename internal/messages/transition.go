@@ -39,6 +39,7 @@ const (
 	UpgradeConvertPristineEditedFmt            = "%s changed during the upgrade, so it was not deleted; your edited copy is preserved at %s and the rollback restores the unmodified copy at the original path. Move your copy back to keep your changes, then rerun al upgrade"
 	UpgradeConvertPristineEditedUnpreservedFmt = "%s changed during the upgrade and could not be moved out of the rollback's reach (%v); the rollback restores the unmodified copy at that path"
 	UpgradeConvertPristineNotActive            = "%s was not imported as expected; its local copy is preserved"
+	UpgradeConvertPristineMoveFmt              = "could not move %s out of the project to remove it atomically (%v); its local copy is preserved"
 	UpgradePlanSectionConversions              = "Unmodified shipped copies to convert to Git imports (requires network access to github.com/nicholasjconn/skills)"
 	UpgradePlanConversionItemFmt               = "  - %s -> %s\n"
 	UpgradePlanConversionDeleteFmt             = "  - %s (import of %s already active; remove the leftover local copy)\n"

@@ -190,6 +190,12 @@ func TestInterruptedConversionIsCompletedByTheNextUpgrade(t *testing.T) {
 			requireConverted(t, root)
 			require.True(t, captured)
 
+			// The next al upgrade must recover the crash image by itself.
+			unrecovered := filepath.Join(t.TempDir(), "unrecovered")
+			copyProject(t, crash, unrecovered)
+			require.NoError(t, upgradeWith(unrecovered, UpgradeConverter{}))
+			requireConverted(t, unrecovered)
+
 			require.NoError(t, skilljournal.RecoverBoth(crash))
 			local := 0
 			for _, rel := range conversionLocalPaths {

@@ -123,8 +123,11 @@ func Run(root string, opts Options) error {
 	}
 
 	if opts.Overwrite && root != "" && opts.System != nil {
-		return skillmigration.WithCheckedRecovery(opts.Context, root, func() error { return CheckUpgradeSource(root, opts.System) }, func() error {
+		return skillmigration.WithCheckedRecovery(opts.Context, root, func() error { return checkUpgradeSourceBeforeRecovery(root, opts.System) }, func() error {
 			if err := skillmigration.CheckVersionLocked(root, opts.PinVersion); err != nil {
+				return err
+			}
+			if err := checkUnconfiguredInstructions(root, opts.System); err != nil {
 				return err
 			}
 			return run(root, opts)

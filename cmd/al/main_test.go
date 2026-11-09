@@ -657,7 +657,10 @@ func TestRunMainRoutesOnlyMCPServerToImageDispatch(t *testing.T) {
 		{"al", "dispatch", "mcp-server", "--quiet"},
 		{"al", "-q", "dispatch", "-q", "mcp-server", "--quiet=true"},
 		{"al", "dispatch", "--quiet=false", "mcp-server"},
+		{"al", "dispatch", "mcp-server", "-q=false"},
+		{"al", "dispatch", "mcp-server", "--"},
 		{"al", "dispatch", "start"},
+		{"al", "dispatch", "mcp-server", "--", "-q"},
 		{"al", "dispatch", "mcp-server", "extra"},
 		{"al", "mcp-server"},
 		{"al", "--verbose", "dispatch", "mcp-server"},
@@ -666,7 +669,7 @@ func TestRunMainRoutesOnlyMCPServerToImageDispatch(t *testing.T) {
 	} {
 		runMain(context.Background(), args, io.Discard, io.Discard, func(int) {})
 	}
-	if want := []string{"mcp-server", "mcp-server", "mcp-server", "mcp-server", "mcp-server", "plain", "plain", "plain", "plain", "plain", "plain"}; !slices.Equal(routed, want) {
+	if want := []string{"mcp-server", "mcp-server", "mcp-server", "mcp-server", "mcp-server", "mcp-server", "mcp-server", "plain", "plain", "plain", "plain", "plain", "plain", "plain"}; !slices.Equal(routed, want) {
 		t.Fatalf("routed %v, want %v", routed, want)
 	}
 }
