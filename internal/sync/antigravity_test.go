@@ -243,7 +243,7 @@ func TestWriteAntigravitySettingsPreservesNativeStateAndRefreshesManagedPaths(t 
 	}
 }
 
-func TestWriteAntigravitySettingsPreservesNativeManagedPathsWhenConfigOmitsThem(t *testing.T) {
+func TestWriteAntigravitySettingsKeepsNativeValuesButOwnsAllow(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
 	path := filepath.Join(root, ".agy", "antigravity-cli", "settings.json")
@@ -322,6 +322,7 @@ func TestWriteAntigravitySettingsRejectsInvalidStateBeforeWrite(t *testing.T) {
 		{"null", `null`},
 		{"trailing", `{} {}`},
 		{"shape-conflict", `{"permissions":"native"}`},
+		{"permissions-null", `{"permissions":null}`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			root := t.TempDir()
@@ -336,9 +337,9 @@ func TestWriteAntigravitySettingsRejectsInvalidStateBeforeWrite(t *testing.T) {
 			if err := os.WriteFile(path, before, 0o600); err != nil {
 				t.Fatal(err)
 			}
-			// Approvals mode all makes buildAntigravitySettings emit permissions.allow,
-			// so the shape-conflict seed is a path Agent Layer actually writes.
-			project := &config.ProjectConfig{Config: config.Config{Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeAll}}, CommandsAllow: []string{"git status"}}
+			// buildAntigravitySettings always emits permissions.allow, so even
+			// approvals mode none writes the shape-conflict path (#475).
+			project := &config.ProjectConfig{Config: config.Config{Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeNone}}}
 			if err := writeAntigravitySettings(RealSystem{}, root, project); err == nil {
 				t.Fatal("expected error")
 			}
@@ -536,9 +537,9 @@ func TestWriteAntigravitySettingsPreservesUnmanagedNonObjectValue(t *testing.T) 
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	// A native JSON null where Agent Layer writes the permissions object is
-	// treated as absent; unmanaged values beside it are kept.
-	seed := []byte(`{"permissions":null,"trust":true}`)
+	// Native ui is a non-object value at a path Agent Layer does not target,
+	// so the merge must not inspect or reject it.
+	seed := []byte(`{"ui":null,"trust":true}`)
 	if err := os.WriteFile(path, seed, 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -546,7 +547,7 @@ func TestWriteAntigravitySettingsPreservesUnmanagedNonObjectValue(t *testing.T) 
 		t.Fatalf("unmanaged non-object native value must not error, got %v", err)
 	}
 	got := readFileForTest(t, path)
-	for _, want := range []string{`"allow": []`, `"trust": true`} {
+	for _, want := range []string{`"ui": null`, `"trust": true`} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("native value %s not preserved:\n%s", want, got)
 		}

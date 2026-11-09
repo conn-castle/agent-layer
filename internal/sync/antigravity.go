@@ -115,14 +115,14 @@ func readAntigravitySettings(sys System, path string) (map[string]any, error) {
 // permissions.allow, and any agent_specific paths, all produced by
 // buildAntigravitySettings) onto the user's native Antigravity settings,
 // preserving every native key Agent Layer does not produce. permissions.allow is
-// always produced, empty when nothing is approved, and a JSON null where a
-// managed object belongs is replaced. Any other managed key
-// absent from desired is left untouched rather than deleted, because
+// always produced, as [] when nothing is approved. Any other managed key absent
+// from desired is left untouched rather than deleted, because
 // .agy/antigravity-cli/settings.json is owned by Antigravity and the user: an
 // omitted Agent Layer value is not an instruction to erase native state. It
 // returns an error only when a managed key Agent Layer must write collides with
-// an incompatible native shape (object vs. scalar); a native path Agent Layer
-// does not target is never inspected.
+// an incompatible native shape (object vs. non-object, including null, such as
+// a non-object native permissions); a native path Agent Layer does not target
+// is never inspected.
 func mergeAntigravitySettings(existing, desired map[string]any) (map[string]any, error) {
 	merged, ok := cloneAgentSpecificValue(existing).(map[string]any)
 	if !ok {
@@ -156,7 +156,7 @@ func overlayAntigravityManagedMap(target, desired map[string]any, prefix []strin
 		path := append(append([]string{}, prefix...), key)
 		if desiredMap, ok := value.(map[string]any); ok {
 			current, exists := target[key]
-			if !exists || current == nil {
+			if !exists {
 				current = make(map[string]any)
 				target[key] = current
 			}

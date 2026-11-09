@@ -327,7 +327,7 @@ Generated outputs are written into the repo in client-specific formats (examples
 
 - Instruction shims: `AGENTS.md`, `.claude/CLAUDE.md`, `.github/copilot-instructions.md`
 - MCP + client configs: `.mcp.json`, `.agy/antigravity-cli/mcp_config.json`, `.claude/settings.json`, `.codex/`, `.copilot/mcp-config.json`, `.grok/config.toml`
-- Shared Antigravity settings: `.agy/antigravity-cli/settings.json` (Agent Layer patches its managed model, `permissions.allow`, and `agent_specific` paths while preserving native settings)
+- Shared Antigravity settings: `.agy/antigravity-cli/settings.json` (Agent Layer patches its managed model, `permissions.allow`, and `agent_specific` paths while preserving native settings; `permissions.allow` is replaced on every sync, so keep approved commands in `.agent-layer/commands.allow`)
 - Shared skills: `.agents/skills/`
 - Antigravity notification plugin: `.agents/plugins/agent-layer-chime/`
 - Grok notification hook: `.grok/hooks/agent-layer-chime.json`
