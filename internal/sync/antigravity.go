@@ -114,7 +114,9 @@ func readAntigravitySettings(sys System, path string) (map[string]any, error) {
 // mergeAntigravitySettings overlays the Agent Layer-managed projection (model,
 // permissions.allow, and any agent_specific paths, all produced by
 // buildAntigravitySettings) onto the user's native Antigravity settings,
-// preserving every native key Agent Layer does not produce. A managed key
+// preserving every native key Agent Layer does not produce. permissions.allow is
+// always produced, empty when nothing is approved, and a JSON null where a
+// managed object belongs is replaced. Any other managed key
 // absent from desired is left untouched rather than deleted, because
 // .agy/antigravity-cli/settings.json is owned by Antigravity and the user: an
 // omitted Agent Layer value is not an instruction to erase native state. It
@@ -154,7 +156,7 @@ func overlayAntigravityManagedMap(target, desired map[string]any, prefix []strin
 		path := append(append([]string{}, prefix...), key)
 		if desiredMap, ok := value.(map[string]any); ok {
 			current, exists := target[key]
-			if !exists {
+			if !exists || current == nil {
 				current = make(map[string]any)
 				target[key] = current
 			}
@@ -188,13 +190,17 @@ func buildAntigravitySettings(project *config.ProjectConfig) map[string]any {
 	if model := strings.TrimSpace(project.Config.Agents.Antigravity.Model); model != "" {
 		settings["model"] = model
 	}
-	if allow := projection.AntigravityAllowRules(
+	// Agent Layer owns permissions.allow: an empty approval result is written as
+	// [] so grants from an earlier, broader approvals mode do not linger.
+	allow := projection.AntigravityAllowRules(
 		project.Config,
 		project.CommandsAllow,
 		projection.EffectiveServerIDs(project.Config, projection.ClientAntigravity),
-	); len(allow) > 0 {
-		settings["permissions"] = map[string]any{"allow": allow}
+	)
+	if allow == nil {
+		allow = []string{}
 	}
+	settings["permissions"] = map[string]any{"allow": allow}
 	mergeAgentSpecificSettings(settings, project.Config.Agents.Antigravity.AgentSpecific)
 	return settings
 }
