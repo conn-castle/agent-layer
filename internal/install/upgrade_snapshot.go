@@ -56,14 +56,18 @@ type upgradeSnapshotEntry struct {
 }
 
 type upgradeSnapshot struct {
-	SchemaVersion   int                    `json:"schema_version"`
-	SnapshotID      string                 `json:"snapshot_id"`
-	CreatedAtUTC    string                 `json:"created_at_utc"`
-	Status          upgradeSnapshotStatus  `json:"status"`
-	FailureStep     string                 `json:"failure_step,omitempty"`
-	FailureError    string                 `json:"failure_error,omitempty"`
-	RollbackTargets []string               `json:"rollback_targets,omitempty"`
-	Entries         []upgradeSnapshotEntry `json:"entries"`
+	SchemaVersion   int                   `json:"schema_version"`
+	SnapshotID      string                `json:"snapshot_id"`
+	CreatedAtUTC    string                `json:"created_at_utc"`
+	Status          upgradeSnapshotStatus `json:"status"`
+	FailureStep     string                `json:"failure_step,omitempty"`
+	FailureError    string                `json:"failure_error,omitempty"`
+	RollbackTargets []string              `json:"rollback_targets,omitempty"`
+	// ConvertedLeftovers lists leftover local copies of already intact imports
+	// that the upgrade deletes. A manual rollback does not recreate them beside
+	// their still-active imports, which sync would refuse.
+	ConvertedLeftovers []string               `json:"converted_leftovers,omitempty"`
+	Entries            []upgradeSnapshotEntry `json:"entries"`
 }
 
 type upgradeSnapshotFile struct {
@@ -121,6 +125,11 @@ func (inst *installer) createUpgradeSnapshot() (upgradeSnapshot, error) {
 		CreatedAtUTC:  now.Format(time.RFC3339),
 		Status:        upgradeSnapshotStatusCreated,
 		Entries:       entries,
+	}
+	for _, item := range inst.conversions {
+		if item.DeleteOnly {
+			snapshot.ConvertedLeftovers = append(snapshot.ConvertedLeftovers, item.Path)
+		}
 	}
 	if err := inst.writeUpgradeSnapshot(snapshot, true); err != nil {
 		return upgradeSnapshot{}, err
@@ -354,6 +363,10 @@ func readUpgradeSnapshotIfValid(path string, sys System) (upgradeSnapshot, bool)
 }
 
 func (inst *installer) rollbackUpgradeSnapshot(snapshot *upgradeSnapshot, targets []string) error {
+	targets, err := withoutRollbackKeep(targets, inst.rollbackKeep)
+	if err != nil {
+		return err
+	}
 	rollbackTargets, err := rollbackTargetRelativePaths(inst.root, targets)
 	if err != nil {
 		return err
@@ -363,6 +376,34 @@ func (inst *installer) rollbackUpgradeSnapshot(snapshot *upgradeSnapshot, target
 		return fmt.Errorf("persist rollback targets before rollback: %w", err)
 	}
 	return rollbackUpgradeSnapshotState(inst.root, inst.sys, *snapshot, targets)
+}
+
+// withoutRollbackKeep drops targets at or below a kept path, so the rollback
+// neither resets nor restores it. A target above a kept path would reset it
+// too, so the rollback stops instead and the project is left for manual
+// recovery.
+func withoutRollbackKeep(targets, keep []string) ([]string, error) {
+	if len(keep) == 0 {
+		return targets, nil
+	}
+	out := make([]string, 0, len(targets))
+	for _, target := range targets {
+		clean, skip := filepath.Clean(target), false
+		for _, kept := range keep {
+			kept = filepath.Clean(kept)
+			if clean == kept || strings.HasPrefix(clean, kept+string(filepath.Separator)) {
+				skip = true
+				break
+			}
+			if strings.HasPrefix(kept, clean+string(filepath.Separator)) {
+				return nil, fmt.Errorf("rollback would reset %s, which holds edited local content that could not be preserved; nothing was rolled back", target)
+			}
+		}
+		if !skip {
+			out = append(out, target)
+		}
+	}
+	return out, nil
 }
 
 func (inst *installer) captureUpgradeSnapshotEntries() ([]upgradeSnapshotEntry, error) {

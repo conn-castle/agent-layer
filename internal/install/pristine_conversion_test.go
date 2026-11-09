@@ -292,7 +292,7 @@ func TestUpgradeConversionPreflightFailureLeavesProjectUntouched(t *testing.T) {
 	before := testutil.SnapshotEvidence(t, root)
 	converter := &fakeConverter{t: t, root: root, prepareErr: errors.New("network is unreachable")}
 	err := conversionUpgrade(root, converter, autoApprovePrompter(), &bytes.Buffer{})
-	require.EqualError(t, err, "could not fetch github.com/nicholasjconn/skills to convert 4 unmodified shipped copies: network is unreachable. Retry when online, or rerun al upgrade interactively and decline the conversion to keep them as local copies")
+	require.EqualError(t, err, "could not prepare github.com/nicholasjconn/skills imports to convert 4 unmodified shipped copies: network is unreachable. This upgrade changed nothing. Retry when online or after fixing the reported problem, or keep them as local copies by running al upgrade in a terminal without --yes and declining the conversion")
 	require.Equal(t, before, testutil.SnapshotEvidence(t, root))
 }
 
@@ -308,6 +308,8 @@ func TestUpgradeDeclinedConversionKeepsLocalCopies(t *testing.T) {
 	require.Len(t, offered, 4)
 	require.Empty(t, converter.prepared)
 	require.Contains(t, warn.String(), "Kept the unmodified shipped copies as user-managed local content")
+	require.Contains(t, warn.String(), "al wizard and profile commands refuse until they are converted", "the decline names what still refuses")
+	require.ErrorIs(t, CheckWizardSource(root, RealSystem{}), ErrUnfinishedTransition)
 	require.Equal(t, local, testutil.SnapshotEvidence(t, filepath.Join(root, ".agent-layer/skills/ship-pr"), filepath.Join(root, ".agent-layer/instructions")))
 	pin, err := readCurrentPinVersion(root, RealSystem{})
 	require.NoError(t, err)
@@ -371,10 +373,37 @@ func TestUpgradeCompletesInterruptedConversionAsDeleteOnly(t *testing.T) {
 		require.True(t, item.DeleteOnly, item.Path)
 	}
 	require.NoError(t, CheckUpgradeSource(root, RealSystem{}))
-	// Delete-only completion needs no converter and no network.
-	require.NoError(t, conversionUpgrade(root, nil, autoApprovePrompter(), &bytes.Buffer{}))
+	// Delete-only completion needs no converter and no network, and it is
+	// announced even though nothing is offered for consent.
+	prompter := autoApprovePrompter()
+	prompter.ConvertPristineCopiesFunc = func([]PristineConversion) (bool, error) {
+		t.Fatal("leftover copies are not a choice")
+		return false, nil
+	}
+	warn := &bytes.Buffer{}
+	require.NoError(t, conversionUpgrade(root, nil, prompter, warn))
+	for _, item := range items {
+		require.Contains(t, warn.String(), "Removing leftover unmodified shipped copy "+item.Path+": its import of "+item.Selector+" is already active")
+	}
 	require.NoDirExists(t, filepath.Join(root, ".agent-layer/skills/ship-pr"))
 	require.NoFileExists(t, filepath.Join(root, ".agent-layer/instructions/00_rules.md"))
+
+	// Manual rollback restores the rest of the snapshot without recreating the
+	// leftovers beside their still-active imports.
+	snapshots, err := ListUpgradeSnapshots(root, RealSystem{})
+	require.NoError(t, err)
+	writeTransitionFile(t, root, ".agent-layer/al.version", []byte("1.2.0\n"))
+	require.NoError(t, RollbackUpgradeSnapshot(root, snapshots[0].ID, RollbackUpgradeSnapshotOptions{System: RealSystem{}}))
+	pin, err := readCurrentPinVersion(root, RealSystem{})
+	require.NoError(t, err)
+	require.Equal(t, "1.1.0", pin, "unrelated paths are restored")
+	for _, item := range items {
+		_, err := os.Lstat(filepath.Join(root, item.Path))
+		require.ErrorIs(t, err, os.ErrNotExist, item.Path)
+	}
+	plan, err := PlanPristineConversions(root, RealSystem{})
+	require.NoError(t, err)
+	require.Empty(t, plan)
 }
 
 // A leftover local copy is deleted only when configuration owns its import and
@@ -674,4 +703,119 @@ func TestUpgradeConversionMovesLocalCopiesAsideBeforeDeleting(t *testing.T) {
 		require.NoError(t, err)
 		require.Empty(t, matches, "the removal directory is cleaned up")
 	}
+}
+
+// A copy replaced after the snapshot by a link fails conversion planning; the
+// link is still moved out of the rollback's reach instead of being overwritten.
+func TestUpgradeConversionPreservesCopyReplacedAfterSnapshot(t *testing.T) {
+	root := pristineProject(t, "1.0.0")
+	rel := ".agent-layer/instructions/00_rules.md"
+	outside := filepath.Join(t.TempDir(), "rules.md")
+	require.NoError(t, os.WriteFile(outside, []byte("my rules\n"), 0o600))
+	warn := &snapshotHookWriter{hook: func() {
+		require.NoError(t, os.Remove(filepath.Join(root, rel)))
+		require.NoError(t, os.Symlink(outside, filepath.Join(root, rel)))
+	}}
+	err := Run(root, Options{System: RealSystem{}, Overwrite: true, Prompter: autoApprovePrompter(), PinVersion: "1.1.0", Converter: &fakeConverter{t: t, root: root}, WarnWriter: warn})
+	require.True(t, warn.done)
+	require.ErrorContains(t, err, rel+" changed during the upgrade, so it was not deleted")
+	require.ErrorContains(t, err, "rolled back")
+	preserved := preservedCopy(t, root, rel)
+	target, err := os.Readlink(preserved)
+	require.NoError(t, err, "the replacing link itself is preserved")
+	require.Equal(t, outside, target)
+}
+
+// failingRemovalDirSystem cannot create the removal directory, so edited
+// copies cannot be moved out of the rollback's reach.
+type failingRemovalDirSystem struct{ RealSystem }
+
+func (failingRemovalDirSystem) MkdirAll(path string, perm os.FileMode) error {
+	if strings.Contains(path, "upgrade-conversion-") {
+		return errors.New("read-only file system")
+	}
+	return os.MkdirAll(path, perm)
+}
+
+// When an edited copy cannot be preserved, the automatic rollback leaves it in
+// place rather than restoring the snapshot's unmodified copy over the edit.
+func TestUpgradeRollbackLeavesUnpreservableEditedCopyInPlace(t *testing.T) {
+	root := pristineProject(t, "1.0.0")
+	rel := ".agent-layer/instructions/01_memory.md"
+	warn := &snapshotHookWriter{hook: func() {
+		writeTransitionFile(t, root, rel, []byte("edited after the snapshot\n"))
+	}}
+	err := Run(root, Options{System: failingRemovalDirSystem{}, Overwrite: true, Prompter: autoApprovePrompter(), PinVersion: "1.1.0", Converter: &fakeConverter{t: t, root: root}, WarnWriter: warn})
+	require.True(t, warn.done)
+	require.ErrorContains(t, err, rel+" changed during the upgrade and could not be moved out of the rollback's reach")
+	require.ErrorContains(t, err, "rolled back")
+	data, err := os.ReadFile(filepath.Join(root, rel)) // #nosec G304 -- test-owned project file.
+	require.NoError(t, err)
+	require.Equal(t, "edited after the snapshot\n", string(data), "the edit survives the rollback")
+	pin, err := readCurrentPinVersion(root, RealSystem{})
+	require.NoError(t, err)
+	require.Equal(t, "1.0.0", pin)
+	cfg, err := config.LoadConfigLenient(config.DefaultPaths(root).ConfigPath)
+	require.NoError(t, err)
+	require.Len(t, cfg.Instructions.Local, 2, "configuration still owns the kept file")
+}
+
+// A project without config.toml is seeded inside the snapshotted conversion
+// step, so its skill imports can edit configuration before the pin advances.
+func TestUpgradeConvertsSkillsWhenConfigIsMissing(t *testing.T) {
+	root := pristineProject(t, "1.0.0")
+	for _, rel := range []string{".agent-layer/config.toml", ".agent-layer/instructions/00_rules.md", ".agent-layer/instructions/01_memory.md"} {
+		require.NoError(t, os.Remove(filepath.Join(root, rel)))
+	}
+	items, err := PlanPristineConversions(root, RealSystem{})
+	require.NoError(t, err)
+	require.Equal(t, []string{".agent-layer/skills/implement", ".agent-layer/skills/ship-pr"}, conversionPaths(items))
+	require.NoError(t, conversionUpgrade(root, &fakeConverter{t: t, root: root}, autoApprovePrompter(), &bytes.Buffer{}))
+	require.NoDirExists(t, filepath.Join(root, ".agent-layer/skills/implement"))
+	require.DirExists(t, filepath.Join(config.DefaultPaths(root).ImportedSkillsDir, "implement"))
+	cfg, err := config.LoadConfigLenient(config.DefaultPaths(root).ConfigPath)
+	require.NoError(t, err)
+	require.Len(t, cfg.Skills.Imports, 1)
+}
+
+func TestPlanPristineConversionsKeepsCopiesWhoseImportWouldConflict(t *testing.T) {
+	t.Run("local instruction already uses the import name", func(t *testing.T) {
+		root := pristineProject(t, "1.1.0")
+		writeTransitionFile(t, root, ".agent-layer/instructions/rules.md", []byte("Project rules.\n"))
+		path := config.DefaultPaths(root).ConfigPath
+		raw, err := os.ReadFile(path) // #nosec G304 -- test-owned project config.
+		require.NoError(t, err)
+		raw = append(raw, []byte("\n[[instructions.local]]\nselectors = [\"rules.md\"]\norder = 20\n")...)
+		require.NoError(t, os.WriteFile(path, raw, 0o600)) // #nosec G703 -- test-owned project config.
+		cfg, err := config.LoadConfigLenient(path)
+		require.NoError(t, err)
+		require.NoError(t, config.ValidateInstructions(path, cfg.Instructions), "the project is valid before conversion")
+		items, err := PlanPristineConversions(root, RealSystem{})
+		require.NoError(t, err)
+		require.Equal(t, []string{".agent-layer/skills/implement", ".agent-layer/skills/ship-pr", ".agent-layer/instructions/01_memory.md"}, conversionPaths(items))
+	})
+	t.Run("manually managed catalog block", func(t *testing.T) {
+		root := pristineProject(t, "1.1.0")
+		path := config.DefaultPaths(root).ConfigPath
+		raw, err := os.ReadFile(path) // #nosec G304 -- test-owned project config.
+		require.NoError(t, err)
+		raw = append(raw, []byte("\n[[skills.imports]]\nrepository = \""+templates.GeneralSkillsRepository+"\"\nselectors = [\"skills/tools/*\"]\n")...)
+		require.NoError(t, os.WriteFile(path, raw, 0o600)) // #nosec G703 -- test-owned project config.
+		items, err := PlanPristineConversions(root, RealSystem{})
+		require.NoError(t, err)
+		require.Equal(t, []string{".agent-layer/instructions/00_rules.md", ".agent-layer/instructions/01_memory.md"}, conversionPaths(items),
+			"imports never edit a wildcard block, so its shipped skill copies stay user-managed")
+	})
+}
+
+// After recovery restores configuration, an instruction block without a
+// selector is refused with validation guidance instead of panicking.
+func TestUnconfiguredInstructionCheckValidatesRecoveredConfig(t *testing.T) {
+	root := t.TempDir()
+	require.NoError(t, Run(root, Options{System: RealSystem{}, PinVersion: "1.1.0"}))
+	path := config.DefaultPaths(root).ConfigPath
+	raw, err := os.ReadFile(path) // #nosec G304 -- test-owned project config.
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(path, append(raw, []byte("\n[[instructions.local]]\nselectors = []\norder = 0\n")...), 0o600)) // #nosec G703 -- test-owned project config.
+	require.ErrorContains(t, checkUnconfiguredInstructions(root, RealSystem{}), "each instructions block requires exactly one selector")
 }

@@ -71,6 +71,13 @@ type state struct {
 // loadState reads configuration, lock state, and every imported directory.
 // Callers must already hold the project lock.
 func loadState(root string, instructions bool) (*state, error) {
+	return loadStateWithout(root, instructions, nil)
+}
+
+// loadStateWithout reads state as if the named local sources were already
+// removed. Conversion preflights use it for leftover copies that the upgrade
+// deletes before its imports commit.
+func loadStateWithout(root string, instructions bool, removed map[string]bool) (*state, error) {
 	paths := config.DefaultPaths(root)
 
 	raw, err := fsutil.ReadRegularFile(paths.ConfigPath)
@@ -101,6 +108,9 @@ func loadState(root string, instructions bool) (*state, error) {
 	userSkills, err := readUserSkillNames(paths.SkillsDir, instructions)
 	if err != nil {
 		return nil, err
+	}
+	for name := range removed {
+		delete(userSkills, collisionName(name))
 	}
 
 	if instructions {

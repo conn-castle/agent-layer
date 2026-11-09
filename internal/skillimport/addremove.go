@@ -57,11 +57,30 @@ func (s *Service) Add(ctx context.Context, opts AddOptions) (*Report, error) {
 }
 
 func (s *Service) addLocked(ctx context.Context, st *state, opts AddOptions, report *Report) error {
+	plan, err := planAdd(st, opts)
+	if err != nil {
+		return err
+	}
+	return s.commitAdd(ctx, st, plan, report)
+}
+
+// addPlan is a validated selector addition: the edited configuration and the
+// import block it fetches. Planning reads only st, so conversion preflights
+// can run it before any project write.
+type addPlan struct {
+	nextConfig    string
+	block         config.SkillImport
+	blockIndex    int
+	lockedEntries []skilllock.Entry
+}
+
+// planAdd validates opts against st and computes the configuration edit.
+func planAdd(st *state, opts AddOptions) (addPlan, error) {
 	if len(opts.Selectors) == 0 {
-		return fmt.Errorf("at least one selector is required")
+		return addPlan{}, fmt.Errorf("at least one selector is required")
 	}
 	if st.instructions && (len(opts.Selectors) != 1 || opts.Order == nil) {
-		return fmt.Errorf("instructions add requires one exact Markdown selector and --order")
+		return addPlan{}, fmt.Errorf("instructions add requires one exact Markdown selector and --order")
 	}
 	for _, selector := range opts.Selectors {
 		var err error
@@ -71,7 +90,7 @@ func (s *Service) addLocked(ctx context.Context, st *state, opts AddOptions, rep
 			err = config.ValidateSkillSelectorPath(config.SkillExclusionPath(selector))
 		}
 		if err != nil {
-			return fmt.Errorf("invalid selector %q: %w", selector, err)
+			return addPlan{}, fmt.Errorf("invalid selector %q: %w", selector, err)
 		}
 	}
 
@@ -84,7 +103,7 @@ func (s *Service) addLocked(ctx context.Context, st *state, opts AddOptions, rep
 		nextConfig, err = instructionAddConfig(st, opts, requested)
 	} else {
 		if !hasExisting && !hasPositiveSelector(opts.Selectors) {
-			return fmt.Errorf("an exclusion-only addition must extend an existing block that already has a positive selector; no block matches this repository and policy")
+			return addPlan{}, fmt.Errorf("an exclusion-only addition must extend an existing block that already has a positive selector; no block matches this repository and policy")
 		}
 		selectors := make([]string, 0, len(opts.Selectors))
 		if hasExisting {
@@ -93,39 +112,43 @@ func (s *Service) addLocked(ctx context.Context, st *state, opts AddOptions, rep
 		for _, selector := range opts.Selectors {
 			normalized := config.NormalizeSkillSelector(selector)
 			if containsSelector(selectors, normalized) {
-				return fmt.Errorf("selector %q is already configured for %s", selector, identity.Repository)
+				return addPlan{}, fmt.Errorf("selector %q is already configured for %s", selector, identity.Repository)
 			}
 			selectors = append(selectors, normalized)
 		}
 		nextConfig, err = config.SetSkillImportSelectors(st.configRaw, identity, selectors)
 	}
 	if err != nil {
-		return err
+		return addPlan{}, err
 	}
 	proposed, err := config.ParseConfig([]byte(nextConfig), st.paths.ConfigPath)
 	if err != nil {
-		return err
+		return addPlan{}, err
 	}
 	if st.instructions {
 		instructionBlocks(proposed)
 	}
 	block, blockIndex, ok := findBlockByIdentity(proposed, identity)
 	if !ok {
-		return fmt.Errorf("the updated configuration does not contain the expected import block")
+		return addPlan{}, fmt.Errorf("the updated configuration does not contain the expected import block")
 	}
 	lockedEntries := []skilllock.Entry{}
 	if hasExisting {
 		blockIndex = existingIndex
 		lockedEntries = st.entriesForBlock(st.lock.Skills, existing)
 	}
+	return addPlan{nextConfig: nextConfig, block: block, blockIndex: blockIndex, lockedEntries: lockedEntries}, nil
+}
 
+// commitAdd fetches the planned block and commits it in one journaled transaction.
+func (s *Service) commitAdd(ctx context.Context, st *state, plan addPlan, report *Report) error {
 	txn := s.newTransaction(pathSetFor(st), st.lock)
-	txn.SetConfig(nextConfig)
+	txn.SetConfig(plan.nextConfig)
 	return s.applySelectorEdit(ctx, st, txn, selectorEdit{
 		op:            selectorEditAdd,
-		blockIndex:    blockIndex,
-		block:         block,
-		lockedEntries: lockedEntries,
+		blockIndex:    plan.blockIndex,
+		block:         plan.block,
+		lockedEntries: plan.lockedEntries,
 		requireSkills: true,
 	}, report)
 }

@@ -133,9 +133,26 @@ func TestUpgradeConversionPreflightFailsOfflineWithoutWrites(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(root, ".agent-layer/sync.lock"), nil, 0o600))
 	before := testutil.SnapshotEvidence(t, root)
 	err := upgradeWith(root, UpgradeConverter{})
-	require.ErrorContains(t, err, "could not fetch github.com/nicholasjconn/skills to convert 4 unmodified shipped copies: ")
-	require.ErrorContains(t, err, "rerun al upgrade interactively and decline the conversion")
+	require.ErrorContains(t, err, "could not prepare github.com/nicholasjconn/skills imports to convert 4 unmodified shipped copies: ")
+	require.ErrorContains(t, err, "running al upgrade in a terminal without --yes and declining the conversion")
 	require.Equal(t, before, testutil.SnapshotEvidence(t, root))
+}
+
+// Project-state problems the imports would refuse are found by the preflight,
+// before the snapshot or any other project write.
+func TestUpgradeConversionPreflightChecksProjectStateWithoutWrites(t *testing.T) {
+	testutil.CatalogGitFixture(t)
+	root := pristineConversionProject(t)
+	orphan := filepath.Join(config.DefaultPaths(root).ImportedSkillsDir, "orphan")
+	require.NoError(t, os.MkdirAll(orphan, 0o700))
+	require.NoError(t, os.WriteFile(filepath.Join(orphan, "SKILL.md"), []byte("---\nname: orphan\ndescription: Unowned.\n---\n"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(root, ".agent-layer/sync.lock"), nil, 0o600))
+	before := testutil.SnapshotEvidence(t, root)
+	err := upgradeWith(root, UpgradeConverter{})
+	require.ErrorContains(t, err, "could not prepare github.com/nicholasjconn/skills imports to convert 4 unmodified shipped copies: ")
+	require.ErrorContains(t, err, "imported skill directories have no entry in")
+	require.ErrorContains(t, err, "This upgrade changed nothing")
+	require.Equal(t, before, testutil.SnapshotEvidence(t, root), "no snapshot or other write precedes the refusal")
 }
 
 // seamConverter injects transaction behavior into the real conversion.

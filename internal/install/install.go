@@ -83,6 +83,9 @@ type installer struct {
 	conversionRemovalDir string
 	// conversionPreserved marks edited copies kept in conversionRemovalDir.
 	conversionPreserved bool
+	// rollbackKeep lists edited local copies that could not be moved out of
+	// the automatic rollback's reach; the rollback leaves them untouched.
+	rollbackKeep []string
 }
 
 type templateFile struct {

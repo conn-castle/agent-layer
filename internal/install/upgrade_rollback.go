@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 
@@ -97,7 +98,11 @@ func rollbackUpgradeSnapshot(root string, snapshotID string, opts RollbackUpgrad
 	if err != nil {
 		return err
 	}
+	// restore is the snapshot this rollback applies; deleted leftovers of
+	// still-active imports are left out of it rather than refusing.
+	restore := snapshot
 	if len(active) > 0 {
+		restore.Entries = withoutConvertedLeftovers(snapshot, active)
 		// A conversion snapshot may recreate local copies because it also
 		// restores the configuration and lock files and removes the imports.
 		restored := conversionRestoredImports(snapshot)
@@ -107,7 +112,7 @@ func rollbackUpgradeSnapshot(root string, snapshotID string, opts RollbackUpgrad
 				owned[name] = true
 			}
 		}
-		for _, entry := range snapshot.Entries {
+		for _, entry := range restore.Entries {
 			clean := normalizeRelPath(filepath.Clean(filepath.FromSlash(entry.Path)))
 			if entry.Kind == upgradeSnapshotEntryKindAbsent {
 				if clean == ".agent-layer/config.toml" {
@@ -145,7 +150,7 @@ func rollbackUpgradeSnapshot(root string, snapshotID string, opts RollbackUpgrad
 			return fmt.Errorf("persist rollback targets before rollback snapshot %s: %w", snapshotID, err)
 		}
 	}
-	if err := rollbackUpgradeSnapshotState(root, sys, snapshot, targets); err != nil {
+	if err := rollbackUpgradeSnapshotState(root, sys, restore, targets); err != nil {
 		if snapshot.Status == upgradeSnapshotStatusRollbackFailed && strings.TrimSpace(snapshot.FailureError) != "" {
 			snapshot.FailureError = fmt.Sprintf("%s; retry rollback failed: %v", snapshot.FailureError, err)
 		} else {
@@ -164,6 +169,38 @@ func rollbackUpgradeSnapshot(root string, snapshotID string, opts RollbackUpgrad
 		return fmt.Errorf("rollback snapshot %s succeeded but failed to persist manually_rolled_back state: %w", snapshotID, err)
 	}
 	return nil
+}
+
+// withoutConvertedLeftovers drops the entries of leftover local copies the
+// upgrade deleted beside their intact imports, while those imports are still
+// active. Recreating them would restore a project that sync refuses; their
+// content is the unmodified shipped copy the import already holds.
+func withoutConvertedLeftovers(snapshot upgradeSnapshot, active map[string]bool) []upgradeSnapshotEntry {
+	if len(snapshot.ConvertedLeftovers) == 0 {
+		return snapshot.Entries
+	}
+	skip := map[string]bool{}
+	for name := range active {
+		slot := skillmigration.LocalSlot(name)
+		if slices.Contains(snapshot.ConvertedLeftovers, slot) {
+			skip[slot] = true
+		}
+	}
+	entries := make([]upgradeSnapshotEntry, 0, len(snapshot.Entries))
+	for _, entry := range snapshot.Entries {
+		clean := normalizeRelPath(filepath.Clean(filepath.FromSlash(entry.Path)))
+		dropped := false
+		for leftover := range skip {
+			if clean == leftover || strings.HasPrefix(clean, leftover+"/") {
+				dropped = true
+				break
+			}
+		}
+		if !dropped {
+			entries = append(entries, entry)
+		}
+	}
+	return entries
 }
 
 func rollbackTargetsForSnapshot(root string, snapshot upgradeSnapshot) ([]string, error) {

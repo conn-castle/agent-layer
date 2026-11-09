@@ -62,6 +62,7 @@ func (inst *installer) preparePristineConversions() error {
 	var conversions []PristineConversion
 	for _, item := range items {
 		if item.DeleteOnly {
+			_, _ = fmt.Fprintf(inst.warnOutput(), messages.UpgradeConvertPristineLeftoverFmt, item.Path, item.Selector)
 			conversions = append(conversions, item)
 		}
 	}
@@ -96,7 +97,9 @@ func (inst *installer) convertPristineCopies() error {
 	}()
 	current, err := PlanPristineConversions(inst.root, inst.sys)
 	if err != nil {
-		return err
+		// A copy replaced after the snapshot (for example by a link) fails
+		// planning; it must still be moved out of the rollback's reach.
+		return inst.failConversion(err)
 	}
 	verified := map[string]PristineConversion{}
 	for _, item := range current {
@@ -126,6 +129,12 @@ func (inst *installer) convertPristineCopies() error {
 		}
 	}
 	if imports := pendingImports(inst.conversions); len(imports) > 0 {
+		// Imports edit the configuration, which a project may lack until
+		// writeTemplateFiles seeds it; seed it here, inside the snapshotted step.
+		configPath := config.DefaultPaths(inst.root).ConfigPath
+		if err := inst.templates().writeTemplateFile(configPath, configFileName, 0o644, nil, nil); err != nil {
+			return inst.failConversion(err)
+		}
 		if err := inst.preparedConversion.Import(inst.ctx, imports, removeLocal); err != nil {
 			return inst.failConversion(err)
 		}
@@ -179,7 +188,8 @@ func (inst *installer) removePristineCopy(item PristineConversion) error {
 
 // preserveEditedCopy moves (or, across filesystems, copies) a local copy edited
 // during the upgrade into .agent-layer/tmp, which rollback never touches, and
-// returns the error that fails the step.
+// returns the error that fails the step. When neither works the copy stays at
+// its path, and the automatic rollback is told to leave that path untouched.
 func (inst *installer) preserveEditedCopy(item PristineConversion) error {
 	src := inst.localCopyPath(item)
 	dest, err := inst.conversionRemovalPath(item)
@@ -189,6 +199,7 @@ func (inst *installer) preserveEditedCopy(item PristineConversion) error {
 		}
 	}
 	if err != nil {
+		inst.rollbackKeep = append(inst.rollbackKeep, src)
 		return fmt.Errorf(messages.UpgradeConvertPristineEditedUnpreservedFmt, item.Path, err)
 	}
 	inst.conversionPreserved = true
@@ -303,6 +314,8 @@ func (inst *installer) closePreparedConversion() {
 	}
 }
 
+// pendingImports returns the items that still need an import; the rest are
+// delete-only leftovers of imports that already committed.
 func pendingImports(items []PristineConversion) []PristineConversion {
 	var imports []PristineConversion
 	for _, item := range items {

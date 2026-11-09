@@ -171,6 +171,8 @@ func PlanPristineConversions(root string, sys System) ([]PristineConversion, err
 			item.DeleteOnly = true
 		case skillImportConfigured(cfg, item.Selector):
 			continue // Configured but not imported: ordinary import commands own it.
+		case !catalogBlockEditable(cfg):
+			continue // Imports never edit a manually managed catalog block.
 		default:
 			if exists, err := transitionPathExists(root, ".agent-layer/skills-imported/"+item.Name, sys); err != nil {
 				return nil, err
@@ -201,6 +203,11 @@ func PlanPristineConversions(root string, sys System) ([]PristineConversion, err
 		default:
 			if raw == nil {
 				continue
+			}
+			if occupied, err := localInstructionNamed(root, cfg, item.Name, sys); err != nil {
+				return nil, err
+			} else if occupied {
+				continue // A local rules.md or memory.md already uses the import's name.
 			}
 			if _, order, err := config.RemoveLocalInstruction(string(raw), item.LocalName); err != nil || order == nil {
 				continue //nolint:nilerr // A block that cannot be edited stays user-managed.
@@ -243,6 +250,9 @@ func requireIntactImport(root string, cfg *config.Config, item PristineConversio
 	return nil
 }
 
+// intactImport reports why item's import cannot replace its local copy: the
+// configuration must own the import and the imported tree must match its lock
+// entry. A nil error means deleting the local copy loses nothing.
 func intactImport(root string, cfg *config.Config, item PristineConversion) error {
 	paths := config.DefaultPaths(root)
 	var (
@@ -296,6 +306,9 @@ func requireRealDirectory(path string) error {
 	return nil
 }
 
+// pristineFile reports whether data equals the shipped content of rel in any
+// published manifest version, after line-ending and trailing-newline
+// normalization.
 func pristineFile(manifests map[string]templateManifest, rel string, data []byte) bool {
 	hash := hashNormalizedContent(data)
 	for _, manifest := range manifests {
@@ -371,6 +384,8 @@ func pristineSkillDir(dir, rel string, sys System, manifests map[string]template
 	return false, nil
 }
 
+// catalogSkillSelectors maps each general-repository catalog skill name to
+// the exact selector a fresh setup imports it with.
 func catalogSkillSelectors() (map[string]string, error) {
 	catalog, err := templates.LoadCLISkillCatalog()
 	if err != nil {
@@ -387,6 +402,8 @@ func catalogSkillSelectors() (map[string]string, error) {
 	return selectors, nil
 }
 
+// skillImportConfigured reports a general-repository import block whose
+// positive selectors, including wildcards, select selector.
 func skillImportConfigured(cfg *config.Config, selector string) bool {
 	for _, imp := range cfg.Skills.Imports {
 		if _, selected := imp.SelectingPositiveSelector(selector); selected && config.NormalizeSkillRepository(imp.Repository) == templates.GeneralSkillsRepository {
@@ -407,6 +424,40 @@ func instructionImportOwned(cfg *config.Config, name string) bool {
 	return false
 }
 
+// localInstructionNamed reports a local instruction, configured or on disk,
+// that already uses the import's file name, which instruction validation
+// requires to be unique across the local and imported tiers.
+func localInstructionNamed(root string, cfg *config.Config, name string, sys System) (bool, error) {
+	for _, local := range cfg.Instructions.Local {
+		for _, selector := range local.Selectors {
+			if strings.EqualFold(path.Base(selector), name) {
+				return true, nil
+			}
+		}
+	}
+	return transitionPathExists(root, ".agent-layer/instructions/"+name, sys)
+}
+
+// catalogBlockEditable mirrors the import policy: a default-policy catalog
+// block with wildcards or exclusions is manually managed, so conversion never
+// edits it and its shipped copies stay user-managed.
+func catalogBlockEditable(cfg *config.Config) bool {
+	identity := config.SkillImport{Repository: templates.GeneralSkillsRepository}.Identity()
+	for _, imp := range cfg.Skills.Imports {
+		if imp.Identity() != identity {
+			continue
+		}
+		for _, selector := range imp.Selectors {
+			if config.IsSkillExclusionSelector(selector) || strings.ContainsAny(config.NormalizeSkillSelector(selector), "*?[") {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+// instructionImportConfigured reports any instruction import, from any
+// repository, whose selector names a file called name.
 func instructionImportConfigured(cfg *config.Config, name string) bool {
 	for _, imp := range cfg.Instructions.Imports {
 		for _, selector := range imp.Selectors {
@@ -577,9 +628,17 @@ func checkUnconfiguredInstructions(root string, sys System) error {
 		return err
 	}
 	instructions := cfg.Instructions
+	if len(instructions.Local)+len(instructions.Imports) > 0 {
+		// Recovery may have restored configuration after the boundary check.
+		if err := config.ValidateInstructions(upgradeMigrationConfigPath, instructions); err != nil {
+			return err
+		}
+	}
 	configured := map[string]bool{}
 	for _, local := range instructions.Local {
-		configured[local.Selectors[0]] = true
+		for _, selector := range local.Selectors {
+			configured[selector] = true
+		}
 	}
 	// Sync loads only configured local instructions, so an unconfigured file
 	// (even an unmodified shipped one) would fail after the pin advanced. Only a

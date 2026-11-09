@@ -363,19 +363,27 @@ read-only install gate (`CheckTransitionState`) blocks only needs-upgrade config
 and adoption-v2 evidence. `PlanPristineConversions` lists unmodified shipped
 copies: a moved skill directory whose entire tree equals one manifest version,
 or a standard instruction with a published hash and its own local block.
-Upgrade converts them (#522): consent and a write-free network preflight run
-under the project lock before the snapshot, then the `convertPristineCopies`
+Copies stay user-managed when a local instruction already uses the import's
+name or the default catalog block is manually managed (wildcards or
+exclusions). Upgrade converts them (#522): consent and a write-free preflight
+run under the project lock before the snapshot. The preflight fetches the
+catalog and plans every import with the same state checks the commit applies,
+treating leftover copies the step deletes first as already removed. Then the
+`convertPristineCopies`
 step commits journaled imports through the lock-held `skillimport` conversion
 API (injected from `cmd/al` as `install.PristineConverter`, because `install`
 cannot import `skillimport`) and deletes each local copy only after its import
 commits, before the pin advances. Deletion renames the copy into
 `.agent-layer/tmp/upgrade-conversion-<id>/` and re-verifies it there; a copy
 edited during the upgrade stays there, out of the rollback's reach, and fails the
-step. The snapshot captures configuration, both lock files and both imported
+step; if it cannot be moved, the automatic rollback leaves that path untouched.
+The step seeds a missing `config.toml` before importing. The snapshot captures configuration, both lock files and both imported
 tiers whole, because an import also materializes other exact selectors already
 in its block. A leftover local copy completes as delete-only only when
 configuration owns its import and the imported tree matches its lock entry;
-otherwise upgrade refuses before mutation. Upgrade also refuses an unconfigured
+otherwise upgrade refuses before mutation. The snapshot records deleted
+leftovers, and manual rollback does not recreate them beside still-active
+imports. Upgrade also refuses an unconfigured
 local instruction file, which sync would refuse after the pin advanced.
 Customized copies remain user content. The source
 floor uses `skillmigration.MinimumCLI`; unknown clean sources receive only

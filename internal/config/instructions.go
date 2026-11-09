@@ -228,9 +228,17 @@ func RemoveLocalInstruction(content, name string) (string, *int, error) {
 		local := cfg.Instructions.Local[0]
 		if len(local.Selectors) == 1 && local.Selectors[0] == name {
 			if span.end < len(lines) {
-				// The span runs to the next header; keeping the blank lines
-				// before it preserves the separator in front of that header.
-				return strings.Join(append(lines[:span.start:span.start], lines[span.end:]...), "\n"), local.Order, nil
+				// The span runs to the next header. Comments in the trailing
+				// run of blank and comment lines document that next table, so
+				// they stay; the separator before the removed header is kept.
+				end := span.end
+				for end > span.start+1 && (strings.TrimSpace(lines[end-1]) == "" || strings.HasPrefix(strings.TrimSpace(lines[end-1]), "#")) {
+					end--
+				}
+				for end < span.end && strings.TrimSpace(lines[end]) == "" {
+					end++
+				}
+				return strings.Join(append(lines[:span.start:span.start], lines[end:]...), "\n"), local.Order, nil
 			}
 			return strings.Join(removeSkillImportBlockLines(lines, span), "\n"), local.Order, nil
 		}

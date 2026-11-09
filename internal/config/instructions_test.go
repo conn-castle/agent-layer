@@ -140,3 +140,17 @@ func TestRemoveLocalInstructionKeepsNeighborSeparators(t *testing.T) {
 		t.Fatal("inline local instruction was edited")
 	}
 }
+
+// Comments above the next table document that table and survive removal.
+func TestRemoveLocalInstructionKeepsNextBlockComments(t *testing.T) {
+	for _, separator := range []string{"\n", "\n\n"} {
+		content := "[[instructions.local]]\nselectors = [\"00_rules.md\"]\norder = 0\n\n# project memory notes" + separator + "[[instructions.local]]\nselectors = [\"01_memory.md\"]\norder = 10\n"
+		got, _, err := RemoveLocalInstruction(content, "00_rules.md")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if want := "# project memory notes" + separator + "[[instructions.local]]\nselectors = [\"01_memory.md\"]\norder = 10\n"; got != want {
+			t.Fatalf("removal = %q, want %q", got, want)
+		}
+	}
+}

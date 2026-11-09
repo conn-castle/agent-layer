@@ -597,7 +597,9 @@ immutable content-addressed copy of its own image,
 or `AL_CACHE_DIR`). The copy is written through a synced temporary file, verified
 by SHA-256, and renamed into place under a file lock. An existing entry is reused
 only after it is re-hashed. The copy never goes into `versions/<v>`, which
-holds only checksum-verified downloads. If any step fails, the server runs in
+holds only checksum-verified downloads. Entries are not pruned yet (#525); with
+no `agent-layer` MCP server running, deleting `<cache root>/images/` is safe and
+the next pinned server start recreates its entry. If any step fails, the server runs in
 place after one stderr warning, and replacing the installed `al` then makes it
 stale as before. The server records its starting selection (version and
 source: pin, `AL_VERSION`, or current). `dispatch_options`, `dispatch_start`

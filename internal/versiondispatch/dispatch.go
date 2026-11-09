@@ -60,6 +60,8 @@ func maybeExec(ctx context.Context, sys System, args []string, currentVersion st
 	return maybeExecWithOptions(ctx, sys, args, currentVersion, cwd, execOptions{})
 }
 
+// maybeExecWithOptions is MaybeExec; a non-nil opts.runningImage also enables
+// the MCP server image handoff when the running release is selected.
 func maybeExecWithOptions(ctx context.Context, sys System, args []string, currentVersion string, cwd string, opts execOptions) error {
 	if len(args) == 0 {
 		return fmt.Errorf(messages.DispatchMissingArgv0)

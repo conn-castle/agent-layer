@@ -40,6 +40,8 @@ func MaybeExecMCPServer(ctx context.Context, args []string, currentVersion strin
 	return maybeExecWithOptions(ctx, RealSystem{StderrWriter: stderr}, args, currentVersion, cwd, execOptions{runningImage: runningImage})
 }
 
+// runningImage returns a readable reference to this process's image (procfs
+// on Linux, otherwise the unchanged executable path) and its pathname.
 func runningImage() (string, string, error) {
 	source, err := executableimage.Self()
 	if err != nil {
@@ -178,6 +180,7 @@ func writeImage(sys System, source string, dir string, path string, sum string) 
 	return nil
 }
 
+// fileSHA256 returns the hex SHA-256 of path's content, the image cache key.
 func fileSHA256(path string) (string, error) {
 	file, err := os.Open(path) // #nosec G304 -- the running executable image.
 	if err != nil {

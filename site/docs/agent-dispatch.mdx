@@ -112,7 +112,9 @@ release keep generating the older launcher until you run `al update`, then
 Running servers keep their code until reconnected. A server whose project pin
 or `AL_VERSION` selects the running release runs from an immutable, verified copy
 of its own image in the content-addressed image cache
-(`<cache root>/images/<sha256>/al`), never in the version cache. It therefore keeps
+(`<cache root>/images/<sha256>/al`), never in the version cache. Entries are not
+pruned yet (#525); with no `agent-layer` MCP server running, deleting
+`<cache root>/images/` is safe. It therefore keeps
 accepting work after `al update` or `brew upgrade` replaces the global `al`. If
 the copy fails, the server runs in place after one warning. After a pin change,
 pin removal or corrupt pin, or a replaced executable in an unpinned project or
