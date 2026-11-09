@@ -50,7 +50,7 @@ Notes:
 - Claude Code and Codex VS Code extension support is handled through `al vscode`.
 - Auto-approval capabilities vary by client; `approvals.mode` is applied on a best-effort basis.
 - *Antigravity MCP config is written to `.agy/antigravity-cli/mcp_config.json` using the supported `serverUrl` shape. `agy` v1.0.0 migrates that file to `<gemini_dir>/config/mcp_config.json`, but runtime MCP registration has not been observed yet. Run `al probe agy` to see the current capability matrix.
-- **Antigravity approved commands are written to `.agy/antigravity-cli/settings.json` as a managed `permissions.allow` list. User passthrough in `agents.antigravity.agent_specific` can add other settings keys, including `permissions.deny`; runtime enforcement is reported by `al probe agy`.
+- **Antigravity approved commands are written to `.agy/antigravity-cli/settings.json` as a managed `permissions.allow` list, which is written as `[]` when nothing is approved so grants from an earlier approvals mode are removed. User passthrough in `agents.antigravity.agent_specific` can add other settings keys, including `permissions.deny`; runtime enforcement is reported by `al probe agy`.
 
 Muse is optional and disabled by default. Enable `[agents.muse]` with `enabled = true`; optional `model` and `reasoning_effort` select native runtime options. `al muse` launches interactively, and `al dispatch start --agent muse` starts a headless conversation. Model suggestions come from the installed native MSP catalog; an empty catalog is reported explicitly and custom models remain available.
 
@@ -327,7 +327,7 @@ Generated outputs are written into the repo in client-specific formats (examples
 
 - Instruction shims: `AGENTS.md`, `.claude/CLAUDE.md`, `.github/copilot-instructions.md`
 - MCP + client configs: `.mcp.json`, `.agy/antigravity-cli/mcp_config.json`, `.claude/settings.json`, `.codex/`, `.copilot/mcp-config.json`, `.grok/config.toml`
-- Shared Antigravity settings: `.agy/antigravity-cli/settings.json` (Agent Layer patches its managed model, `permissions.allow`, and `agent_specific` paths while preserving native settings)
+- Shared Antigravity settings: `.agy/antigravity-cli/settings.json` (Agent Layer patches its managed model, `permissions.allow`, and `agent_specific` paths while preserving native settings; `permissions.allow` is replaced on every sync, so keep approved commands in `.agent-layer/commands.allow`)
 - Shared skills: `.agents/skills/`
 - Antigravity notification plugin: `.agents/plugins/agent-layer-chime/`
 - Grok notification hook: `.grok/hooks/agent-layer-chime.json`

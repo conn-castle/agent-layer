@@ -243,7 +243,7 @@ func TestWriteAntigravitySettingsPreservesNativeStateAndRefreshesManagedPaths(t 
 	}
 }
 
-func TestWriteAntigravitySettingsPreservesNativeManagedPathsWhenConfigOmitsThem(t *testing.T) {
+func TestWriteAntigravitySettingsKeepsNativeValuesButOwnsAllow(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
 	path := filepath.Join(root, ".agy", "antigravity-cli", "settings.json")
@@ -251,8 +251,8 @@ func TestWriteAntigravitySettingsPreservesNativeManagedPathsWhenConfigOmitsThem(
 		t.Fatal(err)
 	}
 	// settings.json is owned by Antigravity and the user. When Agent Layer
-	// config produces no model or permissions, it must not delete the native
-	// values the user set in Antigravity itself.
+	// config produces no model, it must not delete the native model or other
+	// native values; permissions.allow is always managed (#475).
 	seed := []byte(`{"model":"native-model","permissions":{"allow":["native-allow"],"deny":["native"]},"trust":true}`)
 	if err := os.WriteFile(path, seed, 0o600); err != nil {
 		t.Fatal(err)
@@ -261,10 +261,56 @@ func TestWriteAntigravitySettingsPreservesNativeManagedPathsWhenConfigOmitsThem(
 		t.Fatal(err)
 	}
 	got := readFileForTest(t, path)
-	for _, want := range []string{`"native-model"`, `"native-allow"`, `"deny"`, `"native"`, `"trust"`} {
+	for _, want := range []string{`"native-model"`, `"deny"`, `"native"`, `"trust"`, `"allow": []`} {
 		if !strings.Contains(got, want) {
-			t.Fatalf("native value %s was not preserved:\n%s", want, got)
+			t.Fatalf("expected %s in:\n%s", want, got)
 		}
+	}
+	if strings.Contains(got, "native-allow") {
+		t.Fatalf("empty approval result kept a stale allow grant:\n%s", got)
+	}
+}
+
+// TestWriteAntigravitySettingsClearsGrantsWhenApprovalsBecomeEmpty reproduces
+// #475: narrowing approvals to none, or to an empty commands.allow, must
+// remove grants projected earlier instead of leaving them in effect.
+func TestWriteAntigravitySettingsClearsGrantsWhenApprovalsBecomeEmpty(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name    string
+		project config.ProjectConfig
+	}{
+		{"mode none", config.ProjectConfig{Config: config.Config{Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeNone}}, CommandsAllow: []string{"git status"}}},
+		{"empty commands.allow", config.ProjectConfig{Config: config.Config{Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeCommands}}}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			root := t.TempDir()
+			path := filepath.Join(root, ".agy", "antigravity-cli", "settings.json")
+			granted := &config.ProjectConfig{Config: config.Config{Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeCommands}}, CommandsAllow: []string{"git status"}}
+			if err := writeAntigravitySettings(RealSystem{}, root, granted); err != nil {
+				t.Fatal(err)
+			}
+			if got := readFileForTest(t, path); !strings.Contains(got, `"command(git status)"`) {
+				t.Fatalf("expected the commands grant first:\n%s", got)
+			}
+			for range 2 {
+				if err := writeAntigravitySettings(RealSystem{}, root, &tc.project); err != nil {
+					t.Fatal(err)
+				}
+			}
+			var settings struct {
+				Permissions struct {
+					Allow []string `json:"allow"`
+				} `json:"permissions"`
+			}
+			if err := json.Unmarshal([]byte(readFileForTest(t, path)), &settings); err != nil {
+				t.Fatal(err)
+			}
+			if settings.Permissions.Allow == nil || len(settings.Permissions.Allow) != 0 {
+				t.Fatalf("permissions.allow = %#v, want []", settings.Permissions.Allow)
+			}
+		})
 	}
 }
 
@@ -276,6 +322,7 @@ func TestWriteAntigravitySettingsRejectsInvalidStateBeforeWrite(t *testing.T) {
 		{"null", `null`},
 		{"trailing", `{} {}`},
 		{"shape-conflict", `{"permissions":"native"}`},
+		{"permissions-null", `{"permissions":null}`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			root := t.TempDir()
@@ -290,9 +337,9 @@ func TestWriteAntigravitySettingsRejectsInvalidStateBeforeWrite(t *testing.T) {
 			if err := os.WriteFile(path, before, 0o600); err != nil {
 				t.Fatal(err)
 			}
-			// Approvals mode all makes buildAntigravitySettings emit permissions.allow,
-			// so the shape-conflict seed is a path Agent Layer actually writes.
-			project := &config.ProjectConfig{Config: config.Config{Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeAll}}, CommandsAllow: []string{"git status"}}
+			// buildAntigravitySettings always emits permissions.allow, so even
+			// approvals mode none writes the shape-conflict path (#475).
+			project := &config.ProjectConfig{Config: config.Config{Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeNone}}}
 			if err := writeAntigravitySettings(RealSystem{}, root, project); err == nil {
 				t.Fatal("expected error")
 			}
@@ -490,10 +537,9 @@ func TestWriteAntigravitySettingsPreservesUnmanagedNonObjectValue(t *testing.T) 
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	// Native permissions is a non-object value and Agent Layer produces no
-	// permissions here, so the merge must not inspect or reject the native
-	// shape — it targets nothing at that path.
-	seed := []byte(`{"permissions":null,"trust":true}`)
+	// Native ui is a non-object value at a path Agent Layer does not target,
+	// so the merge must not inspect or reject it.
+	seed := []byte(`{"ui":null,"trust":true}`)
 	if err := os.WriteFile(path, seed, 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -501,7 +547,7 @@ func TestWriteAntigravitySettingsPreservesUnmanagedNonObjectValue(t *testing.T) 
 		t.Fatalf("unmanaged non-object native value must not error, got %v", err)
 	}
 	got := readFileForTest(t, path)
-	for _, want := range []string{`"permissions": null`, `"trust": true`} {
+	for _, want := range []string{`"ui": null`, `"trust": true`} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("native value %s not preserved:\n%s", want, got)
 		}
