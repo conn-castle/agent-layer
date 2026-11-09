@@ -380,10 +380,12 @@ cannot import `skillimport`) and deletes each local copy only after its import
 commits, before the pin advances. Deletion renames the copy into
 `.agent-layer/tmp/upgrade-conversion-<id>/` and re-verifies it there; a copy
 edited during the upgrade stays there, out of the rollback's reach, and fails the
-step. On any step failure, every edited copy still in place is renamed (or, if
-that fails, copied) there before the full rollback runs; if both fail, the step
-error names the path and the rollback restores the shipped copy, so an edit made
-during the upgrade is lost only when `.agent-layer/tmp` is unwritable.
+step. When the conversion step itself fails, every edited copy of a pending
+import still in place is renamed (or, if that fails, copied) there before the
+full rollback runs; if both fail, the step error names the path and the
+rollback restores the shipped copy. Later steps preserve nothing: if one fails,
+the rollback resets converted paths to the snapshot, replacing anything written
+there after the conversion step completed.
 The step seeds a missing `config.toml` before importing. The snapshot captures configuration, both lock files and both imported
 tiers whole, because an import also materializes other exact selectors already
 in its block. A leftover local copy completes as delete-only only when
