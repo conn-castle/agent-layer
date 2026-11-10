@@ -43,11 +43,16 @@ func SameAs(path string) error {
 	if initialErr != nil {
 		return initialErr
 	}
+	return SameFile(initialInfo, path)
+}
+
+// SameFile reports whether path still names the file that original describes.
+func SameFile(original os.FileInfo, path string) error {
 	info, err := os.Stat(path)
 	if err != nil {
 		return err
 	}
-	if !os.SameFile(initialInfo, info) || initialInfo.Size() != info.Size() || !initialInfo.ModTime().Equal(info.ModTime()) {
+	if !os.SameFile(original, info) || original.Size() != info.Size() || !original.ModTime().Equal(info.ModTime()) {
 		return errors.New("running executable was replaced")
 	}
 	return nil

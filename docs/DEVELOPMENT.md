@@ -359,14 +359,49 @@ for fresh and supported layouts. Sync never assigns orders or fetches content.
 ### Upgrade and migration internals
 
 v1.2.0 retires pre-1.0 migration execution and optional adoption (#428). The
-read-only install detector recognizes only published-hash pristine moved skills
-and standard instructions, needs-upgrade config, and adoption-v2 evidence.
-Customized copies remain user content. The source floor uses
-`skillmigration.MinimumCLI`; unknown clean sources receive only source-agnostic operations after 1.0.0.
-Upgrade and wizard/profile entry check before recovery and again under the
-project lock. Manual rollback checks its captured pin before recovery. Journal
-recovery preflights both tiers for v2 evidence before touching either; ordinary
-v1 recovery remains supported. Install or run the v1.0.0 executable itself: run its `al upgrade`, then its `al wizard` to adopt or recover before retrying.
+read-only install gate (`CheckTransitionState`) blocks only needs-upgrade config
+and adoption-v2 evidence. `PlanPristineConversions` lists unmodified shipped
+copies: a moved skill directory whose entire tree equals one manifest version,
+or a standard instruction with a published hash and its own local block.
+Copies stay user-managed when a local instruction already uses the import's
+name or the default catalog block is manually managed (wildcards or
+exclusions). Upgrade converts them (#522): consent and a write-free preflight
+run under the project lock before the snapshot. The preflight fetches the
+catalog and plans every import with the same state checks the commit applies,
+treating leftover copies the step deletes first as already removed and a
+missing `config.toml` as the template the step seeds. Supported sources
+(1.0.0 and later) have no migration operations, so the migrations that run in
+between do not change what the preflight planned; the commit re-plans anyway
+and rolls back on divergence. Then the
+`convertPristineCopies`
+step commits journaled imports through the lock-held `skillimport` conversion
+API (injected from `cmd/al` as `install.PristineConverter`, because `install`
+cannot import `skillimport`) and deletes each local copy only after its import
+commits, before the pin advances. Deletion renames the copy into
+`.agent-layer/tmp/upgrade-conversion-<id>/` and re-verifies it there; a copy
+edited during the upgrade stays there, out of the rollback's reach, and fails the
+step. When the conversion step itself fails, every edited copy of a pending
+import still in place is renamed (or, if that fails, copied) there before the
+full rollback runs; if both fail, the step error names the path and the
+rollback restores the shipped copy. Later steps preserve nothing: if one fails,
+the rollback resets converted paths to the snapshot, replacing anything written
+there after the conversion step completed.
+The step seeds a missing `config.toml` before importing. The snapshot captures configuration, both lock files and both imported
+tiers whole, because an import also materializes other exact selectors already
+in its block. A leftover local copy completes as delete-only only when
+configuration owns its import and the imported tree matches its lock entry;
+otherwise upgrade refuses before mutation. Leftover paths are neither
+snapshotted nor rollback targets, so no rollback recreates them beside their
+committed imports. A snapshot taken without `config.toml` removes the seeded
+file along with the imports. Upgrade also refuses an unconfigured
+local instruction file, which sync would refuse after the pin advanced.
+Customized copies remain user content. The source
+floor uses `skillmigration.MinimumCLI`; unknown clean sources receive only
+source-agnostic operations after 1.0.0. Upgrade and wizard/profile entry check
+before recovery and again under the project lock; the wizard refuses convertible
+copies and asks for `al upgrade`. Manual rollback checks its captured pin before
+recovery. Journal recovery preflights both tiers for v2 evidence before touching
+either; ordinary v1 recovery remains supported.
 
 Published template and migration manifests are immutable. Historical kinds still
 parse for release tooling and the required-field guardrail, but retired kinds

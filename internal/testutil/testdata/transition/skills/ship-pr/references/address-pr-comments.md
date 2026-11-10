@@ -1,0 +1,60 @@
+# Address pull request comments
+
+Resolve pull-request comments from fresh GitHub state.
+
+## Inputs and boundaries
+
+Use the exact PR and head supplied by the caller. Never stage, commit, push,
+post, or call reply APIs. Return uncommitted fixes, dispositions, and proposed
+replies.
+
+## Workflow
+
+Rerun this command yourself for fresh comment state; do not wait for the caller
+to paste it:
+
+```bash
+bash <skill_dir>/scripts/read-pr-comments.sh --repo <owner/name> --pr <number>
+```
+
+Reason about eligibility and supported replies from that output. Exclude only
+status or CI messages, factual statements, and verdicts without a new request.
+Read every review body, including automated approvals, review summaries, and
+pre-merge checklists: a request embedded there is eligible regardless of review
+state or a no-actionable-comments verdict. A bot's threshold, such as a coverage
+percentage, is not repository policy; validate its request like any other. Stop
+if no eligible unresolved feedback remains.
+
+Validate each remaining request against the current tree:
+
+- `fix`: in scope and addresses a material correctness, security, safety,
+  reliability, maintainability, or contract-completion problem
+- `disagree`: unsupported, harmful, or not beneficial
+- `defer`: worthwhile new feature, pre-existing issue, or unrelated refactor
+
+Never disagree to avoid work or defer a defect introduced by the PR. Continue
+independent work before escalating under repository rules.
+
+Repair accepted root causes and required tests, documentation, or memory. Group
+coupled work and run focused checks. Track deferrals locally without external
+issue creation unless authorized.
+
+Prepare a reply for each eligible, unblocked request, keyed by its source's
+stable ID or URL. Requests with the same disposition may share one reply that
+addresses each:
+
+- `Fixed.` Describe the fix. This is a proposal marker only; the shipper must
+  replace it with `Fixed in <full commit SHA>.` after pushing the fix.
+- `Disagreed.` Give evidence for not following the reviewer's recommendation,
+  including any alternative fix that addresses the underlying problem.
+- `Deferred.` Name the tracking location and explain the boundary.
+
+The first words are a machine-readable disposition protocol. Do not substitute
+`No change`, `Done`, `Resolved`, or another synonym. Never post the proposal
+marker `Fixed.`; a posted fixed disposition must name the full commit that
+contains the accepted fix.
+
+Finish when every eligible request has a supported disposition and no unblocked
+local work remains. Return each eligible request with its source URL, request
+text, disposition, and proposed reply, plus fixes and checks, trackers,
+blockers, and confirmation that nothing was published.

@@ -51,6 +51,8 @@ type UpgradePlan struct {
 	MigrationReport           UpgradeMigrationReport  `json:"migration_report"`
 	PinVersionChange          UpgradePinVersionDiff   `json:"pin_version_change"`
 	ReadinessChecks           []UpgradeReadinessCheck `json:"readiness_checks"`
+	// PristineConversions lists unmodified shipped copies upgrade converts to Git imports.
+	PristineConversions []PristineConversion `json:"pristine_conversions"`
 }
 
 // UpgradeChange describes a single template delta entry.
@@ -202,6 +204,10 @@ func BuildUpgradePlan(root string, opts UpgradePlanOptions) (UpgradePlan, error)
 	if err != nil {
 		return UpgradePlan{}, err
 	}
+	conversions, err := PlanPristineConversions(root, opts.System)
+	if err != nil {
+		return UpgradePlan{}, err
+	}
 
 	return UpgradePlan{
 		TemplateAdditions:         toUpgradeChanges(additions),
@@ -215,6 +221,7 @@ func BuildUpgradePlan(root string, opts UpgradePlanOptions) (UpgradePlan, error)
 		MigrationReport:           migrationPlan.report,
 		PinVersionChange:          pinDiff,
 		ReadinessChecks:           readinessChecks,
+		PristineConversions:       conversions,
 	}, nil
 }
 

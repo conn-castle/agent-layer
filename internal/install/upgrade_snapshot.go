@@ -541,9 +541,13 @@ func (inst *installer) writeTemplateDirsTargetPaths(catalogDirs []templateDir) [
 	for _, dir := range catalogDirs {
 		paths = append(paths, dir.destRoot)
 	}
-	// Failed template writes must reset legacy slots without resetting user skills.
+	// Failed template writes must reset legacy slots without resetting user
+	// skills. A delete-only conversion's slot is left out: no rollback
+	// recreates a leftover beside its committed import.
 	for _, name := range templates.RetiredSkillNames {
-		paths = append(paths, filepath.Join(inst.root, ".agent-layer", "skills", name))
+		if path := filepath.Join(inst.root, ".agent-layer", "skills", name); !inst.isDeleteOnlyConversion(path) {
+			paths = append(paths, path)
+		}
 	}
 	return uniqueNormalizedPaths(paths)
 }

@@ -57,6 +57,12 @@ func MaybeExec(ctx context.Context, args []string, currentVersion string, cwd st
 // It returns ErrDispatched if execution was handed off. Canceling ctx stops a
 // pending download or cache-lock wait and prevents the hand-off.
 func maybeExec(ctx context.Context, sys System, args []string, currentVersion string, cwd string) error {
+	return maybeExecWithOptions(ctx, sys, args, currentVersion, cwd, execOptions{})
+}
+
+// maybeExecWithOptions is MaybeExec; a non-nil opts.runningImage also enables
+// the MCP server image handoff when the running release is selected.
+func maybeExecWithOptions(ctx context.Context, sys System, args []string, currentVersion string, cwd string, opts execOptions) error {
 	if len(args) == 0 {
 		return fmt.Errorf(messages.DispatchMissingArgv0)
 	}
@@ -93,6 +99,12 @@ func maybeExec(ctx context.Context, sys System, args []string, currentVersion st
 		return err
 	}
 	if requested == current {
+		// The image process prints the diagnostics below after its handoff.
+		if wantsImageHandoff(sys, opts, source, current) {
+			if err := handOffToImage(ctx, sys, opts, args, current); err != nil {
+				return err
+			}
+		}
 		// No dispatch needed — this is the binary that will run the command.
 		// Print version-source diagnostics here so they appear exactly once,
 		// even when an older cached binary was dispatched to reach this point.
@@ -131,7 +143,14 @@ func maybeExec(ctx context.Context, sys System, args []string, currentVersion st
 		return err
 	}
 
-	dispatchArgs := argsForRequestedVersion(args, requested)
+	if err := execHandoff(sys, path, argsForRequestedVersion(args, requested), current, cacheRoot); err != nil {
+		return err
+	}
+	return ErrDispatched
+}
+
+// execHandoff replaces this process with the cached binary at path.
+func execHandoff(sys System, path string, args []string, current string, cacheRoot string) error {
 	env := append(sys.Environ(), fmt.Sprintf("%s=1", EnvShimActive))
 	// The cached binary's argv[0] is its cache path, so pass the stable entry
 	// that generated MCP launchers record (overriding an inherited one). Source
@@ -141,11 +160,8 @@ func maybeExec(ctx context.Context, sys System, args []string, currentVersion st
 			env = append(withoutEnv(env, EnvInstalledExecutable), EnvInstalledExecutable+"="+entry)
 		}
 	}
-	execArgs := append([]string{path}, dispatchArgs[1:]...)
-	if err := sys.ExecBinary(path, execArgs, env); err != nil {
-		return err
-	}
-	return ErrDispatched
+	execArgs := append([]string{path}, args[1:]...)
+	return sys.ExecBinary(path, execArgs, env)
 }
 
 // invokingEntry returns the absolute al entry this process was invoked

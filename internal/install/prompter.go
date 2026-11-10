@@ -28,7 +28,8 @@ type PromptConfigSetDefaultFunc func(key string, manifestValue any, rationale st
 // PromptFuncs holds install prompt callbacks. A nil *PromptFuncs means headless.
 // Overwrite mode requires unified and per-file overwrite callbacks and both
 // delete-unknown callbacks. Optional nil callbacks keep statusline files, leave
-// tmp untouched, select no keep-list paths, and use manifest config defaults.
+// tmp untouched, select no keep-list paths, use manifest config defaults, and
+// convert unmodified shipped copies.
 type PromptFuncs struct {
 	OverwriteAllUnifiedPreviewFunc PromptOverwriteAllUnifiedPreviewFunc
 	OverwritePreviewFunc           PromptOverwritePreviewFunc
@@ -38,6 +39,7 @@ type PromptFuncs struct {
 	DeleteUnknownTmpAllFunc        PromptDeleteUnknownTmpAllFunc
 	SelectUnknownsToKeepFunc       PromptSelectUnknownsToKeepFunc
 	ConfigSetDefaultFunc           PromptConfigSetDefaultFunc
+	ConvertPristineCopiesFunc      PromptConvertPristineCopiesFunc
 }
 
 // overwrite asks whether to overwrite a single path.
@@ -94,6 +96,14 @@ func (p *PromptFuncs) configSetDefault(key string, manifestValue any, rationale 
 		return manifestValue, nil
 	}
 	return p.ConfigSetDefaultFunc(key, manifestValue, rationale, field)
+}
+
+// convertPristineCopies converts when no callback is set.
+func (p *PromptFuncs) convertPristineCopies(items []PristineConversion) (bool, error) {
+	if p == nil || p.ConvertPristineCopiesFunc == nil {
+		return true, nil
+	}
+	return p.ConvertPristineCopiesFunc(items)
 }
 
 // hasStatuslineSource gates the file-reading diff preview build.

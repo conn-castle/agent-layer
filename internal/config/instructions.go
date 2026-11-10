@@ -9,6 +9,8 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/pelletier/go-toml/v2"
+
 	"github.com/conn-castle/agent-layer/internal/messages"
 	"github.com/conn-castle/agent-layer/internal/skilllock"
 	"github.com/conn-castle/agent-layer/internal/skilltree"
@@ -98,11 +100,8 @@ func LocalInstructionEntry(entry fs.DirEntry) bool {
 }
 
 // UnconfiguredLocalInstruction explains how to establish explicit ownership.
-func UnconfiguredLocalInstruction(source string, cfg InstructionsConfig) error {
-	if len(cfg.Local)+len(cfg.Imports) == 0 {
-		return fmt.Errorf(messages.ConfigUnorderedInstructionsFmt, source)
-	}
-	return fmt.Errorf("unconfigured local instruction %s: declare it in .agent-layer/config.toml with [[instructions.local]], selectors = [<filename.md>], and a unique order", source)
+func UnconfiguredLocalInstruction(source string) error {
+	return fmt.Errorf(messages.ConfigUnconfiguredLocalInstructionFmt, source)
 }
 
 // LoadOrderedInstructionsFS validates completeness before reading any projected output.
@@ -166,7 +165,7 @@ func LoadOrderedInstructionsFS(fsys fs.FS, root string, cfg InstructionsConfig) 
 			if !tier.names[entry.Name()] {
 				source := filepath.Join(tier.dir, entry.Name())
 				if tier.dir == paths.InstructionsDir {
-					return nil, UnconfiguredLocalInstruction(source, cfg)
+					return nil, UnconfiguredLocalInstruction(source)
 				}
 				return nil, fmt.Errorf("unconfigured imported instruction source %s: restore its [[instructions.imports]] block or remove the unowned file", source)
 			}
@@ -211,6 +210,69 @@ func SetInstructionImport(content string, block SkillImport, order *int, remove 
 // AddInstructionImport adds one exact instruction import with explicit order.
 func AddInstructionImport(content string, block SkillImport, order *int) (string, error) {
 	return SetInstructionImport(content, block, order, false)
+}
+
+// RemoveLocalInstruction removes the [[instructions.local]] block that selects
+// exactly name and returns its order. A missing block returns content unchanged
+// and a nil order; a matching entry without its own header is rejected.
+func RemoveLocalInstruction(content, name string) (string, *int, error) {
+	lines := strings.Split(content, "\n")
+	for _, span := range findTableBlocks(lines, "instructions.local") {
+		var cfg Config
+		if err := toml.Unmarshal([]byte(strings.Join(lines[span.start:span.end], "\n")), &cfg); err != nil {
+			return "", nil, err
+		}
+		if len(cfg.Instructions.Local) != 1 {
+			return "", nil, fmt.Errorf("invalid local instruction block")
+		}
+		local := cfg.Instructions.Local[0]
+		if len(local.Selectors) == 1 && local.Selectors[0] == name {
+			if span.end < len(lines) {
+				// The span runs to the next header. Comments documenting that
+				// table stay; the separator before the removed header is kept.
+				end := nextTableComments(lines, span)
+				return strings.Join(append(lines[:span.start:span.start], lines[end:]...), "\n"), local.Order, nil
+			}
+			return strings.Join(removeSkillImportBlockLines(lines, span), "\n"), local.Order, nil
+		}
+	}
+	var cfg Config
+	if err := toml.Unmarshal([]byte(content), &cfg); err != nil {
+		return "", nil, err
+	}
+	for _, local := range cfg.Instructions.Local {
+		if len(local.Selectors) == 1 && local.Selectors[0] == name {
+			return "", nil, fmt.Errorf("local instruction requires its own [[instructions.local]] header before editing")
+		}
+	}
+	return content, nil, nil
+}
+
+// nextTableComments returns where the comments documenting the table after
+// span begin, or span.end when there are none. Only whole-line comments and
+// blank lines that start outside TOML strings count, so a multiline value is
+// never split. A comment group directly after the block's last line belongs to
+// the removed block; a group separated from it by a blank line documents the
+// next table.
+func nextTableComments(lines []string, span skillImportBlockSpan) int {
+	outside := map[int]bool{}
+	tomlpatch.WalkLinesOutsideMultiline(lines[span.start:span.end], func(i int, _ string, _ tomlpatch.StringState) tomlpatch.LineWalkResult {
+		outside[span.start+i] = true
+		return tomlpatch.LineWalkResult{}
+	})
+	blank := func(i int) bool { return strings.TrimSpace(lines[i]) == "" }
+	comment := func(i int) bool { return strings.HasPrefix(strings.TrimSpace(lines[i]), "#") }
+	end := span.end
+	for end > span.start+1 && outside[end-1] && (blank(end-1) || comment(end-1)) {
+		end--
+	}
+	for end < span.end && !blank(end) {
+		end++
+	}
+	for end < span.end && blank(end) {
+		end++
+	}
+	return end
 }
 
 // MigrateInstructionOrderFS is an offline, read-only preview of legacy ordering.

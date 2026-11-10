@@ -46,6 +46,8 @@ type Options struct {
 	PinVersion   string
 	DiffMaxLines int
 	System       System
+	// Converter imports accepted unmodified shipped copies during upgrade.
+	Converter PristineConverter
 }
 
 type installer struct {
@@ -73,6 +75,14 @@ type installer struct {
 	migrationReport           UpgradeMigrationReport
 	migrationsPrepared        bool
 	sys                       System
+	converter                 PristineConverter
+	// conversions are the accepted unmodified shipped copies to convert.
+	conversions        []PristineConversion
+	preparedConversion PreparedConversion
+	// conversionRemovalDir receives local copies being deleted, see removePristineCopy.
+	conversionRemovalDir string
+	// conversionPreserved marks edited copies kept in conversionRemovalDir.
+	conversionPreserved bool
 }
 
 type templateFile struct {
@@ -113,8 +123,11 @@ func Run(root string, opts Options) error {
 	}
 
 	if opts.Overwrite && root != "" && opts.System != nil {
-		return skillmigration.WithCheckedRecovery(opts.Context, root, func() error { return CheckUpgradeSource(root, opts.System) }, func() error {
+		return skillmigration.WithCheckedRecovery(opts.Context, root, func() error { return checkUpgradeSourceBeforeRecovery(root, opts.System) }, func() error {
 			if err := skillmigration.CheckVersionLocked(root, opts.PinVersion); err != nil {
+				return err
+			}
+			if err := checkUnconfiguredInstructions(root, opts.System); err != nil {
 				return err
 			}
 			return run(root, opts)
@@ -149,6 +162,7 @@ func run(root string, opts Options) error {
 		warnWriter:   warnWriter,
 		diffMaxLines: normalizeDiffMaxLines(opts.DiffMaxLines),
 		sys:          sys,
+		converter:    opts.Converter,
 	}
 	if strings.TrimSpace(opts.PinVersion) != "" {
 		normalized, err := version.Normalize(opts.PinVersion)
@@ -167,6 +181,11 @@ func run(root string, opts Options) error {
 			return err
 		}
 		if err := inst.prepareUpgradeMigrations(); err != nil {
+			return err
+		}
+		// Conversion consent and its network preflight precede every write.
+		defer inst.closePreparedConversion()
+		if err := inst.preparePristineConversions(); err != nil {
 			return err
 		}
 		if err := inst.ctx.Err(); err != nil {
@@ -229,6 +248,8 @@ type transactionStep struct {
 func (inst upgradeOrchestrator) upgradeTransactionSteps(catalogDirs []templateDir) []transactionStep {
 	return []transactionStep{
 		{name: "runMigrations", run: inst.runMigrations, rollbackTargets: inst.runMigrationsTargetPaths},
+		// The pin advances only after unmodified shipped copies are converted.
+		{name: "convertPristineCopies", run: inst.convertPristineCopies, rollbackTargets: inst.convertPristineCopiesTargetPaths},
 		{name: "writeVersionFile", run: inst.writeVersionFile, rollbackTargets: inst.writeVersionFileTargetPaths},
 		{name: "writeTemplateFiles", run: inst.templates().writeTemplateFiles, rollbackTargets: inst.writeTemplateFilesTargetPaths},
 		{name: "writeTemplateDirs", run: inst.templates().writeTemplateDirs, rollbackTargets: func() []string { return inst.writeTemplateDirsTargetPaths(catalogDirs) }},

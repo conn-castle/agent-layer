@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"slices"
 	"strconv"
 	"strings"
 	"syscall"
@@ -19,6 +20,10 @@ import (
 )
 
 var maybeExecFunc = versiondispatch.MaybeExec
+
+// maybeExecMCPServerFunc dispatches `al dispatch mcp-server`, which also moves
+// a pinned server to an immutable image so al update does not make it stale.
+var maybeExecMCPServerFunc = versiondispatch.MaybeExecMCPServer
 var executeFunc = execute
 
 // spawnDetachedRefreshFunc detaches the refresh helper in the fork intermediate.
@@ -96,7 +101,11 @@ func runMain(ctx context.Context, args []string, stdout io.Writer, stderr io.Wri
 		dispatchStderr = io.Discard
 	}
 	if !shouldBypassDispatch(args) {
-		if handleRunError(maybeExecFunc(ctx, args, Version, cwd, dispatchStderr), stderr, exit, true) {
+		dispatch := maybeExecFunc
+		if isDispatchMCPServer(args) {
+			dispatch = maybeExecMCPServerFunc
+		}
+		if handleRunError(dispatch(ctx, args, Version, cwd, dispatchStderr), stderr, exit, true) {
 			return
 		}
 	}
@@ -145,6 +154,43 @@ func shouldBypassDispatch(args []string) bool {
 	}
 	command := firstCommandArg(args[1:])
 	return command == commandInit || command == commandUpdate || command == commandUpgrade || command == "__dispatch-worker"
+}
+
+// isDispatchMCPServer reports whether args run the hidden MCP server command,
+// al dispatch mcp-server. The persistent --quiet flag is the only flag valid
+// on that path and may appear anywhere before a "--" terminator, as cobra
+// parses it; arguments after the terminator are positional.
+func isDispatchMCPServer(args []string) bool {
+	if len(args) < 2 {
+		return false
+	}
+	var path []string
+	for idx, arg := range args[1:] {
+		if arg == "--" {
+			path = append(path, args[idx+2:]...)
+			break
+		}
+		if !isQuietFlagArg(arg) {
+			path = append(path, arg)
+		}
+	}
+	return slices.Equal(path, []string{commandDispatch, dispatchMCPServerCommand})
+}
+
+// isQuietFlagArg reports one argument cobra parses as the --quiet flag.
+func isQuietFlagArg(arg string) bool {
+	if arg == flagQuiet || arg == flagQuietShort {
+		return true
+	}
+	value, ok := strings.CutPrefix(arg, flagQuietPrefix)
+	if !ok {
+		value, ok = strings.CutPrefix(arg, flagQuietShort+"=")
+	}
+	if !ok {
+		return false
+	}
+	_, err := strconv.ParseBool(value)
+	return err == nil
 }
 
 // firstCommandArg extracts the first non-flag token from root command arguments.

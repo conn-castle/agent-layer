@@ -109,9 +109,17 @@ from. Provider CLIs must be on the client's `PATH` or in that `al` directory. Pr
 release keep generating the older launcher until you run `al update`, then
 `al upgrade` in the project.
 
-Running servers keep their code until reconnected. After a pin change or binary
-replacement (including a source rebuild), options, start and continue refuse new
-provider work when selected code differs or freshness cannot be verified. Wait,
+Running servers keep their code until reconnected. A server whose project pin
+or `AL_VERSION` selects the running release runs from an immutable, verified copy
+of its own image in the content-addressed image cache
+(`<cache root>/images/<sha256>/al`), never in the version cache. Entries are not
+pruned yet (#525); with no `agent-layer` MCP server running, deleting
+`<cache root>/images/` is safe. It therefore keeps
+accepting work after `al update` or `brew upgrade` replaces the global `al`. If
+the copy fails, the server runs in place after one warning. After a pin change,
+pin removal or corrupt pin, or a replaced executable in an unpinned project or
+a source rebuild, options, start and continue refuse new provider work. They also
+refuse it when selected code differs or freshness cannot be verified. Wait,
 inspect, output and cancel remain available. Admitted work keeps its original
 image. Even a same-byte atomic replacement requires reconnecting; source
 wrappers keep an unchanged rebuild's existing executable. Changing the
@@ -119,7 +127,9 @@ launch environment or switching source/release mode also needs a reconnect;
 running servers cannot detect those projection changes.
 
 Run `al update`, then `al upgrade` in each repository, and reconnect `agent-layer`
-once. In Claude Code use `/mcp`; in a persistent Codex app restart the app or
+once, because the upgrade changes the pin. Servers started by v1.2.0 or earlier
+ran from the install path and refuse new work once after the update that
+installs a newer release. In Claude Code use `/mcp`; in a persistent Codex app restart the app or
 reload MCP configuration. A new chat may reuse the running server. Pre-guard
 servers need one reconnect after upgrade to acquire the guard. For development,
 use `make al-sync` to project source despite an older pin, or `make al-upgrade` after completing the v1.0.0 transition,

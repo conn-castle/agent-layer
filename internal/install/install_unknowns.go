@@ -397,7 +397,7 @@ func (inst *installer) buildKnownPaths() (map[string]struct{}, error) {
 	}
 
 	add(filepath.Join(root, ".agent-layer", "instructions.lock.json"))
-	for _, dir := range []string{"instructions", "instructions-imported"} {
+	for _, dir := range []string{instructionsDirName, instructionsDirName + "-imported"} {
 		if err := inst.addExistingKnownPaths(filepath.Join(root, ".agent-layer", dir), add); err != nil {
 			return nil, err
 		}

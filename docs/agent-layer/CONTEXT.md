@@ -121,7 +121,7 @@ Do not duplicate information that belongs elsewhere:
 
 ## Upgrade and migration internals
 
-- v1.2.0 requires completed v1.0.0 transition state. Known pre-1.0 sources and positively identified pristine moved skills/instructions, needs-upgrade config, or adoption-v2 evidence refuse before mutation with v1.0.0 guidance. Customized user content is preserved.
+- Installed projects must be on v1.0.0 or later. Since v1.2.1, `al upgrade` converts unmodified shipped copies (moved skill trees and configured `00_rules.md`/`01_memory.md`) to Git imports: interactive upgrades ask (default yes), `--yes` with the existing apply flags accepts, and declining keeps them as local content. Needs-upgrade config, adoption-v2 evidence, and unconfigured local instructions refuse before mutation with repair guidance. Only pins below 1.0.0 get the temporary-prefix v1.0.0 commands. Customized user content is preserved.
 - Supported upgrades chain manifests from source (exclusive) to target (inclusive), deduplicating operation IDs. Unknown clean sources receive only source-agnostic operations after 1.0.0. Historical schemas remain recognized; obsolete executors are retired. Wizard/profile and benchmark ordering, ordinary import recovery, honored pins, and reachable sync cleanup remain supported.
 - The required-field migration guardrail uses a baseline allowlist for fields that predate manifest enforcement (baseline version `0.8.1`). The allowlist must be maintained when introducing new required fields; stale entries can hide drift if not reviewed.
 

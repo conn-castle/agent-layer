@@ -71,9 +71,26 @@ type state struct {
 // loadState reads configuration, lock state, and every imported directory.
 // Callers must already hold the project lock.
 func loadState(root string, instructions bool) (*state, error) {
+	return loadStateAs(root, instructions, stateView{})
+}
+
+// stateView describes the project a conversion preflight plans against: the
+// state the commit sees after the upgrade's earlier writes in its step.
+type stateView struct {
+	// removed names local sources deleted first (leftover shipped copies).
+	removed map[string]bool
+	// seedConfig is read when config.toml is missing; the step seeds it.
+	seedConfig []byte
+}
+
+// loadStateAs reads state as view describes it.
+func loadStateAs(root string, instructions bool, view stateView) (*state, error) {
 	paths := config.DefaultPaths(root)
 
 	raw, err := fsutil.ReadRegularFile(paths.ConfigPath)
+	if errors.Is(err, os.ErrNotExist) && view.seedConfig != nil {
+		raw, err = view.seedConfig, nil
+	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to read %s: %w", paths.ConfigPath, err)
 	}
@@ -102,6 +119,9 @@ func loadState(root string, instructions bool) (*state, error) {
 	if err != nil {
 		return nil, err
 	}
+	for name := range view.removed {
+		delete(userSkills, collisionName(name))
+	}
 
 	if instructions {
 		configured := map[string]bool{}
@@ -114,7 +134,7 @@ func loadState(root string, instructions bool) (*state, error) {
 		}
 		for name, source := range userSkills {
 			if !configured[name] {
-				return nil, config.UnconfiguredLocalInstruction(source, cfg.Instructions)
+				return nil, config.UnconfiguredLocalInstruction(source)
 			}
 		}
 	}
