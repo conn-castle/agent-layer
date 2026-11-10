@@ -2,6 +2,7 @@ package agentdispatch
 
 import (
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -114,16 +115,28 @@ func TestMuseRecoveryBaselineReportsTimeoutStep(t *testing.T) {
 	}
 }
 
-// A host descendant that inherits stderr must not hold every read for
-// exec's WaitDelay, as a copied (non-file) stderr writer would.
+// A host descendant that inherits stderr and outlives the host must not hold
+// the read until it exits: the drain gets a bounded grace after Wait.
 func TestMuseRecoveryBaselineIgnoresStderrHeldByDescendant(t *testing.T) {
-	path, _ := writeMuseBaselineHost(t, "sleep 3 </dev/null >/dev/null &\n"+museHostAnswers)
+	previous := museStderrDrainGrace
+	museStderrDrainGrace = 200 * time.Millisecond
+	t.Cleanup(func() { museStderrDrainGrace = previous })
+	path, _ := writeMuseBaselineHost(t, "sleep 30 </dev/null >/dev/null &\n"+museHostAnswers)
 	started := time.Now()
 	if _, err := readTestMuseBaseline(path, museBaselineRead{attempts: 1, timeout: museNeverTimeout}); err != nil {
 		t.Fatalf("baseline error = %v", err)
 	}
-	if elapsed := time.Since(started); elapsed >= time.Second {
-		t.Fatalf("baseline read took %s; Wait waited for the descendant's stderr", elapsed)
+	if elapsed := time.Since(started); elapsed >= 10*time.Second {
+		t.Fatalf("baseline read took %s; it waited for the descendant holding stderr", elapsed)
+	}
+}
+
+func TestMuseStderrTailKeepsLastBytes(t *testing.T) {
+	var tail museStderrTail
+	data := strings.Repeat("x", 3*museBaselineStderrTail) + "last line\n"
+	tail.drain(strings.NewReader(data))
+	if got := string(tail.bytes()); got != data[len(data)-museBaselineStderrTail:] || cap(tail.data) > 4*museBaselineStderrTail {
+		t.Fatalf("tail = %d bytes ending %q, cap %d", len(got), got[len(got)-10:], cap(tail.data))
 	}
 }
 
@@ -136,6 +149,36 @@ func TestMuseRecoveryBaselineDoesNotRetryExitedHost(t *testing.T) {
 	}
 	message := err.Error()
 	if !strings.HasPrefix(message, "muse serve stopped before answering initialize after ") || !strings.Contains(message, "(exit status 3): ") || !strings.HasSuffix(message, "; muse serve stderr: host crashed") || strings.Contains(message, "\n") {
+		t.Fatalf("error = %q", message)
+	}
+}
+
+// A clean exit is still the host's own status, not this read's cleanup.
+func TestMuseRecoveryBaselineReportsExitStatusZero(t *testing.T) {
+	path, _ := writeMuseBaselineHost(t, "exit 0")
+	_, err := readTestMuseBaseline(path, museBaselineRead{attempts: 1, timeout: museNeverTimeout})
+	if err == nil || !strings.Contains(err.Error(), "(exit status 0): ") {
+		t.Fatalf("error = %v", err)
+	}
+}
+
+// A host that closes its pipes and is then killed by this read reports no exit status.
+func TestMuseRecoveryBaselineOmitsStatusForCleanupKill(t *testing.T) {
+	path, attempts := writeMuseBaselineHost(t, "exec >&- <&-\nexec sleep 30")
+	_, err := readTestMuseBaseline(path, museBaselineRead{attempts: museBaselineAttempts, timeout: museNeverTimeout})
+	if err == nil || !strings.HasPrefix(err.Error(), "muse serve stopped before answering initialize after ") || strings.Contains(err.Error(), "exit status") || attempts() != 1 {
+		t.Fatalf("error = %v, attempts = %d", err, attempts())
+	}
+}
+
+// A retry that fails differently still reports that the first attempt timed out.
+func TestMuseRecoveryBaselineRetryFailureKeepsEarlierTimeout(t *testing.T) {
+	path, attempts := writeMuseBaselineHost(t, museHostHangs, museHostExitsEarly)
+	_, err := readTestMuseBaseline(path, museBaselineRead{attempts: museBaselineAttempts, timeout: museAnswerTimeout})
+	if err == nil || !errors.Is(err, io.EOF) || attempts() != 2 {
+		t.Fatalf("error = %v, attempts = %d", err, attempts())
+	}
+	if message := err.Error(); !strings.HasPrefix(message, "muse serve stopped before answering initialize after ") || !strings.HasSuffix(message, "; muse serve stderr: host crashed (after attempt 1 timed out waiting for initialize)") {
 		t.Fatalf("error = %q", message)
 	}
 }
@@ -183,6 +226,7 @@ func TestSanitizeMuseStderrLine(t *testing.T) {
 		{"control characters", "bad\x1b[31mcolor\tend\n", "bad [31mcolor end"},
 		{"split leading rune", "\xa9partial\n", "�partial"},
 		{"long line on rune boundary", long + "\n", strings.Repeat("a", museBaselineStderrLineLimit-1) + "..."},
+		{"unicode separators and format runes", "line\u2028sep\u2029para \u202Eevil\u200Bzero\n", "line sep para  evil zero"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			if got := sanitizeMuseStderrLine([]byte(test.tail)); got != test.want {
@@ -192,21 +236,42 @@ func TestSanitizeMuseStderrLine(t *testing.T) {
 	}
 }
 
-func TestDispatchCancelledBeforeLaunch(t *testing.T) {
+// The pre-launch read stops with the same refusal startFencedProvider gives.
+func TestDispatchLaunchRefused(t *testing.T) {
 	root := t.TempDir()
 	run, err := newDispatchRun(root, AgentMuse, supportedProviderVersions[AgentMuse], dispatchModeResume)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := dispatchCancelledBeforeLaunch(root, run.Record.ID); err != nil {
-		t.Fatalf("pending run reported cancelled: %v", err)
+	if err := dispatchLaunchRefused(root, run.Record.ID); err != nil {
+		t.Fatalf("pending run refused: %v", err)
 	}
 	run.Record.LaunchFenced = true
 	if err := writeRunRecord(run.Dir, &run.Record); err != nil {
 		t.Fatal(err)
 	}
-	if err := dispatchCancelledBeforeLaunch(root, run.Record.ID); err == nil || !strings.Contains(err.Error(), "cancelled before provider launch") {
+	if err := dispatchLaunchRefused(root, run.Record.ID); err == nil || err.Error() != startFencedProviderError(run.Record, nil).Error() {
 		t.Fatalf("fenced run error = %v", err)
+	}
+}
+
+// The in-stream check reports why verification failed, on one line.
+func TestMuseReducerReportsResumedRootVerifyError(t *testing.T) {
+	const root = "01a132d6-69c2-7b51-bf05-e8b24f9711f3"
+	reducer := &museReducer{expectedSession: runtimeSessionID, candidateRunID: root, recovery: &museRecoveryBaseline{
+		SessionID: runtimeSessionID, ViewCursor: "cursor-0",
+		verifyRoot: func(string) (*museRecoveryBaseline, error) {
+			return nil, errors.New("muse serve did not answer initialize within 10s\nsecond line")
+		},
+	}}
+	events := reducer.reduce(map[string]any{
+		"schema_version": 1, "stream": map[string]any{"kind": "session", "id": runtimeSessionID},
+		"payload_type": "run.terminal.completed",
+		"payload":      map[string]any{"command_id": root, "run_stream": map[string]any{"kind": "run", "id": root}},
+	})
+	want := "Muse resumed terminal has no authoritative root/cursor evidence: muse serve did not answer initialize within 10s second line"
+	if len(events) != 1 || events[0].Kind != eventFailure || events[0].Reason != want {
+		t.Fatalf("events = %+v", events)
 	}
 }
 

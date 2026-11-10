@@ -97,9 +97,9 @@ func startFencedProvider(root string, run *dispatchRun, cmd *exec.Cmd, provider 
 		if current.EventsPath == "" && run.Record.EventsPath != "" {
 			current.EventsPath = run.Record.EventsPath
 		}
-		if current.LaunchFenced || current.State == dispatchStateCancelled {
+		if err := startFencedProviderError(current, nil); err != nil {
 			run.Record = current
-			return startFencedProviderError(current, exitError(ExitTargetFailure, fmt.Sprintf("dispatch run %s was cancelled before provider launch", current.ID)))
+			return err
 		}
 		if terminalDispatchState(current.State) {
 			run.Record = current
@@ -159,12 +159,12 @@ func startFencedProvider(root string, run *dispatchRun, cmd *exec.Cmd, provider 
 	})
 }
 
-// dispatchCancelledBeforeLaunch reports a cancellation that startFencedProvider
-// would refuse anyway, so pre-launch work can stop early. A record that cannot
-// be read is left to that fence.
-func dispatchCancelledBeforeLaunch(root, runID string) error {
-	if current, err := loadRunRecord(root, runID); err == nil && (current.LaunchFenced || current.State == dispatchStateCancelled) {
-		return exitError(ExitTargetFailure, fmt.Sprintf("dispatch run %s was cancelled before provider launch", runID))
+// dispatchLaunchRefused reports the cancellation or fence that
+// startFencedProvider would refuse anyway, so pre-launch work can stop early.
+// A record that cannot be read is left to that fence.
+func dispatchLaunchRefused(root, runID string) error {
+	if current, err := loadRunRecord(root, runID); err == nil {
+		return startFencedProviderError(current, nil)
 	}
 	return nil
 }
@@ -279,7 +279,7 @@ func executeProvider(
 			baseline, err := readMuseRecoveryBaseline(command, root, museBaselineRead{
 				attempts: museBaselineAttempts,
 				timeout:  museBaselineAttemptTimeout,
-				stop:     func() error { return dispatchCancelledBeforeLaunch(root, run.Record.ID) },
+				stop:     func() error { return dispatchLaunchRefused(root, run.Record.ID) },
 				logRetry: func(line string) { appendWorkerLog(run.Dir, line) },
 			})
 			if err != nil {

@@ -157,9 +157,17 @@ func releaseIfConfirmed(root string, record RunRecord) error {
 	return releaseConversation(root, record.Name, record.ID)
 }
 
+// cancelledBeforeLaunchError is the refusal for a run cancelled before its
+// provider started.
+func cancelledBeforeLaunchError(runID string) error {
+	return exitError(ExitTargetFailure, fmt.Sprintf("dispatch run %s was cancelled before provider launch", runID))
+}
+
+// startFencedProviderError returns why record may not launch its provider:
+// cancellation, then a launch fence; otherwise it returns err (nil allowed).
 func startFencedProviderError(record RunRecord, err error) error {
 	if record.State == dispatchStateCancelled {
-		return exitError(ExitTargetFailure, fmt.Sprintf("dispatch run %s was cancelled before provider launch", record.ID))
+		return cancelledBeforeLaunchError(record.ID)
 	}
 	if record.LaunchFenced {
 		return exitError(ExitUnavailable, fmt.Sprintf("dispatch run %s launch is fenced", record.ID))

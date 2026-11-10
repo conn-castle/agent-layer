@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"time"
 	"unicode"
@@ -55,6 +56,11 @@ const (
 	museBaselineStderrLineLimit = 300
 )
 
+// museStderrDrainGrace bounds the wait for host stderr to reach EOF after the
+// host is reaped. A descendant still holding it then gets EPIPE on its next
+// write instead of unbounded output. A var so tests can pin it.
+var museStderrDrainGrace = 200 * time.Millisecond
+
 // museBaselineRead is the attempt policy for one baseline read.
 type museBaselineRead struct {
 	attempts int
@@ -93,11 +99,18 @@ func (e *museBaselineStepError) Error() string { return e.step + ": " + e.err.Er
 func (e *museBaselineStepError) Unwrap() error { return e.err }
 
 func readMuseRecoveryBaseline(command providerCommand, root string, read museBaselineRead) (*museRecoveryBaseline, error) {
+	var earlier *museBaselineTimeoutError
 	for attempt := 1; ; attempt++ {
 		baseline, err := readMuseRecoveryBaselineOnce(command, root, read.timeout)
 		var timeout *museBaselineTimeoutError
-		if err == nil || !errors.As(err, &timeout) {
-			return baseline, err
+		if err == nil {
+			return baseline, nil
+		}
+		if !errors.As(err, &timeout) {
+			if earlier != nil {
+				return nil, fmt.Errorf("%w (after attempt %d timed out waiting for %s)", err, attempt-1, earlier.step)
+			}
+			return nil, err
 		}
 		if attempt >= read.attempts {
 			timeout.attempts = attempt
@@ -111,31 +124,32 @@ func readMuseRecoveryBaseline(command providerCommand, root string, read museBas
 		if read.logRetry != nil {
 			read.logRetry(fmt.Sprintf("agent-layer: Muse recovery baseline attempt %d failed, retrying with a fresh host: %v", attempt, err))
 		}
+		earlier = timeout
 	}
 }
 
 func readMuseRecoveryBaselineOnce(command providerCommand, root string, timeout time.Duration) (*museRecoveryBaseline, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
-	// A file, unlike an io.Writer, needs no exec copy goroutine, so a host
-	// descendant holding stderr cannot delay Wait. Unlink it while open.
-	stderr, err := os.CreateTemp("", "muse-baseline-stderr-*")
+	// Stderr is an *os.File pipe, so exec starts no copy goroutine and a host
+	// descendant holding it cannot delay Wait; this read drains it instead.
+	stderrRead, stderrWrite, err := os.Pipe()
 	if err != nil {
 		return nil, err
 	}
-	defer func() { _ = stderr.Close() }()
-	if err := os.Remove(stderr.Name()); err != nil {
-		return nil, err
-	}
+	defer func() { _ = stderrRead.Close() }()
+	defer func() { _ = stderrWrite.Close() }()
+	// The deadline is enforced below rather than by the command's context, so
+	// the protocol pipes are always closed before the host is killed.
 	// #nosec G204 -- already resolved, version-checked provider executable.
-	cmd := exec.CommandContext(ctx, command.Path, "serve")
+	cmd := exec.CommandContext(context.Background(), command.Path, "serve")
 	cmd.Dir = command.WorkDir
 	if cmd.Dir == "" {
 		cmd.Dir = root
 	}
 	cmd.Env = command.Env
 	cmd.WaitDelay = time.Second
-	cmd.Stderr = stderr
+	cmd.Stderr = stderrWrite
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		return nil, err
@@ -148,24 +162,44 @@ func readMuseRecoveryBaselineOnce(command providerCommand, root string, timeout 
 	if err := cmd.Start(); err != nil {
 		return nil, err
 	}
-	// Close the decoder pipe on timeout even if a host descendant keeps it open.
-	done := make(chan struct{})
+	_ = stderrWrite.Close()
+	stderr := &museStderrTail{}
+	drained := make(chan struct{})
 	go func() {
+		defer close(drained)
+		stderr.drain(stderrRead)
+	}()
+	// On the deadline, close both protocol pipes even if a host descendant
+	// keeps them open. Only an I/O failed by that close is a timeout; an EOF
+	// that arrived first is a host that exited on its own.
+	var deadlineClosed atomic.Bool
+	done, watched := make(chan struct{}), make(chan struct{})
+	go func() {
+		defer close(watched)
 		select {
 		case <-ctx.Done():
+			deadlineClosed.Store(true)
 			_ = stdout.Close()
+			_ = stdin.Close()
 		case <-done:
 		}
 	}()
 	baseline, err := queryMuseRecoveryBaseline(json.NewEncoder(stdin), json.NewDecoder(stdout), command.SessionID)
 	close(done)
-	// The timeout surfaces as a closed-pipe read, never as a protocol answer.
-	timedOut := ctx.Err() != nil && isMuseTransportError(err)
+	<-watched
+	timedOut := deadlineClosed.Load() && errors.Is(err, os.ErrClosed)
 	elapsed := time.Since(started).Round(time.Millisecond)
-	cancel()
+	_ = cmd.Process.Kill()
 	_ = stdin.Close()
 	_ = stdout.Close()
-	waitErr := cmd.Wait()
+	_ = cmd.Wait()
+	// A descendant may still hold stderr; take what arrived within the grace.
+	select {
+	case <-drained:
+	case <-time.After(museStderrDrainGrace):
+	}
+	_ = stderrRead.Close()
+	<-drained
 	if err == nil {
 		return baseline, nil
 	}
@@ -174,16 +208,15 @@ func readMuseRecoveryBaselineOnce(command providerCommand, root string, timeout 
 	if errors.As(err, &stepErr) {
 		step = stepErr.step
 	}
-	line := lastMuseStderrLine(stderr)
+	line := sanitizeMuseStderrLine(stderr.bytes())
 	if timedOut {
 		return nil, &museBaselineTimeoutError{step: step, timeout: timeout, stderr: line}
 	}
 	if isMuseTransportError(err) {
 		// Report the host's own exit code; a kill by this read's cleanup is not one.
 		status := ""
-		var exitErr *exec.ExitError
-		if errors.As(waitErr, &exitErr) && exitErr.Exited() {
-			status = fmt.Sprintf(" (exit status %d)", exitErr.ExitCode())
+		if state := cmd.ProcessState; state != nil && state.Exited() {
+			status = fmt.Sprintf(" (exit status %d)", state.ExitCode())
 		}
 		return nil, fmt.Errorf("muse serve stopped before answering %s after %s%s: %w%s", step, elapsed, status, err, museStderrDetail(line))
 	}
@@ -203,29 +236,36 @@ func museStderrDetail(line string) string {
 	return "; muse serve stderr: " + line
 }
 
-// lastMuseStderrLine returns the host's last non-empty stderr line, bounded,
-// valid UTF-8, and free of control characters, so errors stay single-line.
-func lastMuseStderrLine(file *os.File) string {
-	info, err := file.Stat()
-	if err != nil {
-		return ""
+// museStderrTail keeps the last museBaselineStderrTail bytes of the host's
+// stderr. It trims only past twice that size, so writes do not shift it each
+// time. Only the drain goroutine writes it; it is read after that goroutine ends.
+type museStderrTail struct{ data []byte }
+
+func (t *museStderrTail) drain(r io.Reader) {
+	buffer := make([]byte, museBaselineStderrTail)
+	for {
+		n, err := r.Read(buffer)
+		t.data = append(t.data, buffer[:n]...)
+		if len(t.data) > 2*museBaselineStderrTail {
+			t.data = append(t.data[:0], t.data[len(t.data)-museBaselineStderrTail:]...)
+		}
+		if err != nil {
+			return
+		}
 	}
-	offset := max(info.Size()-museBaselineStderrTail, 0)
-	tail := make([]byte, info.Size()-offset)
-	n, _ := file.ReadAt(tail, offset)
-	return sanitizeMuseStderrLine(tail[:n])
 }
 
+func (t *museStderrTail) bytes() []byte {
+	return t.data[max(len(t.data)-museBaselineStderrTail, 0):]
+}
+
+// sanitizeMuseStderrLine returns the last non-empty line, bounded and made
+// single-line, for use in an error.
 func sanitizeMuseStderrLine(tail []byte) string {
 	lines := strings.Split(strings.ToValidUTF8(string(tail), "�"), "\n")
 	line := ""
 	for i := len(lines) - 1; i >= 0 && line == ""; i-- {
-		line = strings.TrimSpace(strings.Map(func(r rune) rune {
-			if unicode.IsControl(r) {
-				return ' '
-			}
-			return r
-		}, lines[i]))
+		line = singleLineMuseText(lines[i])
 	}
 	if len(line) <= museBaselineStderrLineLimit {
 		return line
@@ -235,6 +275,18 @@ func sanitizeMuseStderrLine(tail []byte) string {
 		cut--
 	}
 	return line[:cut] + "..."
+}
+
+// singleLineMuseText replaces control, line/paragraph separator, and format
+// (including bidi override) runes with spaces, so provider text cannot split
+// or visually reorder a single-line error.
+func singleLineMuseText(text string) string {
+	return strings.TrimSpace(strings.Map(func(r rune) rune {
+		if unicode.IsControl(r) || unicode.In(r, unicode.Zl, unicode.Zp, unicode.Cf) {
+			return ' '
+		}
+		return r
+	}, text))
 }
 
 func queryMuseRecoveryBaseline(encoder *json.Encoder, decoder *json.Decoder, sessionID string) (*museRecoveryBaseline, error) {
