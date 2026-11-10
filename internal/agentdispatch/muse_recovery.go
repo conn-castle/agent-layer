@@ -6,8 +6,14 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
+	"strings"
+	"sync/atomic"
+	"syscall"
 	"time"
+	"unicode"
+	"unicode/utf8"
 )
 
 // The view cursor and turn identity are provider-authoritative, point-in-time
@@ -29,17 +35,131 @@ type museRecoveryBaseline struct {
 	verifyRoot func(string) (*museRecoveryBaseline, error) `json:"-"`
 }
 
-func readMuseRecoveryBaseline(command providerCommand, root string) (*museRecoveryBaseline, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), providerVersionTimeout)
+// museBaselineAttemptTimeout bounds one pre-launch `muse serve` baseline query.
+// It is separate from providerVersionTimeout: Muse occasionally starts its host
+// and then never answers the handshake (#526).
+const museBaselineAttemptTimeout = 30 * time.Second
+
+// museBaselineAttempts includes one retry of a hung pre-launch host. The query
+// never mutates the session, so a fresh host is safe.
+const museBaselineAttempts = 2
+
+// museResumedRootTimeout bounds the single in-stream resumed-root check. That
+// check runs inside the provider's stdout event handler, so it keeps the short
+// version-check bound and never retries. A var so tests can shrink it.
+var museResumedRootTimeout = providerVersionTimeout
+
+// museBaselineStderrTail is how much of the host's stderr is scanned for the
+// last line; museBaselineStderrLineLimit bounds the line kept in errors.
+const (
+	museBaselineStderrTail      = 4096
+	museBaselineStderrLineLimit = 300
+)
+
+// museBaselineStderrFile is the run-directory file that receives every
+// baseline host's stderr, like provider.stderr for the provider itself.
+const museBaselineStderrFile = "muse-baseline.stderr"
+
+// museHostExitGrace is how long a host that closed its pipes gets to exit on
+// its own, so its exit status survives, before it is killed.
+const museHostExitGrace = time.Second
+
+// museBaselineRead is the attempt policy for one baseline read.
+type museBaselineRead struct {
+	attempts int
+	timeout  time.Duration
+	// stderrPath, when set, receives host stderr in append mode; otherwise it
+	// is discarded.
+	stderrPath string
+	// stop, when set, is checked before every attempt; a non-nil error ends the
+	// read and is returned inside museBaselineStopped.
+	stop func() error
+	// logRetry, when set, records a retried attempt.
+	logRetry func(string)
+}
+
+// museBaselineStopped carries the stop hook's refusal so callers can return it
+// unchanged rather than as a baseline failure.
+type museBaselineStopped struct{ err error }
+
+func (e *museBaselineStopped) Error() string { return e.err.Error() }
+func (e *museBaselineStopped) Unwrap() error { return e.err }
+
+// museBaselineTimeoutError is a host that started but never answered a step.
+// It is the only failure that is retried: early exits, closed pipes, and
+// protocol answers repeat on a fresh host.
+type museBaselineTimeoutError struct {
+	step     string
+	timeout  time.Duration
+	attempts int
+	stderr   string
+}
+
+func (e *museBaselineTimeoutError) Error() string {
+	message := fmt.Sprintf("muse serve did not answer %s within %s", e.step, e.timeout)
+	if e.attempts > 1 {
+		message += fmt.Sprintf(" (%d attempts)", e.attempts)
+	}
+	return message + e.stderr
+}
+
+// museBaselineStepError names the protocol step whose response never arrived.
+type museBaselineStepError struct {
+	step string
+	err  error
+}
+
+func (e *museBaselineStepError) Error() string { return e.step + ": " + e.err.Error() }
+func (e *museBaselineStepError) Unwrap() error { return e.err }
+
+func readMuseRecoveryBaseline(command providerCommand, root string, read museBaselineRead) (*museRecoveryBaseline, error) {
+	var earlier *museBaselineTimeoutError
+	for attempt := 1; ; attempt++ {
+		if read.stop != nil {
+			if err := read.stop(); err != nil {
+				return nil, &museBaselineStopped{err: err}
+			}
+		}
+		if earlier != nil && read.logRetry != nil {
+			read.logRetry(fmt.Sprintf("agent-layer: Muse recovery baseline attempt %d failed, retrying with a fresh host: %v", attempt-1, earlier))
+		}
+		baseline, err := readMuseRecoveryBaselineOnce(command, root, read)
+		if err == nil {
+			return baseline, nil
+		}
+		var timeout *museBaselineTimeoutError
+		if !errors.As(err, &timeout) {
+			if earlier != nil {
+				return nil, fmt.Errorf("%w (after attempt %d timed out waiting for %s)", err, attempt-1, earlier.step)
+			}
+			return nil, err
+		}
+		if attempt >= read.attempts {
+			timeout.attempts = attempt
+			return nil, timeout
+		}
+		earlier = timeout
+	}
+}
+
+func readMuseRecoveryBaselineOnce(command providerCommand, root string, read museBaselineRead) (*museRecoveryBaseline, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), read.timeout)
 	defer cancel()
+	// The deadline is enforced by the watcher goroutine and Kill below, not by this context.
 	// #nosec G204 -- already resolved, version-checked provider executable.
-	cmd := exec.CommandContext(ctx, command.Path, "serve")
+	cmd := exec.CommandContext(context.Background(), command.Path, "serve")
 	cmd.Dir = command.WorkDir
 	if cmd.Dir == "" {
 		cmd.Dir = root
 	}
 	cmd.Env = command.Env
-	cmd.WaitDelay = time.Second
+	// A file needs no exec copy goroutine, so a descendant holding stderr never
+	// delays this read. Only this attempt's bytes are scanned on failure.
+	stderr, stderrStart := openMuseBaselineStderr(read.stderrPath)
+	if stderr != nil {
+		defer func() { _ = stderr.Close() }()
+		cmd.Stderr = stderr
+	}
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		return nil, err
@@ -48,36 +168,170 @@ func readMuseRecoveryBaseline(command providerCommand, root string) (*museRecove
 	if err != nil {
 		return nil, err
 	}
+	started := time.Now()
 	if err := cmd.Start(); err != nil {
 		return nil, err
 	}
-	defer func() { cancel(); _ = stdin.Close(); _ = stdout.Close(); _ = cmd.Wait() }()
-	// Close the decoder pipe on timeout even if a host descendant keeps it open.
-	done := make(chan struct{})
-	defer close(done)
+	// On the deadline, close both protocol pipes even if a host descendant
+	// keeps them open. Only an I/O failed by that close is a timeout; an EOF
+	// that arrived first is a host that exited on its own.
+	var deadlineClosed atomic.Bool
+	done, watched := make(chan struct{}), make(chan struct{})
 	go func() {
+		defer close(watched)
 		select {
 		case <-ctx.Done():
+			deadlineClosed.Store(true)
 			_ = stdout.Close()
+			_ = stdin.Close()
 		case <-done:
 		}
 	}()
-	return queryMuseRecoveryBaseline(json.NewEncoder(stdin), json.NewDecoder(stdout), command.SessionID)
+	baseline, err := queryMuseRecoveryBaseline(json.NewEncoder(stdin), json.NewDecoder(stdout), command.SessionID)
+	close(done)
+	<-watched
+	timedOut := deadlineClosed.Load() && errors.Is(err, os.ErrClosed)
+	elapsed := time.Since(started).Round(time.Millisecond)
+	_ = stdin.Close()
+	waited := make(chan struct{})
+	go func() {
+		defer close(waited)
+		_ = cmd.Wait()
+	}()
+	exited := false
+	if err != nil && !timedOut && isMuseTransportError(err) {
+		// A host that closed its pipes is likely exiting; keep its exit status.
+		select {
+		case <-waited:
+			exited = true
+		case <-time.After(museHostExitGrace):
+		}
+	}
+	if !exited {
+		_ = cmd.Process.Kill()
+		<-waited
+	}
+	if err == nil {
+		return baseline, nil
+	}
+	step := "the recovery baseline query"
+	var stepErr *museBaselineStepError
+	if errors.As(err, &stepErr) {
+		step = stepErr.step
+	}
+	detail := museStderrDetail(read.stderrPath, stderrStart)
+	if timedOut {
+		return nil, &museBaselineTimeoutError{step: step, timeout: read.timeout, stderr: detail}
+	}
+	if isMuseTransportError(err) {
+		// Report the host's own exit code; a kill by this read's cleanup is not one.
+		status := ""
+		if state := cmd.ProcessState; state != nil && state.Exited() {
+			status = fmt.Sprintf(" (exit status %d)", state.ExitCode())
+		}
+		return nil, fmt.Errorf("muse serve stopped before answering %s after %s%s: %w%s", step, elapsed, status, err, detail)
+	}
+	return nil, err
+}
+
+// openMuseBaselineStderr opens path for appended host stderr and returns its
+// size before this attempt. Without a path, or if it cannot be opened, stderr
+// is discarded: diagnostics never fail the read.
+func openMuseBaselineStderr(path string) (*os.File, int64) {
+	if path == "" {
+		return nil, 0
+	}
+	// #nosec G304 -- Agent Layer-owned run directory.
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
+	if err != nil {
+		return nil, 0
+	}
+	info, err := file.Stat()
+	if err != nil {
+		_ = file.Close()
+		return nil, 0
+	}
+	return file, info.Size()
+}
+
+// isMuseTransportError reports a host that exited or closed its pipes, as
+// opposed to a protocol answer such as an RPC error or a mismatched session.
+func isMuseTransportError(err error) bool {
+	return errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) || errors.Is(err, os.ErrClosed) || errors.Is(err, syscall.EPIPE)
+}
+
+// museStderrDetail returns the last stderr line this attempt wrote to path,
+// read with one bounded ReadAt from the end, and names the file that keeps
+// the full output.
+func museStderrDetail(path string, start int64) string {
+	if path == "" {
+		return ""
+	}
+	file, err := os.Open(path) // #nosec G304 -- Agent Layer-owned run directory.
+	if err != nil {
+		return ""
+	}
+	defer func() { _ = file.Close() }()
+	info, err := file.Stat()
+	if err != nil {
+		return ""
+	}
+	offset := max(start, info.Size()-museBaselineStderrTail)
+	if offset >= info.Size() {
+		return ""
+	}
+	tail := make([]byte, info.Size()-offset)
+	n, _ := file.ReadAt(tail, offset)
+	line := sanitizeMuseStderrLine(tail[:n])
+	if line == "" {
+		return ""
+	}
+	return "; muse serve stderr: " + line + " (full stderr: " + path + ")"
+}
+
+// sanitizeMuseStderrLine returns the last non-empty line, bounded and made
+// single-line, for use in an error.
+func sanitizeMuseStderrLine(tail []byte) string {
+	lines := strings.Split(strings.ToValidUTF8(string(tail), "�"), "\n")
+	line := ""
+	for i := len(lines) - 1; i >= 0 && line == ""; i-- {
+		line = singleLineMuseText(lines[i])
+	}
+	if len(line) <= museBaselineStderrLineLimit {
+		return line
+	}
+	cut := museBaselineStderrLineLimit
+	for cut > 0 && !utf8.RuneStart(line[cut]) {
+		cut--
+	}
+	return line[:cut] + "..."
+}
+
+// singleLineMuseText replaces control, line/paragraph separator, and format
+// (including bidi override) runes with spaces, so provider text cannot split
+// or visually reorder a single-line error.
+func singleLineMuseText(text string) string {
+	return strings.TrimSpace(strings.Map(func(r rune) rune {
+		if unicode.IsControl(r) || unicode.In(r, unicode.Zl, unicode.Zp, unicode.Cf) {
+			return ' '
+		}
+		return r
+	}, text))
 }
 
 func queryMuseRecoveryBaseline(encoder *json.Encoder, decoder *json.Decoder, sessionID string) (*museRecoveryBaseline, error) {
 	if err := initializeMuseRPC(encoder, decoder); err != nil {
-		return nil, err
+		return nil, &museBaselineStepError{step: "initialize", err: err}
 	}
 	if err := encoder.Encode(map[string]any{
 		jsonRPCKey: jsonRPCVersion, "id": 2, jsonMethodKey: museSessionRead,
 		jsonParamsKey: map[string]any{jsonSessionIDCamelKey: sessionID, "excludeItems": true},
 	}); err != nil {
-		return nil, err
+		return nil, &museBaselineStepError{step: museSessionRead, err: err}
 	}
 	frame, err := readMuseRPCResponse(decoder, encoder, 2)
 	if err != nil {
-		return nil, err
+		return nil, &museBaselineStepError{step: museSessionRead, err: err}
 	}
 	var result struct {
 		Session struct {
@@ -187,8 +441,8 @@ func resolveMuseRecoveryBaseline(root, previousID string, baseline *museRecovery
 // A resumed exec can submit a new turn yet omit command/root announcements on
 // stdout. Require its earlier task linkage AND an independent, advanced session
 // view naming that exact root terminal, never just an equal session ID.
-func verifyMuseResumedRoot(command providerCommand, root string, baseline *museRecoveryBaseline, id string) (*museRecoveryBaseline, error) {
-	observed, err := readMuseRecoveryBaseline(command, root)
+func verifyMuseResumedRoot(command providerCommand, root, stderrPath string, baseline *museRecoveryBaseline, id string) (*museRecoveryBaseline, error) {
+	observed, err := readMuseRecoveryBaseline(command, root, museBaselineRead{attempts: 1, timeout: museResumedRootTimeout, stderrPath: stderrPath})
 	if err != nil {
 		return nil, err
 	}

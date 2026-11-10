@@ -144,7 +144,7 @@ func executeDispatch(request dispatchExecution) error {
 			return finishDispatchFailure(request, err)
 		}
 		if current, err := loadRunRecord(request.Root, request.Run.Record.ID); err == nil && current.State == dispatchStateCancelled {
-			return finishDispatchFailure(request, exitError(ExitTargetFailure, fmt.Sprintf("dispatch run %s was cancelled before provider launch", request.Run.Record.ID)))
+			return finishDispatchFailure(request, cancelledBeforeLaunchError(request.Run.Record.ID))
 		}
 		if err := herdr.WriteBoundary(request.Root, request.Run.Dir); err != nil {
 			return finishDispatchFailure(request, fmt.Errorf("create HerdR dispatch boundary: %w", err))

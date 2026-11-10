@@ -796,7 +796,7 @@ func (m *museReducer) reduce(value map[string]any) []providerEvent {
 	if m.rootRunID == "" && m.recovery != nil && m.recovery.verifyRoot != nil && runID != "" && runID == commandID && runKind == museRunStreamKind && runID == m.candidateRunID && runID != m.recovery.RootID {
 		observed, err := m.recovery.verifyRoot(runID)
 		if err != nil {
-			return []providerEvent{{Kind: eventFailure, Reason: "Muse resumed terminal has no authoritative root/cursor evidence"}}
+			return []providerEvent{{Kind: eventFailure, Reason: "Muse resumed terminal has no authoritative root/cursor evidence: " + singleLineMuseText(err.Error())}}
 		}
 		m.recovery = observed
 	}

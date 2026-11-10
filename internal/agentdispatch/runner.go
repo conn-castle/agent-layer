@@ -97,9 +97,9 @@ func startFencedProvider(root string, run *dispatchRun, cmd *exec.Cmd, provider 
 		if current.EventsPath == "" && run.Record.EventsPath != "" {
 			current.EventsPath = run.Record.EventsPath
 		}
-		if current.LaunchFenced || current.State == dispatchStateCancelled {
+		if err := startFencedProviderError(current, nil); err != nil {
 			run.Record = current
-			return startFencedProviderError(current, exitError(ExitTargetFailure, fmt.Sprintf("dispatch run %s was cancelled before provider launch", current.ID)))
+			return err
 		}
 		if terminalDispatchState(current.State) {
 			run.Record = current
@@ -157,6 +157,28 @@ func startFencedProvider(root string, run *dispatchRun, cmd *exec.Cmd, provider 
 		run.Record = started
 		return nil
 	})
+}
+
+// dispatchLaunchRefused reports the cancellation or fence that
+// startFencedProvider would refuse anyway, so pre-launch work can stop early.
+// A record that cannot be read is left to that fence.
+func dispatchLaunchRefused(root, runID string) error {
+	if current, err := loadRunRecord(root, runID); err == nil {
+		return startFencedProviderError(current, nil)
+	}
+	return nil
+}
+
+// appendWorkerLog adds one diagnostic line to the run's worker.log, which the
+// detached worker launcher opens in append mode for the worker's own output.
+func appendWorkerLog(runDir, line string) {
+	// #nosec G304 -- Agent Layer-owned run directory.
+	log, err := os.OpenFile(filepath.Join(runDir, workerLogFile), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
+	if err != nil {
+		return
+	}
+	_, _ = log.WriteString(line + "\n")
+	_ = log.Close()
 }
 
 func stopUnpublishedProvider(cmd *exec.Cmd, record RunRecord, primary error, proofMessage string) error {
@@ -254,7 +276,18 @@ func executeProvider(
 	run.Record.AgentLayerBuild = buildIdentity
 	if command.Provider == AgentMuse && command.RunMode == dispatchModeResume {
 		if command.MuseBaseline == nil {
-			baseline, err := readMuseRecoveryBaseline(command, root)
+			baseline, err := readMuseRecoveryBaseline(command, root, museBaselineRead{
+				attempts:   museBaselineAttempts,
+				timeout:    museBaselineAttemptTimeout,
+				stderrPath: filepath.Join(run.Dir, museBaselineStderrFile),
+				stop:       func() error { return dispatchLaunchRefused(root, run.Record.ID) },
+				logRetry:   func(line string) { appendWorkerLog(run.Dir, line) },
+			})
+			// A cancellation or fence keeps the refusal startFencedProvider would give.
+			var stopped *museBaselineStopped
+			if errors.As(err, &stopped) {
+				return executionResult{}, stopped.err
+			}
 			if err != nil {
 				return executionResult{}, wrapExitError(ExitTargetFailure, "read Muse recovery baseline before launch", err)
 			}
@@ -269,7 +302,7 @@ func executeProvider(
 		}
 		baseline := command.MuseBaseline
 		baseline.verifyRoot = func(id string) (*museRecoveryBaseline, error) {
-			return verifyMuseResumedRoot(command, root, baseline, id)
+			return verifyMuseResumedRoot(command, root, filepath.Join(run.Dir, museBaselineStderrFile), baseline, id)
 		}
 		run.Record.MuseRecovery = command.MuseBaseline
 	}
