@@ -1,7 +1,7 @@
 package agentdispatch
 
 import (
-	"bytes"
+	"errors"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -47,98 +47,177 @@ func writeMuseBaselineHost(t *testing.T, behaviors ...string) (string, func() in
 }
 
 const (
-	museHostHangs           = "echo 'host warming up' >&2\nexec sleep 30"
-	museHostHangsAfterInit  = "IFS= read -r request\nprintf '%s\\n' '" + museBaselineInitReply + "'\nexec sleep 30"
-	museHostExitsEarly      = "echo 'host crashed' >&2\nexit 3"
-	museHostAnswers         = "IFS= read -r request\nprintf '%s\\n' '" + museBaselineInitReply + "'\nIFS= read -r request\nIFS= read -r request\nprintf '%s\\n' '" + museBaselineReadReply + "'\nwhile IFS= read -r request; do :; done"
-	museHostRejectsSession  = "IFS= read -r request\nprintf '%s\\n' '" + museBaselineInitReply + "'\nIFS= read -r request\nIFS= read -r request\nprintf '%s\\n' '{\"jsonrpc\":\"2.0\",\"id\":2,\"error\":{\"code\":-32602,\"message\":\"unknown session\"}}'\nwhile IFS= read -r request; do :; done"
-	museBaselineTestTimeout = 300 * time.Millisecond
+	museHostHangs          = "echo 'host warming up' >&2\nexec sleep 30"
+	museHostHangsAfterInit = "IFS= read -r request\nprintf '%s\\n' '" + museBaselineInitReply + "'\nexec sleep 30"
+	museHostExitsEarly     = "printf 'loading config\\nhost crashed\\n\\n' >&2\nexit 3"
+	museHostAnswers        = "IFS= read -r request\nprintf '%s\\n' '" + museBaselineInitReply + "'\nIFS= read -r request\nIFS= read -r request\nprintf '%s\\n' '" + museBaselineReadReply + "'\nwhile IFS= read -r request; do :; done"
+	museHostRejectsSession = "IFS= read -r request\nprintf '%s\\n' '" + museBaselineInitReply + "'\nIFS= read -r request\nIFS= read -r request\nprintf '%s\\n' '{\"jsonrpc\":\"2.0\",\"id\":2,\"error\":{\"code\":-32602,\"message\":\"unknown session\"}}'\nwhile IFS= read -r request; do :; done"
 )
 
-func shrinkMuseBaselineTimeout(t *testing.T) *bytes.Buffer {
-	t.Helper()
-	previousTimeout, previousDiagnostics := museBaselineAttemptTimeout, museBaselineDiagnostics
-	diagnostics := &bytes.Buffer{}
-	museBaselineAttemptTimeout, museBaselineDiagnostics = museBaselineTestTimeout, diagnostics
-	t.Cleanup(func() { museBaselineAttemptTimeout, museBaselineDiagnostics = previousTimeout, previousDiagnostics })
-	return diagnostics
+// Timeouts used by these tests. A host that must answer gets at least
+// museAnswerTimeout, so a loaded runner cannot turn an answer into a timeout;
+// a host that must time out without answering anything uses museHangTimeout.
+const (
+	museAnswerTimeout = 2 * time.Second
+	museHangTimeout   = 500 * time.Millisecond
+	museNeverTimeout  = 30 * time.Second
+)
+
+func testMuseCommand(path string) providerCommand {
+	return providerCommand{Path: path, Env: os.Environ(), Provider: AgentMuse, SessionID: runtimeSessionID}
 }
 
-func readTestMuseBaseline(path string) (*museRecoveryBaseline, error) {
-	return readMuseRecoveryBaseline(providerCommand{Path: path, Env: os.Environ(), Provider: AgentMuse, SessionID: runtimeSessionID}, filepath.Dir(path))
+func readTestMuseBaseline(path string, read museBaselineRead) (*museRecoveryBaseline, error) {
+	return readMuseRecoveryBaseline(testMuseCommand(path), filepath.Dir(path), read)
 }
 
 // #526: a host that hangs once must not fail the continue with a closed-pipe error.
 func TestMuseRecoveryBaselineRetriesHungHost(t *testing.T) {
-	diagnostics := shrinkMuseBaselineTimeout(t)
 	path, attempts := writeMuseBaselineHost(t, museHostHangs, museHostAnswers)
-	baseline, err := readTestMuseBaseline(path)
+	var logged []string
+	baseline, err := readTestMuseBaseline(path, museBaselineRead{
+		attempts: museBaselineAttempts, timeout: museAnswerTimeout,
+		stop:     func() error { return nil },
+		logRetry: func(line string) { logged = append(logged, line) },
+	})
 	if err != nil {
 		t.Fatalf("baseline error = %v", err)
 	}
 	if baseline.ViewCursor != "cursor-1" || baseline.TerminalRootID != "turn-1" || attempts() != 2 {
 		t.Fatalf("baseline = %+v, attempts = %d", baseline, attempts())
 	}
-	logged := diagnostics.String()
-	if !strings.Contains(logged, "attempt 1 failed, retrying") || !strings.Contains(logged, "did not answer initialize within 300ms") || !strings.Contains(logged, "host warming up") {
-		t.Fatalf("diagnostics = %q", logged)
+	want := "agent-layer: Muse recovery baseline attempt 1 failed, retrying with a fresh host: muse serve did not answer initialize within 2s; muse serve stderr: host warming up"
+	if len(logged) != 1 || logged[0] != want {
+		t.Fatalf("retry log = %q", logged)
 	}
 }
 
 func TestMuseRecoveryBaselineReportsTimeoutStep(t *testing.T) {
 	for _, test := range []struct {
-		name, behavior, step string
+		name, behavior string
+		read           museBaselineRead
+		want           string
 	}{
-		{"initialize", museHostHangs, "initialize"},
-		{"session read", museHostHangsAfterInit, "session/read"},
+		{"initialize exhausted", museHostHangs, museBaselineRead{attempts: 2, timeout: museHangTimeout}, "muse serve did not answer initialize within 500ms (2 attempts); muse serve stderr: host warming up"},
+		{"session read single", museHostHangsAfterInit, museBaselineRead{attempts: 1, timeout: museAnswerTimeout}, "muse serve did not answer session/read within 2s"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			shrinkMuseBaselineTimeout(t)
 			path, attempts := writeMuseBaselineHost(t, test.behavior)
-			started := time.Now()
-			_, err := readTestMuseBaseline(path)
-			if err == nil {
-				t.Fatal("hung host returned a baseline")
+			_, err := readTestMuseBaseline(path, test.read)
+			if err == nil || err.Error() != test.want {
+				t.Fatalf("error = %v, want %q", err, test.want)
 			}
-			message := err.Error()
-			want := "did not answer " + test.step + " within 300ms"
-			if !strings.Contains(message, "attempt 1: muse serve "+want) || !strings.Contains(message, "attempt 2: muse serve "+want) || strings.Contains(message, "file already closed") {
-				t.Fatalf("error = %q", message)
-			}
-			if attempts() != museBaselineAttempts {
+			if attempts() != test.read.attempts {
 				t.Fatalf("attempts = %d", attempts())
-			}
-			if elapsed := time.Since(started); elapsed > 10*time.Second {
-				t.Fatalf("hung hosts took %s", elapsed)
 			}
 		})
 	}
 }
 
-func TestMuseRecoveryBaselineRetriesExitedHost(t *testing.T) {
-	shrinkMuseBaselineTimeout(t)
+// A host descendant that inherits stderr must not hold every read for
+// exec's WaitDelay, as a copied (non-file) stderr writer would.
+func TestMuseRecoveryBaselineIgnoresStderrHeldByDescendant(t *testing.T) {
+	path, _ := writeMuseBaselineHost(t, "sleep 3 </dev/null >/dev/null &\n"+museHostAnswers)
+	started := time.Now()
+	if _, err := readTestMuseBaseline(path, museBaselineRead{attempts: 1, timeout: museNeverTimeout}); err != nil {
+		t.Fatalf("baseline error = %v", err)
+	}
+	if elapsed := time.Since(started); elapsed >= time.Second {
+		t.Fatalf("baseline read took %s; Wait waited for the descendant's stderr", elapsed)
+	}
+}
+
+// A host that exits fails the same way on a fresh host, so it is not retried.
+func TestMuseRecoveryBaselineDoesNotRetryExitedHost(t *testing.T) {
 	path, attempts := writeMuseBaselineHost(t, museHostExitsEarly)
-	_, err := readTestMuseBaseline(path)
-	if err == nil || !strings.Contains(err.Error(), "stopped before answering initialize") || !strings.Contains(err.Error(), "muse serve stderr: host crashed") || attempts() != museBaselineAttempts {
+	_, err := readTestMuseBaseline(path, museBaselineRead{attempts: museBaselineAttempts, timeout: museNeverTimeout, logRetry: func(line string) { t.Errorf("retried: %s", line) }})
+	if err == nil || attempts() != 1 {
 		t.Fatalf("error = %v, attempts = %d", err, attempts())
+	}
+	message := err.Error()
+	if !strings.HasPrefix(message, "muse serve stopped before answering initialize after ") || !strings.Contains(message, "(exit status 3): ") || !strings.HasSuffix(message, "; muse serve stderr: host crashed") || strings.Contains(message, "\n") {
+		t.Fatalf("error = %q", message)
 	}
 }
 
 // A protocol answer is authoritative: retrying would not change it.
 func TestMuseRecoveryBaselineDoesNotRetryProtocolAnswer(t *testing.T) {
-	shrinkMuseBaselineTimeout(t)
 	path, attempts := writeMuseBaselineHost(t, museHostRejectsSession)
-	_, err := readTestMuseBaseline(path)
-	if err == nil || !strings.Contains(err.Error(), "session/read: ") || !strings.Contains(err.Error(), "unknown session") || attempts() != 1 {
+	_, err := readTestMuseBaseline(path, museBaselineRead{attempts: museBaselineAttempts, timeout: museNeverTimeout})
+	if err == nil || !strings.HasPrefix(err.Error(), "session/read: ") || !strings.Contains(err.Error(), "unknown session") || attempts() != 1 {
 		t.Fatalf("error = %v, attempts = %d", err, attempts())
 	}
 }
 
-func TestTailBufferKeepsLastBytes(t *testing.T) {
-	buffer := &tailBuffer{limit: 5}
-	_, _ = buffer.Write([]byte("abc"))
-	_, _ = buffer.Write([]byte("defgh"))
-	if got := buffer.String(); got != "defgh" {
-		t.Fatalf("tail = %q", got)
+func TestMuseRecoveryBaselineStopsBeforeRetry(t *testing.T) {
+	path, attempts := writeMuseBaselineHost(t, museHostHangs, museHostAnswers)
+	cancelled := errors.New("dispatch run was cancelled before provider launch")
+	_, err := readTestMuseBaseline(path, museBaselineRead{
+		attempts: museBaselineAttempts, timeout: museHangTimeout,
+		stop:     func() error { return cancelled },
+		logRetry: func(line string) { t.Errorf("retried: %s", line) },
+	})
+	if !errors.Is(err, cancelled) || attempts() != 1 {
+		t.Fatalf("error = %v, attempts = %d", err, attempts())
+	}
+}
+
+// The resumed-root check runs inside the provider's stdout handler, so a hung
+// host costs one bounded attempt and never a retry.
+func TestMuseResumedRootCheckMakesOneAttempt(t *testing.T) {
+	previous := museResumedRootTimeout
+	museResumedRootTimeout = museHangTimeout
+	t.Cleanup(func() { museResumedRootTimeout = previous })
+	path, attempts := writeMuseBaselineHost(t, museHostHangs, museHostAnswers)
+	_, err := verifyMuseResumedRoot(testMuseCommand(path), filepath.Dir(path), &museRecoveryBaseline{SessionID: runtimeSessionID, ViewCursor: "cursor-0"}, "turn-1")
+	if err == nil || err.Error() != "muse serve did not answer initialize within 500ms; muse serve stderr: host warming up" || attempts() != 1 {
+		t.Fatalf("error = %v, attempts = %d", err, attempts())
+	}
+}
+
+func TestSanitizeMuseStderrLine(t *testing.T) {
+	long := strings.Repeat("a", museBaselineStderrLineLimit-1) + "é" + "tail"
+	for _, test := range []struct{ name, tail, want string }{
+		{"empty", "", ""},
+		{"last non-empty line", "first\nsecond\r\n\n  \n", "second"},
+		{"control characters", "bad\x1b[31mcolor\tend\n", "bad [31mcolor end"},
+		{"split leading rune", "\xa9partial\n", "�partial"},
+		{"long line on rune boundary", long + "\n", strings.Repeat("a", museBaselineStderrLineLimit-1) + "..."},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if got := sanitizeMuseStderrLine([]byte(test.tail)); got != test.want {
+				t.Fatalf("line = %q, want %q", got, test.want)
+			}
+		})
+	}
+}
+
+func TestDispatchCancelledBeforeLaunch(t *testing.T) {
+	root := t.TempDir()
+	run, err := newDispatchRun(root, AgentMuse, supportedProviderVersions[AgentMuse], dispatchModeResume)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := dispatchCancelledBeforeLaunch(root, run.Record.ID); err != nil {
+		t.Fatalf("pending run reported cancelled: %v", err)
+	}
+	run.Record.LaunchFenced = true
+	if err := writeRunRecord(run.Dir, &run.Record); err != nil {
+		t.Fatal(err)
+	}
+	if err := dispatchCancelledBeforeLaunch(root, run.Record.ID); err == nil || !strings.Contains(err.Error(), "cancelled before provider launch") {
+		t.Fatalf("fenced run error = %v", err)
+	}
+}
+
+func TestAppendWorkerLog(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, workerLogFile), []byte("worker started\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	appendWorkerLog(dir, "retrying")
+	data, err := os.ReadFile(filepath.Join(dir, workerLogFile)) // #nosec G304 -- test-owned temporary path.
+	if err != nil || string(data) != "worker started\nretrying\n" {
+		t.Fatalf("worker.log = %q, %v", data, err)
 	}
 }

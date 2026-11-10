@@ -159,6 +159,28 @@ func startFencedProvider(root string, run *dispatchRun, cmd *exec.Cmd, provider 
 	})
 }
 
+// dispatchCancelledBeforeLaunch reports a cancellation that startFencedProvider
+// would refuse anyway, so pre-launch work can stop early. A record that cannot
+// be read is left to that fence.
+func dispatchCancelledBeforeLaunch(root, runID string) error {
+	if current, err := loadRunRecord(root, runID); err == nil && (current.LaunchFenced || current.State == dispatchStateCancelled) {
+		return exitError(ExitTargetFailure, fmt.Sprintf("dispatch run %s was cancelled before provider launch", runID))
+	}
+	return nil
+}
+
+// appendWorkerLog adds one diagnostic line to the run's worker.log, which the
+// detached worker launcher opens in append mode for the worker's own output.
+func appendWorkerLog(runDir, line string) {
+	// #nosec G304 -- Agent Layer-owned run directory.
+	log, err := os.OpenFile(filepath.Join(runDir, workerLogFile), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
+	if err != nil {
+		return
+	}
+	_, _ = log.WriteString(line + "\n")
+	_ = log.Close()
+}
+
 func stopUnpublishedProvider(cmd *exec.Cmd, record RunRecord, primary error, proofMessage string) error {
 	killErr := cmd.Process.Kill()
 	waitErr := cmd.Wait()
@@ -254,7 +276,12 @@ func executeProvider(
 	run.Record.AgentLayerBuild = buildIdentity
 	if command.Provider == AgentMuse && command.RunMode == dispatchModeResume {
 		if command.MuseBaseline == nil {
-			baseline, err := readMuseRecoveryBaseline(command, root)
+			baseline, err := readMuseRecoveryBaseline(command, root, museBaselineRead{
+				attempts: museBaselineAttempts,
+				timeout:  museBaselineAttemptTimeout,
+				stop:     func() error { return dispatchCancelledBeforeLaunch(root, run.Record.ID) },
+				logRetry: func(line string) { appendWorkerLog(run.Dir, line) },
+			})
 			if err != nil {
 				return executionResult{}, wrapExitError(ExitTargetFailure, "read Muse recovery baseline before launch", err)
 			}
