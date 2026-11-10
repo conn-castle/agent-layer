@@ -157,8 +157,8 @@ func releaseIfConfirmed(root string, record RunRecord) error {
 	return releaseConversation(root, record.Name, record.ID)
 }
 
-// cancelledBeforeLaunchError is the refusal for a run cancelled before its
-// provider started.
+// cancelledBeforeLaunchError keeps one wording and ExitTargetFailure for every
+// pre-launch cancellation path; callers and tests match this message.
 func cancelledBeforeLaunchError(runID string) error {
 	return exitError(ExitTargetFailure, fmt.Sprintf("dispatch run %s was cancelled before provider launch", runID))
 }

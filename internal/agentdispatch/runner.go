@@ -277,11 +277,17 @@ func executeProvider(
 	if command.Provider == AgentMuse && command.RunMode == dispatchModeResume {
 		if command.MuseBaseline == nil {
 			baseline, err := readMuseRecoveryBaseline(command, root, museBaselineRead{
-				attempts: museBaselineAttempts,
-				timeout:  museBaselineAttemptTimeout,
-				stop:     func() error { return dispatchLaunchRefused(root, run.Record.ID) },
-				logRetry: func(line string) { appendWorkerLog(run.Dir, line) },
+				attempts:   museBaselineAttempts,
+				timeout:    museBaselineAttemptTimeout,
+				stderrPath: filepath.Join(run.Dir, museBaselineStderrFile),
+				stop:       func() error { return dispatchLaunchRefused(root, run.Record.ID) },
+				logRetry:   func(line string) { appendWorkerLog(run.Dir, line) },
 			})
+			// A cancellation or fence keeps the refusal startFencedProvider would give.
+			var stopped *museBaselineStopped
+			if errors.As(err, &stopped) {
+				return executionResult{}, stopped.err
+			}
 			if err != nil {
 				return executionResult{}, wrapExitError(ExitTargetFailure, "read Muse recovery baseline before launch", err)
 			}
@@ -296,7 +302,7 @@ func executeProvider(
 		}
 		baseline := command.MuseBaseline
 		baseline.verifyRoot = func(id string) (*museRecoveryBaseline, error) {
-			return verifyMuseResumedRoot(command, root, baseline, id)
+			return verifyMuseResumedRoot(command, root, filepath.Join(run.Dir, museBaselineStderrFile), baseline, id)
 		}
 		run.Record.MuseRecovery = command.MuseBaseline
 	}

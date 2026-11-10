@@ -56,20 +56,34 @@ const (
 	museBaselineStderrLineLimit = 300
 )
 
-// museStderrDrainGrace bounds the wait for host stderr to reach EOF after the
-// host is reaped. A descendant still holding it then gets EPIPE on its next
-// write instead of unbounded output. A var so tests can pin it.
-var museStderrDrainGrace = 200 * time.Millisecond
+// museBaselineStderrFile is the run-directory file that receives every
+// baseline host's stderr, like provider.stderr for the provider itself.
+const museBaselineStderrFile = "muse-baseline.stderr"
+
+// museHostExitGrace is how long a host that closed its pipes gets to exit on
+// its own, so its exit status survives, before it is killed.
+const museHostExitGrace = time.Second
 
 // museBaselineRead is the attempt policy for one baseline read.
 type museBaselineRead struct {
 	attempts int
 	timeout  time.Duration
-	// stop, when set, is checked before a retry; a non-nil error ends the read.
+	// stderrPath, when set, receives host stderr in append mode; otherwise it
+	// is discarded.
+	stderrPath string
+	// stop, when set, is checked before every attempt; a non-nil error ends the
+	// read and is returned inside museBaselineStopped.
 	stop func() error
 	// logRetry, when set, records a retried attempt.
 	logRetry func(string)
 }
+
+// museBaselineStopped carries the stop hook's refusal so callers can return it
+// unchanged rather than as a baseline failure.
+type museBaselineStopped struct{ err error }
+
+func (e *museBaselineStopped) Error() string { return e.err.Error() }
+func (e *museBaselineStopped) Unwrap() error { return e.err }
 
 // museBaselineTimeoutError is a host that started but never answered a step.
 // It is the only failure that is retried: early exits, closed pipes, and
@@ -86,7 +100,7 @@ func (e *museBaselineTimeoutError) Error() string {
 	if e.attempts > 1 {
 		message += fmt.Sprintf(" (%d attempts)", e.attempts)
 	}
-	return message + museStderrDetail(e.stderr)
+	return message + e.stderr
 }
 
 // museBaselineStepError names the protocol step whose response never arrived.
@@ -101,11 +115,19 @@ func (e *museBaselineStepError) Unwrap() error { return e.err }
 func readMuseRecoveryBaseline(command providerCommand, root string, read museBaselineRead) (*museRecoveryBaseline, error) {
 	var earlier *museBaselineTimeoutError
 	for attempt := 1; ; attempt++ {
-		baseline, err := readMuseRecoveryBaselineOnce(command, root, read.timeout)
-		var timeout *museBaselineTimeoutError
+		if read.stop != nil {
+			if err := read.stop(); err != nil {
+				return nil, &museBaselineStopped{err: err}
+			}
+		}
+		if earlier != nil && read.logRetry != nil {
+			read.logRetry(fmt.Sprintf("agent-layer: Muse recovery baseline attempt %d failed, retrying with a fresh host: %v", attempt-1, earlier))
+		}
+		baseline, err := readMuseRecoveryBaselineOnce(command, root, read)
 		if err == nil {
 			return baseline, nil
 		}
+		var timeout *museBaselineTimeoutError
 		if !errors.As(err, &timeout) {
 			if earlier != nil {
 				return nil, fmt.Errorf("%w (after attempt %d timed out waiting for %s)", err, attempt-1, earlier.step)
@@ -116,31 +138,14 @@ func readMuseRecoveryBaseline(command providerCommand, root string, read museBas
 			timeout.attempts = attempt
 			return nil, timeout
 		}
-		if read.stop != nil {
-			if stopErr := read.stop(); stopErr != nil {
-				return nil, stopErr
-			}
-		}
-		if read.logRetry != nil {
-			read.logRetry(fmt.Sprintf("agent-layer: Muse recovery baseline attempt %d failed, retrying with a fresh host: %v", attempt, err))
-		}
 		earlier = timeout
 	}
 }
 
-func readMuseRecoveryBaselineOnce(command providerCommand, root string, timeout time.Duration) (*museRecoveryBaseline, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+func readMuseRecoveryBaselineOnce(command providerCommand, root string, read museBaselineRead) (*museRecoveryBaseline, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), read.timeout)
 	defer cancel()
-	// Stderr is an *os.File pipe, so exec starts no copy goroutine and a host
-	// descendant holding it cannot delay Wait; this read drains it instead.
-	stderrRead, stderrWrite, err := os.Pipe()
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = stderrRead.Close() }()
-	defer func() { _ = stderrWrite.Close() }()
-	// The deadline is enforced below rather than by the command's context, so
-	// the protocol pipes are always closed before the host is killed.
+	// The deadline is enforced by the watcher goroutine and Kill below, not by this context.
 	// #nosec G204 -- already resolved, version-checked provider executable.
 	cmd := exec.CommandContext(context.Background(), command.Path, "serve")
 	cmd.Dir = command.WorkDir
@@ -148,8 +153,13 @@ func readMuseRecoveryBaselineOnce(command providerCommand, root string, timeout 
 		cmd.Dir = root
 	}
 	cmd.Env = command.Env
-	cmd.WaitDelay = time.Second
-	cmd.Stderr = stderrWrite
+	// A file needs no exec copy goroutine, so a descendant holding stderr never
+	// delays this read. Only this attempt's bytes are scanned on failure.
+	stderr, stderrStart := openMuseBaselineStderr(read.stderrPath)
+	if stderr != nil {
+		defer func() { _ = stderr.Close() }()
+		cmd.Stderr = stderr
+	}
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		return nil, err
@@ -162,13 +172,6 @@ func readMuseRecoveryBaselineOnce(command providerCommand, root string, timeout 
 	if err := cmd.Start(); err != nil {
 		return nil, err
 	}
-	_ = stderrWrite.Close()
-	stderr := &museStderrTail{}
-	drained := make(chan struct{})
-	go func() {
-		defer close(drained)
-		stderr.drain(stderrRead)
-	}()
 	// On the deadline, close both protocol pipes even if a host descendant
 	// keeps them open. Only an I/O failed by that close is a timeout; an EOF
 	// that arrived first is a host that exited on its own.
@@ -189,17 +192,25 @@ func readMuseRecoveryBaselineOnce(command providerCommand, root string, timeout 
 	<-watched
 	timedOut := deadlineClosed.Load() && errors.Is(err, os.ErrClosed)
 	elapsed := time.Since(started).Round(time.Millisecond)
-	_ = cmd.Process.Kill()
 	_ = stdin.Close()
-	_ = stdout.Close()
-	_ = cmd.Wait()
-	// A descendant may still hold stderr; take what arrived within the grace.
-	select {
-	case <-drained:
-	case <-time.After(museStderrDrainGrace):
+	waited := make(chan struct{})
+	go func() {
+		defer close(waited)
+		_ = cmd.Wait()
+	}()
+	exited := false
+	if err != nil && !timedOut && isMuseTransportError(err) {
+		// A host that closed its pipes is likely exiting; keep its exit status.
+		select {
+		case <-waited:
+			exited = true
+		case <-time.After(museHostExitGrace):
+		}
 	}
-	_ = stderrRead.Close()
-	<-drained
+	if !exited {
+		_ = cmd.Process.Kill()
+		<-waited
+	}
 	if err == nil {
 		return baseline, nil
 	}
@@ -208,9 +219,9 @@ func readMuseRecoveryBaselineOnce(command providerCommand, root string, timeout 
 	if errors.As(err, &stepErr) {
 		step = stepErr.step
 	}
-	line := sanitizeMuseStderrLine(stderr.bytes())
+	detail := museStderrDetail(read.stderrPath, stderrStart)
 	if timedOut {
-		return nil, &museBaselineTimeoutError{step: step, timeout: timeout, stderr: line}
+		return nil, &museBaselineTimeoutError{step: step, timeout: read.timeout, stderr: detail}
 	}
 	if isMuseTransportError(err) {
 		// Report the host's own exit code; a kill by this read's cleanup is not one.
@@ -218,9 +229,29 @@ func readMuseRecoveryBaselineOnce(command providerCommand, root string, timeout 
 		if state := cmd.ProcessState; state != nil && state.Exited() {
 			status = fmt.Sprintf(" (exit status %d)", state.ExitCode())
 		}
-		return nil, fmt.Errorf("muse serve stopped before answering %s after %s%s: %w%s", step, elapsed, status, err, museStderrDetail(line))
+		return nil, fmt.Errorf("muse serve stopped before answering %s after %s%s: %w%s", step, elapsed, status, err, detail)
 	}
 	return nil, err
+}
+
+// openMuseBaselineStderr opens path for appended host stderr and returns its
+// size before this attempt. Without a path, or if it cannot be opened, stderr
+// is discarded: diagnostics never fail the read.
+func openMuseBaselineStderr(path string) (*os.File, int64) {
+	if path == "" {
+		return nil, 0
+	}
+	// #nosec G304 -- Agent Layer-owned run directory.
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
+	if err != nil {
+		return nil, 0
+	}
+	info, err := file.Stat()
+	if err != nil {
+		_ = file.Close()
+		return nil, 0
+	}
+	return file, info.Size()
 }
 
 // isMuseTransportError reports a host that exited or closed its pipes, as
@@ -229,34 +260,33 @@ func isMuseTransportError(err error) bool {
 	return errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) || errors.Is(err, os.ErrClosed) || errors.Is(err, syscall.EPIPE)
 }
 
-func museStderrDetail(line string) string {
+// museStderrDetail returns the last stderr line this attempt wrote to path,
+// read with one bounded ReadAt from the end, and names the file that keeps
+// the full output.
+func museStderrDetail(path string, start int64) string {
+	if path == "" {
+		return ""
+	}
+	file, err := os.Open(path) // #nosec G304 -- Agent Layer-owned run directory.
+	if err != nil {
+		return ""
+	}
+	defer func() { _ = file.Close() }()
+	info, err := file.Stat()
+	if err != nil {
+		return ""
+	}
+	offset := max(start, info.Size()-museBaselineStderrTail)
+	if offset >= info.Size() {
+		return ""
+	}
+	tail := make([]byte, info.Size()-offset)
+	n, _ := file.ReadAt(tail, offset)
+	line := sanitizeMuseStderrLine(tail[:n])
 	if line == "" {
 		return ""
 	}
-	return "; muse serve stderr: " + line
-}
-
-// museStderrTail keeps the last museBaselineStderrTail bytes of the host's
-// stderr. It trims only past twice that size, so writes do not shift it each
-// time. Only the drain goroutine writes it; it is read after that goroutine ends.
-type museStderrTail struct{ data []byte }
-
-func (t *museStderrTail) drain(r io.Reader) {
-	buffer := make([]byte, museBaselineStderrTail)
-	for {
-		n, err := r.Read(buffer)
-		t.data = append(t.data, buffer[:n]...)
-		if len(t.data) > 2*museBaselineStderrTail {
-			t.data = append(t.data[:0], t.data[len(t.data)-museBaselineStderrTail:]...)
-		}
-		if err != nil {
-			return
-		}
-	}
-}
-
-func (t *museStderrTail) bytes() []byte {
-	return t.data[max(len(t.data)-museBaselineStderrTail, 0):]
+	return "; muse serve stderr: " + line + " (full stderr: " + path + ")"
 }
 
 // sanitizeMuseStderrLine returns the last non-empty line, bounded and made
@@ -411,8 +441,8 @@ func resolveMuseRecoveryBaseline(root, previousID string, baseline *museRecovery
 // A resumed exec can submit a new turn yet omit command/root announcements on
 // stdout. Require its earlier task linkage AND an independent, advanced session
 // view naming that exact root terminal, never just an equal session ID.
-func verifyMuseResumedRoot(command providerCommand, root string, baseline *museRecoveryBaseline, id string) (*museRecoveryBaseline, error) {
-	observed, err := readMuseRecoveryBaseline(command, root, museBaselineRead{attempts: 1, timeout: museResumedRootTimeout})
+func verifyMuseResumedRoot(command providerCommand, root, stderrPath string, baseline *museRecoveryBaseline, id string) (*museRecoveryBaseline, error) {
+	observed, err := readMuseRecoveryBaseline(command, root, museBaselineRead{attempts: 1, timeout: museResumedRootTimeout, stderrPath: stderrPath})
 	if err != nil {
 		return nil, err
 	}
