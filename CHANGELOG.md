@@ -1,11 +1,12 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
-## Unreleased
+## v1.2.1 - 2026-11-10
 
 ### Fixed
 - `al upgrade` converts unmodified shipped local copies left by projects created before v1.0.0 into the Git imports a fresh setup creates, instead of refusing them and recommending the v1.0.0 executable, which downgraded projects pinned to 1.1.0. A moved skill converts only when its entire directory equals one published release, and `00_rules.md` or `01_memory.md` only when its own `[[instructions.local]]` block selects it; the instruction import reuses that order. `al upgrade plan` lists each conversion. Interactive upgrades ask first (default yes), `--yes` with the apply flags accepts, and declining keeps the copies as local content. Conversion needs network access to `github.com/nicholasjconn/skills`; a failed fetch, or a project state the imports would refuse, stops the upgrade before any change. Edited or extra skill files and customized instructions stay user content. A local instruction file without its own `[[instructions.local]]` block is refused before any change with the same guidance sync gives, instead of advancing the pin and failing in sync. Projects still on a release before v1.0.0, adoption-v2 recovery evidence, and pre-1.0 configuration are still refused, now with exact, pin-correct commands; the wizard asks for `al upgrade` first while convertible copies remain (#522).
 - Running `agent-layer` MCP servers in projects pinned to the installed release keep accepting dispatch work after `al update` or `brew upgrade` replaces the global executable, because pinned servers now run from an immutable copy in the content-addressed image cache, `<cache root>/images/<sha256>/al`; the version cache (`versions/<v>`) is never written. Unpinned projects, pin changes and pin removals still require reconnecting. Servers started by v1.2.0 or earlier refuse new work once after the update that installs this release; reconnect them once (#523).
+- Removing a `[[skills.imports]]`, `[[instructions.imports]]` or `[[instructions.local]]` block keeps a comment group that is separated from it by a blank line, because that group documents the next table; a comment attached to the removed block still goes with it.
 
 ## v1.2.0 - 2026-11-09
 
