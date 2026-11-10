@@ -6,7 +6,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
+	"strings"
+	"sync"
+	"syscall"
 	"time"
 )
 
@@ -29,8 +33,60 @@ type museRecoveryBaseline struct {
 	verifyRoot func(string) (*museRecoveryBaseline, error) `json:"-"`
 }
 
+// museBaselineAttemptTimeout bounds one read-only `muse serve` baseline query.
+// It is separate from providerVersionTimeout: Muse occasionally starts its host
+// and then answers the handshake late (#526). A var so tests can shrink it.
+var museBaselineAttemptTimeout = 30 * time.Second
+
+// museBaselineAttempts includes one retry. The query never mutates the session,
+// so a fresh host is safe when an earlier host hung or exited without answering.
+const museBaselineAttempts = 2
+
+// museBaselineStderrLimit keeps the stderr tail reported with a failed attempt.
+const museBaselineStderrLimit = 4096
+
+// museBaselineDiagnostics receives one line per retried attempt. Dispatch
+// workers write stderr to the run's worker.log, which keeps that evidence when
+// the retry succeeds.
+var museBaselineDiagnostics io.Writer = os.Stderr
+
+// museBaselineTransientError marks a failure a fresh host may not repeat:
+// the host hung, exited, or closed its pipes before answering.
+type museBaselineTransientError struct{ err error }
+
+func (e *museBaselineTransientError) Error() string { return e.err.Error() }
+func (e *museBaselineTransientError) Unwrap() error { return e.err }
+
+// museBaselineStepError names the protocol step whose response never arrived.
+type museBaselineStepError struct {
+	step string
+	err  error
+}
+
+func (e *museBaselineStepError) Error() string { return e.step + ": " + e.err.Error() }
+func (e *museBaselineStepError) Unwrap() error { return e.err }
+
 func readMuseRecoveryBaseline(command providerCommand, root string) (*museRecoveryBaseline, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), providerVersionTimeout)
+	var failures []error
+	for attempt := 1; attempt <= museBaselineAttempts; attempt++ {
+		baseline, err := readMuseRecoveryBaselineOnce(command, root, museBaselineAttemptTimeout)
+		if err == nil {
+			return baseline, nil
+		}
+		failures = append(failures, fmt.Errorf("attempt %d: %w", attempt, err))
+		var transient *museBaselineTransientError
+		if !errors.As(err, &transient) {
+			break
+		}
+		if attempt < museBaselineAttempts {
+			_, _ = fmt.Fprintf(museBaselineDiagnostics, "agent-layer: Muse recovery baseline attempt %d failed, retrying: %v\n", attempt, err)
+		}
+	}
+	return nil, errors.Join(failures...)
+}
+
+func readMuseRecoveryBaselineOnce(command providerCommand, root string, timeout time.Duration) (*museRecoveryBaseline, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	// #nosec G204 -- already resolved, version-checked provider executable.
 	cmd := exec.CommandContext(ctx, command.Path, "serve")
@@ -40,6 +96,8 @@ func readMuseRecoveryBaseline(command providerCommand, root string) (*museRecove
 	}
 	cmd.Env = command.Env
 	cmd.WaitDelay = time.Second
+	stderr := &tailBuffer{limit: museBaselineStderrLimit}
+	cmd.Stderr = stderr
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		return nil, err
@@ -48,13 +106,12 @@ func readMuseRecoveryBaseline(command providerCommand, root string) (*museRecove
 	if err != nil {
 		return nil, err
 	}
+	started := time.Now()
 	if err := cmd.Start(); err != nil {
 		return nil, err
 	}
-	defer func() { cancel(); _ = stdin.Close(); _ = stdout.Close(); _ = cmd.Wait() }()
 	// Close the decoder pipe on timeout even if a host descendant keeps it open.
 	done := make(chan struct{})
-	defer close(done)
 	go func() {
 		select {
 		case <-ctx.Done():
@@ -62,22 +119,79 @@ func readMuseRecoveryBaseline(command providerCommand, root string) (*museRecove
 		case <-done:
 		}
 	}()
-	return queryMuseRecoveryBaseline(json.NewEncoder(stdin), json.NewDecoder(stdout), command.SessionID)
+	baseline, err := queryMuseRecoveryBaseline(json.NewEncoder(stdin), json.NewDecoder(stdout), command.SessionID)
+	close(done)
+	// The timeout surfaces as a closed-pipe read, never as a protocol answer.
+	timedOut := ctx.Err() != nil && isMuseTransportError(err)
+	cancel()
+	_ = stdin.Close()
+	_ = stdout.Close()
+	_ = cmd.Wait()
+	if err == nil {
+		return baseline, nil
+	}
+	// Report the timeout itself rather than the closed-pipe read it causes.
+	step := "the recovery baseline query"
+	var stepErr *museBaselineStepError
+	if errors.As(err, &stepErr) {
+		step = stepErr.step
+	}
+	detail := ""
+	if tail := strings.TrimSpace(stderr.String()); tail != "" {
+		detail = "; muse serve stderr: " + tail
+	}
+	if timedOut {
+		return nil, &museBaselineTransientError{fmt.Errorf("muse serve did not answer %s within %s%s", step, timeout, detail)}
+	}
+	if isMuseTransportError(err) {
+		return nil, &museBaselineTransientError{fmt.Errorf("muse serve stopped before answering %s after %s: %w%s", step, time.Since(started).Round(time.Millisecond), err, detail)}
+	}
+	return nil, err
+}
+
+// isMuseTransportError reports a host that exited or closed its pipes, as
+// opposed to a protocol answer such as an RPC error or a mismatched session.
+func isMuseTransportError(err error) bool {
+	return errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) || errors.Is(err, os.ErrClosed) || errors.Is(err, syscall.EPIPE)
+}
+
+// tailBuffer retains the last limit bytes written to it. exec copies stderr
+// from a separate goroutine until Wait returns, so it is safe for concurrent use.
+type tailBuffer struct {
+	mu    sync.Mutex
+	limit int
+	data  []byte
+}
+
+func (b *tailBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.data = append(b.data, p...)
+	if extra := len(b.data) - b.limit; extra > 0 {
+		b.data = append(b.data[:0], b.data[extra:]...)
+	}
+	return len(p), nil
+}
+
+func (b *tailBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return string(b.data)
 }
 
 func queryMuseRecoveryBaseline(encoder *json.Encoder, decoder *json.Decoder, sessionID string) (*museRecoveryBaseline, error) {
 	if err := initializeMuseRPC(encoder, decoder); err != nil {
-		return nil, err
+		return nil, &museBaselineStepError{step: "initialize", err: err}
 	}
 	if err := encoder.Encode(map[string]any{
 		jsonRPCKey: jsonRPCVersion, "id": 2, jsonMethodKey: museSessionRead,
 		jsonParamsKey: map[string]any{jsonSessionIDCamelKey: sessionID, "excludeItems": true},
 	}); err != nil {
-		return nil, err
+		return nil, &museBaselineStepError{step: museSessionRead, err: err}
 	}
 	frame, err := readMuseRPCResponse(decoder, encoder, 2)
 	if err != nil {
-		return nil, err
+		return nil, &museBaselineStepError{step: museSessionRead, err: err}
 	}
 	var result struct {
 		Session struct {
