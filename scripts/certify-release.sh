@@ -32,16 +32,19 @@ push_run_poll_seconds=5
 # Sets run_state to "success", "active", "completed", or "none" for the runs of
 # HEAD, and run_id to the successful or active run.
 refresh_run_state() {
-  local state
+  local state event=push
+  [[ "${workflow}" != "release.yml" ]] || event=workflow_dispatch
   state="$(
     gh run list \
       --workflow "${workflow}" \
       --branch main \
       --commit "${head_sha}" \
-      --limit 20 \
-      --json databaseId,status,conclusion,displayTitle \
+      --event "${event}" \
+      --limit 100 \
+      --json databaseId,status,conclusion,displayTitle,event,headBranch,headSha \
       --jq "
-        map(select(\"${workflow}\" != \"release.yml\" or .displayTitle == \"Release rehearsal ${release_tag}\"))
+        map(select(.event == \"${event}\" and .headBranch == \"main\" and .headSha == \"${head_sha}\"
+          and (\"${workflow}\" != \"release.yml\" or .displayTitle == \"Release rehearsal ${release_tag}\")))
         | ([.[] | select(.conclusion == \"success\")][0].databaseId) as \$success
         | ([.[] | select(.status != \"completed\")][0].databaseId) as \$active
         | if \$success != null then \"success \(\$success)\"

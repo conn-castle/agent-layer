@@ -91,9 +91,11 @@ jq --arg workflow "$workflow" --arg branch "$branch" --arg commit "$commit" \
       ($status == "" or ((.statusIndexLag != true) and
         (.status == $status or .conclusion == $status)))
     ))[:$limit]
-    # Deliberately inconsistent response to exercise the client SHA check even
-    # when the server accepted the commit filter.
+    # Deliberately inconsistent responses exercise client checks independently
+    # of the server filters.
     | map(if has("responseHeadSha") then .headSha = .responseHeadSha else . end)
+    | map(if has("responseEvent") then .event = .responseEvent else . end)
+    | map(if has("responseHeadBranch") then .headBranch = .responseHeadBranch else . end)
     | ($fields | split(",")) as $keys
     | map(with_entries(select(.key as $key | $keys | index($key))))
   ' "$TEST_RUNS" | jq -r "$jq_expr"
@@ -116,12 +118,14 @@ EOF
     fi
     success_run=$(jq -cn --arg sha "$head_sha" --arg kind "$kind" '{
       workflow: (if $kind == "ci" then "ci.yml" else "release.yml" end),
-      headBranch: "main", headSha: $sha, event: "workflow_dispatch",
+      headBranch: "main", headSha: $sha,
+      event: (if $kind == "ci" then "push" else "workflow_dispatch" end),
       status: "completed", conclusion: "success",
       displayTitle: "Release rehearsal v9.8.7", url: "https://example.invalid/runs/534"
     }')
-    for scenario in lagging-index no-runs failure cancelled in-progress wrong-workflow \
+    for scenario in lagging-index no-runs failure cancelled skipped in-progress wrong-workflow \
       wrong-branch wrong-commit response-sha-mismatch newest-failed-older-success \
+      response-event-mismatch response-branch-mismatch success-after-20 \
       other-version publication-title wrong-event; do
       expected=1
       case "$scenario" in
@@ -130,11 +134,16 @@ EOF
         no-runs) runs='[]' ;;
         failure) runs='[$run | .conclusion = "failure"]' ;;
         cancelled) runs='[$run | .conclusion = "cancelled"]' ;;
+        skipped) runs='[$run | .conclusion = "skipped"]' ;;
         in-progress) runs='[$run | .status = "in_progress" | .conclusion = ""]' ;;
         wrong-workflow) runs='[$run | .workflow = "unrelated.yml"]' ;;
         wrong-branch) runs='[$run | .headBranch = "feature"]' ;;
         wrong-commit) runs='[$run | .headSha = $other]' ;;
         response-sha-mismatch) runs='[$run | .responseHeadSha = $other]' ;;
+        response-event-mismatch) runs='[$run | .responseEvent = "pull_request"]' ;;
+        response-branch-mismatch) runs='[$run | .responseHeadBranch = "feature"]' ;;
+        success-after-20)
+          runs='[range(25) | $run | .conclusion = "failure"] + [$run]'; expected=0 ;;
         newest-failed-older-success)
           runs='[($run | .conclusion = "failure" | .url = "https://example.invalid/failed"),
             ($run | .headSha = $other),
@@ -154,8 +163,7 @@ EOF
           [[ "$kind" == rehearsal ]] || continue
           runs='[$run | .displayTitle = "Release v9.8.7"]' ;;
         wrong-event)
-          [[ "$kind" == rehearsal ]] || continue
-          runs='[$run | .event = "push"]' ;;
+          runs='[$run | .event = "pull_request"]' ;;
       esac
       jq -n --argjson run "$success_run" --arg other "$other_sha" "$runs" >"$fixture/runs.json"
       result=0
@@ -225,6 +233,7 @@ run_release_workflow_security_tests() {
   if grep -Eq '^[[:space:]]+release_commit="\$\(git rev-parse HEAD\)"$' <<<"$ci_check_step" &&
      grep -Eq '^[[:space:]]+for workflow in ci.yml; do$' <<<"$ci_check_step" &&
      grep -Eq '^[[:space:]]+--workflow "\$\{workflow\}" \\$' <<<"$ci_check_step" &&
+     grep -Eq '^[[:space:]]+--event push \\$' <<<"$ci_check_step" &&
      grep -Eq '^[[:space:]]+--branch main \\$' <<<"$ci_check_step" &&
      grep -Eq '^[[:space:]]+--commit "\$\{release_commit\}" \\$' <<<"$ci_check_step"; then
     pass "release-security: readiness requires successful CI for the exact source commit"
