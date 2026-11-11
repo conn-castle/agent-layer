@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"testing"
 	"time"
@@ -27,7 +28,7 @@ func TestRunOwnsDescendants(t *testing.T) {
 	for _, mode := range []string{"deadline", "exited", "closed", "nonzero"} {
 		t.Run(mode, func(t *testing.T) {
 			pidFile := filepath.Join(t.TempDir(), "child")
-			script := `trap '' TERM; /bin/sleep 30 & echo $! > "$1"; echo retained; `
+			script := `trap '' TERM; /bin/sleep 30 & printf '%s\n' "$!" > "$1.tmp"; mv "$1.tmp" "$1"; echo retained; printf 'ready\n' >&3; `
 			switch mode {
 			case "exited":
 				script += "exit 0"
@@ -38,13 +39,9 @@ func TestRunOwnsDescendants(t *testing.T) {
 			default:
 				script += "wait"
 			}
-			// Only the timeout modes depend on the deadline; exit modes get slack
-			// so a slow start under -race cannot turn an exit into a timeout.
-			timeout := 5 * time.Second
-			if mode == "deadline" || mode == "closed" {
-				timeout = 300 * time.Millisecond
-			}
-			ctx, cancel := context.WithTimeout(context.Background(), timeout)
+			// The deadline is armed only after a separate fd proves the child
+			// PID was atomically published, even when stdout/stderr are closed.
+			ctx, cancel := newFixtureDeadlineContext()
 			defer cancel()
 			t.Cleanup(func() {
 				if data, err := os.ReadFile(pidFile); t.Failed() && err == nil { // #nosec G304 -- owned fixture PID path.
@@ -56,8 +53,37 @@ func TestRunOwnsDescendants(t *testing.T) {
 			var output bytes.Buffer
 			cmd := exec.Command("/bin/sh", "-c", script, "fixture", pidFile)
 			cmd.Stdout, cmd.Stderr = &output, &output
+			awaitReady := fixtureReadiness(t, cmd)
+			done := make(chan error, 1)
+			joined := false
+			defer func() {
+				cancel()
+				if !joined {
+					select {
+					case <-done:
+					case <-time.After(5 * time.Second):
+						t.Error("fixture did not join after cleanup")
+					}
+				}
+			}()
+			go func() { done <- Run(ctx, cmd) }()
+			awaitReady()
+			// Readiness is independent of output and guarantees a complete PID
+			// record. Do not accept missing/empty PIDs, including after shutdown.
+			if data, err := os.ReadFile(pidFile); err != nil || strings.TrimSpace(string(data)) == "" { // #nosec G304 -- owned fixture PID path.
+				t.Fatalf("ready fixture PID: %q, %v", data, err)
+			}
 			start := time.Now()
-			err := Run(ctx, cmd)
+			if mode == "deadline" || mode == "closed" {
+				defer ctx.arm(300 * time.Millisecond)()
+			}
+			var err error
+			select {
+			case err = <-done:
+				joined = true
+			case <-time.After(2 * time.Second):
+				t.Fatal("unbounded return")
+			}
 			var cleanupErr *CleanupError
 			if errors.As(err, &cleanupErr) {
 				t.Fatalf("unexpected cleanup failure: %v", err)
@@ -66,7 +92,7 @@ func TestRunOwnsDescendants(t *testing.T) {
 				t.Fatalf("unbounded return: %v", err)
 			}
 			if mode == "deadline" || mode == "closed" {
-				if !errors.Is(err, ctx.Err()) || ctx.Err() == nil || strings.Contains(err.Error(), "process group") {
+				if !errors.Is(ctx.Err(), context.DeadlineExceeded) || !errors.Is(err, ctx.Err()) || strings.Contains(err.Error(), "process group") {
 					t.Fatalf("context outcome: %v", err)
 				}
 			} else if mode == "nonzero" {
@@ -111,15 +137,18 @@ func TestStartPreservesCallerOwnedOutput(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = reader.Close(); _ = writer.Close() }()
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := newFixtureDeadlineContext()
 	defer cancel()
-	cmd := exec.Command("/bin/sh", "-c", `/bin/sleep 30 & echo $! > "$1"; echo retained; exit 0`, "fixture", pidFile)
+	cmd := exec.Command("/bin/sh", "-c", `/bin/sleep 30 & printf '%s\n' "$!" > "$1.tmp"; mv "$1.tmp" "$1"; echo retained; printf 'ready\n' >&3; exit 0`, "fixture", pidFile)
 	cmd.Stdout = writer
+	awaitReady := fixtureReadiness(t, cmd)
 	wait, err := Start(ctx, cmd)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer func() { cancel(); _ = wait() }()
+	awaitReady()
+	defer ctx.arm(5 * time.Second)()
 	if cmd.Stdout != writer {
 		t.Fatal("caller-owned stdout was wrapped")
 	}
@@ -320,4 +349,66 @@ func sessionFixtureStopped(pid int) bool {
 	}
 	stat := strings.TrimSpace(string(state))
 	return stat == "" || strings.ContainsAny(stat[:1], "ZXx")
+}
+
+// fixtureDeadlineContext delegates deadline semantics to a real timer context
+// created after readiness. Its stable Done channel lets Run start beforehand.
+type fixtureDeadlineContext struct {
+	context.Context
+	mu       sync.Mutex
+	deadline context.Context
+	cancel   context.CancelFunc
+}
+
+func newFixtureDeadlineContext() (*fixtureDeadlineContext, context.CancelFunc) {
+	ctx, cancel := context.WithCancel(context.Background())
+	return &fixtureDeadlineContext{Context: ctx, cancel: cancel}, cancel
+}
+
+func (c *fixtureDeadlineContext) arm(timeout time.Duration) context.CancelFunc {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	c.deadline = ctx
+	stop := context.AfterFunc(ctx, c.cancel)
+	return func() { stop(); cancel() }
+}
+
+func (c *fixtureDeadlineContext) Deadline() (time.Time, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.deadline != nil {
+		return c.deadline.Deadline()
+	}
+	return time.Time{}, false
+}
+
+func (c *fixtureDeadlineContext) Err() error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.deadline != nil && c.deadline.Err() != nil {
+		return c.deadline.Err()
+	}
+	return c.Context.Err()
+}
+
+// fixtureReadiness uses fd 3 so closing stdout/stderr cannot hide readiness.
+func fixtureReadiness(t *testing.T, cmd *exec.Cmd) func() {
+	t.Helper()
+	reader, writer, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = reader.Close(); _ = writer.Close() })
+	cmd.ExtraFiles = []*os.File{writer}
+	return func() {
+		t.Helper()
+		if err := reader.SetReadDeadline(time.Now().Add(5 * time.Second)); err != nil {
+			t.Fatal(err)
+		}
+		line := make([]byte, len("ready\n"))
+		if _, err := io.ReadFull(reader, line); err != nil || string(line) != "ready\n" {
+			t.Fatalf("fixture readiness: %q, %v", line, err)
+		}
+	}
 }

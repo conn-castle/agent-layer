@@ -725,8 +725,10 @@ its closed-channel EOF while a partial frame remains undecoded. That retains
 `context_condition` retains observed cancellation/deadline even when another
 condition takes precedence. Failures from reads/writes begun while open survive
 overlapping Close with `uncertain: true`: they establish an observed failure,
-not that the peer caused it. Pure context cancellation with only local-close
-EOF remains certain cancellation. Unknown causes and competing input
+not that the peer caused it. A raw read error identified as a locally closed
+pipe/file after our physical reader Close began is local-close fallout, not
+competing transport evidence. Pure context cancellation with only that fallout
+or local-close EOF remains certain cancellation. Unknown causes and competing input
 EOF/cancellation are uncertain. None of these records establishes a graceful
 shutdown. SIGTERM/SIGINT normally cancel the CLI serving context.
 On Unix, process-owned MCP stdin and stdout use pollable I/O, including when a

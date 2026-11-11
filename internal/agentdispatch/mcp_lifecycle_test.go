@@ -840,3 +840,98 @@ func TestDispatchPreservesLiteralRootWhitespace(t *testing.T) {
 		t.Fatalf("trimmed sibling was written: %v %v", entries, err)
 	}
 }
+
+// Keep SDK Close inside the physical reader's Close until SDK Read has
+// returned. Its closed-channel EOF cannot mask the raw close-induced error.
+type mcpCloseGatedReader struct {
+	io.ReadCloser
+	entered     chan struct{}
+	sdkReturned <-chan struct{}
+}
+
+func (r *mcpCloseGatedReader) Read(p []byte) (int, error) {
+	close(r.entered)
+	return r.ReadCloser.Read(p)
+}
+
+func (r *mcpCloseGatedReader) Close() error {
+	err := r.ReadCloser.Close()
+	<-r.sdkReturned
+	return err
+}
+
+func TestMCPLifecycleLocalCloseReadError(t *testing.T) {
+	for _, kind := range []string{"pipe", "file"} {
+		for _, local := range []bool{true, false} {
+			t.Run(fmt.Sprintf("%s/local=%t", kind, local), func(t *testing.T) {
+				root := writeDispatchRepo(t, dispatchRepoConfig{})
+				l := newMCPLifecycle(MCPServerOptions{Root: root, Version: "1.2.3"}, io.Discard)
+				ctx, cancel := context.WithCancel(context.Background())
+				defer cancel()
+				var input io.ReadCloser
+				var peer io.Closer
+				wantErr := io.ErrClosedPipe
+				if kind == "pipe" {
+					input, peer = io.Pipe()
+				} else {
+					var err error
+					input, peer, err = os.Pipe()
+					if err != nil {
+						t.Fatal(err)
+					}
+					wantErr = os.ErrClosed
+				}
+				defer func() { _ = peer.Close(); _ = input.Close() }()
+				pause := &mcpPausedTransport{operation: mcpLifecycleRead, entered: make(chan struct{}), returned: make(chan struct{}), release: make(chan struct{})}
+				var once sync.Once
+				release := func() { once.Do(func() { close(pause.release) }) }
+				defer release()
+				raw := &mcpCloseGatedReader{ReadCloser: input, entered: make(chan struct{}), sdkReturned: pause.returned}
+				framing := &mcpFrameObserver{}
+				pause.Transport = &mcp.IOTransport{Reader: &mcpObservedReader{ReadCloser: raw, lifecycle: l, framing: framing}, Writer: mcpNopCloseWriter{io.Discard}}
+				connection, err := (&mcpObservedTransport{Transport: pause, lifecycle: l, framing: framing}).Connect(ctx)
+				if err != nil {
+					t.Fatal(err)
+				}
+				result := make(chan error, 1)
+				go func() {
+					// Like the SDK serving loop, keep Read independent of the
+					// serving context so cancellation triggers transport Close.
+					_, err := connection.Read(context.Background())
+					result <- err
+				}()
+				waitMCPBoundary(t, pause.entered)
+				waitMCPBoundary(t, raw.entered)
+				if !local {
+					// The same identity before our Close is competing evidence.
+					_ = input.Close()
+					waitMCPBoundary(t, pause.returned)
+				}
+				cancel()
+				closed := make(chan error, 1)
+				go func() { closed <- connection.Close() }()
+				waitMCPBoundary(t, pause.returned)
+				if err := waitMCPRun(t, closed); err != nil && (kind != "file" || local || !errors.Is(err, os.ErrClosed)) {
+					t.Fatal(err)
+				}
+				release()
+				if err := waitMCPRun(t, result); !errors.Is(err, wantErr) {
+					t.Fatalf("SDK raw read error: got %v, want %v", err, wantErr)
+				}
+				l.stop(ctx, "serving", ctx.Err())
+				records := readMCPLifecycle(t, root)[0]
+				last := records[len(records)-1]
+				if local {
+					if len(records) != 2 || last.Condition != mcpLifecycleCancelled || last.Uncertain {
+						t.Fatalf("local read closure invented competing evidence: %+v", records)
+					}
+				} else if len(records) != 3 || records[1].Operation != mcpLifecycleRead || last.Condition != mcpLifecycleTransportError || !last.Uncertain {
+					t.Fatalf("independent read error erased: %+v", records)
+				}
+				if last.InputEOF || last.ClientEOF || last.ContextCondition != mcpLifecycleCancelled {
+					t.Fatalf("EOF/context evidence: %+v", records)
+				}
+			})
+		}
+	}
+}
