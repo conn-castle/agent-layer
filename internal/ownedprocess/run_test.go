@@ -10,7 +10,6 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"sync"
 	"syscall"
 	"testing"
 	"time"
@@ -39,9 +38,10 @@ func TestRunOwnsDescendants(t *testing.T) {
 			default:
 				script += "wait"
 			}
-			// The deadline is armed only after a separate fd proves the child
-			// PID was atomically published, even when stdout/stderr are closed.
-			ctx, cancel := newFixtureDeadlineContext()
+			// Arm cancellation only after a separate fd proves the child PID
+			// was atomically published, even when stdout/stderr are closed. Run
+			// handles cancellation and deadlines identically, propagating ctx.Err().
+			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 			t.Cleanup(func() {
 				if data, err := os.ReadFile(pidFile); t.Failed() && err == nil { // #nosec G304 -- owned fixture PID path.
@@ -75,7 +75,8 @@ func TestRunOwnsDescendants(t *testing.T) {
 			}
 			start := time.Now()
 			if mode == "deadline" || mode == "closed" {
-				defer ctx.arm(300 * time.Millisecond)()
+				timer := time.AfterFunc(300*time.Millisecond, cancel)
+				defer timer.Stop()
 			}
 			var err error
 			select {
@@ -92,7 +93,7 @@ func TestRunOwnsDescendants(t *testing.T) {
 				t.Fatalf("unbounded return: %v", err)
 			}
 			if mode == "deadline" || mode == "closed" {
-				if !errors.Is(ctx.Err(), context.DeadlineExceeded) || !errors.Is(err, ctx.Err()) || strings.Contains(err.Error(), "process group") {
+				if !errors.Is(err, context.Canceled) || !errors.Is(err, ctx.Err()) || strings.Contains(err.Error(), "process group") {
 					t.Fatalf("context outcome: %v", err)
 				}
 			} else if mode == "nonzero" {
@@ -137,7 +138,7 @@ func TestStartPreservesCallerOwnedOutput(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = reader.Close(); _ = writer.Close() }()
-	ctx, cancel := newFixtureDeadlineContext()
+	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	cmd := exec.Command("/bin/sh", "-c", `/bin/sleep 30 & printf '%s\n' "$!" > "$1.tmp"; mv "$1.tmp" "$1"; echo retained; printf 'ready\n' >&3; exit 0`, "fixture", pidFile)
 	cmd.Stdout = writer
@@ -148,7 +149,8 @@ func TestStartPreservesCallerOwnedOutput(t *testing.T) {
 	}
 	defer func() { cancel(); _ = wait() }()
 	awaitReady()
-	defer ctx.arm(5 * time.Second)()
+	timer := time.AfterFunc(5*time.Second, cancel)
+	defer timer.Stop()
 	if cmd.Stdout != writer {
 		t.Fatal("caller-owned stdout was wrapped")
 	}
@@ -349,47 +351,6 @@ func sessionFixtureStopped(pid int) bool {
 	}
 	stat := strings.TrimSpace(string(state))
 	return stat == "" || strings.ContainsAny(stat[:1], "ZXx")
-}
-
-// fixtureDeadlineContext delegates deadline semantics to a real timer context
-// created after readiness. Its stable Done channel lets Run start beforehand.
-type fixtureDeadlineContext struct {
-	context.Context
-	mu       sync.Mutex
-	deadline context.Context
-	cancel   context.CancelFunc
-}
-
-func newFixtureDeadlineContext() (*fixtureDeadlineContext, context.CancelFunc) {
-	ctx, cancel := context.WithCancel(context.Background())
-	return &fixtureDeadlineContext{Context: ctx, cancel: cancel}, cancel
-}
-
-func (c *fixtureDeadlineContext) arm(timeout time.Duration) context.CancelFunc {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
-	c.deadline = ctx
-	stop := context.AfterFunc(ctx, c.cancel)
-	return func() { stop(); cancel() }
-}
-
-func (c *fixtureDeadlineContext) Deadline() (time.Time, bool) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if c.deadline != nil {
-		return c.deadline.Deadline()
-	}
-	return time.Time{}, false
-}
-
-func (c *fixtureDeadlineContext) Err() error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if c.deadline != nil && c.deadline.Err() != nil {
-		return c.deadline.Err()
-	}
-	return c.Context.Err()
 }
 
 // fixtureReadiness uses fd 3 so closing stdout/stderr cannot hide readiness.

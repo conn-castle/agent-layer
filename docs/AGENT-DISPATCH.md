@@ -726,8 +726,8 @@ its closed-channel EOF while a partial frame remains undecoded. That retains
 condition takes precedence. Failures from reads/writes begun while open survive
 overlapping Close with `uncertain: true`: they establish an observed failure,
 not that the peer caused it. A raw read error identified as a locally closed
-pipe/file after our physical reader Close began is local-close fallout, not
-competing transport evidence. Pure context cancellation with only that fallout
+pipe/file after our transport reader's Close began is local-close fallout,
+not competing transport evidence. Pure context cancellation with only that fallout
 or local-close EOF remains certain cancellation. Unknown causes and competing input
 EOF/cancellation are uncertain. None of these records establishes a graceful
 shutdown. SIGTERM/SIGINT normally cancel the CLI serving context.

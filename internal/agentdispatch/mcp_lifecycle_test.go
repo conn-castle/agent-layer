@@ -846,11 +846,12 @@ func TestDispatchPreservesLiteralRootWhitespace(t *testing.T) {
 type mcpCloseGatedReader struct {
 	io.ReadCloser
 	entered     chan struct{}
+	enterOnce   sync.Once
 	sdkReturned <-chan struct{}
 }
 
 func (r *mcpCloseGatedReader) Read(p []byte) (int, error) {
-	close(r.entered)
+	r.enterOnce.Do(func() { close(r.entered) })
 	return r.ReadCloser.Read(p)
 }
 

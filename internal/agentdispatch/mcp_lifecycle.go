@@ -227,7 +227,7 @@ type mcpObservedReader struct {
 	io.ReadCloser
 	lifecycle *mcpLifecycle
 	framing   *mcpFrameObserver
-	closing   bool // guarded by lifecycle.mu; physical reader Close has begun
+	closing   bool // guarded by lifecycle.mu; transport reader Close has begun
 }
 
 func (r *mcpObservedReader) Read(p []byte) (int, error) {

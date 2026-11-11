@@ -49,8 +49,8 @@ dispatch_json_field() {
 dispatch_show_stderr() {
   local path="$1"
   if [[ -s "$path" ]]; then
-    echo "  stderr (first 10 lines):"
-    sed -n '1,10{s/^/    /;p;}' "$path"
+    echo "  stderr (last 20 lines):"
+    tail -n 20 "$path" | sed 's/^/    /'
   fi
 }
 
@@ -257,11 +257,11 @@ SKILL
 
   handle="$(dispatch_json_field "$start_file" handle)"
   rc=0
-  (cd "$repo_dir" && al dispatch wait "$handle" --condition termination_confirmed >"$wait_file" 2>>"$stderr_file") || rc=$?
+  (cd "$repo_dir" && al dispatch wait "$handle" >"$wait_file" 2>>"$stderr_file") || rc=$?
   local result_path
   result_path="$(dispatch_json_field "$wait_file" result_path)"
   if [[ $rc -eq 0 ]] && grep -q '"state":"completed"' "$wait_file" \
-    && grep -q '"condition_met":true' "$wait_file" && grep -q '"termination_confirmed":true' "$wait_file" && [[ -f "$result_path" ]]; then
+    && grep -q '"condition_met":true' "$wait_file" && [[ -f "$result_path" ]]; then
     pass "dispatch wait returns a durable completed result"
   else
     fail "dispatch wait returns a durable completed result (exit code: $rc)"
@@ -272,6 +272,15 @@ SKILL
   assert_file_contains "$MOCK_DISPATCH_CODEX_LOG" "CODEX_HOME=$repo_dir/.codex" "worker receives repo CODEX_HOME"
   assert_file_contains "$MOCK_DISPATCH_CODEX_LOG" "AL_DISPATCH_ACTIVE=1" "worker receives depth marker"
   assert_file_contains "$MOCK_DISPATCH_CODEX_PROMPT" "Return ok" "start passes prompt"
+
+  rc=0
+  (cd "$repo_dir" && al dispatch wait "$handle" --condition termination_confirmed >"$wait_file" 2>>"$stderr_file") || rc=$?
+  if [[ $rc -eq 0 ]] && grep -q '"condition_met":true' "$wait_file" && grep -q '"termination_confirmed":true' "$wait_file"; then
+    pass "dispatch termination is confirmed before continue"
+  else
+    fail "dispatch termination is confirmed before continue (exit code: $rc)"
+    dispatch_show_stderr "$stderr_file"
+  fi
 
   : > "$MOCK_DISPATCH_CODEX_LOG"
   rc=0
