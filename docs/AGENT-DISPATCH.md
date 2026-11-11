@@ -641,10 +641,18 @@ instead of returning structured replacement status.
 Startup verifies the snapshot content and its selected regular executable.
 Missing or unverifiable startup evidence, including a rebuild during the
 handoff/startup verification window, refuses work until reconnect. After successful
-verification only the server's own immutable snapshot gates freshness: a missing
-or unusable selected dev path is reported as changed and does not refuse work.
-Changing or removing the executing snapshot itself still refuses work. Options
-uses cached build identity and file stats, without hashing on each request.
+verification the server's own immutable snapshot gates code freshness. Options
+continues answering when the selected dev path is missing, non-regular or
+non-executable, reporting `replaced: true` and the reconnect notice. Start and
+continue additionally require that path to remain a regular executable: they
+refuse before projection sync or provider work when it is unusable, preserving
+operator-restored launchers and HerdR hooks. Restore an executable at the selected
+path to resume work, or restore project projections and reconnect the server.
+Rebuilds that leave a regular executable at that path keep accepting work on the
+original snapshot. Wait, inspect, output and cancel remain available. Changing
+or removing the executing snapshot itself still refuses options/start/continue.
+These checks use cached build identity and file stats without opening or hashing
+the selected executable on each request.
 The handoff preserves the development environment and `PATH` without adding shim
 or installed-entry markers, so child agents and nested MCP servers continue
 selecting the development executable through their inherited environment.

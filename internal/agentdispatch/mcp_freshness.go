@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 
 	"github.com/conn-castle/agent-layer/internal/executableimage"
@@ -61,6 +62,31 @@ func (s *dispatchToolServer) checkFreshness() error {
 		return nil
 	}
 	return fmt.Errorf("agent-layer MCP server is stale or freshness cannot be verified (running %s, selected %q): %w. No provider work was started. Reconnect the agent-layer MCP server (Claude Code: /mcp reconnect; Codex app: restart the app or reload MCP configuration), then retry. Wait, inspect, output and cancel remain available", s.version, selection, err)
+}
+
+// checkProviderWork guards operations that regenerate project launchers and hooks.
+// Snapshot options remain readable when the selected dev source is unavailable,
+// but start and continue must not project that unusable path into client config.
+func (s *dispatchToolServer) checkProviderWork() error {
+	if err := s.checkFreshness(); err != nil {
+		return err
+	}
+	if !s.development.snapshot {
+		return nil
+	}
+	info, err := os.Stat(s.development.path)
+	if err == nil && !info.Mode().IsRegular() {
+		err = errors.New("not a regular executable file")
+	}
+	if err == nil {
+		// Absolute-path lookup checks execute permission for this user without
+		// opening the file; execute bits for another class are insufficient.
+		_, err = exec.LookPath(s.development.path)
+	}
+	if err == nil {
+		return nil
+	}
+	return fmt.Errorf("selected development executable %q is missing or unusable: %v. No provider work was started and project projections were not changed. Restore that executable, or restore project projections and reconnect the agent-layer MCP server, then retry. Options, wait, inspect, output and cancel remain available", s.development.path, err)
 }
 
 // fresh reports whether a server started with this selection still runs what a
@@ -145,7 +171,7 @@ func verifyDevelopmentExecutable(path, sha string) (os.FileInfo, error) {
 }
 
 // fresh accepts a verified startup selection while the server's own snapshot stays intact.
-// Subsequent changes to the selected dev path affect only the replacement notice.
+// Options can report selected-path changes; projection-writing operations check source usability separately.
 func (d developmentSelection) fresh() error {
 	if d.err != nil {
 		return d.err

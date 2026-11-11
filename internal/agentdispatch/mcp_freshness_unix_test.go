@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/conn-castle/agent-layer/internal/fsutil"
@@ -50,5 +51,27 @@ func TestImageSHA256RefusesFIFO(t *testing.T) {
 	err := testutil.BoundedFIFO(t, path, func() error { _, err := imageSHA256(path); return err })
 	if !errors.Is(err, fsutil.ErrNotRegularFile) {
 		t.Fatalf("hashing FIFO: %v", err)
+	}
+}
+
+// TestMCPProviderWorkRefusesFIFO keeps the post-startup projection guard nonblocking.
+func TestMCPProviderWorkRefusesFIFO(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "al")
+	freshnessWrite(t, path, "startup source")
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	testutil.MakeFIFO(t, path, false)
+	server := &dispatchToolServer{
+		root: t.TempDir(), version: "dev",
+		development: developmentSelection{path: path, info: info, snapshot: true},
+	}
+	err = testutil.BoundedFIFO(t, path, server.checkProviderWork)
+	if err == nil || !strings.Contains(err.Error(), "missing or unusable") {
+		t.Fatalf("provider work with FIFO source: %v", err)
 	}
 }

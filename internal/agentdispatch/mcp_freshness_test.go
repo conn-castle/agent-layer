@@ -551,9 +551,14 @@ printf '%%s\n' '{"type":"thread.started","thread_id":"11111111-1111-4111-8111-11
 		if strings.Contains(string(generated), snapshot) || !strings.Contains(string(generated), image) {
 			t.Fatalf("regenerated launcher lost dev provenance: %s", generated)
 		}
-		// A verified server no longer needs its selected source path. Report
-		// missing files, directories and removed execute permission as changes.
-		for _, kind := range []string{"missing", "directory", "non-executable"} {
+		// Operator-restored projections must survive options and refused provider
+		// work when the selected source can no longer launch new clients.
+		launcher := filepath.Join(root, ".codex", "config.toml")
+		operatorConfig := "# operator-restored MCP launcher\n"
+		for _, kind := range []string{"missing", "directory", "non-executable", "non-executable-by-owner"} {
+			if kind == "non-executable-by-owner" && os.Geteuid() == 0 {
+				continue // Root can execute a file when any execute bit is set.
+			}
 			if err := os.Remove(image); err != nil {
 				t.Fatal(err)
 			}
@@ -562,12 +567,28 @@ printf '%%s\n' '{"type":"thread.started","thread_id":"11111111-1111-4111-8111-11
 				if err := os.Mkdir(image, 0o700); err != nil {
 					t.Fatal(err)
 				}
-			case "non-executable":
+			case "non-executable", "non-executable-by-owner":
 				freshnessWrite(t, image, "unusable dev source")
+				if kind == "non-executable-by-owner" {
+					if err := os.Chmod(image, 0o655); err != nil { // #nosec G302 -- test fixture denies its owner execute permission while allowing other classes.
+						t.Fatal(err)
+					}
+				}
+			}
+			freshnessWrite(t, launcher, operatorConfig)
+			assertOperatorConfig := func() {
+				t.Helper()
+				data, err := os.ReadFile(launcher) // #nosec G304 -- test-owned operator configuration.
+				if err != nil {
+					t.Fatal(err)
+				}
+				if string(data) != operatorConfig {
+					t.Fatalf("%s source rewrote operator launcher: %s", kind, data)
+				}
 			}
 			response := callMCPTool(t, session, ToolOptions, OptionsInput{})
 			if response.IsError {
-				t.Fatalf("%s dev source refused service: %s", kind, toolResultText(response))
+				t.Fatalf("%s dev source refused options: %s", kind, toolResultText(response))
 			}
 			var status OptionsResponse
 			if err := json.Unmarshal([]byte(toolResultText(response)), &status); err != nil {
@@ -576,24 +597,46 @@ printf '%%s\n' '{"type":"thread.started","thread_id":"11111111-1111-4111-8111-11
 			if status.Server == nil || status.Server.SHA256 != hex.EncodeToString(hash[:]) || status.Server.Development == nil || !status.Server.Development.Replaced || status.Server.Development.Notice == "" {
 				t.Fatalf("%s dev source was not reported as changed: %+v", kind, status.Server)
 			}
-			started := decodeToolResult(t, callMCPTool(t, session, ToolStart, StartInput{Agent: AgentCodex, Model: "gpt-test", Prompt: "fixture"}))
-			if finished := decodeToolResult(t, callMCPTool(t, session, ToolWait, WaitInput{Handle: started.Handle})); finished.State != dispatchStateCompleted {
-				t.Fatalf("%s dev source broke worker: %+v", kind, finished)
-			}
-			record, err := loadRunRecord(root, started.InvocationID)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if record.AgentLayerBuild.SHA256 != hex.EncodeToString(hash[:]) {
-				t.Fatalf("worker lost snapshot: %+v", record.AgentLayerBuild)
-			}
-			if kind != "non-executable" {
-				if kind == "directory" {
-					if err := os.Remove(image); err != nil {
-						t.Fatal(err)
-					}
+			assertOperatorConfig()
+			for _, call := range []struct {
+				name  string
+				input any
+			}{
+				{ToolStart, StartInput{Agent: AgentCodex, Model: "gpt-test", Prompt: "fixture"}},
+				{ToolContinue, ContinueInput{Handle: result.Handle, Prompt: "fixture"}},
+			} {
+				refused := callMCPTool(t, session, call.name, call.input)
+				if !refused.IsError || !strings.Contains(toolResultText(refused), "selected development executable") || !strings.Contains(toolResultText(refused), "missing or unusable") {
+					t.Fatalf("%s accepted %s source: %s", call.name, kind, toolResultText(refused))
 				}
-				copyImage(t, b, image)
+				assertOperatorConfig()
+			}
+			if kind != "missing" {
+				if err := os.Remove(image); err != nil {
+					t.Fatal(err)
+				}
+			}
+			copyImage(t, b, image)
+			// Restoring an executable source admits work without changing the
+			// server/worker image, even though this rebuild is newer than A.
+			for _, call := range []struct {
+				name  string
+				input any
+			}{
+				{ToolStart, StartInput{Agent: AgentCodex, Model: "gpt-test", Prompt: "fixture"}},
+				{ToolContinue, ContinueInput{Handle: result.Handle, Prompt: "fixture"}},
+			} {
+				started := decodeToolResult(t, callMCPTool(t, session, call.name, call.input))
+				if finished := decodeToolResult(t, callMCPTool(t, session, ToolWait, WaitInput{Handle: started.Handle})); finished.State != dispatchStateCompleted {
+					t.Fatalf("restored %s source broke worker: %+v", kind, finished)
+				}
+				record, err := loadRunRecord(root, started.InvocationID)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if record.AgentLayerBuild.SHA256 != hex.EncodeToString(hash[:]) {
+					t.Fatalf("worker lost snapshot: %+v", record.AgentLayerBuild)
+				}
 			}
 		}
 		// The actual executing snapshot remains the freshness boundary.

@@ -104,11 +104,14 @@ regenerate the project's MCP launchers and HerdR hooks using the scratch path.
 After **all** probe workers have terminated, leave the probe environment and
 run `make al-sync` to restore those projections to the operator's normal dev
 build before removing the scratch directory. This restoration may rebuild the
-normal dev executable; an already connected snapshotted MCP server keeps serving
-its startup code and needs no reconnect. A client that connects while the probe
-projections are active starts a candidate snapshot. After successful startup
-verification that server also keeps serving if the scratch directory is removed;
-reconnect it after restoration to run the operator's normal dev build.
+normal dev executable; a snapshotted MCP server started from that normal dev
+path keeps serving its startup code while the path remains a regular executable,
+without reconnecting. A client that connects while the probe
+projections are active starts a candidate snapshot. After scratch removal that
+server still answers options with changed-source status, but refuses new start
+and continue requests so it cannot re-project the deleted scratch path. Restore
+projections as below, then reconnect that server to use the operator's normal dev
+build. Wait, inspect, output and cancel remain available for existing work.
 
 The nested subshell below confines the probe environment. Cleanup runs only
 after every probe succeeds with termination confirmed and projection restoration

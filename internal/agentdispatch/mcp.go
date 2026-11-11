@@ -307,7 +307,7 @@ func (s *dispatchToolServer) handleOptions(ctx context.Context, _ *mcp.CallToolR
 }
 
 func (s *dispatchToolServer) handleStart(ctx context.Context, _ *mcp.CallToolRequest, input StartInput) (*mcp.CallToolResult, *Result, error) {
-	if err := s.checkFreshness(); err != nil {
+	if err := s.checkProviderWork(); err != nil {
 		return nil, nil, err
 	}
 	agent := strings.TrimSpace(input.Agent)
@@ -340,7 +340,7 @@ func (s *dispatchToolServer) handleWait(ctx context.Context, request *mcp.CallTo
 }
 
 func (s *dispatchToolServer) handleContinue(ctx context.Context, _ *mcp.CallToolRequest, input ContinueInput) (*mcp.CallToolResult, *Result, error) {
-	if err := s.checkFreshness(); err != nil {
+	if err := s.checkProviderWork(); err != nil {
 		return nil, nil, err
 	}
 	var out bytes.Buffer
