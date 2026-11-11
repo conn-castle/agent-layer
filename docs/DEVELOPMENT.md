@@ -56,11 +56,13 @@ continue refuse before projection sync or provider work to avoid writing broken
 launchers and hooks. Restore that executable, or restore projections and reconnect
 the server, before starting new provider work. Wait, inspect, output and cancel
 remain available. If snapshot creation fails, the server runs in place and still
-refuses new work after replacement. Bypass alone never promotes
-an arbitrary executable or a transient `go run` path into persistent source selection. The root marker
-must match the project's configuration root (canonical symlink spellings are
-accepted). Inherited Make environment from repository A does not persist MCP
-source selection when syncing repository B, and B honors its release pin.
+refuses new work after replacement. Legacy bypass without a source-root marker
+never promotes an arbitrary executable or a transient `go run` path into
+persistent MCP launcher or HerdR hook source selection. The root marker must
+match the project's configuration root (canonical symlink spellings are
+accepted). Inherited Make environment from repository A affects neither the MCP
+launcher nor the HerdR hook source selection when syncing repository B, and B
+honors its release pin.
 Same-root nested sync preserves source selection. For deliberate scratch-project
 source selection, explicitly set `AL_DEV_SOURCE_ROOT` to that scratch root;
 `AL_DEV_EXECUTABLE` may still point to this checkout's stable development binary.

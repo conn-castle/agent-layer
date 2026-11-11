@@ -210,11 +210,25 @@ print(handle)' <<<"$started")" || return 20
     exit "$probe_status"
   fi
   # No probe worker may remain to regenerate projections after this restore.
-  make al-sync || exit 1
+  make al-sync || exit 30
   rm -rf -- "$probe_bin_dir"
   exit "$probe_status"
 )
 ```
+
+Exit statuses distinguish the cleanup outcome:
+
+- `0`: every provider probe completed; projections were restored and scratch removed.
+- `1`: scratch creation or the candidate build failed before probing, or a provider
+  failed after confirmed termination and successful restoration and cleanup. The
+  printed probe path and build/probe output distinguish these cases; a failed
+  build can leave its scratch directory behind.
+- `20`: probing stopped because a CLI call failed, a response was invalid, no
+  providers were available, or termination was unconfirmed. Scratch is retained;
+  confirm termination and restore projections before removing it.
+- `30`: projection restoration failed after all started invocations terminated.
+  Scratch is retained; fix the restoration failure and run `make al-sync` again
+  from the original shell before removing it.
 
 The block probes every enabled, available provider listed in options and captures
 each returned handle for both waits and continuation. The provider list uses a

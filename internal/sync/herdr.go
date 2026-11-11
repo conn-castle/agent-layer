@@ -55,15 +55,12 @@ func herdrCommand(provider string, arguments ...string) (string, error) {
 	return fmt.Sprintf("exec al hook herdr %s%s # %s", provider, argumentsText, agentLayerHerdRMarker), nil
 }
 
-// canonicalHerdRDevelopmentExecutable keeps explicit dev selection from silently falling back to global al.
+// canonicalHerdRDevelopmentExecutable validates and canonicalizes root-scoped dev selection.
 func canonicalHerdRDevelopmentExecutable(root ...string) (string, error) {
-	if os.Getenv(versiondispatch.EnvDevelopmentBypassVersionDispatch) == "" {
+	if len(root) == 0 {
 		return "", nil
 	}
-	executable := strings.TrimSpace(os.Getenv(versiondispatch.EnvDevelopmentExecutable))
-	if len(root) > 0 && os.Getenv(versiondispatch.EnvDevelopmentSourceRoot) != "" {
-		executable = versiondispatch.DevelopmentExecutable(root[0])
-	}
+	executable := versiondispatch.DevelopmentExecutable(root[0])
 	if executable == "" {
 		return "", nil
 	}
