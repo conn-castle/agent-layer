@@ -124,6 +124,15 @@ EOF
       /bin/bash "$fixture/scripts/certify-release.sh" >"$fixture/$scenario.out" 2>"$fixture/$scenario.err"
   }
 
+  assert_full_ci_appearance_wait() {
+    # The documented 60s appearance window uses twelve 5s polls.
+    # Update this expectation explicitly when changing the wait contract.
+    awk '
+      /^sleep / { polls++; if ($0 != "sleep 5") invalid = 1 }
+      END { exit !(polls == 12 && !invalid) }
+    ' "$log"
+  }
+
   if run_certify certified && \
      ! grep -q -e '^workflow run' -e '^run watch' -e 'catalog' "$log" && \
      grep -q "Ready to tag v9.8.7 at $head_sha: full CI and signed release rehearsal passed" "$fixture/$scenario.out"; then
@@ -146,29 +155,14 @@ EOF
     fail "release-certification: must find valid evidence beyond the default 20-run window"
   fi
 
-  # Filtered-out evidence must wait just as long as entirely missing push CI.
-  local missing_ci_poll_count push_run_wait_seconds
-  push_run_wait_seconds="$(sed -n 's/^push_run_wait_seconds=\([0-9][0-9]*\)$/\1/p' "$fixture/scripts/certify-release.sh")"
-  if run_certify ci-missing || grep -q -- '--workflow release.yml' "$log" || ! grep -q 'CI' "$fixture/$scenario.err"; then
-    fail "release-certification: ci-missing must block before any rehearsal workflow call"
-  elif ! awk -v wait_seconds="$push_run_wait_seconds" '
-    /^sleep [0-9]+$/ { slept_seconds += $2 }
-    END { exit !(wait_seconds ~ /^[0-9]+$/ && wait_seconds > 0 && slept_seconds > 0 && slept_seconds >= wait_seconds) }
-  ' "$log"; then
-    fail "release-certification: missing CI must exhaust the bounded appearance wait"
-  else
-    pass "release-certification: ci-missing blocks release certification"
-  fi
-  missing_ci_poll_count="$(grep -c '^sleep ' "$log" || true)"
-
-  for scenario in ci-pr-success ci-pr-active ci-response-event-success ci-response-event-active \
+  for scenario in ci-missing ci-pr-success ci-pr-active ci-response-event-success ci-response-event-active \
     ci-response-branch-success ci-response-sha-active; do
     if run_certify "$scenario" || grep -q -e '^run watch' -e '^workflow run' -e '--workflow release.yml' "$log" ||
        ! grep -Fxq "ERROR: CI workflow has no successful push-event run on main for ${head_sha} (none)" "$fixture/$scenario.err" ||
-       [[ "$missing_ci_poll_count" -le 0 || "$(grep -c '^sleep ' "$log")" -ne "$missing_ci_poll_count" ]]; then
-      fail "release-certification: $scenario must reject unrelated CI evidence after the full appearance wait"
+       ! assert_full_ci_appearance_wait; then
+      fail "release-certification: $scenario must reject absent push CI after the full appearance wait"
     else
-      pass "release-certification: $scenario rejects unrelated success or active evidence"
+      pass "release-certification: $scenario rejects absent push CI after the full appearance wait"
     fi
   done
 
