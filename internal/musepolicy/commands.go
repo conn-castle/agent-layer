@@ -216,11 +216,13 @@ func syncCommands(dir, root string, commands []string, prune bool) (err error) {
 	kept := make([]json.RawMessage, 0, len(document.Rules)+len(desired))
 	seen := make(map[string]bool, len(wanted))
 	orphans := make(map[string]bool)
+	ownChanged := false
 	for _, raw := range document.Rules {
 		rule := decodeCommandRule(raw)
 		if rule.matchesWorkspace(root) {
 			key := prefixKey(rule.argv)
 			if !rule.strictlyOwned() || !wanted[key] || seen[key] {
+				ownChanged = true
 				continue
 			}
 			seen[key] = true
@@ -231,10 +233,15 @@ func syncCommands(dir, root string, commands []string, prune bool) (err error) {
 	}
 	for _, rule := range desired {
 		if !seen[rule.key] {
+			ownChanged = true
 			kept = append(kept, rule.data)
 		}
 	}
-	return writeRulesIfChanged(path, document.Rules, kept)
+	writeErr := writeRulesIfChanged(path, document.Rules, kept)
+	if writeErr != nil && !ownChanged {
+		return nil // Only optional orphan housekeeping needed a write.
+	}
+	return writeErr
 }
 
 func openPolicyLock(dir string) (*os.File, error) {
