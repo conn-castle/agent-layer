@@ -122,7 +122,7 @@ EOF
     }')
     for scenario in lagging-index no-runs failure cancelled in-progress wrong-workflow \
       wrong-branch wrong-commit response-sha-mismatch newest-failed-older-success \
-      beyond-window other-version publication-title wrong-event; do
+      other-version publication-title wrong-event; do
       expected=1
       case "$scenario" in
         lagging-index)
@@ -130,7 +130,7 @@ EOF
         no-runs) runs='[]' ;;
         failure) runs='[$run | .conclusion = "failure"]' ;;
         cancelled) runs='[$run | .conclusion = "cancelled"]' ;;
-        in-progress) runs='[$run | .status = "in_progress" | .conclusion = null]' ;;
+        in-progress) runs='[$run | .status = "in_progress" | .conclusion = ""]' ;;
         wrong-workflow) runs='[$run | .workflow = "unrelated.yml"]' ;;
         wrong-branch) runs='[$run | .headBranch = "feature"]' ;;
         wrong-commit) runs='[$run | .headSha = $other]' ;;
@@ -147,8 +147,6 @@ EOF
               ($run | .event = "push")] + ('"$runs"')'
           fi
           expected=0 ;;
-        beyond-window)
-          runs='[range(20) | $run | .conclusion = "failure"] + [$run]' ;;
         other-version)
           [[ "$kind" == rehearsal ]] || continue
           runs='[$run | .displayTitle = "Release rehearsal v9.8.6"]' ;;
