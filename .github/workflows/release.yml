@@ -51,15 +51,16 @@ jobs:
             certification_url="$(
               gh run list \
                 --workflow "${workflow}" \
+                --event push \
                 --branch main \
                 --commit "${release_commit}" \
-                --status success \
-                --limit 1 \
-                --json url \
-                --jq '.[0].url // ""'
+                --limit 100 \
+                --json conclusion,headSha,event,headBranch,url \
+                --jq "map(select(.conclusion == \"success\" and .headSha == \"${release_commit}\"
+                  and .event == \"push\" and .headBranch == \"main\"))[0].url // \"\""
             )"
             if [[ -z "${certification_url}" ]]; then
-              echo "::error::No successful ${workflow} exists for exact source commit ${release_commit}."
+              echo "::error::No successful push-event ${workflow} run on main exists for exact source commit ${release_commit}."
               echo "::error::Run make release-certify AL_VERSION=${RELEASE_TAG} on clean, pushed main before tagging."
               exit 1
             fi
@@ -72,9 +73,13 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
+          release_commit="$(git rev-parse HEAD)"
           rehearsal_url="$(gh run list --workflow release.yml --event workflow_dispatch \
-            --branch main --commit "$(git rev-parse HEAD)" --status success --limit 20 \
-            --json displayTitle,url --jq "map(select(.displayTitle == \"Release rehearsal ${RELEASE_TAG}\"))[0].url // \"\"")"
+            --branch main --commit "${release_commit}" --limit 100 \
+            --json conclusion,headSha,event,headBranch,displayTitle,url \
+            --jq "map(select(.conclusion == \"success\" and .headSha == \"${release_commit}\"
+              and .event == \"workflow_dispatch\" and .headBranch == \"main\"
+              and .displayTitle == \"Release rehearsal ${RELEASE_TAG}\"))[0].url // \"\"")"
           if [[ -z "${rehearsal_url}" ]]; then
             echo "::error::No successful exact-commit rehearsal exists for ${RELEASE_TAG}. Run make release-certify AL_VERSION=${RELEASE_TAG} before tagging."
             exit 1
