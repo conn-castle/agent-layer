@@ -205,16 +205,20 @@ func buildCodexManagedConfigWithSystem(sys System, root string, project *config.
 		appendCodexChimeBlock(&builder)
 	}
 	if herdREnabled {
+		command, err := herdrCommand("codex", root)
+		if err != nil {
+			return codexManagedConfig{}, err
+		}
 		appendCodexSectionBreak(&builder)
 		builder.WriteString(codexHerdRBeginMarker)
 		builder.WriteByte('\n')
 		builder.WriteString("[[hooks.SessionStart]]\n[[hooks.SessionStart.hooks]]\n")
 		builder.WriteString(`type = "command"` + "\n")
-		fmt.Fprintf(&builder, "command = %q\n", herdrCommand("codex", root))
+		fmt.Fprintf(&builder, "command = %q\n", command)
 		fmt.Fprintf(&builder, "timeout = %d\n", herdrTimeout)
 		builder.WriteString("[[hooks.UserPromptSubmit]]\n[[hooks.UserPromptSubmit.hooks]]\n")
 		builder.WriteString(`type = "command"` + "\n")
-		fmt.Fprintf(&builder, "command = %q\n", herdrCommand("codex", root))
+		fmt.Fprintf(&builder, "command = %q\n", command)
 		fmt.Fprintf(&builder, "timeout = %d\n", herdrTimeout)
 		builder.WriteString(codexHerdREndMarker + "\n")
 	}
@@ -222,7 +226,10 @@ func buildCodexManagedConfigWithSystem(sys System, root string, project *config.
 	placeholderEnv := project.PlaceholderEnv()
 	var resolved []projection.ResolvedMCPServer
 	if config.HasProviderPassthroughKey(agentSpecific, config.CodexMCPServersKey) {
-		builtIn, ok := projection.RootedBuiltInDispatchServer(project.Config, projection.ClientCodex, root)
+		builtIn, ok, err := projection.RootedBuiltInDispatchServer(project.Config, projection.ClientCodex, root)
+		if err != nil {
+			return codexManagedConfig{}, err
+		}
 		if ok {
 			servers, isTable := agentSpecific[config.CodexMCPServersKey].(map[string]any)
 			if !isTable {

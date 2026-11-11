@@ -45,19 +45,36 @@ binary, so committing or first dirtying the tree changes the bytes. They explici
 and put that directory first on `PATH`.
 Sync embeds the absolute development executable as a quoted positional MCP
 launcher argument for every client. A client parent does not need these
-variables. After a rebuild replaces it, running MCP servers refuse new
-provider work until reconnected; admitted work keeps its original image. Bypass alone never promotes
-an arbitrary executable or a transient `go run` path into persistent source selection. The root marker
-must match the project's configuration root (canonical symlink spellings are
-accepted). Inherited Make environment from repository A does not persist MCP
-source selection when syncing repository B, and B honors its release pin.
+variables. Development MCP servers first run from a verified content-addressed
+snapshot under `<cache root>/images/<sha256>/al`. After successful startup
+verification, rebuilds that leave a regular executable at the selected dev path
+keep accepting work on the original image. `dispatch_options.server` reports that
+build's version and SHA-256 and a reconnect notice when the selected file's
+identity (inode, size, modification time or mode) changes or the path becomes
+unavailable. Options keeps answering for a missing or unusable path; start and
+continue refuse before projection sync or provider work to avoid writing broken
+launchers and hooks. Restore that executable, or restore projections and reconnect
+the server, before starting new provider work. Wait, inspect, output and cancel
+remain available. If snapshot creation fails, the server runs in place and still
+refuses new work after replacement. Legacy bypass without a source-root marker
+never promotes an arbitrary executable or a transient `go run` path into
+persistent MCP launcher or HerdR hook source selection. The root marker must
+match the project's configuration root (canonical symlink spellings are
+accepted). Inherited Make environment from repository A affects neither the MCP
+launcher nor the HerdR hook source selection when syncing repository B, and B
+honors its release pin.
 Same-root nested sync preserves source selection. For deliberate scratch-project
 source selection, explicitly set `AL_DEV_SOURCE_ROOT` to that scratch root;
 `AL_DEV_EXECUTABLE` may still point to this checkout's stable development binary.
 Generated argv carries the matching root marker without persisting provider env.
 
+Each distinct development build used by an MCP server start adds a full-size
+binary under `<cache root>/images/`. Entries are not pruned yet (#525). With no
+`agent-layer` MCP server running, deleting `<cache root>/images/` is safe; the
+next snapshotted server start recreates its entry.
+
 A release `al sync` without development selection restores the pin/override
-launcher. Reconnect after a rebuild replaces the executable or after changing
+launcher. Reconnect to use a rebuilt executable or after changing
 source/release mode; sync does
 not replace a running server, and a new chat may reuse it. See
 [MCP code freshness](AGENT-DISPATCH.md#mcp-code-freshness) for recovery and limits.

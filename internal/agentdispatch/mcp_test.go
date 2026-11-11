@@ -254,9 +254,18 @@ func TestMCPOptionsReportsDiscovery(t *testing.T) {
 	if len(response.Agents) == 0 {
 		t.Fatal("dispatch_options returned no agents")
 	}
+	if response.Server == nil || response.Server.Version == "" || len(response.Server.SHA256) != 64 {
+		t.Fatalf("MCP options omitted running code identity: %+v", response.Server)
+	}
+	if response.Server.Development != nil || response.Server.Snapshot {
+		t.Fatalf("in-place non-dev server reported dev/snapshot identity: %+v", response.Server)
+	}
 	expected, err := BuildOptions(OptionsRequest{Root: root})
 	if err != nil {
 		t.Fatalf("build reference options: %v", err)
+	}
+	if expected.Server != nil {
+		t.Fatalf("CLI options unexpectedly include long-lived server metadata: %+v", expected.Server)
 	}
 	if len(response.Agents) != len(expected.Agents) {
 		t.Fatalf("dispatch_options returned %d agents, CLI discovery returned %d",

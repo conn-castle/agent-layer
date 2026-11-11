@@ -590,8 +590,9 @@ directory of the intended provider CLI before it. A project
 pinned to a release older than this launcher (#513) still generates the older
 launcher; run `al update`, then `al upgrade` in the project.
 
-Running MCP servers keep their code until reconnected. A release server whose
-project pin or `AL_VERSION` selects the running release first re-executes from an
+Running MCP servers keep their code until reconnected. A same-root development
+server running the selected development executable, or a release server whose
+project pin or `AL_VERSION` selects the running release, first re-executes from an
 immutable content-addressed copy of its own image,
 `<cache root>/images/<sha256>/al` (default cache root `~/.cache/agent-layer`,
 or `AL_CACHE_DIR`). The copy is written through a synced temporary file, verified
@@ -599,29 +600,68 @@ by SHA-256, and renamed into place under a file lock. An existing entry is reuse
 only after it is re-hashed. The copy never goes into `versions/<v>`, which
 holds only checksum-verified downloads. Entries are not pruned yet (#525); with
 no `agent-layer` MCP server running, deleting `<cache root>/images/` is safe and
-the next pinned server start recreates its entry. If any step fails, the server runs in
+the next snapshotted server start recreates its entry. If any step fails, the server runs in
 place after one stderr warning, and replacing the installed `al` then makes it
-stale as before. The server records its starting selection (version and
+stale as before. A release server records its starting selection (version and
 source: pin, `AL_VERSION`, or current). `dispatch_options`, `dispatch_start`
 and `dispatch_continue` refuse new provider work when any of these hold:
 
-- that selection changes, including a pin change, pin removal or a corrupt pin
+- that release selection changes, including a pin change, pin removal or a corrupt pin
   that falls back to the running version;
-- the selected code differs from the running code;
+- the selected release code differs from the running code;
 - an unpinned server's executable, or the installed entry it was dispatched
   through, is replaced;
-- a source rebuild replaces the development executable;
+- a source rebuild replaces the development executable of a server that could
+  not create a snapshot and is running in place;
 - freshness cannot be verified.
 
 A pinned server therefore keeps accepting work after `al update` or `brew
 upgrade` replaces the global `al` while the pin still selects its release. Switching source/release mode or changing the
 launch environment also requires reconnecting; the running server cannot detect
 those projection changes. Wait, inspect, output and cancel remain available for existing runs. Already admitted work finishes on its original
-image; a rebuild does not cancel or replay it. On Linux detached workers use
-that same image; on macOS replacement before worker publication fails cleanly.
-Even a same-byte atomic replacement requires reconnecting; source wrappers
-keep the existing development executable when rebuilt output is unchanged, so
-no reconnect is needed then.
+image; a rebuild does not cancel or replay it. Snapshotted development servers
+also keep accepting new work after a rebuild. Their detached workers run the
+server's own image on both Linux and macOS. A server running in place still
+requires reconnecting after even a same-byte atomic replacement; on macOS that
+replacement before worker publication fails cleanly. Source wrappers keep the
+existing development executable when rebuilt output is unchanged.
+
+MCP `dispatch_options` includes a provider-independent `server` object that is
+absent from CLI options output: `version`, the running image's `sha256`, and
+`snapshot` (boolean).
+In development mode it also includes `development` with `executable`, `replaced`
+(boolean), and an optional `notice` (omitted when unchanged). For a snapshot-backed server, `replaced` reports changes
+to the selected dev file's identity or mode, including deletion, a non-regular
+replacement or removed execute permission. An unusable source is also reported
+as replaced when identity is unchanged (for example after access permissions
+change). A usable changed source gets a notice
+to reconnect for the current build; an unusable source gets a notice that start
+and continue are refused until the executable is restored, or projections are
+restored and the server reconnected. Identity comparison uses inode, size and modification
+time, so touching the file or replacing it with identical bytes also sets it.
+An in-place server refuses options after replacement with a freshness error
+instead of returning structured replacement status.
+
+Startup verifies the snapshot content and its selected regular executable.
+Missing or unverifiable startup evidence, including a rebuild during the
+handoff/startup verification window, refuses work until reconnect. After successful
+verification the server's own immutable snapshot gates code freshness. Options
+continues answering when the selected dev path is missing, non-regular or
+non-executable, reporting `replaced: true` and the reconnect notice. Start and
+continue perform an early usability check. Projection sync rechecks the selected
+dev executable under its project lock before any output steps, and launcher and
+HerdR construction reject an unusable source instead of persisting it or silently
+falling back to global `al`. These checks also cover CLI and nested sync, preserving
+operator-restored launchers and HerdR hooks. Restore an executable at the selected
+path to resume work, or restore project projections and reconnect the server.
+Rebuilds that leave a regular executable at that path keep accepting work on the
+original snapshot. Wait, inspect, output and cancel remain available. Changing
+or removing the executing snapshot itself still refuses options/start/continue.
+These checks use cached build identity and file stats without opening or hashing
+the selected executable on each request.
+The handoff preserves the development environment and `PATH` without adding shim
+or installed-entry markers, so child agents and nested MCP servers continue
+selecting the development executable through their inherited environment.
 
 For release updates, run `al update`, then `al upgrade` in each repository and
 reconnect the `agent-layer` MCP server once; the upgrade changes the pin.
@@ -631,7 +671,7 @@ before the project is upgraded. In Claude Code use `/mcp` to
 reconnect; for a persistent Codex app restart the app or reload MCP configuration.
 A new chat can reuse an existing server. Source workflows use `make al-sync` or
 `make al-upgrade` to build and project source despite an older repository pin;
-reconnect when a rebuild replaces the executable. Do not edit the pin manually to select source.
+reconnect to run the new code after a rebuild. Do not edit the pin manually to select source.
 Servers from before the freshness guard need this reconnect once to acquire it.
 `al sync` updates launch configuration without replacing a running server.
 Timeout configuration changes also require reconnecting and reloading projected

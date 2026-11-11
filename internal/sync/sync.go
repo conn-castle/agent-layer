@@ -13,6 +13,7 @@ import (
 	"github.com/conn-castle/agent-layer/internal/messages"
 	"github.com/conn-castle/agent-layer/internal/musepolicy"
 	"github.com/conn-castle/agent-layer/internal/projection"
+	"github.com/conn-castle/agent-layer/internal/versiondispatch"
 	"github.com/conn-castle/agent-layer/internal/warnings"
 )
 
@@ -78,6 +79,12 @@ func runWithProjectLocked(sys System, root string, project *config.ProjectConfig
 }
 
 func runWithProjectLockedContext(ctx context.Context, sys System, root string, project *config.ProjectConfig) (*Result, error) {
+	if err := versiondispatch.ValidateDevelopmentExecutable(root); err != nil {
+		return nil, err
+	}
+	if _, err := canonicalHerdRDevelopmentExecutable(root); err != nil {
+		return nil, err
+	}
 	if err := preflightMuseApprovals(project); err != nil {
 		return nil, err
 	}
@@ -161,7 +168,11 @@ func runWithProjectLockedContext(ctx context.Context, sys System, root string, p
 			func() error { return writeGrokHomeClaudeCompat(sys, root) },
 			func() error { return writeGrokChimeHook(sys, root, project) },
 			func() error {
-				return writeProviderHerdRHook(sys, root, "grok", "SessionStart", herdrCommand("grok", root))
+				command, err := herdrCommand("grok", root)
+				if err != nil {
+					return err
+				}
+				return writeProviderHerdRHook(sys, root, "grok", "SessionStart", command)
 			},
 		)
 	} else {

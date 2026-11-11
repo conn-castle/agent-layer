@@ -2,13 +2,13 @@ package projection
 
 import (
 	"os"
-	"os/exec"
 	"path/filepath"
 	"slices"
 	"sort"
 	"strings"
 
 	"github.com/conn-castle/agent-layer/internal/config"
+	"github.com/conn-castle/agent-layer/internal/fsutil"
 	"github.com/conn-castle/agent-layer/internal/versiondispatch"
 )
 
@@ -68,12 +68,15 @@ func BuiltInDispatchServer(cfg config.Config, client string) (ResolvedMCPServer,
 // InstalledExecutable) and appends its directory to PATH, so GUI and background
 // clients without the terminal PATH can start it. It falls back to al on PATH
 // when nothing was recorded or the recorded entry is no longer executable.
-func RootedBuiltInDispatchServer(cfg config.Config, client string, repoRoot string) (ResolvedMCPServer, bool) {
+func RootedBuiltInDispatchServer(cfg config.Config, client string, repoRoot string) (ResolvedMCPServer, bool, error) {
 	builtIn, ok := BuiltInDispatchServer(cfg, client)
 	if !ok {
-		return ResolvedMCPServer{}, false
+		return ResolvedMCPServer{}, false, nil
 	}
 	if repoRoot != "" {
+		if err := versiondispatch.ValidateDevelopmentExecutable(repoRoot); err != nil {
+			return ResolvedMCPServer{}, false, err
+		}
 		// Preserve the caller cwd for current binaries while keeping the actual al
 		// arguments compatible with cached older binaries, which ignore the extra
 		// environment variable and run safely from the canonical root.
@@ -84,7 +87,7 @@ func RootedBuiltInDispatchServer(cfg config.Config, client string, repoRoot stri
 		}
 		builtIn.Args = []string{"-c", builtInDispatchScript, builtInDispatchArgZero, repoRoot, versiondispatch.DevelopmentExecutable(repoRoot), installed, installedDir}
 	}
-	return builtIn, true
+	return builtIn, true, nil
 }
 
 // InstalledExecutable returns the absolute installed al entry point that the
@@ -107,7 +110,9 @@ func InstalledExecutable() string {
 			return candidate
 		}
 	}
-	if len(os.Args) == 0 || os.Getenv(versiondispatch.EnvShimActive) != "" {
+	// Dev snapshots intentionally do not export a shim marker. Their argv[0]
+	// is still a cache image, never an installed entry for regenerated launchers.
+	if len(os.Args) == 0 || os.Getenv(versiondispatch.EnvShimActive) != "" || versiondispatch.RunningFromImageCache() {
 		return ""
 	}
 	invoked := os.Args[0]
@@ -136,10 +141,10 @@ func installedEntry(path string) bool {
 		return false
 	}
 	info, err := os.Stat(path) // #nosec G703 -- only inspects a candidate executable; nothing is read or written.
-	if err != nil || !info.Mode().IsRegular() {
+	if err != nil {
 		return false
 	}
-	if _, err := exec.LookPath(path); err != nil {
+	if err := fsutil.RequireExecutable(path, info); err != nil {
 		return false
 	}
 	development := os.Getenv(versiondispatch.EnvDevelopmentExecutable)
@@ -191,7 +196,10 @@ func EffectiveMCPServers(cfg config.Config, env map[string]string, client string
 		return nil, err
 	}
 	sortServersByID(resolved)
-	builtIn, ok := RootedBuiltInDispatchServer(cfg, client, env[config.BuiltinRepoRootEnvVar])
+	builtIn, ok, err := RootedBuiltInDispatchServer(cfg, client, env[config.BuiltinRepoRootEnvVar])
+	if err != nil {
+		return nil, err
+	}
 	return withBuiltInServer(resolved, builtIn, ok), nil
 }
 

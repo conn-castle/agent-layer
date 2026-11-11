@@ -97,39 +97,144 @@ defaults, redirect provider homes, or copy credentials into a test fixture.
 Disposable projects remain appropriate for install/upgrade tests, which do not
 validate live provider authentication.
 
-Build the candidate with `make al-dev-build`, then run the following in a
-subshell from the repository root (the environment setup matches the development
-launchers in `Makefile`):
+Build and run the candidate in a unique scratch directory from the repository
+root. The command-line `AL_DEV_BIN_DIR` override keeps the candidate build out
+of the operator's `.agent-layer/tmp/dev-bin/al`. Dispatch start/continue still
+regenerate the project's MCP launchers and HerdR hooks using the scratch path.
+After **all** probe workers have terminated, leave the probe environment and
+run `make al-sync` to restore those projections to the operator's normal dev
+build before removing the scratch directory. This restoration may rebuild the
+normal dev executable; a snapshotted MCP server started from that normal dev
+path keeps serving its startup code while the path remains a regular executable,
+without reconnecting. A client that connects while the probe
+projections are active starts a candidate snapshot. After scratch removal that
+server still answers options with changed-source status, but refuses new start
+and continue requests so it cannot re-project the deleted scratch path. Restore
+projections as below, then reconnect that server to use the operator's normal dev
+build. Wait, inspect, output and cancel remain available for existing work.
+
+The nested subshell below confines the probe environment. Confirmed provider
+failures are recorded and later providers are still probed. After a confirmed
+failure, an operator can type `retry-transient` at the terminal only when the
+reported cause is explicitly transient and after waiting its requested delay;
+this permits one retry of the fresh/continuation pair on a new handle. Without a
+terminal or that explicit response, the failure is retained without retrying.
+
+Cleanup runs after every started invocation has termination confirmed, including
+confirmed failures, and projection restoration succeeds. The block exits nonzero
+if any provider still failed. An unsuccessful CLI call, invalid response or
+unconfirmed termination stops probing and retains scratch for manual recovery:
+confirm termination of every invocation started, then run `make al-sync` from
+the original shell before removing that directory:
 
 ```bash
 (
-  unset AL_RUN_DIR AL_RUN_ID AL_DISPATCH_CALLER_AGENT AL_DISPATCH_ACTIVE AL_SHIM_ACTIVE
-  unset AL_INSTALLED_EXECUTABLE
-  unset CODEX_HOME CLAUDE_CONFIG_DIR AGY_CLI_DISABLE_AUTO_UPDATE GROK_HOME
-  export PATH="$PWD/.agent-layer/tmp/dev-bin:$PATH"
-  export AL_DEV_BYPASS_VERSION_DISPATCH=1
-  export AL_DEV_EXECUTABLE="$PWD/.agent-layer/tmp/dev-bin/al"
-  export AL_DEV_SOURCE_ROOT="$PWD"
-  al dispatch options || exit 1
-  wait_for_termination() {
-    local result
-    result="$(al dispatch wait "$1" --condition termination_confirmed)" || return 1
-    printf '%s\n' "$result"
-    python3 -c 'import json, sys
+  probe_bin_dir="$(mktemp -d "${TMPDIR:-/tmp}/al-release-probe.XXXXXX")" || exit 1
+  make al-dev-build AL_DEV_BIN_DIR="$probe_bin_dir" || exit 1
+  printf 'Release probe executable: %s\n' "$probe_bin_dir/al"
+  probe_status=0
+  (
+    unset AL_RUN_DIR AL_RUN_ID AL_DISPATCH_CALLER_AGENT AL_DISPATCH_ACTIVE AL_SHIM_ACTIVE
+    unset AL_INSTALLED_EXECUTABLE
+    unset CODEX_HOME CLAUDE_CONFIG_DIR AGY_CLI_DISABLE_AUTO_UPDATE GROK_HOME
+    export PATH="$probe_bin_dir:$PATH"
+    export AL_DEV_BYPASS_VERSION_DISPATCH=1
+    export AL_DEV_EXECUTABLE="$probe_bin_dir/al"
+    export AL_DEV_SOURCE_ROOT="$PWD"
+    options="$(al dispatch options)" || exit 20
+    printf '%s\n' "$options"
+    providers="$(python3 -c 'import json, sys
+for agent in json.load(sys.stdin)["agents"]:
+    if agent["available"]:
+        print(agent["agent"])' <<<"$options")" || exit 20
+    if [ -z "$providers" ]; then
+      printf '%s\n' 'No available providers to probe; retain scratch until projections are restored.' >&2
+      exit 20
+    fi
+    # 0 = completed, 10 = confirmed provider failure, 20 = unsafe to proceed.
+    wait_for_termination() {
+      local result
+      result="$(al dispatch wait "$1" --condition termination_confirmed)" || return 20
+      printf '%s\n' "$result"
+      python3 -c 'import json, sys
 result = json.load(sys.stdin)
-sys.exit(0 if result.get("condition_met") is True and result.get("termination_confirmed") is True and result.get("state") == "completed" else 1)' <<<"$result"
-  }
-  # For each enabled, available provider, use its name from options:
-  al dispatch start --agent <provider> --prompt 'Reply with exactly release-probe-fresh. Do not use tools or modify files.' || exit 1
-  wait_for_termination <handle> || exit 1
-  # After successful completion, continue the same handle:
-  al dispatch continue <handle> --prompt 'Reply with exactly release-probe-continue. Do not use tools or modify files.' || exit 1
-  wait_for_termination <handle> || exit 1
+confirmed = result.get("condition_met") is True and result.get("termination_confirmed") is True
+state = result.get("state")
+sys.exit(0 if confirmed and state == "completed" else 10 if confirmed and state in ("failed", "cancelled", "interrupted") else 20)' <<<"$result"
+    }
+    probe_provider() {
+      local started handle status
+      started="$(al dispatch start --agent "$1" --prompt 'Reply with exactly release-probe-fresh. Do not use tools or modify files.')" || return 20
+      printf '%s\n' "$started"
+      handle="$(python3 -c 'import json, sys
+handle = json.load(sys.stdin)["handle"]
+if not isinstance(handle, str) or not handle:
+    raise ValueError("missing dispatch handle")
+print(handle)' <<<"$started")" || return 20
+      wait_for_termination "$handle"
+      status=$?
+      [ "$status" -eq 0 ] || return "$status"
+      al dispatch continue "$handle" --prompt 'Reply with exactly release-probe-continue. Do not use tools or modify files.' || return 20
+      wait_for_termination "$handle"
+    }
+    retry_transient_failure() {
+      local answer
+      printf '%s\n' 'Only after an explicitly transient error and its requested delay: type retry-transient to retry once on a new handle; otherwise press Enter.' 2>/dev/null >/dev/tty || return 1
+      IFS= read -r answer 2>/dev/null </dev/tty || return 1
+      [ "$answer" = retry-transient ]
+    }
+    probe_failed=0
+    while IFS= read -r provider <&3; do
+      attempt=1
+      while :; do
+        status=0
+        probe_provider "$provider" || status=$?
+        case "$status" in
+          0) break ;;
+          10)
+            if [ "$attempt" -eq 1 ] && retry_transient_failure; then
+              attempt=2
+              continue
+            fi
+            printf '%s\n' "Provider $provider failed after confirmed termination (attempt $attempt); continue collecting evidence." >&2
+            probe_failed=1
+            break ;;
+          *) exit 20 ;;
+        esac
+      done
+    done 3<<<"$providers"
+    exit "$probe_failed"
+  ) || probe_status=$?
+  # Only success or confirmed failures permit restoration and scratch cleanup.
+  if [ "$probe_status" -ne 0 ] && [ "$probe_status" -ne 1 ]; then
+    exit "$probe_status"
+  fi
+  # No probe worker may remain to regenerate projections after this restore.
+  make al-sync || exit 30
+  rm -rf -- "$probe_bin_dir"
+  exit "$probe_status"
 )
 ```
 
-Replace the angle-bracket placeholders with the selected provider and returned
-handle. Omit model and reasoning overrides so Agent Layer uses the local config.
+Exit statuses distinguish the cleanup outcome:
+
+- `0`: every provider probe completed; projections were restored and scratch removed.
+- `1`: scratch creation or the candidate build failed before probing, or a provider
+  failed after confirmed termination and successful restoration and cleanup. The
+  printed probe path and build/probe output distinguish these cases; a failed
+  build can leave its scratch directory behind.
+- `20`: probing stopped because a CLI call failed, a response was invalid, no
+  providers were available, or termination was unconfirmed. Scratch is retained;
+  confirm termination and restore projections before removing it.
+- `30`: projection restoration failed after all started invocations terminated.
+  Scratch is retained; fix the restoration failure and run `make al-sync` again
+  from the original shell before removing it.
+
+The block probes every enabled, available provider listed in options and captures
+each returned handle for both waits and continuation. The provider list uses a
+separate descriptor so dispatch commands cannot consume later provider names. Providers that are
+unavailable remain listed in the printed options with their reasons. Model and
+reasoning overrides are omitted so Agent Layer uses the local config.
 Record the effective targets and checkout commit alongside the CLI versions,
 fresh/continuation results, and provider session IDs. Each invocation's
 provider session ID is the `provider_session_id` field of

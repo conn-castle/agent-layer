@@ -20,7 +20,7 @@ func TestHerdRCommandPinsDevelopmentExecutableAtSync(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(candidate), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(candidate, []byte("fixture"), 0o600); err != nil {
+	if err := os.WriteFile(candidate, []byte("fixture"), 0o700); err != nil { // #nosec G306 -- executable development fixture.
 		t.Fatal(err)
 	}
 	live := filepath.Join(root, "live", "bin", "al")
@@ -36,7 +36,8 @@ func TestHerdRCommandPinsDevelopmentExecutableAtSync(t *testing.T) {
 	}
 	t.Setenv("AL_DEV_BYPASS_VERSION_DISPATCH", "1")
 	t.Setenv("AL_DEV_EXECUTABLE", live)
-	command := herdrCommand("muse", "/scratch/project")
+	t.Setenv("AL_DEV_SOURCE_ROOT", "/scratch/project")
+	command := mustHerdRCommand(t, "muse", "/scratch/project")
 	if !strings.Contains(command, "AL_DEV_BYPASS_VERSION_DISPATCH=1") || !strings.Contains(command, "AL_DEV_EXECUTABLE='"+canonicalCandidate+"'") || !strings.Contains(command, "exec '"+canonicalCandidate+"' hook herdr muse '/scratch/project'") {
 		t.Fatalf("development command did not pin its source executable: %q", command)
 	}
@@ -55,7 +56,7 @@ func TestHerdRCommandKeepsCanonicalCandidateWhenLiveSymlinkChanges(t *testing.T)
 	first := filepath.Join(root, "candidate", "al-review")
 	second := filepath.Join(root, "candidate", "al-corrected")
 	for _, path := range []string{first, second} {
-		if err := os.WriteFile(path, []byte("fixture"), 0o600); err != nil {
+		if err := os.WriteFile(path, []byte("fixture"), 0o700); err != nil { // #nosec G306 -- executable development fixture.
 			t.Fatal(err)
 		}
 	}
@@ -65,7 +66,8 @@ func TestHerdRCommandKeepsCanonicalCandidateWhenLiveSymlinkChanges(t *testing.T)
 	}
 	t.Setenv("AL_DEV_BYPASS_VERSION_DISPATCH", "1")
 	t.Setenv("AL_DEV_EXECUTABLE", live)
-	firstCommand := herdrCommand("codex", root)
+	t.Setenv("AL_DEV_SOURCE_ROOT", root)
+	firstCommand := mustHerdRCommand(t, "codex", root)
 	canonicalFirst, err := filepath.EvalSymlinks(first)
 	if err != nil {
 		t.Fatal(err)
@@ -84,7 +86,7 @@ func TestHerdRCommandKeepsCanonicalCandidateWhenLiveSymlinkChanges(t *testing.T)
 func TestHerdRCommandUsesReleaseResolutionWithoutDevelopmentContext(t *testing.T) {
 	t.Setenv("AL_DEV_BYPASS_VERSION_DISPATCH", "")
 	t.Setenv("AL_DEV_EXECUTABLE", "/scratch/candidate/al")
-	if got, want := herdrCommand("claude"), "exec al hook herdr claude # agent-layer-herdr"; got != want || !isHerdRHandler(herdrHandler(got)) {
+	if got, want := mustHerdRCommand(t, "claude"), "exec al hook herdr claude # agent-layer-herdr"; got != want || !isHerdRHandler(herdrHandler(got)) {
 		t.Fatalf("release command = %q, want %q", got, want)
 	}
 }
@@ -195,7 +197,7 @@ func TestProviderRecoveryProjectionPreservesUserHooksOnResyncAndDisable(t *testi
 				t.Fatal(err)
 			}
 			for range 2 {
-				if err := writeProviderHerdRHook(RealSystem{}, root, provider, event, herdrCommand(provider)); err != nil {
+				if err := writeProviderHerdRHook(RealSystem{}, root, provider, event, mustHerdRCommand(t, provider)); err != nil {
 					t.Fatal(err)
 				}
 			}
@@ -268,7 +270,7 @@ func TestHerdRHookCanonicalRootMatchesLogicalAndPhysicalLaunch(t *testing.T) {
 	if err := os.Symlink(root, link); err != nil {
 		t.Fatal(err)
 	}
-	if got, want := herdrCommand("codex", link), herdrCommand("codex", root); got != want {
+	if got, want := mustHerdRCommand(t, "codex", link), mustHerdRCommand(t, "codex", root); got != want {
 		t.Fatalf("logical root changes trusted hook: got %q want %q", got, want)
 	}
 }
@@ -870,4 +872,13 @@ func assertCodexManagedHookEvents(t *testing.T, content string, herdR bool, chim
 				want, event, managedCounts[event], strings.Count(content, markers[event]), content)
 		}
 	}
+}
+
+func mustHerdRCommand(t *testing.T, provider string, arguments ...string) string {
+	t.Helper()
+	command, err := herdrCommand(provider, arguments...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return command
 }

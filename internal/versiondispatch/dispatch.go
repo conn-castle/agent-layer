@@ -61,7 +61,7 @@ func maybeExec(ctx context.Context, sys System, args []string, currentVersion st
 }
 
 // maybeExecWithOptions is MaybeExec; a non-nil opts.runningImage also enables
-// the MCP server image handoff when the running release is selected.
+// the MCP server image handoff when the running executable is selected.
 func maybeExecWithOptions(ctx context.Context, sys System, args []string, currentVersion string, cwd string, opts execOptions) error {
 	if len(args) == 0 {
 		return fmt.Errorf(messages.DispatchMissingArgv0)
@@ -91,6 +91,10 @@ func maybeExecWithOptions(ctx context.Context, sys System, args []string, curren
 	}
 
 	if development && sameDevelopmentRoot(rootDir, sys.Getenv(EnvDevelopmentSourceRoot)) {
+		devExe := sys.Getenv(EnvDevelopmentExecutable)
+		if devExe != "" && opts.runningImage != nil && opts.sameAs != nil && opts.sameAs(devExe) == nil {
+			return handOffToImage(ctx, sys, opts, args, current, true)
+		}
 		return nil
 	}
 
@@ -101,7 +105,7 @@ func maybeExecWithOptions(ctx context.Context, sys System, args []string, curren
 	if requested == current {
 		// The image process prints the diagnostics below after its handoff.
 		if wantsImageHandoff(sys, opts, source, current) {
-			if err := handOffToImage(ctx, sys, opts, args, current); err != nil {
+			if err := handOffToImage(ctx, sys, opts, args, current, false); err != nil {
 				return err
 			}
 		}

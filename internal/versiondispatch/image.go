@@ -16,10 +16,10 @@ import (
 )
 
 const (
-	// imagesDirName holds immutable content-addressed copies of running release
-	// images (<cache root>/images/<sha256>/al). Pinned MCP servers run from them,
-	// so replacing the installed al does not make a server stale while its pin
-	// still selects the same release. Entries are never written to versions/<v>,
+	// imagesDirName holds immutable content-addressed copies of running
+	// images (<cache root>/images/<sha256>/al). Selected development and pinned
+	// MCP servers run from them so replacing the source executable keeps the
+	// server's startup code available. Entries are never written to versions/<v>,
 	// which holds only checksum-verified downloads.
 	imagesDirName        = "images"
 	imageName            = "al"
@@ -31,13 +31,15 @@ type execOptions struct {
 	// runningImage enables the MCP server image handoff. It returns a readable
 	// reference to the running image and the pathname this process runs from.
 	runningImage func() (source string, path string, err error)
+	// sameAs verifies that the selected development path names this image.
+	sameAs func(string) error
 }
 
-// MaybeExecMCPServer is MaybeExec for `al dispatch mcp-server`. When a pin or
-// AL_VERSION selects the running release, it first re-executes from an
-// immutable copy of this image. Any failure keeps running in place.
+// MaybeExecMCPServer is MaybeExec for `al dispatch mcp-server`. A selected
+// development executable or pinned release first re-executes from an immutable
+// copy of this image. Any failure keeps running in place.
 func MaybeExecMCPServer(ctx context.Context, args []string, currentVersion string, cwd string, stderr io.Writer) error {
-	return maybeExecWithOptions(ctx, RealSystem{StderrWriter: stderr}, args, currentVersion, cwd, execOptions{runningImage: runningImage})
+	return maybeExecWithOptions(ctx, RealSystem{StderrWriter: stderr}, args, currentVersion, cwd, execOptions{runningImage: runningImage, sameAs: executableimage.SameAs})
 }
 
 // runningImage returns a readable reference to this process's image (procfs
@@ -71,7 +73,7 @@ func wantsImageHandoff(sys System, opts execOptions, source string, current stri
 // handOffToImage re-executes this process from <cache root>/images/<sha256>/al.
 // It returns ErrDispatched after a handoff, a context error when canceled, and
 // nil to keep running in place (after one diagnostic on failure).
-func handOffToImage(ctx context.Context, sys System, opts execOptions, args []string, current string) error {
+func handOffToImage(ctx context.Context, sys System, opts execOptions, args []string, current string, development bool) error {
 	err := func() error {
 		cacheRoot, err := cacheRootDir(sys)
 		if err != nil {
@@ -97,7 +99,14 @@ func handOffToImage(ctx context.Context, sys System, opts execOptions, args []st
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		if err := execHandoff(sys, path, args, current, cacheRoot); err != nil {
+		if development {
+			// A dev snapshot is a process-local move, not version dispatch. Keep
+			// all inherited environment entries unchanged: a shim/installed-entry
+			// marker would affect projections and nested release selections.
+			if err := sys.ExecBinary(path, append([]string{path}, args[1:]...), sys.Environ()); err != nil {
+				return err
+			}
+		} else if err := execHandoff(sys, path, args, current, cacheRoot); err != nil {
 			return err
 		}
 		return ErrDispatched
@@ -105,7 +114,11 @@ func handOffToImage(ctx context.Context, sys System, opts execOptions, args []st
 	if err == nil || errors.Is(err, ErrDispatched) || ctx.Err() != nil {
 		return err
 	}
-	_, _ = fmt.Fprintf(sys.Stderr(), messages.DispatchMCPImageFallbackFmt, err)
+	diagnostic := messages.DispatchMCPImageFallbackFmt
+	if development {
+		diagnostic = messages.DispatchMCPDevImageFallbackFmt
+	}
+	_, _ = fmt.Fprintf(sys.Stderr(), diagnostic, err)
 	return nil
 }
 

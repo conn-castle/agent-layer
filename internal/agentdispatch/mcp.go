@@ -16,6 +16,7 @@ import (
 
 	"github.com/conn-castle/agent-layer/internal/agentoptions"
 	"github.com/conn-castle/agent-layer/internal/config"
+	"github.com/conn-castle/agent-layer/internal/versiondispatch"
 )
 
 // MCP tool names. They are the canonical agent-facing Agent Dispatch surface
@@ -69,7 +70,9 @@ type dispatchToolServer struct {
 	discoveryGate    chan struct{}
 	discoveryCleanup *agentoptions.DiscoveryCleanup
 	// start is the release selection at server start; freshness compares it.
-	start releaseSelection
+	start       releaseSelection
+	development developmentSelection
+	snapshot    bool
 }
 
 // OptionsInput is the (empty) input of dispatch_options.
@@ -171,13 +174,18 @@ func newDispatchToolServer(opts MCPServerOptions) (*dispatchToolServer, error) {
 		waitTimeout:      config.DispatchMCPWaitTimeout(project.Config),
 		toolTimeout:      config.DispatchMCPToolTimeout(project.Config),
 		progressInterval: mcpProgressInterval,
+		snapshot:         versiondispatch.RunningFromImageCache(),
 		policy:           policy,
 		discoveryCleanup: opts.discoveryCleanup,
 	}
 	if tools.workDir == "" {
 		tools.workDir = root
 	}
+	// Capture while the executing path is still available on platforms without
+	// procfs, before provider discovery can overlap an executable replacement.
+	currentBuildIdentity()
 	tools.start = selectRelease(root, tools.version)
+	tools.development = selectDevelopment(root, tools.snapshot)
 	return tools, nil
 }
 
@@ -293,12 +301,13 @@ func (s *dispatchToolServer) handleOptions(ctx context.Context, _ *mcp.CallToolR
 	if err != nil {
 		return nil, nil, toolError(err)
 	}
+	options.Server = s.serverCode()
 	s.policy.constrainOptions(options)
 	return nil, options, nil
 }
 
 func (s *dispatchToolServer) handleStart(ctx context.Context, _ *mcp.CallToolRequest, input StartInput) (*mcp.CallToolResult, *Result, error) {
-	if err := s.checkFreshness(); err != nil {
+	if err := s.checkProviderWork(); err != nil {
 		return nil, nil, err
 	}
 	agent := strings.TrimSpace(input.Agent)
@@ -331,7 +340,7 @@ func (s *dispatchToolServer) handleWait(ctx context.Context, request *mcp.CallTo
 }
 
 func (s *dispatchToolServer) handleContinue(ctx context.Context, _ *mcp.CallToolRequest, input ContinueInput) (*mcp.CallToolResult, *Result, error) {
-	if err := s.checkFreshness(); err != nil {
+	if err := s.checkProviderWork(); err != nil {
 		return nil, nil, err
 	}
 	var out bytes.Buffer

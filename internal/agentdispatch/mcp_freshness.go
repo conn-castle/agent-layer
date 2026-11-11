@@ -4,8 +4,10 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"github.com/conn-castle/agent-layer/internal/executableimage"
+	"github.com/conn-castle/agent-layer/internal/fsutil"
 	"github.com/conn-castle/agent-layer/internal/versiondispatch"
 )
 
@@ -46,9 +48,12 @@ func selectRelease(root, version string) releaseSelection {
 func (s *dispatchToolServer) checkFreshness() error {
 	var err error
 	selection := versiondispatch.DevelopmentExecutable(s.root)
-	if selection != "" {
+	switch {
+	case s.development.snapshot:
+		err = s.development.fresh()
+	case selection != "":
 		err = executableimage.SameAs(selection)
-	} else {
+	default:
 		current := selectRelease(s.root, s.version)
 		selection = current.version
 		err = s.start.fresh(current)
@@ -57,6 +62,19 @@ func (s *dispatchToolServer) checkFreshness() error {
 		return nil
 	}
 	return fmt.Errorf("agent-layer MCP server is stale or freshness cannot be verified (running %s, selected %q): %w. No provider work was started. Reconnect the agent-layer MCP server (Claude Code: /mcp reconnect; Codex app: restart the app or reload MCP configuration), then retry. Wait, inspect, output and cancel remain available", s.version, selection, err)
+}
+
+// checkProviderWork guards operations that regenerate project launchers and hooks.
+// Snapshot options remain readable when the selected dev source is unavailable,
+// but start and continue must not project that unusable path into client config.
+func (s *dispatchToolServer) checkProviderWork() error {
+	if err := s.checkFreshness(); err != nil {
+		return err
+	}
+	if err := versiondispatch.ValidateDevelopmentExecutable(s.root); err != nil {
+		return fmt.Errorf("%w. No provider work was started and project projections were not changed. Restore that executable, or restore project projections and reconnect the agent-layer MCP server, then retry. Options, wait, inspect, output and cancel remain available", err)
+	}
+	return nil
 }
 
 // fresh reports whether a server started with this selection still runs what a
@@ -89,4 +107,95 @@ func (start releaseSelection) fresh(current releaseSelection) error {
 		}
 	}
 	return nil
+}
+
+// developmentSelection binds a verified snapshot to the dev file selected at
+// startup. No handoff marker leaks into providers or their nested al commands.
+type developmentSelection struct {
+	path     string
+	info     os.FileInfo
+	snapshot bool
+	err      error
+}
+
+// selectDevelopment verifies that the running cache image matches the selected dev build at startup.
+func selectDevelopment(root string, snapshot bool) developmentSelection {
+	d := developmentSelection{path: versiondispatch.DevelopmentExecutable(root)}
+	if d.path == "" || !snapshot {
+		return d
+	}
+	// Treat an unverifiable image-cache launch as an error, never as a
+	// successful snapshot just because its path lies somewhere in images/.
+	d.snapshot = true
+	build := currentBuildIdentity()
+	if build.SHA256 == "" || filepath.Base(build.Executable) != "al" || filepath.Base(filepath.Dir(build.Executable)) != build.SHA256 {
+		d.err = errors.New("running snapshot identity cannot be verified")
+		return d
+	}
+	d.info, d.err = verifyDevelopmentExecutable(d.path, build.SHA256)
+	return d
+}
+
+// verifyDevelopmentExecutable binds a regular executable's identity to the startup snapshot.
+func verifyDevelopmentExecutable(path, sha string) (os.FileInfo, error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return nil, err
+	}
+	if err := fsutil.RequireExecutable(path, info); err != nil {
+		return nil, err
+	}
+	sum, err := imageSHA256(path)
+	switch {
+	case err != nil:
+		return nil, err
+	case sum != sha:
+		return nil, errors.New("development executable changed during server startup")
+	}
+	if err := executableimage.SameFile(info, path); err != nil {
+		return nil, fmt.Errorf("development executable changed during server startup: %w", err)
+	}
+	return info, nil
+}
+
+// fresh accepts a verified startup selection while the server's own snapshot stays intact.
+// Options can report selected-path changes; projection-writing operations check source usability separately.
+func (d developmentSelection) fresh() error {
+	if d.err != nil {
+		return d.err
+	}
+	if d.info == nil {
+		return errors.New("development selection cannot be verified")
+	}
+	return executableimage.Unchanged()
+}
+
+// changed compares the selected dev file's current identity and mode with startup evidence.
+// Missing or unusable paths count as changed without opening or hashing them.
+func (d developmentSelection) changed() bool {
+	if d.info == nil {
+		return false
+	}
+	if executableimage.SameFile(d.info, d.path) != nil {
+		return true
+	}
+	info, err := os.Stat(d.path)
+	return err != nil || d.info.Mode() != info.Mode()
+}
+
+// serverCode reports the running code and any change to its selected development source.
+func (s *dispatchToolServer) serverCode() *ServerCode {
+	build := currentBuildIdentity()
+	code := &ServerCode{Version: s.version, SHA256: build.SHA256, Snapshot: s.snapshot}
+	if s.development.path != "" {
+		unusable := versiondispatch.ValidateDevelopmentExecutable(s.root) != nil
+		replaced := unusable || s.development.changed()
+		code.Development = &DevelopmentCode{Executable: s.development.path, Replaced: replaced}
+		if unusable {
+			code.Development.Notice = "Selected development executable is missing or unusable; start and continue are refused until it is restored, or project projections are restored and the agent-layer MCP server is reconnected."
+		} else if replaced {
+			code.Development.Notice = "Development executable changed since the server started; reconnect the agent-layer MCP server to run the current build."
+		}
+	}
+	return code
 }

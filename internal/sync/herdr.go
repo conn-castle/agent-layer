@@ -9,9 +9,11 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/conn-castle/agent-layer/internal/fsutil"
 	"github.com/conn-castle/agent-layer/internal/herdr"
 	"github.com/conn-castle/agent-layer/internal/messages"
 	"github.com/conn-castle/agent-layer/internal/tomlpatch"
+	"github.com/conn-castle/agent-layer/internal/versiondispatch"
 )
 
 const (
@@ -34,7 +36,7 @@ const (
 // hook retaining Agent Layer's environment. A development sync records the
 // exact absolute source executable and bypass flag; release syncs use the
 // normal `al` resolution. This deliberately does not persist any other env.
-func herdrCommand(provider string, arguments ...string) string {
+func herdrCommand(provider string, arguments ...string) (string, error) {
 	argumentsText := ""
 	for index, argument := range arguments {
 		if canonical, err := filepath.EvalSymlinks(argument); index == 0 && err == nil {
@@ -42,28 +44,41 @@ func herdrCommand(provider string, arguments ...string) string {
 		}
 		argumentsText += " " + shellSingleQuote(argument)
 	}
-	executable := canonicalHerdRDevelopmentExecutable()
-	if os.Getenv("AL_DEV_BYPASS_VERSION_DISPATCH") != "" && executable != "" {
-		quoted := shellSingleQuote(executable)
-		return fmt.Sprintf("AL_DEV_BYPASS_VERSION_DISPATCH=1 AL_DEV_EXECUTABLE=%s exec %s hook herdr %s%s # %s", quoted, quoted, provider, argumentsText, agentLayerHerdRMarker)
+	executable, err := canonicalHerdRDevelopmentExecutable(arguments...)
+	if err != nil {
+		return "", err
 	}
-	return fmt.Sprintf("exec al hook herdr %s%s # %s", provider, argumentsText, agentLayerHerdRMarker)
+	if executable != "" {
+		quoted := shellSingleQuote(executable)
+		return fmt.Sprintf("AL_DEV_BYPASS_VERSION_DISPATCH=1 AL_DEV_EXECUTABLE=%s exec %s hook herdr %s%s # %s", quoted, quoted, provider, argumentsText, agentLayerHerdRMarker), nil
+	}
+	return fmt.Sprintf("exec al hook herdr %s%s # %s", provider, argumentsText, agentLayerHerdRMarker), nil
 }
 
-func canonicalHerdRDevelopmentExecutable() string {
-	executable := strings.TrimSpace(os.Getenv("AL_DEV_EXECUTABLE"))
+// canonicalHerdRDevelopmentExecutable validates and canonicalizes root-scoped dev selection.
+func canonicalHerdRDevelopmentExecutable(root ...string) (string, error) {
+	if len(root) == 0 {
+		return "", nil
+	}
+	executable := versiondispatch.DevelopmentExecutable(root[0])
+	if executable == "" {
+		return "", nil
+	}
 	if !filepath.IsAbs(executable) {
-		return ""
+		return "", errors.New("development executable must be absolute")
 	}
 	canonical, err := filepath.EvalSymlinks(executable)
-	if err != nil {
-		return ""
+	if err == nil {
+		var info os.FileInfo
+		info, err = os.Stat(canonical) // #nosec G703 -- explicit development selection; metadata only, never opened or written.
+		if err == nil {
+			err = fsutil.RequireExecutable(canonical, info)
+		}
 	}
-	canonical, err = filepath.Abs(canonical)
 	if err != nil {
-		return ""
+		return "", fmt.Errorf("selected development executable %q is missing or unusable: %w", executable, err)
 	}
-	return filepath.Clean(canonical)
+	return filepath.Clean(canonical), nil
 }
 
 func herdrHandler(command string) map[string]any {
@@ -85,7 +100,11 @@ func isHerdRHandler(value any) bool {
 }
 
 func injectClaudeHerdRHookAtRoot(settings map[string]any, root string) error {
-	return injectEventHook(settings, "SessionStart", herdrCommand("claude", root))
+	command, err := herdrCommand("claude", root)
+	if err != nil {
+		return err
+	}
+	return injectEventHook(settings, "SessionStart", command)
 }
 
 func injectEventHook(settings map[string]any, event, command string) error {
@@ -176,7 +195,11 @@ func writeAgyHerdRHook(sys System, root string) error {
 	} else if err := json.Unmarshal(data, &document); err != nil || document == nil {
 		return fmt.Errorf("invalid Antigravity hooks %s", path)
 	}
-	document[agentLayerHerdRMarker] = map[string]any{herdrEnabledKey: true, "PreInvocation": []any{herdrHandler(herdrCommand(herdrAgyProvider, root))}}
+	command, err := herdrCommand(herdrAgyProvider, root)
+	if err != nil {
+		return err
+	}
+	document[agentLayerHerdRMarker] = map[string]any{herdrEnabledKey: true, "PreInvocation": []any{herdrHandler(command)}}
 	encoded, err := sys.MarshalIndent(document, "", "  ")
 	if err != nil {
 		return err
@@ -369,7 +392,11 @@ func injectMuseHerdRHook(document map[string]any, enabled bool, root string) err
 			return fmt.Errorf("muse hooks.%s: %w", event, err)
 		}
 		if enabled {
-			entries = append(entries, map[string]any{hooksKey: []any{herdrHandler(herdrCommand("muse", root))}})
+			command, err := herdrCommand("muse", root)
+			if err != nil {
+				return err
+			}
+			entries = append(entries, map[string]any{hooksKey: []any{herdrHandler(command)}})
 		}
 		if len(entries) == 0 {
 			delete(hooks, event)
@@ -428,7 +455,10 @@ func (e *codexTomlEditor) applyCodexHerdRHook(path string, enabled bool, root ..
 	if e.rootInlineTableExists(hooksKey) {
 		return false, fmt.Errorf(messages.SyncCodexExistingConfigShapeConflictFmt, path, hooksKey)
 	}
-	command := herdrCommand("codex", root...)
+	command, err := herdrCommand("codex", root...)
+	if err != nil {
+		return false, err
+	}
 	e.appendBlock([]string{codexHerdRBeginMarker,
 		"[[hooks.SessionStart]]", "[[hooks.SessionStart.hooks]]", herdrCommandHookType, fmt.Sprintf("command = %q", command), fmt.Sprintf("timeout = %d", herdrTimeout),
 		"[[hooks.UserPromptSubmit]]", "[[hooks.UserPromptSubmit.hooks]]", herdrCommandHookType, fmt.Sprintf("command = %q", command), fmt.Sprintf("timeout = %d", herdrTimeout),

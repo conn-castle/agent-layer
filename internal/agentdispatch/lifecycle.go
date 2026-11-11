@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/conn-castle/agent-layer/internal/executableimage"
+	"github.com/conn-castle/agent-layer/internal/fsutil"
 )
 
 type agentLayerBuildIdentity struct {
@@ -24,18 +25,12 @@ type agentLayerBuildIdentity struct {
 var buildIdentityOnce sync.Once
 var executingBuild agentLayerBuildIdentity
 
+// currentBuildIdentity captures executable provenance once for this process.
 func currentBuildIdentity() agentLayerBuildIdentity {
 	buildIdentityOnce.Do(func() {
 		executingBuild.Executable, _ = os.Executable()
 		executable, _ := executableimage.Self()
-		file, err := os.Open(executable) // #nosec G304 -- own executable, no caller-controlled path.
-		if err == nil {
-			h := sha256.New()
-			if _, err := io.Copy(h, file); err == nil {
-				executingBuild.SHA256 = hex.EncodeToString(h.Sum(nil))
-			}
-			_ = file.Close()
-		}
+		executingBuild.SHA256, _ = imageSHA256(executable)
 		if info, ok := debug.ReadBuildInfo(); ok {
 			executingBuild.ModuleVersion = info.Main.Version
 			executingBuild.GoVersion = info.GoVersion
@@ -50,6 +45,21 @@ func currentBuildIdentity() agentLayerBuildIdentity {
 		}
 	})
 	return executingBuild
+}
+
+// imageSHA256 streams a regular executable file into its hex SHA-256 identity.
+// Nonblocking regular-file opening prevents a replaced source from becoming a FIFO hang.
+func imageSHA256(path string) (string, error) {
+	file, err := fsutil.OpenRegularFile(path)
+	if err != nil {
+		return "", err
+	}
+	defer func() { _ = file.Close() }()
+	h := sha256.New()
+	if _, err := io.Copy(h, file); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
 // Fixed categories, IDs and local observations only. Never copy a provider
