@@ -40,38 +40,46 @@ type commandRule struct {
 	Effect     string `json:"effect"`
 	Durability string `json:"durability"`
 	Rule       struct {
-		Kind string   `json:"kind"`
-		Root string   `json:"workspace_root"`
-		Argv []string `json:"argv_prefix"`
+		Kind string `json:"kind"`
+		Root string `json:"workspace_root"`
+		Argv any    `json:"argv_prefix"`
 	} `json:"rule"`
+	valid     bool
+	validArgv bool
+	argv      []string
 }
 
-// Unexpected shapes are unowned. Extra Muse fields are intentionally allowed.
-func ownedCommandRule(raw json.RawMessage) (commandRule, bool) {
+func decodeCommandRule(raw json.RawMessage) commandRule {
 	var rule commandRule
-	if json.Unmarshal(raw, &rule) != nil {
-		return rule, false
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	// Unrecognized numeric argv values must not invalidate ownership metadata.
+	decoder.UseNumber()
+	rule.valid = decoder.Decode(&rule) == nil
+	args, ok := rule.Rule.Argv.([]any)
+	if !rule.valid || !ok || len(args) == 0 {
+		return rule
 	}
-	// encoding/json accepts null as the zero string in []string. A native
-	// prefix containing null is an unexpected shape, not ownership proof.
-	var shape struct {
-		Rule struct {
-			Argv []json.RawMessage `json:"argv_prefix"`
-		} `json:"rule"`
+	rule.argv = make([]string, len(args))
+	for i, arg := range args {
+		value, ok := arg.(string)
+		if !ok {
+			return rule
+		} // Includes null elements from this same decode.
+		rule.argv[i] = value
 	}
-	if json.Unmarshal(raw, &shape) != nil {
-		return rule, false
-	}
-	for _, arg := range shape.Rule.Argv {
-		if bytes.Equal(arg, []byte("null")) {
-			return rule, false
-		}
-	}
+	rule.validArgv = rule.argv[0] != ""
+	return rule
+}
+
+// Ignore argv shape so current-root cleanup can retire malformed owned rules.
+func (rule commandRule) matchesWorkspace(root string) bool {
+	return rule.valid && rule.Reason == "agent-layer:"+root && rule.Effect == policyAllow &&
+		rule.Durability == policyLocalPersistent && rule.Rule.Kind == shellCommandArgvPrefix && rule.Rule.Root == root
+}
+
+func (rule commandRule) strictlyOwned() bool {
 	root := rule.Rule.Root
-	return rule, filepath.IsAbs(root) && filepath.Clean(root) == root &&
-		rule.Reason == "agent-layer:"+root && rule.Effect == policyAllow &&
-		rule.Durability == policyLocalPersistent && rule.Rule.Kind == shellCommandArgvPrefix &&
-		len(rule.Rule.Argv) > 0 && rule.Rule.Argv[0] != ""
+	return rule.matchesWorkspace(root) && filepath.IsAbs(root) && filepath.Clean(root) == root && rule.validArgv
 }
 
 // RootRules describes the number of strictly owned rules at an exact root.
@@ -117,7 +125,8 @@ func Inspect(ctx context.Context, directory, currentRoot string) (Inspection, er
 		if err := ctx.Err(); err != nil {
 			return Inspection{}, err
 		}
-		if rule, owned := ownedCommandRule(raw); owned {
+		rule := decodeCommandRule(raw)
+		if rule.strictlyOwned() {
 			counts[rule.Rule.Root]++
 			result.Total++
 		}

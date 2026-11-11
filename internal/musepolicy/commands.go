@@ -159,13 +159,11 @@ func syncCommands(dir, root string, commands []string, prune bool) (err error) {
 		}
 		owned, candidates := false, false
 		for _, raw := range existing.Rules {
-			var rule struct {
-				Reason string `json:"reason"`
-			}
-			if json.Unmarshal(raw, &rule) == nil && rule.Reason == owner {
+			rule := decodeCommandRule(raw)
+			if rule.Reason == owner {
 				owned = true
 			}
-			if _, candidate := ownedCommandRule(raw); candidate {
+			if rule.strictlyOwned() {
 				candidates = true
 			}
 		}
@@ -219,19 +217,15 @@ func syncCommands(dir, root string, commands []string, prune bool) (err error) {
 	seen := make(map[string]bool, len(wanted))
 	orphans := make(map[string]bool)
 	for _, raw := range document.Rules {
-		if workspaceCommandRule(raw, root) {
-			// Current-root cleanup preserves the original ownership breadth:
-			// malformed argv is ours to retire, not foreign state to preserve.
-			rule, valid := ownedCommandRule(raw)
-			key := prefixKey(rule.Rule.Argv)
-			if !valid || !wanted[key] || seen[key] {
+		rule := decodeCommandRule(raw)
+		if rule.matchesWorkspace(root) {
+			key := prefixKey(rule.argv)
+			if !rule.strictlyOwned() || !wanted[key] || seen[key] {
 				continue
 			}
 			seen[key] = true
-		} else if prune {
-			if rule, owned := ownedCommandRule(raw); owned && rule.Rule.Root != root && orphanRoot(dir, rule.Rule.Root, orphans) {
-				continue
-			}
+		} else if prune && !retainOrphanRule(dir, rule, orphans) {
+			continue
 		}
 		kept = append(kept, raw)
 	}
@@ -241,23 +235,6 @@ func syncCommands(dir, root string, commands []string, prune bool) (err error) {
 		}
 	}
 	return writeRulesIfChanged(path, document.Rules, kept)
-}
-
-// workspaceCommandRule deliberately ignores argv shape. Current-root cleanup
-// may retire any command rule with our exact ownership metadata, as before.
-func workspaceCommandRule(raw json.RawMessage, root string) bool {
-	var rule struct {
-		Reason     string `json:"reason"`
-		Effect     string `json:"effect"`
-		Durability string `json:"durability"`
-		Rule       struct {
-			Kind string `json:"kind"`
-			Root string `json:"workspace_root"`
-		} `json:"rule"`
-	}
-	return json.Unmarshal(raw, &rule) == nil && rule.Reason == "agent-layer:"+root &&
-		rule.Effect == policyAllow && rule.Durability == policyLocalPersistent &&
-		rule.Rule.Kind == shellCommandArgvPrefix && rule.Rule.Root == root
 }
 
 func openPolicyLock(dir string) (*os.File, error) {
@@ -295,12 +272,18 @@ func pruneOrphans(dir, root string) {
 	kept := make([]json.RawMessage, 0, len(document.Rules))
 	orphans := make(map[string]bool)
 	for _, raw := range document.Rules {
-		if rule, owned := ownedCommandRule(raw); owned && rule.Rule.Root != root && orphanRoot(dir, rule.Rule.Root, orphans) {
+		rule := decodeCommandRule(raw)
+		if !rule.matchesWorkspace(root) && !retainOrphanRule(dir, rule, orphans) {
 			continue
 		}
 		kept = append(kept, raw)
 	}
 	_ = writeRulesIfChanged(path, document.Rules, kept)
+}
+
+// retainOrphanRule preserves uncertain or unowned rules in either locked pass.
+func retainOrphanRule(dir string, rule commandRule, cache map[string]bool) bool {
+	return !rule.strictlyOwned() || !orphanRoot(dir, rule.Rule.Root, cache)
 }
 
 // Call only under approval-policy.lock, after reading the latest rule list.

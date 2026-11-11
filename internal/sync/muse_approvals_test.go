@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+	"golang.org/x/sys/unix"
 
 	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/musepolicy"
@@ -305,8 +306,6 @@ func TestMuseEmptyCommandsPreserveUnrelatedUnsupportedNativeState(t *testing.T) 
 				if owner == "none" || state == "symlink directory" {
 					require.NoFileExists(t, filepath.Join(realDir, "approval-policy.lock"))
 				}
-				// With other owned candidates, optional pruning now validates
-				// the schema once under its lock; the policy stays unchanged.
 			})
 		}
 	}
@@ -379,7 +378,7 @@ func TestMuseReceiptRetirementRejectsUncleanPaths(t *testing.T) {
 }
 
 func TestMuseReceiptErrorIdentifiesReceiptAndPathOnce(t *testing.T) {
-	for _, kind := range []string{"invalid marker", "malformed JSON", "empty document", "wrong root", "unreadable"} {
+	for _, kind := range []string{"invalid marker", "malformed JSON", "empty document", "empty file", "wrong root", "unreadable", "unreadable parent", "symlink", "directory", "FIFO"} {
 		t.Run(kind, func(t *testing.T) {
 			root := t.TempDir()
 			t.Setenv("XDG_CONFIG_HOME", t.TempDir())
@@ -391,24 +390,57 @@ func TestMuseReceiptErrorIdentifiesReceiptAndPathOnce(t *testing.T) {
 				data = []byte(`{`)
 			case "empty document":
 				data = []byte(`{}`)
+			case "empty file":
+				data = nil
 			case "wrong root":
 				var err error
 				data, err = json.Marshal(musePolicyReceipt{GeneratedBy: "agent-layer", Directory: filepath.Join(t.TempDir(), "muse"), Root: t.TempDir()})
 				require.NoError(t, err)
 			}
 			require.NoError(t, os.WriteFile(path, data, 0o600))
-			if kind == "unreadable" {
+			readFailure := false
+			switch kind {
+			case "unreadable", "unreadable parent":
 				if os.Geteuid() == 0 {
 					t.Skip("root bypasses permission checks")
 				}
-				require.NoError(t, os.Chmod(path, 0))
-				t.Cleanup(func() { require.NoError(t, os.Chmod(path, 0o600)) })
+				denied := path
+				if kind == "unreadable parent" {
+					denied = filepath.Dir(path)
+				}
+				info, err := os.Stat(denied)
+				require.NoError(t, err)
+				require.NoError(t, os.Chmod(denied, 0))
+				t.Cleanup(func() { require.NoError(t, os.Chmod(denied, info.Mode().Perm())) })
+				readFailure = true
+			case "symlink":
+				target := filepath.Join(t.TempDir(), "receipt")
+				require.NoError(t, os.Rename(path, target))
+				require.NoError(t, os.Symlink(target, path))
+				readFailure = true
+			case "directory", "FIFO":
+				require.NoError(t, os.Remove(path))
+				if kind == "directory" {
+					require.NoError(t, os.Mkdir(path, 0o700))
+				} else {
+					require.NoError(t, unix.Mkfifo(path, 0o600))
+				}
+				readFailure = true
 			}
 			project := &config.ProjectConfig{Config: config.Config{Agents: config.AgentsConfig{Muse: config.AgentConfig{Enabled: configBool(false)}}}}
 			err := writeMuseApprovals(RealSystem{}, root, project)
 			require.Error(t, err)
-			require.Equal(t, 1, strings.Count(err.Error(), "invalid Agent Layer Muse policy ownership receipt"))
+			prefix := "invalid Agent Layer Muse policy ownership receipt "
+			if readFailure {
+				prefix = "read Muse policy ownership receipt "
+			}
+			require.True(t, strings.HasPrefix(err.Error(), prefix+path+": "), err.Error())
+			require.NotContains(t, err.Error(), "Muse settings")
+			require.Equal(t, 1, strings.Count(err.Error(), "policy ownership receipt"))
 			require.Equal(t, 1, strings.Count(err.Error(), path))
+			if kind == "unreadable" || kind == "unreadable parent" {
+				require.ErrorIs(t, err, os.ErrPermission)
+			}
 		})
 	}
 }

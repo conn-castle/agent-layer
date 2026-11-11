@@ -84,9 +84,9 @@ func TestCommandPolicyPreservesRawRulesAndAppendsOnlyNew(t *testing.T) {
 	require.Equal(t, rules[0], actual[0]) // Native user rule.
 	require.Equal(t, rules[1], actual[1]) // Kept at its index, extra field intact.
 	require.Equal(t, rules[3], actual[2]) // Other root keeps its bytes and order.
-	appended, owned := ownedCommandRule(actual[3])
-	require.True(t, owned)
-	require.Equal(t, []string{"python"}, appended.Rule.Argv)
+	appended := decodeCommandRule(actual[3])
+	require.True(t, appended.strictlyOwned())
+	require.Equal(t, []string{"python"}, appended.argv)
 }
 
 func TestCommandPolicyCompactNativeFormattingHasNoChurn(t *testing.T) {
@@ -122,7 +122,7 @@ func TestEnabledCommandPolicyPrunesOnlyProvableOrphans(t *testing.T) {
 		{"malformed receipt", false}, {"invalid marker", false}, {"relative directory", false},
 		{"wrong directory name", false}, {"relative receipt root", false},
 		{"symlink muse directory", false}, {"symlink receipt", false},
-		{"nonregular receipt", false}, {"non-directory muse", false}, {"symlink root", false}, {"non-directory root", false},
+		{"nonregular receipt", false}, {"non-directory muse", false}, {"symlink root", false}, {"non-directory root", true},
 		{"permission denied", false}, {"receipt read denied", false}, {"unclean receipt paths", false},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -295,8 +295,8 @@ func TestCommandRetirementDoesNotPruneOtherRoots(t *testing.T) {
 	require.NoError(t, SyncCommands(dir, root, nil))
 	rules := readRules(t, dir)
 	require.Len(t, rules, 1)
-	rule, owned := ownedCommandRule(rules[0])
-	require.True(t, owned)
+	rule := decodeCommandRule(rules[0])
+	require.True(t, rule.strictlyOwned())
 	require.Equal(t, other, rule.Rule.Root)
 }
 
@@ -638,7 +638,7 @@ func TestCommandPolicyRetiresMalformedCurrentRulesOnly(t *testing.T) {
 			require.NoError(t, SyncCommands(dir, root, []string{"git status"}))
 			valid := readRules(t, dir)[0]
 			var malformed []json.RawMessage
-			for _, argv := range []any{[]string{""}, []any{nil}, []string{}, nil, []any{"git", nil}, []any{1}, map[string]any{"future": true}} {
+			for _, argv := range []any{[]string{""}, []any{nil}, []string{}, nil, []any{"git", nil}, []any{1}, []any{json.Number("1e1000")}, map[string]any{"future": true}} {
 				var entry map[string]any
 				require.NoError(t, json.Unmarshal(valid, &entry))
 				entry["rule"].(map[string]any)["argv_prefix"] = argv
@@ -678,9 +678,9 @@ func TestCommandPolicyRetiresMalformedCurrentRulesOnly(t *testing.T) {
 			if mode == "enabled desired" {
 				require.Len(t, actual, 5)
 				require.Equal(t, []json.RawMessage{user, valid, foreignRaw, unrelatedRaw}, actual[:4])
-				added, owned := ownedCommandRule(actual[4])
-				require.True(t, owned)
-				require.Equal(t, []string{"go"}, added.Rule.Argv)
+				added := decodeCommandRule(actual[4])
+				require.True(t, added.strictlyOwned())
+				require.Equal(t, []string{"go"}, added.argv)
 			} else {
 				require.Equal(t, []json.RawMessage{user, foreignRaw, unrelatedRaw}, actual)
 			}

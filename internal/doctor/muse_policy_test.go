@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+	"golang.org/x/sys/unix"
 
 	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/messages"
@@ -334,5 +335,45 @@ func TestCheckMusePolicyUnknownRootsAreBoundedAndSorted(t *testing.T) {
 	require.Contains(t, results[1].Recommendation, "unreadable, malformed or unclean")
 	require.Contains(t, results[1].Recommendation, "`.muse/agent-layer-policy.json`")
 	require.Contains(t, results[1].Recommendation, "run `al sync` there")
-	require.Contains(t, results[1].Recommendation, "delete the directory if it is disposable")
+	require.Contains(t, results[1].Recommendation, "remove or rename that path")
+	require.Contains(t, results[1].Recommendation, "next Muse-enabled sync can prune its grants")
+}
+
+func TestCheckMusePolicyNonDirectoryRootsAreOrphans(t *testing.T) {
+	for _, kind := range []string{"file", "FIFO", "symlink"} {
+		t.Run(kind, func(t *testing.T) {
+			base, root := doctorPolicyTempDir(t), doctorPolicyTempDir(t)
+			t.Setenv("XDG_CONFIG_HOME", base)
+			dir := filepath.Join(base, "muse")
+			require.NoError(t, musepolicy.SyncCommands(dir, root, []string{"make"}))
+			require.NoError(t, os.RemoveAll(root))
+			switch kind {
+			case "file":
+				require.NoError(t, os.WriteFile(root, nil, 0o600))
+			case "FIFO":
+				require.NoError(t, unix.Mkfifo(root, 0o600))
+			case "symlink":
+				require.NoError(t, os.Symlink(doctorPolicyTempDir(t), root))
+			}
+			cfg := museDoctorConfig(t, true)
+			results := CheckMusePolicy(context.Background(), cfg)
+			require.Len(t, results, 2)
+			require.Equal(t, StatusWarn, results[1].Status)
+			require.Contains(t, results[1].Message, root)
+			if kind == "symlink" {
+				require.Contains(t, results[1].Message, "unverifiable ownership (grants kept)")
+				require.Contains(t, results[1].Recommendation, "remove or rename that path")
+			} else {
+				require.Contains(t, results[1].Message, "orphaned Muse policy roots")
+			}
+			require.NoError(t, musepolicy.SyncEnabledCommands(dir, cfg.Root, nil))
+			inspection, err := musepolicy.Inspect(context.Background(), dir, cfg.Root)
+			require.NoError(t, err)
+			if kind == "symlink" {
+				require.Equal(t, []musepolicy.RootRules{{Root: root, Count: 1}}, inspection.Unknown)
+			} else {
+				require.Zero(t, inspection.Total)
+			}
+		})
+	}
 }

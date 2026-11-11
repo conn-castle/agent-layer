@@ -36,7 +36,7 @@ func writeMuseApprovals(sys System, root string, project *config.ProjectConfig) 
 	receiptPath := filepath.Join(dir, "agent-layer-policy.json")
 	_, receiptErr := sys.Lstat(receiptPath)
 	if receiptErr != nil && !os.IsNotExist(receiptErr) {
-		return fmt.Errorf("stat Muse policy ownership receipt: %w", receiptErr)
+		return musePolicyReceiptReadError(receiptPath, receiptErr)
 	}
 	if !enabled && os.IsNotExist(receiptErr) {
 		owned, err := museLocalOwnershipEvidence(sys, path, "al hook muse-mcp ", museApprovalHookMarker)

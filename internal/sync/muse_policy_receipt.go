@@ -1,7 +1,7 @@
 package sync
 
 import (
-	"encoding/json"
+	"bytes"
 	"errors"
 	"fmt"
 	"os"
@@ -15,31 +15,36 @@ import (
 type musePolicyReceipt = musepolicy.Receipt
 
 func readMusePolicyReceipt(sys System, path string) (*musePolicyReceipt, error) {
-	document, err := readMuseSettings(sys, path)
-	if err != nil {
-		// OS path errors already identify the file; avoid repeating the path
-		// from readMuseSettings while keeping the underlying error available.
-		var pathErr *os.PathError
-		if errors.As(err, &pathErr) {
-			err = pathErr
-		}
-		return nil, fmt.Errorf("invalid Agent Layer Muse policy ownership receipt: %w", err)
+	info, err := sys.Lstat(path)
+	if os.IsNotExist(err) {
+		return nil, nil
 	}
-	if len(document) == 0 {
-		if _, err := sys.Lstat(path); os.IsNotExist(err) {
-			return nil, nil
-		}
+	if err != nil {
+		return nil, musePolicyReceiptReadError(path, err)
+	}
+	if !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 {
+		return nil, fmt.Errorf("read Muse policy ownership receipt %s: must be a regular file, not a symlink or special file", path)
+	}
+	data, err := sys.ReadFile(path)
+	if err != nil {
+		return nil, musePolicyReceiptReadError(path, err)
+	}
+	if len(bytes.TrimSpace(data)) == 0 {
 		return nil, fmt.Errorf("invalid Agent Layer Muse policy ownership receipt %s: empty document", path)
-	}
-	data, err := json.Marshal(document)
-	if err != nil {
-		return nil, fmt.Errorf("invalid Agent Layer Muse policy ownership receipt %s: %w", path, err)
 	}
 	receipt, err := musepolicy.ParseReceipt(data)
 	if err != nil {
 		return nil, fmt.Errorf("invalid Agent Layer Muse policy ownership receipt %s: %w", path, err)
 	}
 	return receipt, nil
+}
+
+func musePolicyReceiptReadError(path string, err error) error {
+	var pathErr *os.PathError
+	if errors.As(err, &pathErr) {
+		err = fmt.Errorf("%s: %w", pathErr.Op, pathErr.Err)
+	}
+	return fmt.Errorf("read Muse policy ownership receipt %s: %w", path, err)
 }
 
 // musePolicyRetirementDirectory returns the native policy directory recorded

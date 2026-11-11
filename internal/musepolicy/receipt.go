@@ -48,8 +48,11 @@ func ownershipState(directory, root string) ownership {
 	if os.IsNotExist(err) {
 		return ownershipOrphan
 	}
-	if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+	if err != nil || info.Mode()&os.ModeSymlink != 0 {
 		return ownershipUnknown
+	}
+	if !info.IsDir() {
+		return ownershipOrphan
 	}
 	local := filepath.Join(root, ".muse")
 	info, err = os.Lstat(local)
