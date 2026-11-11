@@ -49,7 +49,7 @@ func (s *dispatchToolServer) checkFreshness() error {
 	selection := versiondispatch.DevelopmentExecutable(s.root)
 	switch {
 	case s.development.snapshot:
-		err = s.development.fresh(selection)
+		err = s.development.fresh()
 	case selection != "":
 		err = executableimage.SameAs(selection)
 	default:
@@ -126,22 +126,24 @@ func selectDevelopment(root string) developmentSelection {
 	case err != nil:
 		d.err = err
 	case sum != build.SHA256:
-		d.err = errors.New("running snapshot differs from the development executable selected at startup")
+		d.err = errors.New("development executable changed during server startup")
 	default:
-		d.err = executableimage.SameFile(d.info, d.path)
+		if err := executableimage.SameFile(d.info, d.path); err != nil {
+			d.err = fmt.Errorf("development executable changed during server startup: %w", err)
+		}
 	}
 	return d
 }
 
-func (d developmentSelection) fresh(path string) error {
+func (d developmentSelection) fresh() error {
 	if d.err != nil {
 		return d.err
 	}
-	if path != d.path || d.info == nil {
-		return errors.New("development selection changed or cannot be verified")
+	if d.info == nil {
+		return errors.New("development selection cannot be verified")
 	}
-	// A missing/unreadable development file is not evidence of a rebuild.
-	info, err := os.Stat(path) // #nosec G703 -- identity and executable-mode check only.
+	// Refuse missing or unstatable development files as unverifiable.
+	info, err := os.Stat(d.path) // #nosec G703 -- identity and executable-mode check only.
 	if err != nil {
 		return err
 	}
@@ -158,7 +160,7 @@ func (s *dispatchToolServer) serverCode() *ServerCode {
 		replaced := s.development.info != nil && executableimage.SameFile(s.development.info, s.development.path) != nil
 		code.Development = &DevelopmentCode{Executable: s.development.path, Replaced: replaced}
 		if replaced {
-			code.Development.Notice = "Development executable replaced; reconnect the agent-layer MCP server to run the new build."
+			code.Development.Notice = "Development executable changed since the server started; reconnect the agent-layer MCP server to run the current build."
 		}
 	}
 	return code

@@ -28,7 +28,7 @@ type ServerCode struct {
 	Development *DevelopmentCode `json:"development,omitempty"`
 }
 
-// DevelopmentCode reports whether reconnecting would select a rebuilt executable.
+// DevelopmentCode reports whether the selected executable's file identity changed since startup.
 type DevelopmentCode struct {
 	Executable string `json:"executable"`
 	Replaced   bool   `json:"replaced"`

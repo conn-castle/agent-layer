@@ -368,6 +368,12 @@ printf '%%s\n' '{"type":"thread.started","thread_id":"11111111-1111-4111-8111-11
 			// must match its content at startup as well as its cache key.
 			session := connect(t, root, runner, t.TempDir(), "AL_CACHE_DIR="+cache, "AL_DEV_EXECUTABLE="+b, "AL_DEV_SOURCE_ROOT="+root, "AL_DEV_BYPASS_VERSION_DISPATCH=1")
 			assertStaleProviderTools(t, session, "unknown")
+			if identity == hex.EncodeToString(sum[:]) {
+				result := callMCPTool(t, session, ToolOptions, OptionsInput{})
+				if !strings.Contains(toolResultText(result), "development executable changed during server startup") {
+					t.Fatalf("startup replacement was not identified: %s", toolResultText(result))
+				}
+			}
 		}
 	})
 	t.Run("unpinned dispatched server tracks the installed entry", func(t *testing.T) {
@@ -417,7 +423,26 @@ printf '%%s\n' '{"type":"thread.started","thread_id":"11111111-1111-4111-8111-11
 		if err := os.WriteFile(filepath.Join(bin, AgentCodex), []byte(stub), 0o700); err != nil {
 			t.Fatal(err)
 		} // #nosec G306 -- synthetic provider.
+		// Let initial options discovery finish, then re-arm the version barrier
+		// so the later start is still admitted before replacement.
+		freshnessWrite(t, filepath.Join(signalDir, "release"), "")
 		session := connect(t, root, image, bin, "AL_DEV_EXECUTABLE="+image, "AL_DEV_SOURCE_ROOT="+root, "AL_DEV_BYPASS_VERSION_DISPATCH=1", "AL_TEST_SIGNALS="+signalDir)
+		initial := callMCPTool(t, session, ToolOptions, OptionsInput{})
+		if initial.IsError {
+			t.Fatalf("initial dev options: %s", toolResultText(initial))
+		}
+		var before OptionsResponse
+		if err := json.Unmarshal([]byte(toolResultText(initial)), &before); err != nil {
+			t.Fatal(err)
+		}
+		if before.Server == nil || !before.Server.Snapshot || before.Server.Development == nil || before.Server.Development.Replaced || before.Server.Development.Notice != "" {
+			t.Fatalf("unchanged dev snapshot options: %+v", before.Server)
+		}
+		for _, name := range []string{"entered", "release"} {
+			if err := os.Remove(filepath.Join(signalDir, name)); err != nil {
+				t.Fatal(err)
+			}
+		}
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
 		type response struct {

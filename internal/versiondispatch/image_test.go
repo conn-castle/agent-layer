@@ -12,6 +12,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/conn-castle/agent-layer/internal/messages"
 )
 
 type imageHandoffFixture struct {
@@ -311,6 +313,11 @@ func TestDevelopmentImageHandoff(t *testing.T) {
 			case "copy fails", "exec fails":
 				if err != nil || strings.Count(f.stderr.String(), "immutable image copy") != 1 {
 					t.Fatalf("fallback: %v %s", err, f.stderr.String())
+				}
+				// Exec failure has a deterministic cause, so verify that dev mode
+				// selects the dev-specific diagnostic rather than the release one.
+				if mode == "exec fails" && f.stderr.String() != fmt.Sprintf(messages.DispatchMCPDevImageFallbackFmt, f.execErr) {
+					t.Fatalf("wrong dev fallback diagnostic: %s", f.stderr.String())
 				}
 			case "canceled":
 				if !errors.Is(err, context.Canceled) || f.execPath != "" {

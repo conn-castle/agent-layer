@@ -98,37 +98,53 @@ Disposable projects remain appropriate for install/upgrade tests, which do not
 validate live provider authentication.
 
 Build and run the candidate in a unique scratch directory from the repository
-root. The command-line `AL_DEV_BIN_DIR` override keeps the operator's
-`.agent-layer/tmp/dev-bin/al` and connected MCP server untouched; the probes do
-not require reconnecting that server. Keep the candidate until all probe workers
-have terminated, then remove the scratch directory if no longer needed:
+root. The command-line `AL_DEV_BIN_DIR` override keeps the candidate build out
+of the operator's `.agent-layer/tmp/dev-bin/al`. Dispatch start/continue still
+regenerate the project's MCP launchers and HerdR hooks using the scratch path.
+After **all** probe workers have terminated, leave the probe environment and
+run `make al-sync` to restore those projections to the operator's normal dev
+build before removing the scratch directory. This restoration may rebuild the
+normal dev executable; an already connected snapshotted MCP server keeps serving
+its startup code and needs no reconnect.
+
+The nested subshell below confines the probe environment. Cleanup runs only
+after every probe succeeds with termination confirmed and projection restoration
+succeeds. If a probe fails, retain the printed scratch directory, confirm
+termination of every invocation started, then restore projections with
+`make al-sync` from the original shell before removing that directory:
 
 ```bash
 (
   probe_bin_dir="$(mktemp -d "${TMPDIR:-/tmp}/al-release-probe.XXXXXX")" || exit 1
   make al-dev-build AL_DEV_BIN_DIR="$probe_bin_dir" || exit 1
-  unset AL_RUN_DIR AL_RUN_ID AL_DISPATCH_CALLER_AGENT AL_DISPATCH_ACTIVE AL_SHIM_ACTIVE
-  unset AL_INSTALLED_EXECUTABLE
-  unset CODEX_HOME CLAUDE_CONFIG_DIR AGY_CLI_DISABLE_AUTO_UPDATE GROK_HOME
-  export PATH="$probe_bin_dir:$PATH"
-  export AL_DEV_BYPASS_VERSION_DISPATCH=1
-  export AL_DEV_EXECUTABLE="$probe_bin_dir/al"
-  export AL_DEV_SOURCE_ROOT="$PWD"
-  al dispatch options || exit 1
-  wait_for_termination() {
-    local result
-    result="$(al dispatch wait "$1" --condition termination_confirmed)" || return 1
-    printf '%s\n' "$result"
-    python3 -c 'import json, sys
+  printf 'Release probe executable: %s\n' "$probe_bin_dir/al"
+  (
+    unset AL_RUN_DIR AL_RUN_ID AL_DISPATCH_CALLER_AGENT AL_DISPATCH_ACTIVE AL_SHIM_ACTIVE
+    unset AL_INSTALLED_EXECUTABLE
+    unset CODEX_HOME CLAUDE_CONFIG_DIR AGY_CLI_DISABLE_AUTO_UPDATE GROK_HOME
+    export PATH="$probe_bin_dir:$PATH"
+    export AL_DEV_BYPASS_VERSION_DISPATCH=1
+    export AL_DEV_EXECUTABLE="$probe_bin_dir/al"
+    export AL_DEV_SOURCE_ROOT="$PWD"
+    al dispatch options || exit 1
+    wait_for_termination() {
+      local result
+      result="$(al dispatch wait "$1" --condition termination_confirmed)" || return 1
+      printf '%s\n' "$result"
+      python3 -c 'import json, sys
 result = json.load(sys.stdin)
 sys.exit(0 if result.get("condition_met") is True and result.get("termination_confirmed") is True and result.get("state") == "completed" else 1)' <<<"$result"
-  }
-  # For each enabled, available provider, use its name from options:
-  al dispatch start --agent <provider> --prompt 'Reply with exactly release-probe-fresh. Do not use tools or modify files.' || exit 1
-  wait_for_termination <handle> || exit 1
-  # After successful completion, continue the same handle:
-  al dispatch continue <handle> --prompt 'Reply with exactly release-probe-continue. Do not use tools or modify files.' || exit 1
-  wait_for_termination <handle> || exit 1
+    }
+    # For each enabled, available provider, use its name from options:
+    al dispatch start --agent <provider> --prompt 'Reply with exactly release-probe-fresh. Do not use tools or modify files.' || exit 1
+    wait_for_termination <handle> || exit 1
+    # After successful completion, continue the same handle:
+    al dispatch continue <handle> --prompt 'Reply with exactly release-probe-continue. Do not use tools or modify files.' || exit 1
+    wait_for_termination <handle> || exit 1
+  ) || exit 1
+  # No probe worker may remain to regenerate projections after this restore.
+  make al-sync || exit 1
+  rm -rf -- "$probe_bin_dir"
 )
 ```
 

@@ -676,3 +676,44 @@ func TestInstalledExecutableSelection(t *testing.T) {
 		})
 	}
 }
+
+// Run a copy of the actual test executable from images/, with neither an
+// exported install entry nor an al on PATH to mask the argv[0] fallback.
+func TestInstalledExecutableFromImageCache(t *testing.T) {
+	const helper = "AL_TEST_INSTALLED_IMAGE_HELPER"
+	if os.Getenv(helper) == "1" {
+		if !versiondispatch.RunningFromImageCache() {
+			t.Fatal("helper did not start from the images cache")
+		}
+		if got := InstalledExecutable(); got != "" {
+			t.Fatalf("InstalledExecutable() recorded snapshot path %q", got)
+		}
+		return
+	}
+	base := t.TempDir()
+	self, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(self) // #nosec G304 -- this test process's own executable.
+	if err != nil {
+		t.Fatal(err)
+	}
+	cache := filepath.Join(base, "cache")
+	image := writeExecutable(t, filepath.Join(cache, "images", "fixture", "al"), string(data))
+	cmd := exec.Command(image, "-test.run=^TestInstalledExecutableFromImageCache$") // #nosec G204 -- temporary copy of this test executable.
+	// Explicit environment: no AL_INSTALLED_EXECUTABLE, AL_SHIM_ACTIVE, dev
+	// selection or al on PATH; all user state remains inside the fixture.
+	cmd.Env = []string{
+		helper + "=1", versiondispatch.EnvCacheDir + "=" + cache,
+		"GOMAXPROCS=" + os.Getenv("GOMAXPROCS"),
+		"HOME=" + base, "PATH=" + filepath.Join(base, "empty-bin"),
+		"XDG_CACHE_HOME=" + filepath.Join(base, "xdg-cache"),
+		"XDG_CONFIG_HOME=" + filepath.Join(base, "xdg-config"),
+		"XDG_DATA_HOME=" + filepath.Join(base, "xdg-data"),
+		"XDG_STATE_HOME=" + filepath.Join(base, "xdg-state"),
+	}
+	if output, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("image-cache helper: %v\n%s", err, output)
+	}
+}

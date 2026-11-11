@@ -376,7 +376,7 @@ al-dev-build: ## Build source al for development commands that launch child proc
 	  echo "Development executable unchanged; MCP servers already running it need no reconnect."; \
 	else \
 	  mv -f "$$dev_tmp" $(call al_shell_quote,$(AL_DEV_BIN)) || exit $$?; \
-	  echo "Development executable replaced; snapshotted MCP servers keep serving their original code. Reconnect to run this build."; \
+	  echo "Development executable replaced; snapshotted MCP servers keep serving their original code; servers running in place still refuse new dispatch work until reconnected. Reconnect to run this build."; \
 	fi
 
 # Tracked repo sources that upgrade would otherwise offer to delete as unknown.

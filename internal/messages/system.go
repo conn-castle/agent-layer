@@ -55,8 +55,11 @@ const (
 	// DispatchMCPImageFallbackFmt reports a pinned MCP server that could not move
 	// to its immutable image copy and keeps running from the installed path.
 	DispatchMCPImageFallbackFmt = "warning: could not run the agent-layer MCP server from an immutable image copy (%v); running in place, so replacing the installed al (for example with al update) will require reconnecting this server\n"
-	DispatchImageMismatchFmt    = "image %s does not match the running executable"
-	DispatchImageChangedFmt     = "running executable changed while it was copied"
+	// DispatchMCPDevImageFallbackFmt reports a development MCP server that
+	// could not snapshot and will refuse new work after a dev rebuild.
+	DispatchMCPDevImageFallbackFmt = "warning: could not run the agent-layer MCP server from an immutable image copy (%v); running in place, so a development rebuild that replaces the executable will make this server refuse new dispatch work until reconnected\n"
+	DispatchImageMismatchFmt       = "image %s does not match the running executable"
+	DispatchImageChangedFmt        = "running executable changed while it was copied"
 
 	// RootStartPathRequired indicates start path is required for root resolution.
 	RootStartPathRequired   = "start path is required"

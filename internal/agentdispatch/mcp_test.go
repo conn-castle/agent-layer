@@ -257,6 +257,9 @@ func TestMCPOptionsReportsDiscovery(t *testing.T) {
 	if response.Server == nil || response.Server.Version == "" || len(response.Server.SHA256) != 64 {
 		t.Fatalf("MCP options omitted running code identity: %+v", response.Server)
 	}
+	if response.Server.Development != nil || response.Server.Snapshot {
+		t.Fatalf("in-place non-dev server reported dev/snapshot identity: %+v", response.Server)
+	}
 	expected, err := BuildOptions(OptionsRequest{Root: root})
 	if err != nil {
 		t.Fatalf("build reference options: %v", err)

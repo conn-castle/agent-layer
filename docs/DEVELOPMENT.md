@@ -49,7 +49,8 @@ variables. Development MCP servers first run from a verified content-addressed
 snapshot under `<cache root>/images/<sha256>/al`. After a rebuild replaces the
 development executable, those servers keep accepting work on their original
 image; `dispatch_options.server` reports that build's version and SHA-256 and a
-notice to reconnect for the new build. If snapshot creation fails, the server
+notice to reconnect to run the current build when the selected file identity
+(inode, size or modification time) changes. If snapshot creation fails, the server
 runs in place and still refuses new work after replacement. Bypass alone never promotes
 an arbitrary executable or a transient `go run` path into persistent source selection. The root marker
 must match the project's configuration root (canonical symlink spellings are
@@ -59,6 +60,11 @@ Same-root nested sync preserves source selection. For deliberate scratch-project
 source selection, explicitly set `AL_DEV_SOURCE_ROOT` to that scratch root;
 `AL_DEV_EXECUTABLE` may still point to this checkout's stable development binary.
 Generated argv carries the matching root marker without persisting provider env.
+
+Each distinct development build used by an MCP server start adds a full-size
+binary under `<cache root>/images/`. Entries are not pruned yet (#525). With no
+`agent-layer` MCP server running, deleting `<cache root>/images/` is safe; the
+next snapshotted server start recreates its entry.
 
 A release `al sync` without development selection restores the pin/override
 launcher. Reconnect to use a rebuilt executable or after changing

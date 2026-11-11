@@ -626,15 +626,20 @@ requires reconnecting after even a same-byte atomic replacement; on macOS that
 replacement before worker publication fails cleanly. Source wrappers keep the
 existing development executable when rebuilt output is unchanged.
 
-MCP `dispatch_options` adds a provider-independent `server` object to the CLI
-options result: `version`, the running image's `sha256`, and `snapshot` (boolean).
+MCP `dispatch_options` includes a provider-independent `server` object that is
+absent from CLI options output: `version`, the running image's `sha256`, and
+`snapshot` (boolean).
 In development mode it also includes `development` with `executable`, `replaced`
-(boolean), and a `notice` to reconnect to run the new build when replaced.
+(boolean), and a `notice` to reconnect to run the current build when its file
+identity changed since startup. `replaced` compares inode, size and modification
+time, so touching the file or replacing it with identical bytes also sets it.
 Startup verifies the snapshot content and its selected development executable;
 subsequent requests use file identity checks rather than hashing the binary.
 Missing or unverifiable startup evidence, a missing selected executable, or a
-changed snapshot still refuses work. The handoff preserves the development
-environment and `PATH` without adding shim or installed-entry markers, so child
+changed snapshot still refuses work. Rebuilding during the handoff/startup
+verification window also refuses work until reconnect; rebuilds after successful
+startup verification keep the snapshotted server serving. The handoff preserves
+the development environment and `PATH` without adding shim or installed-entry markers, so child
 agents and nested MCP servers continue selecting the current development build.
 
 For release updates, run `al update`, then `al upgrade` in each repository and

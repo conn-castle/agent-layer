@@ -114,7 +114,11 @@ func handOffToImage(ctx context.Context, sys System, opts execOptions, args []st
 	if err == nil || errors.Is(err, ErrDispatched) || ctx.Err() != nil {
 		return err
 	}
-	_, _ = fmt.Fprintf(sys.Stderr(), messages.DispatchMCPImageFallbackFmt, err)
+	diagnostic := messages.DispatchMCPImageFallbackFmt
+	if development {
+		diagnostic = messages.DispatchMCPDevImageFallbackFmt
+	}
+	_, _ = fmt.Fprintf(sys.Stderr(), diagnostic, err)
 	return nil
 }
 
