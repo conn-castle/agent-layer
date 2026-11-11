@@ -17,6 +17,11 @@ import (
 	"github.com/conn-castle/agent-layer/internal/fsutil"
 )
 
+const (
+	policyLocalPersistent  = "local_persistent"
+	shellCommandArgvPrefix = "shell_command_argv_prefix"
+)
+
 // ConfigDir follows Muse's XDG convention on both Linux and macOS.
 func ConfigDir() (string, error) {
 	base := os.Getenv("XDG_CONFIG_HOME")
@@ -103,7 +108,11 @@ func syncCommands(dir, root string, commands []string, prune bool) (err error) {
 		return err
 	}
 	owner := "agent-layer:" + root
-	desired := make([]json.RawMessage, 0, len(prefixes))
+	type desiredRule struct {
+		key  string
+		data json.RawMessage
+	}
+	desired := make([]desiredRule, 0, len(prefixes))
 	wanted := make(map[string]bool, len(prefixes))
 	for _, argv := range prefixes {
 		key := prefixKey(argv)
@@ -111,23 +120,15 @@ func syncCommands(dir, root string, commands []string, prune bool) (err error) {
 			continue
 		}
 		wanted[key] = true
-		rule := map[string]any{"effect": policyAllow, "durability": "local_persistent", "reason": owner,
-			"rule": map[string]any{"kind": "shell_command_argv_prefix", "argv_prefix": argv, "workspace_root": root}}
+		rule := map[string]any{"effect": policyAllow, "durability": policyLocalPersistent, "reason": owner,
+			"rule": map[string]any{"kind": shellCommandArgvPrefix, "argv_prefix": argv, "workspace_root": root}}
 		data, marshalErr := json.Marshal(rule)
 		if marshalErr != nil {
 			return marshalErr
 		}
-		desired = append(desired, data)
+		desired = append(desired, desiredRule{key: key, data: data})
 	}
 	path := filepath.Join(dir, "approval-policy.json")
-	housekeepingOnly := false
-	defer func() {
-		// Once ownership inspection proves no required update, every failure
-		// (including unlock/close) belongs to optional housekeeping only.
-		if housekeepingOnly {
-			err = nil
-		}
-	}()
 	if len(desired) == 0 {
 		// Read leniently before deciding whether this workspace needs a write.
 		// Optional orphan housekeeping must not impose our writer's native
@@ -179,45 +180,31 @@ func syncCommands(dir, root string, commands []string, prune bool) (err error) {
 			return nil // Skip pruning without writing through the policy-file symlink.
 		}
 		if !owned {
-			if !prune || !candidates {
-				return nil
+			if prune && candidates {
+				pruneOrphans(dir, root)
 			}
-			housekeepingOnly = true
-			if _, readErr := readDocument(path); readErr != nil {
-				return nil // Unsupported native state is reported by doctor.
-			}
+			return nil
 		}
 	}
-	if !housekeepingOnly {
-		if err = os.MkdirAll(dir, 0o700); err != nil {
-			return err
-		}
+	if err = os.MkdirAll(dir, 0o700); err != nil {
+		return err
 	}
 	if info, statErr := os.Lstat(dir); statErr != nil {
-		if housekeepingOnly {
-			return nil
-		}
 		return statErr
 	} else if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
-		if housekeepingOnly {
-			return nil
-		}
 		return fmt.Errorf("muse policy directory must be a real directory: %s", dir)
 	}
-	fd, err := unix.Open(filepath.Join(dir, "approval-policy.lock"), unix.O_CREAT|unix.O_RDWR|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0o600)
+	lock, err := openPolicyLock(dir)
 	if err != nil {
-		return fmt.Errorf("open Muse approval policy lock: %w", err)
+		return err
 	}
-	lock := os.NewFile(uintptr(fd), "Muse approval policy lock")
+	fd := int(lock.Fd())
 	defer func() { err = errors.Join(err, lock.Close()) }()
 	deadline := time.Now().Add(10 * time.Second)
 	for {
 		err = unix.Flock(fd, unix.LOCK_EX|unix.LOCK_NB)
 		if err == nil {
 			break
-		}
-		if housekeepingOnly {
-			return nil // One non-blocking attempt; never wait for optional pruning.
 		}
 		if !errors.Is(err, unix.EWOULDBLOCK) && !errors.Is(err, unix.EAGAIN) {
 			return err
@@ -230,43 +217,108 @@ func syncCommands(dir, root string, commands []string, prune bool) (err error) {
 	defer func() { err = errors.Join(err, unix.Flock(fd, unix.LOCK_UN)) }()
 	document, err := readDocument(path)
 	if err != nil {
-		if housekeepingOnly {
-			return nil
-		}
 		return err
 	}
 	kept := make([]json.RawMessage, 0, len(document.Rules)+len(desired))
 	seen := make(map[string]bool, len(wanted))
 	orphans := make(map[string]bool)
 	for _, raw := range document.Rules {
-		rule, owned := ownedCommandRule(raw)
-		if owned && rule.Rule.Root == root {
+		if workspaceCommandRule(raw, root) {
+			// Current-root cleanup preserves the original ownership breadth:
+			// malformed argv is ours to retire, not foreign state to preserve.
+			rule, valid := ownedCommandRule(raw)
 			key := prefixKey(rule.Rule.Argv)
-			if !wanted[key] || seen[key] {
+			if !valid || !wanted[key] || seen[key] {
 				continue
 			}
 			seen[key] = true
-		} else if prune && owned {
-			orphan, checked := orphans[rule.Rule.Root]
-			if !checked {
-				// Check ownership only under approval-policy.lock, after reading
-				// the latest rules. Fresh rules always have a receipt already.
-				orphan = IsOrphan(dir, rule.Rule.Root)
-				orphans[rule.Rule.Root] = orphan
-			}
-			if orphan {
+		} else if prune {
+			if rule, owned := ownedCommandRule(raw); owned && rule.Rule.Root != root && orphanRoot(dir, rule.Rule.Root, orphans) {
 				continue
 			}
 		}
 		kept = append(kept, raw)
 	}
-	for _, raw := range desired {
-		rule, _ := ownedCommandRule(raw)
-		if !seen[prefixKey(rule.Rule.Argv)] {
-			kept = append(kept, raw)
+	for _, rule := range desired {
+		if !seen[rule.key] {
+			kept = append(kept, rule.data)
 		}
 	}
-	if sameRules(document.Rules, kept) {
+	return writeRulesIfChanged(path, document.Rules, kept)
+}
+
+// workspaceCommandRule deliberately ignores argv shape. Current-root cleanup
+// may retire any command rule with our exact ownership metadata, as before.
+func workspaceCommandRule(raw json.RawMessage, root string) bool {
+	var rule struct {
+		Reason     string `json:"reason"`
+		Effect     string `json:"effect"`
+		Durability string `json:"durability"`
+		Rule       struct {
+			Kind string `json:"kind"`
+			Root string `json:"workspace_root"`
+		} `json:"rule"`
+	}
+	return json.Unmarshal(raw, &rule) == nil && rule.Reason == "agent-layer:"+root &&
+		rule.Effect == policyAllow && rule.Durability == policyLocalPersistent &&
+		rule.Rule.Kind == shellCommandArgvPrefix && rule.Rule.Root == root
+}
+
+func openPolicyLock(dir string) (*os.File, error) {
+	fd, err := unix.Open(filepath.Join(dir, "approval-policy.lock"), unix.O_CREAT|unix.O_RDWR|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0o600)
+	if err != nil {
+		return nil, fmt.Errorf("open Muse approval policy lock: %w", err)
+	}
+	return os.NewFile(uintptr(fd), "Muse approval policy lock"), nil
+}
+
+// pruneOrphans is optional housekeeping, independent of required rule updates.
+// It creates no directories, tries the lock once, and ignores all failures.
+func pruneOrphans(dir, root string) {
+	if info, err := os.Lstat(dir); err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+		return
+	}
+	path := filepath.Join(dir, "approval-policy.json")
+	if info, err := os.Lstat(path); err != nil || !info.Mode().IsRegular() {
+		return
+	}
+	lock, err := openPolicyLock(dir)
+	if err != nil {
+		return
+	}
+	defer func() { _ = lock.Close() }()
+	fd := int(lock.Fd())
+	if unix.Flock(fd, unix.LOCK_EX|unix.LOCK_NB) != nil {
+		return
+	}
+	defer func() { _ = unix.Flock(fd, unix.LOCK_UN) }()
+	document, err := readDocument(path)
+	if err != nil {
+		return
+	}
+	kept := make([]json.RawMessage, 0, len(document.Rules))
+	orphans := make(map[string]bool)
+	for _, raw := range document.Rules {
+		if rule, owned := ownedCommandRule(raw); owned && rule.Rule.Root != root && orphanRoot(dir, rule.Rule.Root, orphans) {
+			continue
+		}
+		kept = append(kept, raw)
+	}
+	_ = writeRulesIfChanged(path, document.Rules, kept)
+}
+
+// Call only under approval-policy.lock, after reading the latest rule list.
+func orphanRoot(dir, root string, cache map[string]bool) bool {
+	if orphan, checked := cache[root]; checked {
+		return orphan
+	}
+	orphan := IsOrphan(dir, root)
+	cache[root] = orphan
+	return orphan
+}
+
+func writeRulesIfChanged(path string, original, kept []json.RawMessage) error {
+	if sameRules(original, kept) {
 		// Compare the rule list before encoding: Muse may use different
 		// whitespace, key ordering or extra rule fields. No write means no
 		// formatting or mtime churn, even after another workspace synced.

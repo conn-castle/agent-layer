@@ -70,7 +70,7 @@ func ownedCommandRule(raw json.RawMessage) (commandRule, bool) {
 	root := rule.Rule.Root
 	return rule, filepath.IsAbs(root) && filepath.Clean(root) == root &&
 		rule.Reason == "agent-layer:"+root && rule.Effect == policyAllow &&
-		rule.Durability == "local_persistent" && rule.Rule.Kind == "shell_command_argv_prefix" &&
+		rule.Durability == policyLocalPersistent && rule.Rule.Kind == shellCommandArgvPrefix &&
 		len(rule.Rule.Argv) > 0 && rule.Rule.Argv[0] != ""
 }
 
@@ -85,6 +85,7 @@ type Inspection struct {
 	Total                 int
 	Roots                 []RootRules
 	Orphans               []RootRules
+	Unknown               []RootRules
 	Nested                []RootRules
 	CurrentReceiptOrphan  bool
 	CurrentReceiptUnknown bool
@@ -152,7 +153,8 @@ func Inspect(ctx context.Context, directory, currentRoot string) (Inspection, er
 			result.Orphans = append(result.Orphans, entry)
 			continue
 		}
-		if state != ownershipValid {
+		if state == ownershipUnknown {
+			result.Unknown = append(result.Unknown, entry)
 			continue
 		}
 		path := filepath.ToSlash(root)

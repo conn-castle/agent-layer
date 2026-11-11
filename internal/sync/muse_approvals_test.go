@@ -302,9 +302,11 @@ func TestMuseEmptyCommandsPreserveUnrelatedUnsupportedNativeState(t *testing.T) 
 				after, err := os.ReadFile(path) // #nosec G304 -- isolated temporary native fixture.
 				require.NoError(t, err)
 				require.Equal(t, before, after)
-				if owner != "current" {
+				if owner == "none" || state == "symlink directory" {
 					require.NoFileExists(t, filepath.Join(realDir, "approval-policy.lock"))
 				}
+				// With other owned candidates, optional pruning now validates
+				// the schema once under its lock; the policy stays unchanged.
 			})
 		}
 	}
@@ -365,4 +367,39 @@ func TestMuseReceiptRetirementKeepsExistingUncleanPathValidation(t *testing.T) {
 	target, err := musePolicyRetirementDirectory(receipt, root)
 	require.NoError(t, err)
 	require.Equal(t, dir, target)
+}
+
+func TestMuseReceiptErrorIdentifiesReceiptAndPathOnce(t *testing.T) {
+	for _, kind := range []string{"invalid marker", "malformed JSON", "empty document", "wrong root", "unreadable"} {
+		t.Run(kind, func(t *testing.T) {
+			root := t.TempDir()
+			t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+			path := filepath.Join(root, ".muse/agent-layer-policy.json")
+			require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o700))
+			data := []byte(`{"generated_by":"user","directory":"/native/muse","workspace_root":"/project"}`)
+			switch kind {
+			case "malformed JSON":
+				data = []byte(`{`)
+			case "empty document":
+				data = []byte(`{}`)
+			case "wrong root":
+				var err error
+				data, err = json.Marshal(musePolicyReceipt{GeneratedBy: "agent-layer", Directory: filepath.Join(t.TempDir(), "muse"), Root: t.TempDir()})
+				require.NoError(t, err)
+			}
+			require.NoError(t, os.WriteFile(path, data, 0o600))
+			if kind == "unreadable" {
+				if os.Geteuid() == 0 {
+					t.Skip("root bypasses permission checks")
+				}
+				require.NoError(t, os.Chmod(path, 0))
+				t.Cleanup(func() { require.NoError(t, os.Chmod(path, 0o600)) })
+			}
+			project := &config.ProjectConfig{Config: config.Config{Agents: config.AgentsConfig{Muse: config.AgentConfig{Enabled: configBool(false)}}}}
+			err := writeMuseApprovals(RealSystem{}, root, project)
+			require.Error(t, err)
+			require.Equal(t, 1, strings.Count(err.Error(), "invalid Agent Layer Muse policy ownership receipt"))
+			require.Equal(t, 1, strings.Count(err.Error(), path))
+		})
+	}
 }

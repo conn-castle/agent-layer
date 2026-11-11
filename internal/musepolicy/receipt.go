@@ -22,7 +22,7 @@ func ParseReceipt(data []byte) (*Receipt, error) {
 		return nil, err
 	}
 	if receipt.GeneratedBy != "agent-layer" || !filepath.IsAbs(receipt.Directory) || !filepath.IsAbs(receipt.Root) || filepath.Base(receipt.Directory) != "muse" {
-		return nil, fmt.Errorf("invalid Agent Layer Muse policy ownership receipt")
+		return nil, fmt.Errorf("expected generated_by agent-layer, absolute directory and workspace_root, and a native directory named muse")
 	}
 	return &receipt, nil
 }

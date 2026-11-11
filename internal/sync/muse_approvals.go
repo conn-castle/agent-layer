@@ -125,7 +125,7 @@ func writeMuseApprovals(sys System, root string, project *config.ProjectConfig) 
 	target, targetErr := musePolicyRetirementDirectory(receipt, canonical)
 	if targetErr != nil {
 		if !enabled {
-			return fmt.Errorf("invalid Agent Layer Muse policy ownership receipt: %w: %s", targetErr, receiptPath)
+			return fmt.Errorf("invalid Agent Layer Muse policy ownership receipt %s: %w", receiptPath, targetErr)
 		}
 		// Enabled sync rewrites current grants; do not retire another workspace.
 	} else if target != "" {

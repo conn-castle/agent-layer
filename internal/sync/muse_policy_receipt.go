@@ -2,6 +2,7 @@ package sync
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -16,21 +17,27 @@ type musePolicyReceipt = musepolicy.Receipt
 func readMusePolicyReceipt(sys System, path string) (*musePolicyReceipt, error) {
 	document, err := readMuseSettings(sys, path)
 	if err != nil {
-		return nil, fmt.Errorf("read Muse policy ownership receipt %s: %w", path, err)
+		// OS path errors already identify the file; avoid repeating the path
+		// from readMuseSettings while keeping the underlying error available.
+		var pathErr *os.PathError
+		if errors.As(err, &pathErr) {
+			err = pathErr
+		}
+		return nil, fmt.Errorf("invalid Agent Layer Muse policy ownership receipt: %w", err)
 	}
 	if len(document) == 0 {
 		if _, err := sys.Lstat(path); os.IsNotExist(err) {
 			return nil, nil
 		}
-		return nil, fmt.Errorf("invalid empty Muse policy ownership receipt: %s", path)
+		return nil, fmt.Errorf("invalid Agent Layer Muse policy ownership receipt %s: empty document", path)
 	}
 	data, err := json.Marshal(document)
 	if err != nil {
-		return nil, fmt.Errorf("read Muse policy ownership receipt %s: %w", path, err)
+		return nil, fmt.Errorf("invalid Agent Layer Muse policy ownership receipt %s: %w", path, err)
 	}
 	receipt, err := musepolicy.ParseReceipt(data)
 	if err != nil {
-		return nil, fmt.Errorf("invalid Agent Layer Muse policy ownership receipt: %s: %w", path, err)
+		return nil, fmt.Errorf("invalid Agent Layer Muse policy ownership receipt %s: %w", path, err)
 	}
 	return receipt, nil
 }

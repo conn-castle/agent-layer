@@ -59,19 +59,23 @@ func TestCheckMusePolicyCountsOrphansAndNestedRetirement(t *testing.T) {
 	before, err := os.ReadFile(path) // #nosec G304 -- path is contained in this test-owned temporary fixture.
 	require.NoError(t, err)
 	results := CheckMusePolicy(context.Background(), museDoctorConfig(t, true))
-	require.Len(t, results, 3)
+	require.Len(t, results, 4)
 	require.Equal(t, Result{Status: StatusOK, CheckName: messages.DoctorCheckNameMusePolicy,
 		Message: "6 Agent Layer-owned Muse command rules across 4 workspace roots"}, results[0])
 	require.Equal(t, StatusWarn, results[1].Status)
 	require.Contains(t, results[1].Message, orphan+" (2 rules)")
 	require.Contains(t, results[1].Recommendation, "next Muse-enabled `al sync` in any workspace")
 	require.Equal(t, StatusWarn, results[2].Status)
-	require.Contains(t, results[2].Message, nested+" (1 rules)")
-	require.NotContains(t, results[2].Message, uncertain)
-	require.Contains(t, results[2].Recommendation, "delete that copy then run `al sync`")
-	require.Contains(t, results[2].Recommendation, "`enabled = false` under `[agents.muse]`")
-	require.Contains(t, results[2].Recommendation, "`.agent-layer/config.toml`")
-	require.Contains(t, results[2].Recommendation, "run `al sync` there")
+	require.Contains(t, results[2].Message, uncertain+" (1 rules)")
+	require.Contains(t, results[2].Message, "unverifiable ownership (grants kept)")
+	require.Contains(t, results[2].Recommendation, "Repair or remove that workspace's")
+	require.Equal(t, StatusWarn, results[3].Status)
+	require.Contains(t, results[3].Message, nested+" (1 rules)")
+	require.NotContains(t, results[3].Message, uncertain)
+	require.Contains(t, results[3].Recommendation, "delete that copy then run `al sync`")
+	require.Contains(t, results[3].Recommendation, "`enabled = false` under `[agents.muse]`")
+	require.Contains(t, results[3].Recommendation, "`.agent-layer/config.toml`")
+	require.Contains(t, results[3].Recommendation, "run `al sync` there")
 	after, err := os.ReadFile(path) // #nosec G304 -- path is contained in this test-owned temporary fixture.
 	require.NoError(t, err)
 	require.Equal(t, before, after)
@@ -302,4 +306,33 @@ func TestCheckMusePolicyWarnsOnSymlinkedNativeDirectory(t *testing.T) {
 	require.Len(t, results, 1)
 	require.Equal(t, StatusWarn, results[0].Status)
 	require.Contains(t, results[0].Message, "real directory")
+}
+
+func TestCheckMusePolicyUnknownRootsAreBoundedAndSorted(t *testing.T) {
+	base, parent := doctorPolicyTempDir(t), doctorPolicyTempDir(t)
+	t.Setenv("XDG_CONFIG_HOME", base)
+	dir := filepath.Join(base, "muse")
+	for i := 11; i >= 0; i-- {
+		root := filepath.Join(parent, fmt.Sprintf("copy-%02d", i))
+		doctorMuseReceipt(t, dir, root)
+		require.NoError(t, musepolicy.SyncCommands(dir, root, []string{"make"}))
+		require.NoError(t, os.WriteFile(filepath.Join(root, ".muse/agent-layer-policy.json"), []byte(`{`), 0o600))
+	}
+	results := CheckMusePolicy(context.Background(), museDoctorConfig(t, true))
+	require.Len(t, results, 2)
+	require.Equal(t, StatusWarn, results[1].Status)
+	expected := "12 Muse policy roots with unverifiable ownership (grants kept): "
+	for i := 0; i < 10; i++ {
+		if i > 0 {
+			expected += "; "
+		}
+		expected += filepath.Join(parent, fmt.Sprintf("copy-%02d", i)) + " (1 rules)"
+	}
+	expected += "; ... and 2 more roots"
+	require.Equal(t, expected, results[1].Message)
+	require.Contains(t, results[1].Recommendation, "Grants are kept because ownership cannot be verified")
+	require.Contains(t, results[1].Recommendation, "unreadable, malformed or unclean")
+	require.Contains(t, results[1].Recommendation, "`.muse/agent-layer-policy.json`")
+	require.Contains(t, results[1].Recommendation, "run `al sync` there")
+	require.Contains(t, results[1].Recommendation, "delete the directory if it is disposable")
 }

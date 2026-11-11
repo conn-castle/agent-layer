@@ -57,6 +57,11 @@ func CheckMusePolicy(ctx context.Context, cfg *config.ProjectConfig) (results []
 			Message:        fmt.Sprintf(messages.DoctorMusePolicyOrphansFmt, len(inspection.Orphans), formatMuseRoots(inspection.Orphans)),
 			Recommendation: messages.DoctorMusePolicyOrphansRecommend})
 	}
+	if len(inspection.Unknown) > 0 {
+		results = append(results, Result{Status: StatusWarn, CheckName: messages.DoctorCheckNameMusePolicy,
+			Message:        fmt.Sprintf(messages.DoctorMusePolicyUnknownFmt, len(inspection.Unknown), formatMuseRoots(inspection.Unknown)),
+			Recommendation: messages.DoctorMusePolicyUnknownRecommend})
+	}
 	if len(inspection.Nested) > 0 {
 		results = append(results, Result{Status: StatusWarn, CheckName: messages.DoctorCheckNameMusePolicy,
 			Message:        fmt.Sprintf(messages.DoctorMusePolicyNestedFmt, len(inspection.Nested), formatMuseRoots(inspection.Nested)),
@@ -75,7 +80,7 @@ func formatMuseRoots(roots []musepolicy.RootRules) string {
 	var lines []string
 	for i, entry := range roots {
 		if i == limit {
-			lines = append(lines, fmt.Sprintf("... and %d more roots", len(roots)-limit))
+			lines = append(lines, fmt.Sprintf(messages.DoctorMusePolicyMoreRootsFmt, len(roots)-limit))
 			break
 		}
 		lines = append(lines, fmt.Sprintf("%s (%d rules)", entry.Root, entry.Count))

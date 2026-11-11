@@ -122,7 +122,7 @@ func TestEnabledCommandPolicyPrunesOnlyProvableOrphans(t *testing.T) {
 		{"malformed receipt", false}, {"invalid marker", false}, {"relative directory", false},
 		{"wrong directory name", false}, {"relative receipt root", false},
 		{"symlink muse directory", false}, {"symlink receipt", false},
-		{"nonregular receipt", false}, {"non-directory muse", false}, {"symlink root", false},
+		{"nonregular receipt", false}, {"non-directory muse", false}, {"symlink root", false}, {"non-directory root", false},
 		{"permission denied", false}, {"receipt read denied", false}, {"unclean receipt paths", false},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -196,6 +196,9 @@ func TestEnabledCommandPolicyPrunesOnlyProvableOrphans(t *testing.T) {
 			case "symlink root":
 				require.NoError(t, os.RemoveAll(root))
 				require.NoError(t, os.Symlink(policyTempDir(t), root))
+			case "non-directory root":
+				require.NoError(t, os.RemoveAll(root))
+				require.NoError(t, os.WriteFile(root, nil, 0o600))
 			case "permission denied", "receipt read denied":
 				if os.Geteuid() == 0 {
 					t.Skip("root bypasses permission checks")
@@ -221,6 +224,9 @@ func TestEnabledCommandPolicyPrunesOnlyProvableOrphans(t *testing.T) {
 				require.Equal(t, []RootRules{{Root: root, Count: 2}}, inspection.Orphans)
 			} else {
 				require.Empty(t, inspection.Orphans)
+				if test.name != "valid receipt" {
+					require.Equal(t, []RootRules{{Root: root, Count: 2}}, inspection.Unknown)
+				}
 			}
 			// The enabled empty-list path must still lock and prune other roots.
 			require.NoError(t, SyncEnabledCommands(dir, current, nil))
@@ -612,6 +618,63 @@ func TestCommandPolicySymlinkPreflightRejectsUnsafeTargets(t *testing.T) {
 			require.NoError(t, os.Symlink(target, filepath.Join(dir, "approval-policy.json")))
 			require.Error(t, SyncEnabledCommands(dir, policyTempDir(t), nil))
 			require.NoFileExists(t, filepath.Join(dir, "approval-policy.lock"))
+		})
+	}
+}
+
+func TestCommandPolicyRetiresMalformedCurrentRulesOnly(t *testing.T) {
+	for _, mode := range []string{"enabled desired", "enabled empty", "retirement"} {
+		t.Run(mode, func(t *testing.T) {
+			dir, root, other := policyTempDir(t), policyTempDir(t), policyTempDir(t)
+			require.NoError(t, SyncCommands(dir, root, []string{"git status"}))
+			valid := readRules(t, dir)[0]
+			var malformed []json.RawMessage
+			for _, argv := range []any{[]string{""}, []any{nil}, []string{}, nil, []any{"git", nil}, []any{1}, map[string]any{"future": true}} {
+				var entry map[string]any
+				require.NoError(t, json.Unmarshal(valid, &entry))
+				entry["rule"].(map[string]any)["argv_prefix"] = argv
+				raw, err := json.Marshal(entry)
+				require.NoError(t, err)
+				malformed = append(malformed, raw)
+			}
+			var foreign map[string]any
+			require.NoError(t, json.Unmarshal(malformed[0], &foreign))
+			foreign["reason"] = "agent-layer:" + other
+			foreign["rule"].(map[string]any)["workspace_root"] = other
+			foreignRaw, err := json.Marshal(foreign)
+			require.NoError(t, err)
+			var unrelated map[string]any
+			require.NoError(t, json.Unmarshal(malformed[0], &unrelated))
+			unrelated["rule"].(map[string]any)["kind"] = "tool_action"
+			unrelatedRaw, err := json.Marshal(unrelated)
+			require.NoError(t, err)
+			user := json.RawMessage(`{"reason":"user"}`)
+			rules := append([]json.RawMessage{user, valid}, malformed...)
+			rules = append(rules, valid, foreignRaw, unrelatedRaw)
+			data, err := json.Marshal(policyDocument{Version: 2, Rules: rules})
+			require.NoError(t, err)
+			require.NoError(t, os.WriteFile(filepath.Join(dir, "approval-policy.json"), data, 0o600))
+			inspection, err := Inspect(context.Background(), dir, root)
+			require.NoError(t, err)
+			require.Equal(t, 2, inspection.Total) // Only the two well-formed copies count.
+			switch mode {
+			case "enabled desired":
+				require.NoError(t, SyncEnabledCommands(dir, root, []string{"git status", "go"}))
+			case "enabled empty":
+				require.NoError(t, SyncEnabledCommands(dir, root, nil))
+			case "retirement":
+				require.NoError(t, SyncCommands(dir, root, nil))
+			}
+			actual := readRules(t, dir)
+			if mode == "enabled desired" {
+				require.Len(t, actual, 5)
+				require.Equal(t, []json.RawMessage{user, valid, foreignRaw, unrelatedRaw}, actual[:4])
+				added, owned := ownedCommandRule(actual[4])
+				require.True(t, owned)
+				require.Equal(t, []string{"go"}, added.Rule.Argv)
+			} else {
+				require.Equal(t, []json.RawMessage{user, foreignRaw, unrelatedRaw}, actual)
+			}
 		})
 	}
 }
