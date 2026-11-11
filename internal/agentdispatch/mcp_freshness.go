@@ -117,7 +117,7 @@ func selectDevelopment(root string) developmentSelection {
 		d.err = errors.New("running snapshot identity cannot be verified")
 		return d
 	}
-	d.info, d.err = os.Stat(d.path) // #nosec G703 -- selected development path, identity comparison only.
+	d.info, d.err = os.Stat(d.path)
 	if d.err != nil {
 		return d
 	}
@@ -143,7 +143,7 @@ func (d developmentSelection) fresh() error {
 		return errors.New("development selection cannot be verified")
 	}
 	// Refuse missing or unstatable development files as unverifiable.
-	info, err := os.Stat(d.path) // #nosec G703 -- identity and executable-mode check only.
+	info, err := os.Stat(d.path)
 	if err != nil {
 		return err
 	}

@@ -19,7 +19,7 @@ import (
 
 func freshnessWrite(t *testing.T, path, value string) {
 	t.Helper()
-	if err := os.WriteFile(path, []byte(value), 0o600); err != nil { // #nosec G703 -- test-owned temporary paths only.
+	if err := os.WriteFile(path, []byte(value), 0o600); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -353,14 +353,13 @@ printf '%%s\n' '{"type":"thread.started","thread_id":"11111111-1111-4111-8111-11
 	})
 	t.Run("development snapshot with unverifiable startup identity", func(t *testing.T) {
 		root, cache := writeDispatchRepo(t, dispatchRepoConfig{}), t.TempDir()
-		data, err := os.ReadFile(a) // #nosec G304 -- test-built image.
+		sum, err := imageSHA256(a)
 		if err != nil {
 			t.Fatal(err)
 		}
-		sum := sha256.Sum256(data)
-		for _, identity := range []string{"invalid", hex.EncodeToString(sum[:])} {
+		for _, identity := range []string{"invalid", sum} {
 			runner := filepath.Join(cache, "images", identity, "al")
-			if err := os.MkdirAll(filepath.Dir(runner), 0o700); err != nil { // #nosec G703 -- test-owned temporary image cache.
+			if err := os.MkdirAll(filepath.Dir(runner), 0o700); err != nil {
 				t.Fatal(err)
 			}
 			copyImage(t, a, runner)
@@ -368,7 +367,7 @@ printf '%%s\n' '{"type":"thread.started","thread_id":"11111111-1111-4111-8111-11
 			// must match its content at startup as well as its cache key.
 			session := connect(t, root, runner, t.TempDir(), "AL_CACHE_DIR="+cache, "AL_DEV_EXECUTABLE="+b, "AL_DEV_SOURCE_ROOT="+root, "AL_DEV_BYPASS_VERSION_DISPATCH=1")
 			assertStaleProviderTools(t, session, "unknown")
-			if identity == hex.EncodeToString(sum[:]) {
+			if identity == sum {
 				result := callMCPTool(t, session, ToolOptions, OptionsInput{})
 				if !strings.Contains(toolResultText(result), "development executable changed during server startup") {
 					t.Fatalf("startup replacement was not identified: %s", toolResultText(result))

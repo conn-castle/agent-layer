@@ -700,8 +700,14 @@ func TestInstalledExecutableFromImageCache(t *testing.T) {
 		t.Fatal(err)
 	}
 	cache := filepath.Join(base, "cache")
-	image := writeExecutable(t, filepath.Join(cache, "images", "fixture", "al"), string(data))
-	cmd := exec.Command(image, "-test.run=^TestInstalledExecutableFromImageCache$") // #nosec G204 -- temporary copy of this test executable.
+	image := filepath.Join(cache, "images", "fixture", "al")
+	if err := os.MkdirAll(filepath.Dir(image), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(image, data, 0o700); err != nil { // #nosec G306 G703 -- executable fixture path is fixed under t.TempDir; only contents come from the running test binary.
+		t.Fatal(err)
+	}
+	cmd := exec.Command(image, "-test.run=^TestInstalledExecutableFromImageCache$")
 	// Explicit environment: no AL_INSTALLED_EXECUTABLE, AL_SHIM_ACTIVE, dev
 	// selection or al on PATH; all user state remains inside the fixture.
 	cmd.Env = []string{
