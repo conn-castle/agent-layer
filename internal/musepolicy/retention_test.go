@@ -580,8 +580,17 @@ func TestCommandPolicySymlinkEmptyPreflightPreservesOwnershipBoundaries(t *testi
 			} else {
 				require.NoError(t, err)
 			}
-			// Disabled/retirement reads remain strict even for unrelated rules.
-			require.ErrorContains(t, SyncCommands(dir, root, nil), "regular file")
+			// Retirement also permits a read-only no-op, but never leaves our
+			// own grants silently behind a symlink it cannot safely replace.
+			err = SyncCommands(dir, root, nil)
+			if owner == "current workspace" {
+				require.ErrorContains(t, err, "regular file")
+			} else {
+				require.NoError(t, err)
+			}
+			require.NoFileExists(t, filepath.Join(dir, "approval-policy.lock"))
+			// Required writes still refuse policy-file symlinks.
+			require.ErrorContains(t, SyncEnabledCommands(dir, root, []string{"go"}), "regular file")
 			after, err := os.ReadFile(target) // #nosec G304 -- isolated temporary native policy.
 			require.NoError(t, err)
 			current, err := os.Stat(target)
@@ -589,7 +598,6 @@ func TestCommandPolicySymlinkEmptyPreflightPreservesOwnershipBoundaries(t *testi
 			require.Equal(t, before, after)
 			require.Equal(t, info.ModTime(), current.ModTime())
 			require.True(t, os.SameFile(info, current))
-			require.NoFileExists(t, filepath.Join(dir, "approval-policy.lock"))
 			linkInfo, err := os.Lstat(path)
 			require.NoError(t, err)
 			require.NotZero(t, linkInfo.Mode()&os.ModeSymlink)
@@ -617,6 +625,7 @@ func TestCommandPolicySymlinkPreflightRejectsUnsafeTargets(t *testing.T) {
 			}
 			require.NoError(t, os.Symlink(target, filepath.Join(dir, "approval-policy.json")))
 			require.Error(t, SyncEnabledCommands(dir, policyTempDir(t), nil))
+			require.Error(t, SyncCommands(dir, policyTempDir(t), nil))
 			require.NoFileExists(t, filepath.Join(dir, "approval-policy.lock"))
 		})
 	}

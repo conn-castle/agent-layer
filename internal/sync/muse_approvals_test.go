@@ -354,19 +354,28 @@ func TestMuseNonemptyCommandsPruneOrphans(t *testing.T) {
 	require.Equal(t, [][]string{{"go"}}, museOwnedCommandPrefixes(t, filepath.Join(base, "muse/approval-policy.json")))
 }
 
-func TestMuseReceiptRetirementKeepsExistingUncleanPathValidation(t *testing.T) {
-	base, root := t.TempDir(), t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", base)
-	dir := filepath.Join(base, "muse") + "/../muse"
-	receiptPath := filepath.Join(root, ".muse/agent-layer-policy.json")
-	require.NoError(t, writeMusePolicyReceipt(RealSystem{}, receiptPath, dir, root+"/."))
-	receipt, err := readMusePolicyReceipt(RealSystem{}, receiptPath)
-	require.NoError(t, err)
-	require.Equal(t, root+"/.", receipt.Root)
-	require.Equal(t, dir, receipt.Directory)
-	target, err := musePolicyRetirementDirectory(receipt, root)
-	require.NoError(t, err)
-	require.Equal(t, dir, target)
+func TestMuseReceiptRetirementRejectsUncleanPaths(t *testing.T) {
+	for _, field := range []string{"workspace_root", "directory"} {
+		t.Run(field, func(t *testing.T) {
+			base, root := t.TempDir(), t.TempDir()
+			t.Setenv("XDG_CONFIG_HOME", base)
+			dir, recordedRoot := filepath.Join(base, "muse"), root
+			if field == "workspace_root" {
+				recordedRoot += "/."
+			} else {
+				dir += "/../muse"
+			}
+			receiptPath := filepath.Join(root, ".muse/agent-layer-policy.json")
+			require.NoError(t, writeMusePolicyReceipt(RealSystem{}, receiptPath, dir, recordedRoot))
+			receipt, err := readMusePolicyReceipt(RealSystem{}, receiptPath)
+			require.NoError(t, err) // Enabled sync must still be able to read and repair it.
+			require.Equal(t, recordedRoot, receipt.Root)
+			require.Equal(t, dir, receipt.Directory)
+			target, err := musePolicyRetirementDirectory(receipt, root)
+			require.ErrorContains(t, err, "must be clean paths")
+			require.Empty(t, target)
+		})
+	}
 }
 
 func TestMuseReceiptErrorIdentifiesReceiptAndPathOnce(t *testing.T) {
@@ -401,5 +410,74 @@ func TestMuseReceiptErrorIdentifiesReceiptAndPathOnce(t *testing.T) {
 			require.Equal(t, 1, strings.Count(err.Error(), "invalid Agent Layer Muse policy ownership receipt"))
 			require.Equal(t, 1, strings.Count(err.Error(), path))
 		})
+	}
+}
+
+func TestMuseUncleanReceiptCannotRetireAndEnabledSyncRepairs(t *testing.T) {
+	for _, field := range []string{"workspace_root", "directory"} {
+		for _, enabled := range []bool{false, true} {
+			mode := "disabled"
+			if enabled {
+				mode = "enabled"
+			}
+			t.Run(field+"/"+mode, func(t *testing.T) {
+				base := t.TempDir()
+				t.Setenv("XDG_CONFIG_HOME", base)
+				root, err := filepath.EvalSymlinks(t.TempDir())
+				require.NoError(t, err)
+				lexicalBase, physicalBase := t.TempDir(), t.TempDir()
+				lexicalDir, physicalDir := filepath.Join(lexicalBase, "muse"), filepath.Join(physicalBase, "muse")
+				require.NoError(t, musepolicy.SyncCommands(lexicalDir, root, []string{"make"}))
+				require.NoError(t, os.Mkdir(physicalDir, 0o700))
+				require.NoError(t, os.Mkdir(filepath.Join(physicalBase, "subdir"), 0o700))
+				physicalPolicy := filepath.Join(physicalDir, "approval-policy.json")
+				require.NoError(t, os.WriteFile(physicalPolicy, []byte(`{"schema_version":2,"rules":[{"reason":"user"}]}`), 0o600))
+				recordedRoot, recordedDir := root, lexicalDir
+				if field == "workspace_root" {
+					require.NoError(t, os.Symlink(filepath.Join(physicalBase, "subdir"), filepath.Join(root, "link")))
+					recordedRoot += "/link/.."
+				} else {
+					link := filepath.Join(lexicalBase, "link")
+					require.NoError(t, os.Symlink(filepath.Join(physicalBase, "subdir"), link))
+					recordedDir = link + "/../muse"
+				}
+				receiptPath := filepath.Join(root, ".muse/agent-layer-policy.json")
+				require.NoError(t, writeMusePolicyReceipt(RealSystem{}, receiptPath, recordedDir, recordedRoot))
+				lexicalPolicy := filepath.Join(lexicalDir, "approval-policy.json")
+				before, err := os.ReadFile(lexicalPolicy) // #nosec G304 -- isolated temporary policy fixture.
+				require.NoError(t, err)
+				physicalBefore, err := os.ReadFile(physicalPolicy) // #nosec G304 -- isolated temporary policy fixture.
+				require.NoError(t, err)
+				project := &config.ProjectConfig{Root: root, CommandsAllow: []string{"go"}, Config: config.Config{
+					Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeCommands},
+					Agents:    config.AgentsConfig{Muse: config.AgentConfig{Enabled: &enabled}},
+				}}
+				err = writeMuseApprovals(RealSystem{}, root, project)
+				if enabled {
+					require.NoError(t, err)
+				} else {
+					require.ErrorContains(t, err, "must be clean paths")
+				}
+				after, err := os.ReadFile(lexicalPolicy) // #nosec G304 -- isolated temporary policy fixture.
+				require.NoError(t, err)
+				require.Equal(t, before, after)
+				physicalAfter, err := os.ReadFile(physicalPolicy) // #nosec G304 -- isolated temporary policy fixture.
+				require.NoError(t, err)
+				require.Equal(t, physicalBefore, physicalAfter)
+				receipt, err := readMusePolicyReceipt(RealSystem{}, receiptPath)
+				require.NoError(t, err)
+				if enabled {
+					require.Equal(t, root, receipt.Root)
+					require.Equal(t, filepath.Join(base, "muse"), receipt.Directory)
+					require.Equal(t, filepath.Clean(receipt.Root), receipt.Root)
+					require.Equal(t, filepath.Clean(receipt.Directory), receipt.Directory)
+					require.Equal(t, [][]string{{"go"}}, museOwnedCommandPrefixes(t, filepath.Join(base, "muse/approval-policy.json")))
+				} else {
+					require.Equal(t, recordedRoot, receipt.Root)
+					require.Equal(t, recordedDir, receipt.Directory)
+					require.NoDirExists(t, filepath.Join(base, "muse"))
+				}
+			})
+		}
 	}
 }

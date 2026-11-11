@@ -133,27 +133,23 @@ func syncCommands(dir, root string, commands []string, prune bool) (err error) {
 		// Read leniently before deciding whether this workspace needs a write.
 		// Optional orphan housekeeping must not impose our writer's native
 		// directory and schema requirements on otherwise unrelated state.
-		data, readErr := readRegular(path)
-		symlinkPolicy := false
-		if prune && readErr != nil {
-			if info, statErr := os.Lstat(path); statErr == nil && info.Mode()&os.ModeSymlink != 0 {
-				// Inspect a regular target read-only to determine whether this
-				// workspace must retire grants. Never write through the link.
-				target, statErr := os.Stat(path)
-				if statErr != nil {
-					return statErr
-				}
-				if target.Mode().IsRegular() {
-					data, readErr = fsutil.ReadRegularFile(path)
-					symlinkPolicy = true
-				}
-			}
+		info, statErr := os.Lstat(path)
+		if os.IsNotExist(statErr) {
+			return nil
 		}
+		if statErr != nil {
+			return statErr
+		}
+		symlinkPolicy := info.Mode()&os.ModeSymlink != 0
+		if !info.Mode().IsRegular() && !symlinkPolicy {
+			return fmt.Errorf("muse approval policy must be a regular file: %s", path)
+		}
+		// A single read-only open supplies the ownership snapshot. The helper
+		// opens nonblocking and verifies the opened fd is regular, so a link
+		// target changed to a FIFO cannot block or supply ownership evidence.
+		data, readErr := fsutil.ReadRegularFile(path)
 		if readErr != nil {
 			return readErr
-		}
-		if data == nil {
-			return nil
 		}
 		var existing struct {
 			Rules []json.RawMessage `json:"rules"`
