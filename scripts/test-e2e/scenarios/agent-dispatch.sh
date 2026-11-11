@@ -173,7 +173,9 @@ check_dispatch_reservations() {
   local continuation_file="$repo_dir/reserved-continuation.json"
   rc=0
   (cd "$repo_dir" && al dispatch continue "$reservation" --prompt "Follow up" >"$continuation_file" 2>"$stderr_file") || rc=$?
-  if [[ $rc -eq 0 ]]; then
+  local continuation_id
+  continuation_id="$(dispatch_json_field "$continuation_file" invocation_id)"
+  if [[ $rc -eq 0 && -n "$continuation_id" && "$continuation_id" != "$reserved_id" ]]; then
     pass "reserved conversation can be continued"
   else
     fail "reserved conversation can be continued (exit code: $rc)"
@@ -190,7 +192,7 @@ check_dispatch_reservations() {
     dispatch_show_stderr "$repeat_error"
   fi
   dispatch_wait_terminated "$repo_dir" "$reservation" "$wait_file" "$stderr_file" \
-    "reserved continuation termination is confirmed"
+    "reserved continuation termination is confirmed" completed "$continuation_id"
   launches="$(grep -c -- '---END---' "$MOCK_DISPATCH_CODEX_LOG" || true)"
   if [[ "$launches" -eq 2 ]]; then
     pass "repeated reservation start after continuation launches nothing"
@@ -348,21 +350,21 @@ SKILL
       fail "dispatch cancel returns cancelled (exit code: $rc)"
       dispatch_show_stderr "$stderr_file"
     fi
+    rc=0
+    (cd "$repo_dir" && al dispatch cancel "$handle" >"$wait_file" 2>"$stderr_file") || rc=$?
+    if [[ $rc -eq 0 ]] && grep -q '"state":"cancelled"' "$wait_file"; then
+      pass "repeated cancel is idempotent"
+    else
+      fail "repeated cancel is idempotent (exit code: $rc)"
+      dispatch_show_stderr "$stderr_file"
+    fi
+
+    dispatch_wait_terminated "$repo_dir" "$handle" "$wait_file" "$stderr_file" \
+      "cancelled provider termination is confirmed" cancelled
   else
     fail "dispatch start accepts work to cancel (exit code: $start_rc)"
     dispatch_show_stderr "$stderr_file"
   fi
-  rc=0
-  (cd "$repo_dir" && al dispatch cancel "$handle" >"$wait_file" 2>"$stderr_file") || rc=$?
-  if [[ $rc -eq 0 ]] && grep -q '"state":"cancelled"' "$wait_file"; then
-    pass "repeated cancel is idempotent"
-  else
-    fail "repeated cancel is idempotent (exit code: $rc)"
-    dispatch_show_stderr "$stderr_file"
-  fi
-
-  dispatch_wait_terminated "$repo_dir" "$handle" "$wait_file" "$stderr_file" \
-    "cancelled provider termination is confirmed"
 
   check_dispatch_reservations "$repo_dir" "$handle"
 

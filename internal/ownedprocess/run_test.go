@@ -64,10 +64,14 @@ func TestRunOwnsDescendants(t *testing.T) {
 				}
 			}()
 			go func() { done <- Run(ctx, cmd) }()
+			// fd 3 survives closed-mode output redirection; readiness follows atomic
+			// PID publication, so the PID record must still be checked.
 			awaitReady()
 			if data, err := os.ReadFile(pidFile); err != nil || strings.TrimSpace(string(data)) == "" { // #nosec G304 -- owned fixture PID path.
 				t.Fatalf("ready fixture PID: %q, %v", data, err)
 			}
+			// A pre-armed deadline could preempt PID publication; cancel after readiness.
+			// Run propagates ctx.Err() for both; TestRunDeadline covers real deadlines.
 			if mode == "deadline" || mode == "closed" {
 				timer := time.AfterFunc(300*time.Millisecond, cancel)
 				defer timer.Stop()
@@ -163,6 +167,34 @@ func TestStartPreservesCallerOwnedOutput(t *testing.T) {
 	pid, err := strconv.Atoi(strings.TrimSpace(string(data)))
 	if err != nil || pid <= 0 || !sessionFixtureStopped(pid) {
 		t.Fatalf("child stop unproven: pid=%q err=%v", data, err)
+	}
+}
+
+func TestRunDeadline(t *testing.T) {
+	for _, mode := range []string{"running", "expired"} {
+		t.Run(mode, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+			defer cancel()
+			if mode == "expired" {
+				<-ctx.Done()
+			}
+			cmd := exec.Command("/bin/sleep", "30")
+			start := time.Now()
+			err := Run(ctx, cmd)
+			if time.Since(start) > 2*time.Second {
+				t.Fatalf("unbounded deadline return: %v", err)
+			}
+			if !errors.Is(err, context.DeadlineExceeded) {
+				t.Fatalf("deadline outcome: %v", err)
+			}
+			var cleanupErr *CleanupError
+			if errors.As(err, &cleanupErr) {
+				t.Fatalf("unexpected cleanup failure: %v", err)
+			}
+			if mode == "expired" && cmd.Process != nil {
+				t.Fatal("expired context started the process")
+			}
+		})
 	}
 }
 
