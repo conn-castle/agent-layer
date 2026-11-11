@@ -453,6 +453,9 @@ func CheckAgents(ctx context.Context, cfg *config.ProjectConfig) []Result {
 		}
 		results = append(results, binaryResults...)
 	}
+	if ctx.Err() == nil {
+		results = append(results, CheckMusePolicy(ctx, cfg)...)
+	}
 	return results
 }
 

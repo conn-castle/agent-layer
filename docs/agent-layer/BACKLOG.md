@@ -28,6 +28,12 @@ Maintainability refactors belong in [GitHub Issues](https://github.com/conn-cast
 
 <!-- ENTRIES START -->
 
+- Backlog 2026-11-10 muse-session-approval-rules: Use session approval rules for Muse dispatch
+    Priority: Medium. Area: Muse / dispatch / approvals
+    Description: Adopt client-supplied per-session command approval rules once Muse serves experimental `session/start.approvalRules`, so dispatch can stop persisting global command grants.
+    Acceptance criteria: Verify served support, preserve approval-mode and native denial behavior, and retire dispatch’s persistent grants safely.
+    Notes: Muse 1.4.15’s offline experimental schema explicitly says hosts refuse this field with `-32602` until served; do not send it today (#529).
+
 - Backlog 2026-10-06 copilot-review-context: Evaluate repository context for Copilot reviews
     Priority: Low. Area: review tooling / skills / MCP
     Description: Evaluate a review-focused `code-review` agent skill and relevant MCP context so Copilot reviews can use repository-specific review guidance.

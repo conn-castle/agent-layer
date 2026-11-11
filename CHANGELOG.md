@@ -1,6 +1,11 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## Unreleased
+
+### Fixed
+- Unchanged Muse approval syncs no longer rewrite or reorder `approval-policy.json`. Stale Agent Layer grants for deleted roots or roots with missing or mismatched ownership receipts are removed by the next Muse-enabled `al sync` in any workspace using the same supported native policy directory, so a new project at a reused path no longer keeps inheriting those grants after that sync. Native-directory and workspace-root aliases are kept by filesystem identity. `al doctor` reports owned rule/root counts, orphaned roots, current-workspace receipt repair, and nested or possible throwaway copies with retirement guidance for disposable copies (#529).
+
 ## v1.2.1 - 2026-11-10
 
 ### Fixed

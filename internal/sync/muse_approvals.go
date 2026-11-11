@@ -36,7 +36,7 @@ func writeMuseApprovals(sys System, root string, project *config.ProjectConfig) 
 	receiptPath := filepath.Join(dir, "agent-layer-policy.json")
 	_, receiptErr := sys.Lstat(receiptPath)
 	if receiptErr != nil && !os.IsNotExist(receiptErr) {
-		return fmt.Errorf("stat Muse policy ownership receipt: %w", receiptErr)
+		return musePolicyReceiptReadError(receiptPath, receiptErr)
 	}
 	if !enabled && os.IsNotExist(receiptErr) {
 		owned, err := museLocalOwnershipEvidence(sys, path, "al hook muse-mcp ", museApprovalHookMarker)
@@ -125,12 +125,20 @@ func writeMuseApprovals(sys System, root string, project *config.ProjectConfig) 
 	target, targetErr := musePolicyRetirementDirectory(receipt, canonical)
 	if targetErr != nil {
 		if !enabled {
-			return fmt.Errorf("invalid Agent Layer Muse policy ownership receipt: %w: %s", targetErr, receiptPath)
+			return fmt.Errorf("invalid Agent Layer Muse policy ownership receipt %s: %w", receiptPath, targetErr)
 		}
 		// Enabled sync rewrites current grants; do not retire another workspace.
-	} else if target != "" && (!enabled || target != nativeDir) {
-		if err := musepolicy.SyncCommands(target, canonical, nil); err != nil {
-			return fmt.Errorf("retire Muse command approvals: %w", err)
+	} else if target != "" {
+		retire := !enabled
+		if enabled {
+			same, identityErr := musepolicy.SameDirectory(target, nativeDir)
+			// Uncertain identity cannot authorize retirement of old grants.
+			retire = identityErr == nil && !same
+		}
+		if retire {
+			if err := musepolicy.SyncCommands(target, canonical, nil); err != nil {
+				return fmt.Errorf("retire Muse command approvals: %w", err)
+			}
 		}
 	}
 	switch {
@@ -143,7 +151,7 @@ func writeMuseApprovals(sys System, root string, project *config.ProjectConfig) 
 		if projection.BuildApprovals(project.Config, project.CommandsAllow).AllowCommands {
 			commands = project.CommandsAllow
 		}
-		if err := musepolicy.SyncCommands(nativeDir, canonical, commands); err != nil {
+		if err := musepolicy.SyncEnabledCommands(nativeDir, canonical, commands); err != nil {
 			return fmt.Errorf("sync Muse command approvals: %w", err)
 		}
 	case receipt != nil:
