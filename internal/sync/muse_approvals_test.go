@@ -351,3 +351,18 @@ func TestMuseNonemptyCommandsPruneOrphans(t *testing.T) {
 	require.NoError(t, writeMuseApprovals(RealSystem{}, root, project))
 	require.Equal(t, [][]string{{"go"}}, museOwnedCommandPrefixes(t, filepath.Join(base, "muse/approval-policy.json")))
 }
+
+func TestMuseReceiptRetirementKeepsExistingUncleanPathValidation(t *testing.T) {
+	base, root := t.TempDir(), t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", base)
+	dir := filepath.Join(base, "muse") + "/../muse"
+	receiptPath := filepath.Join(root, ".muse/agent-layer-policy.json")
+	require.NoError(t, writeMusePolicyReceipt(RealSystem{}, receiptPath, dir, root+"/."))
+	receipt, err := readMusePolicyReceipt(RealSystem{}, receiptPath)
+	require.NoError(t, err)
+	require.Equal(t, root+"/.", receipt.Root)
+	require.Equal(t, dir, receipt.Directory)
+	target, err := musePolicyRetirementDirectory(receipt, root)
+	require.NoError(t, err)
+	require.Equal(t, dir, target)
+}

@@ -504,3 +504,114 @@ func TestCommandHousekeepingSkipsBusyNativeLock(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, before, after)
 }
+
+func TestCommandPolicyUncleanReceiptsAreUnknown(t *testing.T) {
+	for _, field := range []string{"workspace_root", "directory"} {
+		t.Run(field, func(t *testing.T) {
+			base, elsewhere := policyTempDir(t), policyTempDir(t)
+			root, dir := filepath.Join(base, "repo"), filepath.Join(base, "muse")
+			require.NoError(t, os.Mkdir(root, 0o700))
+			subdir := filepath.Join(base, "subdir")
+			require.NoError(t, os.Mkdir(subdir, 0o700))
+			link := filepath.Join(elsewhere, "link")
+			require.NoError(t, os.Symlink(subdir, link))
+			receiptFixture(t, dir, root)
+			require.NoError(t, SyncCommands(dir, root, []string{"make"}))
+			receipt := Receipt{GeneratedBy: "agent-layer", Directory: dir, Root: root}
+			// Construct without filepath.Join, which would erase symlink/..
+			// before the filesystem gets to resolve the original spelling.
+			if field == "workspace_root" {
+				receipt.Root = link + "/../repo"
+			} else {
+				receipt.Directory = link + "/../muse"
+			}
+			data, err := json.Marshal(receipt)
+			require.NoError(t, err)
+			require.NoError(t, os.WriteFile(filepath.Join(root, ".muse/agent-layer-policy.json"), data, 0o600))
+			// Shared receipt parsing keeps its existing validation contract.
+			parsed, err := ParseReceipt(data)
+			require.NoError(t, err)
+			require.Equal(t, receipt, *parsed)
+			inspection, err := Inspect(context.Background(), dir, root)
+			require.NoError(t, err)
+			require.True(t, inspection.CurrentReceiptUnknown)
+			require.False(t, inspection.CurrentReceiptOrphan)
+			require.Empty(t, inspection.Orphans)
+			path := filepath.Join(dir, "approval-policy.json")
+			before, err := os.ReadFile(path) // #nosec G304 -- isolated temporary native policy.
+			require.NoError(t, err)
+			require.NoError(t, SyncEnabledCommands(dir, policyTempDir(t), nil))
+			after, err := os.ReadFile(path) // #nosec G304 -- isolated temporary native policy.
+			require.NoError(t, err)
+			require.Equal(t, before, after)
+		})
+	}
+}
+
+func TestCommandPolicySymlinkEmptyPreflightPreservesOwnershipBoundaries(t *testing.T) {
+	for _, owner := range []string{"user", "other workspace", "current workspace"} {
+		t.Run(owner, func(t *testing.T) {
+			dir, targetDir, root := policyTempDir(t), policyTempDir(t), policyTempDir(t)
+			target := filepath.Join(targetDir, "approval-policy.json")
+			if owner == "user" {
+				require.NoError(t, os.WriteFile(target, []byte(`{"schema_version":2,"rules":[{"reason":"user"}]}`), 0o600))
+			} else {
+				ownedRoot := root
+				if owner == "other workspace" {
+					ownedRoot = policyTempDir(t)
+				}
+				require.NoError(t, SyncCommands(targetDir, ownedRoot, []string{"make"}))
+			}
+			path := filepath.Join(dir, "approval-policy.json")
+			require.NoError(t, os.Symlink(target, path))
+			before, err := os.ReadFile(target) // #nosec G304 -- isolated temporary native policy.
+			require.NoError(t, err)
+			info, err := os.Stat(target)
+			require.NoError(t, err)
+			err = SyncEnabledCommands(dir, root, nil)
+			if owner == "current workspace" {
+				require.ErrorContains(t, err, "regular file")
+			} else {
+				require.NoError(t, err)
+			}
+			// Disabled/retirement reads remain strict even for unrelated rules.
+			require.ErrorContains(t, SyncCommands(dir, root, nil), "regular file")
+			after, err := os.ReadFile(target) // #nosec G304 -- isolated temporary native policy.
+			require.NoError(t, err)
+			current, err := os.Stat(target)
+			require.NoError(t, err)
+			require.Equal(t, before, after)
+			require.Equal(t, info.ModTime(), current.ModTime())
+			require.True(t, os.SameFile(info, current))
+			require.NoFileExists(t, filepath.Join(dir, "approval-policy.lock"))
+			linkInfo, err := os.Lstat(path)
+			require.NoError(t, err)
+			require.NotZero(t, linkInfo.Mode()&os.ModeSymlink)
+		})
+	}
+}
+
+func TestCommandPolicySymlinkPreflightRejectsUnsafeTargets(t *testing.T) {
+	for _, kind := range []string{"missing", "directory", "FIFO", "unreadable"} {
+		t.Run(kind, func(t *testing.T) {
+			dir := policyTempDir(t)
+			target := filepath.Join(policyTempDir(t), "target")
+			switch kind {
+			case "directory":
+				require.NoError(t, os.Mkdir(target, 0o700))
+			case "FIFO":
+				require.NoError(t, unix.Mkfifo(target, 0o600))
+			case "unreadable":
+				if os.Geteuid() == 0 {
+					t.Skip("root bypasses permission checks")
+				}
+				require.NoError(t, os.WriteFile(target, []byte(`{"schema_version":2,"rules":[]}`), 0o600))
+				require.NoError(t, os.Chmod(target, 0))
+				t.Cleanup(func() { require.NoError(t, os.Chmod(target, 0o600)) })
+			}
+			require.NoError(t, os.Symlink(target, filepath.Join(dir, "approval-policy.json")))
+			require.Error(t, SyncEnabledCommands(dir, policyTempDir(t), nil))
+			require.NoFileExists(t, filepath.Join(dir, "approval-policy.lock"))
+		})
+	}
+}

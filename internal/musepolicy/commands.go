@@ -133,6 +133,21 @@ func syncCommands(dir, root string, commands []string, prune bool) (err error) {
 		// Optional orphan housekeeping must not impose our writer's native
 		// directory and schema requirements on otherwise unrelated state.
 		data, readErr := readRegular(path)
+		symlinkPolicy := false
+		if prune && readErr != nil {
+			if info, statErr := os.Lstat(path); statErr == nil && info.Mode()&os.ModeSymlink != 0 {
+				// Inspect a regular target read-only to determine whether this
+				// workspace must retire grants. Never write through the link.
+				target, statErr := os.Stat(path)
+				if statErr != nil {
+					return statErr
+				}
+				if target.Mode().IsRegular() {
+					data, readErr = fsutil.ReadRegularFile(path)
+					symlinkPolicy = true
+				}
+			}
+		}
 		if readErr != nil {
 			return readErr
 		}
@@ -156,6 +171,12 @@ func syncCommands(dir, root string, commands []string, prune bool) (err error) {
 			if _, candidate := ownedCommandRule(raw); candidate {
 				candidates = true
 			}
+		}
+		if symlinkPolicy {
+			if owned {
+				return fmt.Errorf("muse approval policy must be a regular file: %s", path)
+			}
+			return nil // Skip pruning without writing through the policy-file symlink.
 		}
 		if !owned {
 			if !prune || !candidates {
