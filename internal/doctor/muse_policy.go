@@ -42,10 +42,15 @@ func CheckMusePolicy(ctx context.Context, cfg *config.ProjectConfig) (results []
 	}
 	results = []Result{{Status: StatusOK, CheckName: messages.DoctorCheckNameMusePolicy,
 		Message: fmt.Sprintf(messages.DoctorMusePolicyCountFmt, inspection.Total, len(inspection.Roots))}}
-	if inspection.CurrentReceiptInvalid {
+	if inspection.CurrentReceiptOrphan {
 		results = append(results, Result{Status: StatusWarn, CheckName: messages.DoctorCheckNameMusePolicy,
-			Message:        messages.DoctorMusePolicyCurrentReceiptInvalid,
-			Recommendation: messages.DoctorMusePolicyCurrentReceiptRecommend})
+			Message:        messages.DoctorMusePolicyCurrentReceiptOrphan,
+			Recommendation: messages.DoctorMusePolicyCurrentReceiptOrphanRecommend})
+	}
+	if inspection.CurrentReceiptUnknown {
+		results = append(results, Result{Status: StatusWarn, CheckName: messages.DoctorCheckNameMusePolicy,
+			Message:        messages.DoctorMusePolicyCurrentReceiptUnknown,
+			Recommendation: messages.DoctorMusePolicyCurrentReceiptUnknownRecommend})
 	}
 	if len(inspection.Orphans) > 0 {
 		results = append(results, Result{Status: StatusWarn, CheckName: messages.DoctorCheckNameMusePolicy,

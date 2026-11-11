@@ -86,7 +86,8 @@ type Inspection struct {
 	Roots                 []RootRules
 	Orphans               []RootRules
 	Nested                []RootRules
-	CurrentReceiptInvalid bool
+	CurrentReceiptOrphan  bool
+	CurrentReceiptUnknown bool
 }
 
 // Inspect shares ownership classification and orphan detection with sync.
@@ -140,7 +141,11 @@ func Inspect(ctx context.Context, directory, currentRoot string) (Inspection, er
 			return Inspection{}, err
 		}
 		if current && state != ownershipValid {
-			result.CurrentReceiptInvalid = true
+			if state == ownershipOrphan {
+				result.CurrentReceiptOrphan = true
+			} else {
+				result.CurrentReceiptUnknown = true
+			}
 			continue
 		}
 		if state == ownershipOrphan {

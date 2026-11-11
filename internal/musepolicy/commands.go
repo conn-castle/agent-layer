@@ -121,6 +121,13 @@ func syncCommands(dir, root string, commands []string, prune bool) (err error) {
 	}
 	path := filepath.Join(dir, "approval-policy.json")
 	housekeepingOnly := false
+	defer func() {
+		// Once ownership inspection proves no required update, every failure
+		// (including unlock/close) belongs to optional housekeeping only.
+		if housekeepingOnly {
+			err = nil
+		}
+	}()
 	if len(desired) == 0 {
 		// Read leniently before deciding whether this workspace needs a write.
 		// Optional orphan housekeeping must not impose our writer's native
@@ -187,6 +194,9 @@ func syncCommands(dir, root string, commands []string, prune bool) (err error) {
 		err = unix.Flock(fd, unix.LOCK_EX|unix.LOCK_NB)
 		if err == nil {
 			break
+		}
+		if housekeepingOnly {
+			return nil // One non-blocking attempt; never wait for optional pruning.
 		}
 		if !errors.Is(err, unix.EWOULDBLOCK) && !errors.Is(err, unix.EAGAIN) {
 			return err

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+	"golang.org/x/sys/unix"
 )
 
 // Match the canonical roots SyncCommands records, including macOS temp paths.
@@ -443,4 +444,63 @@ func TestMusePolicyInspectionDropsPartialResultsOnCancellation(t *testing.T) {
 	inspection, err := Inspect(ctx, dir, "")
 	require.ErrorIs(t, err, context.Canceled)
 	require.Equal(t, Inspection{}, inspection)
+}
+
+func TestCommandHousekeepingReadOnlyNativeDirectoryIsBestEffort(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root bypasses permission checks")
+	}
+	for _, existingLock := range []bool{false, true} {
+		name := "lock creation fails"
+		if existingLock {
+			name = "atomic write fails"
+		}
+		t.Run(name, func(t *testing.T) {
+			dir, orphan, current := policyTempDir(t), policyTempDir(t), policyTempDir(t)
+			// This existing root has no receipt, so its rule is an orphan.
+			require.NoError(t, SyncCommands(dir, orphan, []string{"make"}))
+			path := filepath.Join(dir, "approval-policy.json")
+			before, err := os.ReadFile(path) // #nosec G304 -- isolated temporary policy fixture.
+			require.NoError(t, err)
+			if !existingLock {
+				require.NoError(t, os.Remove(filepath.Join(dir, "approval-policy.lock")))
+			}
+			require.NoError(t, os.Chmod(dir, 0o500))                       // #nosec G302 -- a read-only test directory must retain traversal permission.
+			t.Cleanup(func() { require.NoError(t, os.Chmod(dir, 0o700)) }) // #nosec G302 -- restore traversal of a test-owned directory.
+			require.NoError(t, SyncEnabledCommands(dir, current, nil))
+			after, err := os.ReadFile(path) // #nosec G304 -- isolated temporary policy fixture.
+			require.NoError(t, err)
+			require.Equal(t, before, after)
+			// Adding grants and retiring our own rules remain mandatory writes.
+			require.Error(t, SyncEnabledCommands(dir, current, []string{"go"}))
+			require.Error(t, SyncEnabledCommands(dir, orphan, nil))
+		})
+	}
+}
+
+func TestCommandHousekeepingSkipsBusyNativeLock(t *testing.T) {
+	dir, orphan, current := policyTempDir(t), policyTempDir(t), policyTempDir(t)
+	require.NoError(t, SyncCommands(dir, orphan, []string{"make"}))
+	path := filepath.Join(dir, "approval-policy.json")
+	before, err := os.ReadFile(path) // #nosec G304 -- isolated temporary policy fixture.
+	require.NoError(t, err)
+	lock, err := os.OpenFile(filepath.Join(dir, "approval-policy.lock"), os.O_RDWR, 0o600) // #nosec G304 -- isolated temporary lock fixture.
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, lock.Close()) })
+	require.NoError(t, unix.Flock(int(lock.Fd()), unix.LOCK_EX|unix.LOCK_NB))
+	t.Cleanup(func() { require.NoError(t, unix.Flock(int(lock.Fd()), unix.LOCK_UN)) })
+	done := make(chan error, 1)
+	go func() { done <- SyncEnabledCommands(dir, current, nil) }()
+	select {
+	case err := <-done:
+		require.NoError(t, err)
+	case <-time.After(time.Second):
+		// Release before failing so a regressed blocking writer can finish.
+		require.NoError(t, unix.Flock(int(lock.Fd()), unix.LOCK_UN))
+		<-done
+		t.Fatal("optional pruning waited on the busy native policy lock")
+	}
+	after, err := os.ReadFile(path) // #nosec G304 -- isolated temporary policy fixture.
+	require.NoError(t, err)
+	require.Equal(t, before, after)
 }

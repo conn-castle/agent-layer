@@ -167,36 +167,92 @@ func TestCheckAgentsIncludesMusePolicyOnlyWhenEnabled(t *testing.T) {
 }
 
 func TestCheckMusePolicyCurrentReceiptNeedsRepair(t *testing.T) {
-	for _, missing := range []bool{true, false} {
-		name := "invalid receipt"
-		if missing {
-			name = "missing receipt"
-		}
-		t.Run(name, func(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		unknown bool
+	}{
+		{"missing receipt", false}, {"missing local directory", false},
+		{"another root", false}, {"another native directory", false},
+		{"malformed receipt", true}, {"symlink receipt", true},
+		{"nonregular receipt", true}, {"symlink local directory", true},
+		{"non-directory local path", true}, {"unreadable receipt", true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
 			base := doctorPolicyTempDir(t)
 			t.Setenv("XDG_CONFIG_HOME", base)
 			dir, root := filepath.Join(base, "muse"), doctorPolicyTempDir(t)
 			doctorMuseReceipt(t, dir, root)
 			require.NoError(t, musepolicy.SyncCommands(dir, root, []string{"go"}))
-			receipt := filepath.Join(root, ".muse/agent-layer-policy.json")
-			if missing {
+			local := filepath.Join(root, ".muse")
+			receipt := filepath.Join(local, "agent-layer-policy.json")
+			switch test.name {
+			case "missing receipt":
 				require.NoError(t, os.Remove(receipt))
-			} else {
+			case "missing local directory":
+				require.NoError(t, os.RemoveAll(local))
+			case "another root", "another native directory":
+				recordedRoot, recordedDir := root, dir
+				if test.name == "another root" {
+					recordedRoot = doctorPolicyTempDir(t)
+				} else {
+					recordedDir = filepath.Join(doctorPolicyTempDir(t), "muse")
+					require.NoError(t, os.Mkdir(recordedDir, 0o700))
+				}
+				data, err := json.Marshal(musepolicy.Receipt{GeneratedBy: "agent-layer", Directory: recordedDir, Root: recordedRoot})
+				require.NoError(t, err)
+				require.NoError(t, os.WriteFile(receipt, data, 0o600))
+			case "malformed receipt":
 				require.NoError(t, os.WriteFile(receipt, []byte(`{`), 0o600))
+			case "symlink receipt":
+				target := filepath.Join(doctorPolicyTempDir(t), "receipt")
+				require.NoError(t, os.Rename(receipt, target))
+				require.NoError(t, os.Symlink(target, receipt))
+			case "nonregular receipt":
+				require.NoError(t, os.Remove(receipt))
+				require.NoError(t, os.Mkdir(receipt, 0o700))
+			case "symlink local directory", "non-directory local path":
+				require.NoError(t, os.RemoveAll(local))
+				if test.name == "symlink local directory" {
+					require.NoError(t, os.Symlink(doctorPolicyTempDir(t), local))
+				} else {
+					require.NoError(t, os.WriteFile(local, nil, 0o600))
+				}
+			case "unreadable receipt":
+				if os.Geteuid() == 0 {
+					t.Skip("root bypasses permission checks")
+				}
+				require.NoError(t, os.Chmod(receipt, 0))
+				t.Cleanup(func() { require.NoError(t, os.Chmod(receipt, 0o600)) })
 			}
 			alias := filepath.Join(doctorPolicyTempDir(t), "project-alias")
 			require.NoError(t, os.Symlink(filepath.Dir(root), alias))
 			cfg := museDoctorConfig(t, true)
 			cfg.Root = filepath.Join(alias, filepath.Base(root))
+			path := filepath.Join(dir, "approval-policy.json")
+			before, err := os.ReadFile(path) // #nosec G304 -- isolated temporary policy fixture.
+			require.NoError(t, err)
 			results := CheckMusePolicy(context.Background(), cfg)
 			require.Len(t, results, 2)
 			require.Equal(t, StatusOK, results[0].Status)
 			require.Equal(t, StatusWarn, results[1].Status)
-			require.Contains(t, results[1].Message, "This workspace's Muse ownership receipt is missing, invalid, or unreadable")
-			require.Contains(t, results[1].Message, "other workspaces may remove its grants")
-			require.Contains(t, results[1].Recommendation, "Run `al sync` here")
+			if test.unknown {
+				require.Contains(t, results[1].Message, "ownership could not be verified")
+				require.Contains(t, results[1].Message, "grants are kept, but cleanup cannot be verified")
+				require.NotContains(t, results[1].Message, "may remove")
+				require.Contains(t, results[1].Recommendation, "`.muse` a real directory")
+				require.Contains(t, results[1].Recommendation, "`.muse/agent-layer-policy.json` a regular file")
+				require.Contains(t, results[1].Recommendation, "remove the bad receipt")
+				require.Contains(t, results[1].Recommendation, "run `al sync` here")
+			} else {
+				require.Contains(t, results[1].Message, "receipt is missing or names another workspace root or native policy directory")
+				require.Contains(t, results[1].Message, "other workspaces' Muse-enabled syncs may remove its grants")
+				require.Contains(t, results[1].Recommendation, "Run `al sync` here to rewrite")
+			}
 			require.NotContains(t, results[1].Message, "orphaned")
-			if missing {
+			after, err := os.ReadFile(path) // #nosec G304 -- isolated temporary policy fixture.
+			require.NoError(t, err)
+			require.Equal(t, before, after)
+			if test.name == "missing receipt" {
 				require.NoFileExists(t, receipt)
 			}
 		})
