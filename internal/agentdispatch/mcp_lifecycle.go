@@ -235,6 +235,8 @@ func (r *mcpObservedReader) Read(p []byte) (int, error) {
 	r.framing.read(p[:n])
 	r.lifecycle.mu.Lock()
 	if r.closing && (errors.Is(err, io.ErrClosedPipe) || errors.Is(err, os.ErrClosed)) {
+		// The transport exclusively owns its reader; peer closure yields EOF.
+		// Concurrent in-process closes by other holders are outside this contract.
 		// These identities specifically report use of a closed local reader.
 		// A sentinel, parser error, peer write failure, or input deadline is
 		// not proof of local-close fallout and must remain observable.

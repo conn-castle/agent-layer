@@ -54,6 +54,23 @@ dispatch_show_stderr() {
   fi
 }
 
+# Optional state and invocation ID preserve each caller's additional assertions.
+dispatch_wait_terminated() {
+  local repo_dir="$1" handle="$2" wait_file="$3" stderr_file="$4" label="$5"
+  local expected_state="${6:-}" expected_invocation="${7:-}"
+  local wait_rc=0
+  (cd "$repo_dir" && al dispatch wait "$handle" --condition termination_confirmed >"$wait_file" 2>"$stderr_file") || wait_rc=$?
+  if [[ $wait_rc -eq 0 ]] && grep -q '"condition_met":true' "$wait_file" \
+    && grep -q '"termination_confirmed":true' "$wait_file" \
+    && { [[ -z "$expected_state" ]] || grep -q "\"state\":\"$expected_state\"" "$wait_file"; } \
+    && { [[ -z "$expected_invocation" ]] || grep -q "\"invocation_id\":\"$expected_invocation\"" "$wait_file"; }; then
+    pass "$label"
+  else
+    fail "$label (exit code: $wait_rc)"
+    dispatch_show_stderr "$stderr_file"
+  fi
+}
+
 # check_dispatch_reservations exercises reserve-then-start against the built
 # binary: every start of one reservation launches the provider at most once.
 check_dispatch_reservations() {
@@ -89,12 +106,15 @@ check_dispatch_reservations() {
   done
   assert_mock_agent_not_called "$MOCK_DISPATCH_CODEX_LOG" "unknown reservations launch nothing"
 
-  local index pids=() started=0 already=0
+  local index pids=() stderr_paths=() started=0 already=0
+  local start_stderr
   for index in {1..8}; do
+    start_stderr="$repo_dir/reserved-${index}.stderr"
     (cd "$repo_dir" && MOCK_DISPATCH_DELAY_SECONDS=0.5 al dispatch start --reservation "$reservation" \
       --agent codex --prompt "Reserved work" >"$repo_dir/reserved-${index}.json" \
-      2>"$repo_dir/reserved-${index}.stderr") &
+      2>"$start_stderr") &
     pids+=("$!")
+    stderr_paths+=("$start_stderr")
   done
   for index in "${!pids[@]}"; do
     if wait "${pids[$index]}"; then
@@ -105,7 +125,7 @@ check_dispatch_reservations() {
         already=$((already + 1))
       else
         fail "concurrent reservation start exited $rc, want 0 or 82"
-        dispatch_show_stderr "$repo_dir/reserved-$((index + 1)).stderr"
+        dispatch_show_stderr "${stderr_paths[$index]}"
       fi
     fi
   done
@@ -117,16 +137,9 @@ check_dispatch_reservations() {
     fail "eight concurrent starts launch once and reject seven as already started (started: $started, same id: $same_id, already: $already)"
   fi
   local wait_file="$repo_dir/reserved-wait.json"
-  rc=0
   # A terminal result can precede stop proof; continuation requires that proof.
-  (cd "$repo_dir" && al dispatch wait "$reservation" --condition termination_confirmed >"$wait_file" 2>"$stderr_file") || rc=$?
-  if [[ $rc -eq 0 ]] && grep -q '"state":"completed"' "$wait_file" \
-    && grep -q '"condition_met":true' "$wait_file" && grep -q '"termination_confirmed":true' "$wait_file" && grep -q "\"invocation_id\":\"$reserved_id\"" "$wait_file"; then
-    pass "wait on the reservation handle returns the completed invocation"
-  else
-    fail "wait on the reservation handle returns the completed invocation (exit code: $rc)"
-    dispatch_show_stderr "$stderr_file"
-  fi
+  dispatch_wait_terminated "$repo_dir" "$reservation" "$wait_file" "$stderr_file" \
+    "wait on the reservation handle returns the completed invocation" completed "$reserved_id"
 
   local repeat_file="$repo_dir/reserved-repeat.json"
   local repeat_error="$repo_dir/reserved-repeat.stderr"
@@ -176,15 +189,8 @@ check_dispatch_reservations() {
     fail "repeated start after continuation still errors as already started (exit code: $rc)"
     dispatch_show_stderr "$repeat_error"
   fi
-  rc=0
-  (cd "$repo_dir" && al dispatch wait "$reservation" --condition termination_confirmed >"$wait_file" 2>"$stderr_file") || rc=$?
-  if [[ $rc -eq 0 ]] \
-    && grep -q '"condition_met":true' "$wait_file" && grep -q '"termination_confirmed":true' "$wait_file"; then
-    pass "reserved continuation termination is confirmed"
-  else
-    fail "reserved continuation termination is confirmed (exit code: $rc)"
-    dispatch_show_stderr "$stderr_file"
-  fi
+  dispatch_wait_terminated "$repo_dir" "$reservation" "$wait_file" "$stderr_file" \
+    "reserved continuation termination is confirmed"
   launches="$(grep -c -- '---END---' "$MOCK_DISPATCH_CODEX_LOG" || true)"
   if [[ "$launches" -eq 2 ]]; then
     pass "repeated reservation start after continuation launches nothing"
@@ -225,23 +231,16 @@ SKILL
   local start_file="$repo_dir/dispatch-start.json"
   local wait_file="$repo_dir/dispatch-wait.json"
   local stderr_file="$repo_dir/dispatch.stderr"
-  local rc=0
 
-  local start_rc=0 wait_rc=0 continue_rc=0
+  local start_rc=0
   (cd "$repo_dir" && al dispatch start --agent codex \
     --prompt "Use defaults" >"$start_file" 2>"$stderr_file") || start_rc=$?
   local handle
   handle="$(dispatch_json_field "$start_file" handle)"
-  if [[ $start_rc -eq 0 ]]; then
+  if [[ $start_rc -eq 0 && -n "$handle" ]]; then
     pass "dispatch start accepts omitted overrides"
-    (cd "$repo_dir" && al dispatch wait "$handle" --condition termination_confirmed >"$wait_file" 2>"$stderr_file") || wait_rc=$?
-    if [[ $wait_rc -eq 0 ]] && grep -q '"state":"completed"' "$wait_file" \
-      && grep -q '"condition_met":true' "$wait_file" && grep -q '"termination_confirmed":true' "$wait_file"; then
-      pass "dispatch wait after omitted overrides completes"
-    else
-      fail "dispatch wait after omitted overrides completes (exit code: $wait_rc)"
-      dispatch_show_stderr "$stderr_file"
-    fi
+    dispatch_wait_terminated "$repo_dir" "$handle" "$wait_file" "$stderr_file" \
+      "dispatch wait after omitted overrides completes" completed
   else
     fail "dispatch start accepts omitted overrides (exit code: $start_rc)"
     dispatch_show_stderr "$stderr_file"
@@ -252,7 +251,7 @@ SKILL
     "start omits an unconfigured reasoning override"
 
   : > "$MOCK_DISPATCH_CODEX_LOG"
-  rc=0
+  local rc=0
   (cd "$repo_dir" && al dispatch start --agent codex --model gpt-test \
     --reasoning-effort high --prompt "Return ok" >"$start_file" 2>"$stderr_file") || rc=$?
   if [[ $rc -eq 0 ]] && grep -q '"state":"running"' "$start_file"; then
@@ -280,28 +279,16 @@ SKILL
   assert_file_contains "$MOCK_DISPATCH_CODEX_LOG" "AL_DISPATCH_ACTIVE=1" "worker receives depth marker"
   assert_file_contains "$MOCK_DISPATCH_CODEX_PROMPT" "Return ok" "start passes prompt"
 
-  rc=0
-  (cd "$repo_dir" && al dispatch wait "$handle" --condition termination_confirmed >"$wait_file" 2>"$stderr_file") || rc=$?
-  if [[ $rc -eq 0 ]] && grep -q '"condition_met":true' "$wait_file" && grep -q '"termination_confirmed":true' "$wait_file"; then
-    pass "dispatch termination is confirmed before continue"
-  else
-    fail "dispatch termination is confirmed before continue (exit code: $rc)"
-    dispatch_show_stderr "$stderr_file"
-  fi
+  dispatch_wait_terminated "$repo_dir" "$handle" "$wait_file" "$stderr_file" \
+    "dispatch termination is confirmed before continue"
 
   : > "$MOCK_DISPATCH_CODEX_LOG"
+  local continue_rc=0
   (cd "$repo_dir" && al dispatch continue "$handle" --prompt "Continue" >"$start_file" 2>"$stderr_file") || continue_rc=$?
   if [[ $continue_rc -eq 0 ]]; then
     pass "dispatch continue starts the next invocation"
-    wait_rc=0
-    (cd "$repo_dir" && al dispatch wait "$handle" --condition termination_confirmed >"$wait_file" 2>"$stderr_file") || wait_rc=$?
-    if [[ $wait_rc -eq 0 ]] && grep -q '"state":"completed"' "$wait_file" \
-      && grep -q '"condition_met":true' "$wait_file" && grep -q '"termination_confirmed":true' "$wait_file"; then
-      pass "dispatch wait after continue completes the conversation"
-    else
-      fail "dispatch wait after continue completes the conversation (exit code: $wait_rc)"
-      dispatch_show_stderr "$stderr_file"
-    fi
+    dispatch_wait_terminated "$repo_dir" "$handle" "$wait_file" "$stderr_file" \
+      "dispatch wait after continue completes the conversation" completed
   else
     fail "dispatch continue starts the next invocation (exit code: $continue_rc)"
     dispatch_show_stderr "$stderr_file"
@@ -314,17 +301,10 @@ SKILL
   (cd "$repo_dir" && al dispatch start --agent codex --model gpt-test \
     --reasoning-effort high --skill e2e-skill --prompt "Use skill" >"$start_file" 2>"$stderr_file") || start_rc=$?
   handle="$(dispatch_json_field "$start_file" handle)"
-  if [[ $start_rc -eq 0 ]]; then
+  if [[ $start_rc -eq 0 && -n "$handle" ]]; then
     pass "dispatch start accepts the selected skill"
-    wait_rc=0
-    (cd "$repo_dir" && al dispatch wait "$handle" --condition termination_confirmed >"$wait_file" 2>"$stderr_file") || wait_rc=$?
-    if [[ $wait_rc -eq 0 ]] && grep -q '"state":"completed"' "$wait_file" \
-      && grep -q '"condition_met":true' "$wait_file" && grep -q '"termination_confirmed":true' "$wait_file"; then
-      pass "dispatch wait after skill start completes"
-    else
-      fail "dispatch wait after skill start completes (exit code: $wait_rc)"
-      dispatch_show_stderr "$stderr_file"
-    fi
+    dispatch_wait_terminated "$repo_dir" "$handle" "$wait_file" "$stderr_file" \
+      "dispatch wait after skill start completes" completed
   else
     fail "dispatch start accepts the selected skill (exit code: $start_rc)"
     dispatch_show_stderr "$stderr_file"
@@ -358,7 +338,7 @@ SKILL
   (cd "$repo_dir" && MOCK_DISPATCH_DELAY_SECONDS=5 al dispatch start --agent codex \
     --model gpt-test --reasoning-effort high --prompt "Cancel me" >"$start_file" 2>"$stderr_file") || start_rc=$?
   handle="$(dispatch_json_field "$start_file" handle)"
-  if [[ $start_rc -eq 0 ]]; then
+  if [[ $start_rc -eq 0 && -n "$handle" ]]; then
     pass "dispatch start accepts work to cancel"
     rc=0
     (cd "$repo_dir" && al dispatch cancel "$handle" >"$wait_file" 2>"$stderr_file") || rc=$?
@@ -373,22 +353,16 @@ SKILL
     dispatch_show_stderr "$stderr_file"
   fi
   rc=0
-  (cd "$repo_dir" && al dispatch cancel "$handle" >"$wait_file") || rc=$?
+  (cd "$repo_dir" && al dispatch cancel "$handle" >"$wait_file" 2>"$stderr_file") || rc=$?
   if [[ $rc -eq 0 ]] && grep -q '"state":"cancelled"' "$wait_file"; then
     pass "repeated cancel is idempotent"
   else
     fail "repeated cancel is idempotent (exit code: $rc)"
-  fi
-
-  rc=0
-  (cd "$repo_dir" && al dispatch wait "$handle" --condition termination_confirmed >"$wait_file" 2>"$stderr_file") || rc=$?
-  if [[ $rc -eq 0 ]] \
-    && grep -q '"condition_met":true' "$wait_file" && grep -q '"termination_confirmed":true' "$wait_file"; then
-    pass "cancelled provider termination is confirmed"
-  else
-    fail "cancelled provider termination is confirmed (exit code: $rc)"
     dispatch_show_stderr "$stderr_file"
   fi
+
+  dispatch_wait_terminated "$repo_dir" "$handle" "$wait_file" "$stderr_file" \
+    "cancelled provider termination is confirmed"
 
   check_dispatch_reservations "$repo_dir" "$handle"
 

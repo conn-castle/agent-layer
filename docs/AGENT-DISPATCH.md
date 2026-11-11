@@ -727,8 +727,10 @@ condition takes precedence. Failures from reads/writes begun while open survive
 overlapping Close with `uncertain: true`: they establish an observed failure,
 not that the peer caused it. A raw read error identified as a locally closed
 pipe/file after our transport reader's Close began is local-close fallout,
-not competing transport evidence. Pure context cancellation with only that fallout
-or local-close EOF remains certain cancellation. Unknown causes and competing input
+not competing transport evidence. Attribution assumes exclusive reader ownership:
+peer closure yields EOF; concurrent in-process closes are outside this contract.
+Pure context cancellation with only that fallout or local-close EOF remains
+certain cancellation. Unknown causes and competing input
 EOF/cancellation are uncertain. None of these records establishes a graceful
 shutdown. SIGTERM/SIGINT normally cancel the CLI serving context.
 On Unix, process-owned MCP stdin and stdout use pollable I/O, including when a
