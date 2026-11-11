@@ -227,16 +227,23 @@ SKILL
   local stderr_file="$repo_dir/dispatch.stderr"
   local rc=0
 
+  local start_rc=0 wait_rc=0 continue_rc=0
   (cd "$repo_dir" && al dispatch start --agent codex \
-    --prompt "Use defaults" >"$start_file" 2>"$stderr_file") || rc=$?
+    --prompt "Use defaults" >"$start_file" 2>"$stderr_file") || start_rc=$?
   local handle
   handle="$(dispatch_json_field "$start_file" handle)"
-  (cd "$repo_dir" && al dispatch wait "$handle" --condition termination_confirmed >"$wait_file" 2>>"$stderr_file") || rc=$?
-  if [[ $rc -eq 0 ]] && grep -q '"state":"completed"' "$wait_file" \
-    && grep -q '"condition_met":true' "$wait_file" && grep -q '"termination_confirmed":true' "$wait_file"; then
+  if [[ $start_rc -eq 0 ]]; then
     pass "dispatch start accepts omitted overrides"
+    (cd "$repo_dir" && al dispatch wait "$handle" --condition termination_confirmed >"$wait_file" 2>"$stderr_file") || wait_rc=$?
+    if [[ $wait_rc -eq 0 ]] && grep -q '"state":"completed"' "$wait_file" \
+      && grep -q '"condition_met":true' "$wait_file" && grep -q '"termination_confirmed":true' "$wait_file"; then
+      pass "dispatch wait after omitted overrides completes"
+    else
+      fail "dispatch wait after omitted overrides completes (exit code: $wait_rc)"
+      dispatch_show_stderr "$stderr_file"
+    fi
   else
-    fail "dispatch start accepts omitted overrides (exit code: $rc)"
+    fail "dispatch start accepts omitted overrides (exit code: $start_rc)"
     dispatch_show_stderr "$stderr_file"
   fi
   assert_file_not_contains "$MOCK_DISPATCH_CODEX_LOG" "--model" \
@@ -257,7 +264,7 @@ SKILL
 
   handle="$(dispatch_json_field "$start_file" handle)"
   rc=0
-  (cd "$repo_dir" && al dispatch wait "$handle" >"$wait_file" 2>>"$stderr_file") || rc=$?
+  (cd "$repo_dir" && al dispatch wait "$handle" >"$wait_file" 2>"$stderr_file") || rc=$?
   local result_path
   result_path="$(dispatch_json_field "$wait_file" result_path)"
   if [[ $rc -eq 0 ]] && grep -q '"state":"completed"' "$wait_file" \
@@ -274,7 +281,7 @@ SKILL
   assert_file_contains "$MOCK_DISPATCH_CODEX_PROMPT" "Return ok" "start passes prompt"
 
   rc=0
-  (cd "$repo_dir" && al dispatch wait "$handle" --condition termination_confirmed >"$wait_file" 2>>"$stderr_file") || rc=$?
+  (cd "$repo_dir" && al dispatch wait "$handle" --condition termination_confirmed >"$wait_file" 2>"$stderr_file") || rc=$?
   if [[ $rc -eq 0 ]] && grep -q '"condition_met":true' "$wait_file" && grep -q '"termination_confirmed":true' "$wait_file"; then
     pass "dispatch termination is confirmed before continue"
   else
@@ -283,30 +290,44 @@ SKILL
   fi
 
   : > "$MOCK_DISPATCH_CODEX_LOG"
-  rc=0
-  (cd "$repo_dir" && al dispatch continue "$handle" --prompt "Continue" >"$start_file" 2>"$stderr_file") || rc=$?
-  (cd "$repo_dir" && al dispatch wait "$handle" --condition termination_confirmed >"$wait_file" 2>>"$stderr_file") || rc=$?
-  if [[ $rc -eq 0 ]] && grep -q '"state":"completed"' "$wait_file" \
-    && grep -q '"condition_met":true' "$wait_file" && grep -q '"termination_confirmed":true' "$wait_file"; then
-    pass "dispatch continue completes the conversation"
+  (cd "$repo_dir" && al dispatch continue "$handle" --prompt "Continue" >"$start_file" 2>"$stderr_file") || continue_rc=$?
+  if [[ $continue_rc -eq 0 ]]; then
+    pass "dispatch continue starts the next invocation"
+    wait_rc=0
+    (cd "$repo_dir" && al dispatch wait "$handle" --condition termination_confirmed >"$wait_file" 2>"$stderr_file") || wait_rc=$?
+    if [[ $wait_rc -eq 0 ]] && grep -q '"state":"completed"' "$wait_file" \
+      && grep -q '"condition_met":true' "$wait_file" && grep -q '"termination_confirmed":true' "$wait_file"; then
+      pass "dispatch wait after continue completes the conversation"
+    else
+      fail "dispatch wait after continue completes the conversation (exit code: $wait_rc)"
+      dispatch_show_stderr "$stderr_file"
+    fi
   else
-    fail "dispatch continue completes the conversation (exit code: $rc)"
+    fail "dispatch continue starts the next invocation (exit code: $continue_rc)"
     dispatch_show_stderr "$stderr_file"
   fi
   assert_file_contains "$MOCK_DISPATCH_CODEX_LOG" "ARG_1=resume" "continue resumes the provider conversation"
   assert_file_contains "$MOCK_DISPATCH_CODEX_PROMPT" "Continue" "continue passes its prompt"
 
   : > "$MOCK_DISPATCH_CODEX_PROMPT"
-  rc=0
+  start_rc=0
   (cd "$repo_dir" && al dispatch start --agent codex --model gpt-test \
-    --reasoning-effort high --skill e2e-skill --prompt "Use skill" >"$start_file") || rc=$?
+    --reasoning-effort high --skill e2e-skill --prompt "Use skill" >"$start_file" 2>"$stderr_file") || start_rc=$?
   handle="$(dispatch_json_field "$start_file" handle)"
-  (cd "$repo_dir" && al dispatch wait "$handle" --condition termination_confirmed >"$wait_file") || rc=$?
-  if [[ $rc -eq 0 ]] && grep -q '"state":"completed"' "$wait_file" \
-    && grep -q '"condition_met":true' "$wait_file" && grep -q '"termination_confirmed":true' "$wait_file"; then
-    pass "dispatch start with skill completes"
+  if [[ $start_rc -eq 0 ]]; then
+    pass "dispatch start accepts the selected skill"
+    wait_rc=0
+    (cd "$repo_dir" && al dispatch wait "$handle" --condition termination_confirmed >"$wait_file" 2>"$stderr_file") || wait_rc=$?
+    if [[ $wait_rc -eq 0 ]] && grep -q '"state":"completed"' "$wait_file" \
+      && grep -q '"condition_met":true' "$wait_file" && grep -q '"termination_confirmed":true' "$wait_file"; then
+      pass "dispatch wait after skill start completes"
+    else
+      fail "dispatch wait after skill start completes (exit code: $wait_rc)"
+      dispatch_show_stderr "$stderr_file"
+    fi
   else
-    fail "dispatch start with skill completes (exit code: $rc)"
+    fail "dispatch start accepts the selected skill (exit code: $start_rc)"
+    dispatch_show_stderr "$stderr_file"
   fi
   assert_file_contains "$MOCK_DISPATCH_CODEX_PROMPT" '$e2e-skill' "start invokes the selected skill"
 
@@ -333,15 +354,23 @@ SKILL
     fail "eight independent conversations complete in parallel"
   fi
 
-  rc=0
+  start_rc=0
   (cd "$repo_dir" && MOCK_DISPATCH_DELAY_SECONDS=5 al dispatch start --agent codex \
-    --model gpt-test --reasoning-effort high --prompt "Cancel me" >"$start_file") || rc=$?
+    --model gpt-test --reasoning-effort high --prompt "Cancel me" >"$start_file" 2>"$stderr_file") || start_rc=$?
   handle="$(dispatch_json_field "$start_file" handle)"
-  (cd "$repo_dir" && al dispatch cancel "$handle" >"$wait_file") || rc=$?
-  if [[ $rc -eq 0 ]] && grep -q '"state":"cancelled"' "$wait_file"; then
-    pass "dispatch cancel returns cancelled"
+  if [[ $start_rc -eq 0 ]]; then
+    pass "dispatch start accepts work to cancel"
+    rc=0
+    (cd "$repo_dir" && al dispatch cancel "$handle" >"$wait_file" 2>"$stderr_file") || rc=$?
+    if [[ $rc -eq 0 ]] && grep -q '"state":"cancelled"' "$wait_file"; then
+      pass "dispatch cancel returns cancelled"
+    else
+      fail "dispatch cancel returns cancelled (exit code: $rc)"
+      dispatch_show_stderr "$stderr_file"
+    fi
   else
-    fail "dispatch cancel returns cancelled (exit code: $rc)"
+    fail "dispatch start accepts work to cancel (exit code: $start_rc)"
+    dispatch_show_stderr "$stderr_file"
   fi
   rc=0
   (cd "$repo_dir" && al dispatch cancel "$handle" >"$wait_file") || rc=$?
