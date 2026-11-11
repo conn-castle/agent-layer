@@ -71,10 +71,20 @@ func commandTokenCount(command string) int {
 	}
 }
 
-// SyncCommands replaces only this workspace's Agent Layer-owned allow rules.
+// SyncCommands merges only this workspace's Agent Layer-owned allow rules.
 // Native Muse evaluates argv prefixes, compound stages, and deny precedence.
 // It uses this same lock file when persisting interactive approval decisions.
-func SyncCommands(dir, root string, commands []string) (err error) {
+func SyncCommands(dir, root string, commands []string) error {
+	return syncCommands(dir, root, commands, false)
+}
+
+// SyncEnabledCommands merges this workspace's grants and prunes provable orphans
+// in this native directory. The caller must persist its receipt before calling.
+func SyncEnabledCommands(dir, root string, commands []string) error {
+	return syncCommands(dir, root, commands, true)
+}
+
+func syncCommands(dir, root string, commands []string, prune bool) (err error) {
 	prefixes, err := ParseCommandPrefixes(commands)
 	if err != nil {
 		return err
@@ -94,7 +104,13 @@ func SyncCommands(dir, root string, commands []string) (err error) {
 	}
 	owner := "agent-layer:" + root
 	desired := make([]json.RawMessage, 0, len(prefixes))
+	wanted := make(map[string]bool, len(prefixes))
 	for _, argv := range prefixes {
+		key := prefixKey(argv)
+		if wanted[key] {
+			continue
+		}
+		wanted[key] = true
 		rule := map[string]any{"effect": policyAllow, "durability": "local_persistent", "reason": owner,
 			"rule": map[string]any{"kind": "shell_command_argv_prefix", "argv_prefix": argv, "workspace_root": root}}
 		data, marshalErr := json.Marshal(rule)
@@ -104,9 +120,11 @@ func SyncCommands(dir, root string, commands []string) (err error) {
 		desired = append(desired, data)
 	}
 	path := filepath.Join(dir, "approval-policy.json")
+	housekeepingOnly := false
 	if len(desired) == 0 {
-		// No mutation or lock is needed when this workspace owns no rules.
-		// Inspect ownership without requiring the schema used for writes.
+		// Read leniently before deciding whether this workspace needs a write.
+		// Optional orphan housekeeping must not impose our writer's native
+		// directory and schema requirements on otherwise unrelated state.
 		data, readErr := readRegular(path)
 		if readErr != nil {
 			return readErr
@@ -115,30 +133,47 @@ func SyncCommands(dir, root string, commands []string) (err error) {
 			return nil
 		}
 		var existing struct {
-			Rules []struct {
-				Reason string `json:"reason"`
-			} `json:"rules"`
+			Rules []json.RawMessage `json:"rules"`
 		}
 		if readErr = json.Unmarshal(data, &existing); readErr != nil {
 			return fmt.Errorf("inspect Muse approval policy %s: %w", path, readErr)
 		}
-		owned := false
-		for _, rule := range existing.Rules {
-			if rule.Reason == owner {
+		owned, candidates := false, false
+		for _, raw := range existing.Rules {
+			var rule struct {
+				Reason string `json:"reason"`
+			}
+			if json.Unmarshal(raw, &rule) == nil && rule.Reason == owner {
 				owned = true
-				break
+			}
+			if _, candidate := ownedCommandRule(raw); candidate {
+				candidates = true
 			}
 		}
 		if !owned {
-			return nil
+			if !prune || !candidates {
+				return nil
+			}
+			housekeepingOnly = true
+			if _, readErr := readDocument(path); readErr != nil {
+				return nil // Unsupported native state is reported by doctor.
+			}
 		}
 	}
-	if err = os.MkdirAll(dir, 0o700); err != nil {
-		return err
+	if !housekeepingOnly {
+		if err = os.MkdirAll(dir, 0o700); err != nil {
+			return err
+		}
 	}
 	if info, statErr := os.Lstat(dir); statErr != nil {
+		if housekeepingOnly {
+			return nil
+		}
 		return statErr
 	} else if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+		if housekeepingOnly {
+			return nil
+		}
 		return fmt.Errorf("muse policy directory must be a real directory: %s", dir)
 	}
 	fd, err := unix.Open(filepath.Join(dir, "approval-policy.lock"), unix.O_CREAT|unix.O_RDWR|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0o600)
@@ -162,57 +197,80 @@ func SyncCommands(dir, root string, commands []string) (err error) {
 		time.Sleep(25 * time.Millisecond)
 	}
 	defer func() { err = errors.Join(err, unix.Flock(fd, unix.LOCK_UN)) }()
-	var document struct {
-		Version int               `json:"schema_version"`
-		Rules   []json.RawMessage `json:"rules"`
-	}
-	data, err := readRegular(path)
+	document, err := readDocument(path)
 	if err != nil {
+		if housekeepingOnly {
+			return nil
+		}
 		return err
 	}
-	if data != nil {
-		dec := json.NewDecoder(bytes.NewReader(data))
-		dec.DisallowUnknownFields()
-		if err = dec.Decode(&document); err != nil {
-			return fmt.Errorf("read Muse approval policy %s: %w", path, err)
-		}
-		if !json.Valid(data) || document.Version != 2 {
-			return fmt.Errorf("muse approval policy %s must use schema_version 2; open it with supported Muse before syncing", path)
-		}
-	}
-	if data == nil {
-		document.Version = 2
-	}
 	kept := make([]json.RawMessage, 0, len(document.Rules)+len(desired))
+	seen := make(map[string]bool, len(wanted))
+	orphans := make(map[string]bool)
 	for _, raw := range document.Rules {
-		var rule struct {
-			Reason     string `json:"reason"`
-			Effect     string `json:"effect"`
-			Durability string `json:"durability"`
-			Rule       struct {
-				Kind string `json:"kind"`
-				Root string `json:"workspace_root"`
-			} `json:"rule"`
-		}
-		if err = json.Unmarshal(raw, &rule); err != nil {
-			return fmt.Errorf("read Muse approval rule: %w", err)
-		}
-		if rule.Reason == owner && rule.Effect == policyAllow && rule.Durability == "local_persistent" && rule.Rule.Kind == "shell_command_argv_prefix" && rule.Rule.Root == root {
-			continue
+		rule, owned := ownedCommandRule(raw)
+		if owned && rule.Rule.Root == root {
+			key := prefixKey(rule.Rule.Argv)
+			if !wanted[key] || seen[key] {
+				continue
+			}
+			seen[key] = true
+		} else if prune && owned {
+			orphan, checked := orphans[rule.Rule.Root]
+			if !checked {
+				// Check ownership only under approval-policy.lock, after reading
+				// the latest rules. Fresh rules always have a receipt already.
+				orphan = IsOrphan(dir, rule.Rule.Root)
+				orphans[rule.Rule.Root] = orphan
+			}
+			if orphan {
+				continue
+			}
 		}
 		kept = append(kept, raw)
 	}
-	// Avoid rewriting native state when this repo owns no rules.
-	if len(desired) == 0 && len(kept) == len(document.Rules) {
+	for _, raw := range desired {
+		rule, _ := ownedCommandRule(raw)
+		if !seen[prefixKey(rule.Rule.Argv)] {
+			kept = append(kept, raw)
+		}
+	}
+	if sameRules(document.Rules, kept) {
+		// Compare the rule list before encoding: Muse may use different
+		// whitespace, key ordering or extra rule fields. No write means no
+		// formatting or mtime churn, even after another workspace synced.
 		return nil
 	}
-	kept = append(kept, desired...)
-	document.Rules = kept
-	encoded, err := json.MarshalIndent(document, "", "  ")
-	if err != nil {
-		return err
+	// Do not pass RawMessages through MarshalIndent: it reformats their
+	// contents. Preserve every retained rule's bytes, including Muse metadata.
+	var encoded bytes.Buffer
+	encoded.WriteString("{\n  \"schema_version\": 2,\n  \"rules\": [")
+	for i, raw := range kept {
+		if i != 0 {
+			encoded.WriteByte(',')
+		}
+		encoded.WriteString("\n    ")
+		encoded.Write(raw)
 	}
-	return fsutil.WriteFileAtomicIfChanged(path, append(encoded, '\n'), 0o600)
+	encoded.WriteString("\n  ]\n}\n")
+	return fsutil.WriteFileAtomicIfChanged(path, encoded.Bytes(), 0o600)
+}
+
+func prefixKey(argv []string) string {
+	data, _ := json.Marshal(argv) // []string always marshals successfully.
+	return string(data)
+}
+
+func sameRules(a, b []json.RawMessage) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if !bytes.Equal(a[i], b[i]) {
+			return false
+		}
+	}
+	return true
 }
 
 func readRegular(path string) ([]byte, error) {

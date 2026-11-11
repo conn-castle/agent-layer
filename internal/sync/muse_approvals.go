@@ -128,9 +128,17 @@ func writeMuseApprovals(sys System, root string, project *config.ProjectConfig) 
 			return fmt.Errorf("invalid Agent Layer Muse policy ownership receipt: %w: %s", targetErr, receiptPath)
 		}
 		// Enabled sync rewrites current grants; do not retire another workspace.
-	} else if target != "" && (!enabled || target != nativeDir) {
-		if err := musepolicy.SyncCommands(target, canonical, nil); err != nil {
-			return fmt.Errorf("retire Muse command approvals: %w", err)
+	} else if target != "" {
+		retire := !enabled
+		if enabled {
+			same, identityErr := musepolicy.SameDirectory(target, nativeDir)
+			// Uncertain identity cannot authorize retirement of old grants.
+			retire = identityErr == nil && !same
+		}
+		if retire {
+			if err := musepolicy.SyncCommands(target, canonical, nil); err != nil {
+				return fmt.Errorf("retire Muse command approvals: %w", err)
+			}
 		}
 	}
 	switch {
@@ -143,7 +151,7 @@ func writeMuseApprovals(sys System, root string, project *config.ProjectConfig) 
 		if projection.BuildApprovals(project.Config, project.CommandsAllow).AllowCommands {
 			commands = project.CommandsAllow
 		}
-		if err := musepolicy.SyncCommands(nativeDir, canonical, commands); err != nil {
+		if err := musepolicy.SyncEnabledCommands(nativeDir, canonical, commands); err != nil {
 			return fmt.Errorf("sync Muse command approvals: %w", err)
 		}
 	case receipt != nil:

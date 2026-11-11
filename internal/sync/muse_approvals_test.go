@@ -6,10 +6,12 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
 	"github.com/conn-castle/agent-layer/internal/config"
+	"github.com/conn-castle/agent-layer/internal/musepolicy"
 )
 
 func TestMuseApprovalsSyncPreservesUserHooksAndRevokesOwnedRules(t *testing.T) {
@@ -213,4 +215,139 @@ func museOwnedCommandPrefixes(t *testing.T, path string) [][]string {
 		}
 	}
 	return prefixes
+}
+
+func TestMuseEnabledEmptyCommandsPruneButDisabledSyncStaysNarrow(t *testing.T) {
+	base, root, orphan := t.TempDir(), t.TempDir(), t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", base)
+	project := &config.ProjectConfig{CommandsAllow: []string{"go"}, Config: config.Config{
+		Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeCommands},
+		Agents:    config.AgentsConfig{Muse: config.AgentConfig{Enabled: configBool(true)}},
+	}}
+	require.NoError(t, writeMuseApprovals(RealSystem{}, root, project))
+	require.NoError(t, writeMuseApprovals(RealSystem{}, orphan, project))
+	require.NoError(t, os.RemoveAll(orphan))
+	project.Config.Agents.Muse.Enabled = configBool(false)
+	require.NoError(t, writeMuseApprovals(RealSystem{}, root, project))
+	policy := filepath.Join(base, "muse/approval-policy.json")
+	require.Equal(t, [][]string{{"go"}}, museOwnedCommandPrefixes(t, policy))
+	require.NoFileExists(t, filepath.Join(root, ".muse/agent-layer-policy.json"))
+	project.Config.Agents.Muse.Enabled = configBool(true)
+	project.CommandsAllow = nil
+	require.NoError(t, writeMuseApprovals(RealSystem{}, root, project))
+	require.Empty(t, museOwnedCommandPrefixes(t, policy))
+	require.FileExists(t, filepath.Join(root, ".muse/agent-layer-policy.json"))
+}
+
+func TestMuseRetirementOfPreviousDirectoryDoesNotPruneOtherRoots(t *testing.T) {
+	base, root, orphan := t.TempDir(), t.TempDir(), t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", base)
+	project := &config.ProjectConfig{CommandsAllow: []string{"make"}, Config: config.Config{
+		Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeCommands},
+		Agents:    config.AgentsConfig{Muse: config.AgentConfig{Enabled: configBool(true)}},
+	}}
+	require.NoError(t, writeMuseApprovals(RealSystem{}, root, project))
+	require.NoError(t, writeMuseApprovals(RealSystem{}, orphan, project))
+	require.NoError(t, os.RemoveAll(orphan))
+	newBase := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", newBase)
+	require.NoError(t, writeMuseApprovals(RealSystem{}, root, project))
+	require.Equal(t, [][]string{{"make"}}, museOwnedCommandPrefixes(t, filepath.Join(base, "muse/approval-policy.json")))
+	require.Equal(t, [][]string{{"make"}}, museOwnedCommandPrefixes(t, filepath.Join(newBase, "muse/approval-policy.json")))
+}
+
+func TestMuseEmptyCommandsPreserveUnrelatedUnsupportedNativeState(t *testing.T) {
+	for _, state := range []string{"symlink directory", "future schema", "unknown fields"} {
+		for _, owner := range []string{"none", "other", "current"} {
+			t.Run(state+"/"+owner, func(t *testing.T) {
+				base, root, other := t.TempDir(), t.TempDir(), t.TempDir()
+				t.Setenv("XDG_CONFIG_HOME", base)
+				native := filepath.Join(base, "muse")
+				realDir := native
+				if state == "symlink directory" {
+					realDir = t.TempDir()
+					require.NoError(t, os.Symlink(realDir, native))
+				}
+				path := filepath.Join(realDir, "approval-policy.json")
+				if owner == "none" {
+					require.NoError(t, os.MkdirAll(realDir, 0o700))
+					require.NoError(t, os.WriteFile(path, []byte(`{"schema_version":2,"rules":[{"reason":"user"}]}`), 0o600))
+				} else {
+					ownedRoot := other
+					if owner == "current" {
+						ownedRoot = root
+					}
+					require.NoError(t, musepolicy.SyncCommands(realDir, ownedRoot, []string{"make"}))
+					require.NoError(t, os.Remove(filepath.Join(realDir, "approval-policy.lock")))
+				}
+				before, err := os.ReadFile(path) // #nosec G304 -- isolated temporary native fixture.
+				require.NoError(t, err)
+				switch state {
+				case "future schema":
+					before = []byte(strings.ReplaceAll(strings.ReplaceAll(string(before), `"schema_version": 2`, `"schema_version": 999`), `"schema_version":2`, `"schema_version":999`))
+				case "unknown fields":
+					before = append([]byte(`{"future":true,`), before[1:]...)
+				}
+				require.NoError(t, os.WriteFile(path, before, 0o600)) // #nosec G703 -- policy path and source bytes belong to this temporary fixture.
+				project := &config.ProjectConfig{Root: root, Config: config.Config{
+					Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeCommands},
+					Agents:    config.AgentsConfig{Muse: config.AgentConfig{Enabled: configBool(true)}},
+				}}
+				err = writeMuseApprovals(RealSystem{}, root, project)
+				if owner == "current" {
+					require.Error(t, err)
+				} else {
+					require.NoError(t, err)
+				}
+				after, err := os.ReadFile(path) // #nosec G304 -- isolated temporary native fixture.
+				require.NoError(t, err)
+				require.Equal(t, before, after)
+				if owner != "current" {
+					require.NoFileExists(t, filepath.Join(realDir, "approval-policy.lock"))
+				}
+			})
+		}
+	}
+}
+
+func TestMuseNativeDirectoryAliasDoesNotRetireAndReappend(t *testing.T) {
+	base, root, other := t.TempDir(), t.TempDir(), t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", base)
+	project := &config.ProjectConfig{CommandsAllow: []string{"go"}, Config: config.Config{
+		Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeCommands},
+		Agents:    config.AgentsConfig{Muse: config.AgentConfig{Enabled: configBool(true)}},
+	}}
+	require.NoError(t, writeMuseApprovals(RealSystem{}, root, project))
+	require.NoError(t, writeMuseApprovals(RealSystem{}, other, project))
+	path := filepath.Join(base, "muse/approval-policy.json")
+	require.NoError(t, os.Chtimes(path, time.Unix(42, 0), time.Unix(42, 0)))
+	before, err := os.ReadFile(path) // #nosec G304 -- isolated temporary native fixture.
+	require.NoError(t, err)
+	info, err := os.Stat(path)
+	require.NoError(t, err)
+	alias := filepath.Join(t.TempDir(), "config-alias")
+	require.NoError(t, os.Symlink(base, alias))
+	t.Setenv("XDG_CONFIG_HOME", alias)
+	require.NoError(t, writeMuseApprovals(RealSystem{}, root, project))
+	after, err := os.ReadFile(path) // #nosec G304 -- isolated temporary native fixture.
+	require.NoError(t, err)
+	current, err := os.Stat(path)
+	require.NoError(t, err)
+	require.Equal(t, before, after)
+	require.Equal(t, info.ModTime(), current.ModTime())
+	require.True(t, os.SameFile(info, current))
+}
+
+func TestMuseNonemptyCommandsPruneOrphans(t *testing.T) {
+	base, root, orphan := t.TempDir(), t.TempDir(), t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", base)
+	project := &config.ProjectConfig{CommandsAllow: []string{"make"}, Config: config.Config{
+		Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeCommands},
+		Agents:    config.AgentsConfig{Muse: config.AgentConfig{Enabled: configBool(true)}},
+	}}
+	require.NoError(t, writeMuseApprovals(RealSystem{}, orphan, project))
+	require.NoError(t, os.RemoveAll(orphan))
+	project.CommandsAllow = []string{"go"}
+	require.NoError(t, writeMuseApprovals(RealSystem{}, root, project))
+	require.Equal(t, [][]string{{"go"}}, museOwnedCommandPrefixes(t, filepath.Join(base, "muse/approval-policy.json")))
 }
