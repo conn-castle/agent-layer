@@ -630,17 +630,24 @@ MCP `dispatch_options` includes a provider-independent `server` object that is
 absent from CLI options output: `version`, the running image's `sha256`, and
 `snapshot` (boolean).
 In development mode it also includes `development` with `executable`, `replaced`
-(boolean), and a `notice` to reconnect to run the current build when its file
-identity changed since startup. `replaced` compares inode, size and modification
+(boolean), and a `notice`. For a snapshot-backed server, `replaced` reports changes
+to the selected dev file's identity or mode, including deletion, a non-regular
+replacement or removed execute permission; the notice recommends reconnecting
+to run the current build. Identity comparison uses inode, size and modification
 time, so touching the file or replacing it with identical bytes also sets it.
-Startup verifies the snapshot content and its selected development executable;
-subsequent requests use file identity checks rather than hashing the binary.
-Missing or unverifiable startup evidence, a missing selected executable, or a
-changed snapshot still refuses work. Rebuilding during the handoff/startup
-verification window also refuses work until reconnect; rebuilds after successful
-startup verification keep the snapshotted server serving. The handoff preserves
-the development environment and `PATH` without adding shim or installed-entry markers, so child
-agents and nested MCP servers continue selecting the current development build.
+An in-place server refuses options after replacement with a freshness error
+instead of returning structured replacement status.
+
+Startup verifies the snapshot content and its selected regular executable.
+Missing or unverifiable startup evidence, including a rebuild during the
+handoff/startup verification window, refuses work until reconnect. After successful
+verification only the server's own immutable snapshot gates freshness: a missing
+or unusable selected dev path is reported as changed and does not refuse work.
+Changing or removing the executing snapshot itself still refuses work. Options
+uses cached build identity and file stats, without hashing on each request.
+The handoff preserves the development environment and `PATH` without adding shim
+or installed-entry markers, so child agents and nested MCP servers continue
+selecting the development executable through their inherited environment.
 
 For release updates, run `al update`, then `al upgrade` in each repository and
 reconnect the `agent-layer` MCP server once; the upgrade changes the pin.

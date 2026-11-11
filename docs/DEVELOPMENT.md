@@ -46,11 +46,11 @@ and put that directory first on `PATH`.
 Sync embeds the absolute development executable as a quoted positional MCP
 launcher argument for every client. A client parent does not need these
 variables. Development MCP servers first run from a verified content-addressed
-snapshot under `<cache root>/images/<sha256>/al`. After a rebuild replaces the
-development executable, those servers keep accepting work on their original
-image; `dispatch_options.server` reports that build's version and SHA-256 and a
+snapshot under `<cache root>/images/<sha256>/al`. After successful startup
+verification, rebuilding, deleting or making the selected development executable
+unusable does not stop those servers accepting work on their original image; `dispatch_options.server` reports that build's version and SHA-256 and a
 notice to reconnect to run the current build when the selected file identity
-(inode, size or modification time) changes. If snapshot creation fails, the server
+(inode, size, modification time or mode) changes, or that path becomes unavailable. If snapshot creation fails, the server
 runs in place and still refuses new work after replacement. Bypass alone never promotes
 an arbitrary executable or a transient `go run` path into persistent source selection. The root marker
 must match the project's configuration root (canonical symlink spellings are

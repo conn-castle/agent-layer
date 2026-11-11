@@ -104,6 +104,7 @@ type developmentSelection struct {
 	err      error
 }
 
+// selectDevelopment verifies that the running cache image matches the selected dev build at startup.
 func selectDevelopment(root string) developmentSelection {
 	d := developmentSelection{path: versiondispatch.DevelopmentExecutable(root)}
 	if d.path == "" || !versiondispatch.RunningFromImageCache() {
@@ -117,24 +118,34 @@ func selectDevelopment(root string) developmentSelection {
 		d.err = errors.New("running snapshot identity cannot be verified")
 		return d
 	}
-	d.info, d.err = os.Stat(d.path)
-	if d.err != nil {
-		return d
-	}
-	sum, err := imageSHA256(d.path)
-	switch {
-	case err != nil:
-		d.err = err
-	case sum != build.SHA256:
-		d.err = errors.New("development executable changed during server startup")
-	default:
-		if err := executableimage.SameFile(d.info, d.path); err != nil {
-			d.err = fmt.Errorf("development executable changed during server startup: %w", err)
-		}
-	}
+	d.info, d.err = verifyDevelopmentExecutable(d.path, build.SHA256)
 	return d
 }
 
+// verifyDevelopmentExecutable binds a regular executable's identity to the startup snapshot.
+func verifyDevelopmentExecutable(path, sha string) (os.FileInfo, error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return nil, err
+	}
+	if !info.Mode().IsRegular() || info.Mode().Perm()&0o111 == 0 {
+		return nil, errors.New("selected development executable is not a regular executable file")
+	}
+	sum, err := imageSHA256(path)
+	switch {
+	case err != nil:
+		return nil, err
+	case sum != sha:
+		return nil, errors.New("development executable changed during server startup")
+	}
+	if err := executableimage.SameFile(info, path); err != nil {
+		return nil, fmt.Errorf("development executable changed during server startup: %w", err)
+	}
+	return info, nil
+}
+
+// fresh accepts a verified startup selection while the server's own snapshot stays intact.
+// Subsequent changes to the selected dev path affect only the replacement notice.
 func (d developmentSelection) fresh() error {
 	if d.err != nil {
 		return d.err
@@ -142,22 +153,26 @@ func (d developmentSelection) fresh() error {
 	if d.info == nil {
 		return errors.New("development selection cannot be verified")
 	}
-	// Refuse missing or unstatable development files as unverifiable.
-	info, err := os.Stat(d.path)
-	if err != nil {
-		return err
-	}
-	if !info.Mode().IsRegular() || info.Mode().Perm()&0o111 == 0 {
-		return errors.New("selected development executable is not an executable file")
-	}
 	return executableimage.Unchanged()
 }
 
+// changed compares the selected dev file's current identity and mode with startup evidence.
+// Missing or unusable paths count as changed without opening or hashing them.
+func (d developmentSelection) changed() bool {
+	if d.info == nil {
+		return false
+	}
+	info, err := os.Stat(d.path)
+	return err != nil || !os.SameFile(d.info, info) || d.info.Size() != info.Size() ||
+		!d.info.ModTime().Equal(info.ModTime()) || d.info.Mode() != info.Mode()
+}
+
+// serverCode reports the running code and any change to its selected development source.
 func (s *dispatchToolServer) serverCode() *ServerCode {
 	build := currentBuildIdentity()
-	code := &ServerCode{Version: s.version, SHA256: build.SHA256, Snapshot: versiondispatch.RunningFromImageCache()}
+	code := &ServerCode{Version: s.version, SHA256: build.SHA256, Snapshot: s.snapshot}
 	if s.development.path != "" {
-		replaced := s.development.info != nil && executableimage.SameFile(s.development.info, s.development.path) != nil
+		replaced := s.development.changed()
 		code.Development = &DevelopmentCode{Executable: s.development.path, Replaced: replaced}
 		if replaced {
 			code.Development.Notice = "Development executable changed since the server started; reconnect the agent-layer MCP server to run the current build."

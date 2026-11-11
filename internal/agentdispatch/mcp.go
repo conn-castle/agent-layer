@@ -16,6 +16,7 @@ import (
 
 	"github.com/conn-castle/agent-layer/internal/agentoptions"
 	"github.com/conn-castle/agent-layer/internal/config"
+	"github.com/conn-castle/agent-layer/internal/versiondispatch"
 )
 
 // MCP tool names. They are the canonical agent-facing Agent Dispatch surface
@@ -71,6 +72,7 @@ type dispatchToolServer struct {
 	// start is the release selection at server start; freshness compares it.
 	start       releaseSelection
 	development developmentSelection
+	snapshot    bool
 }
 
 // OptionsInput is the (empty) input of dispatch_options.
@@ -172,12 +174,16 @@ func newDispatchToolServer(opts MCPServerOptions) (*dispatchToolServer, error) {
 		waitTimeout:      config.DispatchMCPWaitTimeout(project.Config),
 		toolTimeout:      config.DispatchMCPToolTimeout(project.Config),
 		progressInterval: mcpProgressInterval,
+		snapshot:         versiondispatch.RunningFromImageCache(),
 		policy:           policy,
 		discoveryCleanup: opts.discoveryCleanup,
 	}
 	if tools.workDir == "" {
 		tools.workDir = root
 	}
+	// Capture while the executing path is still available on platforms without
+	// procfs, before provider discovery can overlap an executable replacement.
+	currentBuildIdentity()
 	tools.start = selectRelease(root, tools.version)
 	tools.development = selectDevelopment(root)
 	return tools, nil

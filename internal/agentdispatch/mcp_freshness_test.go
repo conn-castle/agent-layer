@@ -24,6 +24,36 @@ func freshnessWrite(t *testing.T, path, value string) {
 	}
 }
 
+// Use a fresh process so no earlier test can initialize the build-identity cache.
+func TestMCPBuildIdentityCapturedAtConstruction(t *testing.T) {
+	const helper = "AL_TEST_CONSTRUCT_BUILD_IDENTITY"
+	if os.Getenv(helper) == "1" {
+		root := writeDispatchRepo(t, dispatchRepoConfig{})
+		if _, err := newDispatchToolServer(MCPServerOptions{Root: root, Version: "dev"}); err != nil {
+			t.Fatal(err)
+		}
+		if len(executingBuild.SHA256) != 64 {
+			t.Fatalf("constructor did not capture code identity before discovery: %+v", executingBuild)
+		}
+		return
+	}
+	self, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	base := t.TempDir()
+	cmd := exec.Command(self, "-test.run=^TestMCPBuildIdentityCapturedAtConstruction$")
+	cmd.Env = []string{
+		helper + "=1", "HOME=" + base, "AL_CACHE_DIR=" + filepath.Join(base, "cache"),
+		"PATH=" + testPath(t.TempDir()), "GOMAXPROCS=" + os.Getenv("GOMAXPROCS"),
+		"XDG_CONFIG_HOME=" + filepath.Join(base, "config"), "XDG_CACHE_HOME=" + filepath.Join(base, "xdg-cache"),
+		"XDG_DATA_HOME=" + filepath.Join(base, "data"), "XDG_STATE_HOME=" + filepath.Join(base, "state"),
+	}
+	if output, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("constructor identity helper: %v\n%s", err, output)
+	}
+}
+
 func assertStaleProviderTools(t *testing.T, session *mcp.ClientSession, handle string) {
 	t.Helper()
 	for _, call := range []struct {
@@ -407,7 +437,7 @@ printf '%%s\n' '{"type":"thread.started","thread_id":"11111111-1111-4111-8111-11
 	})
 	t.Run("development snapshot retains server and worker image after replacement", func(t *testing.T) {
 		root, bin := writeDispatchRepo(t, dispatchRepoConfig{}), t.TempDir()
-		image, signalDir := filepath.Join(t.TempDir(), "al"), t.TempDir()
+		image, signalDir, cache := filepath.Join(t.TempDir(), "al"), t.TempDir(), t.TempDir()
 		copyImage(t, a, image)
 		stub := fmt.Sprintf(`#!/bin/sh
 if [ "$1" = "--version" ]; then
@@ -425,7 +455,7 @@ printf '%%s\n' '{"type":"thread.started","thread_id":"11111111-1111-4111-8111-11
 		// Let initial options discovery finish, then re-arm the version barrier
 		// so the later start is still admitted before replacement.
 		freshnessWrite(t, filepath.Join(signalDir, "release"), "")
-		session := connect(t, root, image, bin, "AL_DEV_EXECUTABLE="+image, "AL_DEV_SOURCE_ROOT="+root, "AL_DEV_BYPASS_VERSION_DISPATCH=1", "AL_TEST_SIGNALS="+signalDir)
+		session := connect(t, root, image, bin, "AL_DEV_EXECUTABLE="+image, "AL_DEV_SOURCE_ROOT="+root, "AL_DEV_BYPASS_VERSION_DISPATCH=1", "AL_TEST_SIGNALS="+signalDir, "AL_CACHE_DIR="+cache)
 		initial := callMCPTool(t, session, ToolOptions, OptionsInput{})
 		if initial.IsError {
 			t.Fatalf("initial dev options: %s", toolResultText(initial))
@@ -521,8 +551,57 @@ printf '%%s\n' '{"type":"thread.started","thread_id":"11111111-1111-4111-8111-11
 		if strings.Contains(string(generated), snapshot) || !strings.Contains(string(generated), image) {
 			t.Fatalf("regenerated launcher lost dev provenance: %s", generated)
 		}
-		// Losing the selected executable is unverifiable rather than a verified rebuild.
-		if err := os.Remove(image); err != nil {
+		// A verified server no longer needs its selected source path. Report
+		// missing files, directories and removed execute permission as changes.
+		for _, kind := range []string{"missing", "directory", "non-executable"} {
+			if err := os.Remove(image); err != nil {
+				t.Fatal(err)
+			}
+			switch kind {
+			case "directory":
+				if err := os.Mkdir(image, 0o700); err != nil {
+					t.Fatal(err)
+				}
+			case "non-executable":
+				freshnessWrite(t, image, "unusable dev source")
+			}
+			response := callMCPTool(t, session, ToolOptions, OptionsInput{})
+			if response.IsError {
+				t.Fatalf("%s dev source refused service: %s", kind, toolResultText(response))
+			}
+			var status OptionsResponse
+			if err := json.Unmarshal([]byte(toolResultText(response)), &status); err != nil {
+				t.Fatal(err)
+			}
+			if status.Server == nil || status.Server.SHA256 != hex.EncodeToString(hash[:]) || status.Server.Development == nil || !status.Server.Development.Replaced || status.Server.Development.Notice == "" {
+				t.Fatalf("%s dev source was not reported as changed: %+v", kind, status.Server)
+			}
+			started := decodeToolResult(t, callMCPTool(t, session, ToolStart, StartInput{Agent: AgentCodex, Model: "gpt-test", Prompt: "fixture"}))
+			if finished := decodeToolResult(t, callMCPTool(t, session, ToolWait, WaitInput{Handle: started.Handle})); finished.State != dispatchStateCompleted {
+				t.Fatalf("%s dev source broke worker: %+v", kind, finished)
+			}
+			record, err := loadRunRecord(root, started.InvocationID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if record.AgentLayerBuild.SHA256 != hex.EncodeToString(hash[:]) {
+				t.Fatalf("worker lost snapshot: %+v", record.AgentLayerBuild)
+			}
+			if kind != "non-executable" {
+				if kind == "directory" {
+					if err := os.Remove(image); err != nil {
+						t.Fatal(err)
+					}
+				}
+				copyImage(t, b, image)
+			}
+		}
+		// The actual executing snapshot remains the freshness boundary.
+		snapshotID, err := imageSHA256(a)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Remove(filepath.Join(cache, "images", snapshotID, "al")); err != nil {
 			t.Fatal(err)
 		}
 		assertStaleProviderTools(t, session, result.Handle)

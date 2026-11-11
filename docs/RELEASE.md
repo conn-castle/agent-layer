@@ -105,7 +105,10 @@ After **all** probe workers have terminated, leave the probe environment and
 run `make al-sync` to restore those projections to the operator's normal dev
 build before removing the scratch directory. This restoration may rebuild the
 normal dev executable; an already connected snapshotted MCP server keeps serving
-its startup code and needs no reconnect.
+its startup code and needs no reconnect. A client that connects while the probe
+projections are active starts a candidate snapshot. After successful startup
+verification that server also keeps serving if the scratch directory is removed;
+reconnect it after restoration to run the operator's normal dev build.
 
 The nested subshell below confines the probe environment. Cleanup runs only
 after every probe succeeds with termination confirmed and projection restoration
@@ -126,7 +129,16 @@ termination of every invocation started, then restore projections with
     export AL_DEV_BYPASS_VERSION_DISPATCH=1
     export AL_DEV_EXECUTABLE="$probe_bin_dir/al"
     export AL_DEV_SOURCE_ROOT="$PWD"
-    al dispatch options || exit 1
+    options="$(al dispatch options)" || exit 1
+    printf '%s\n' "$options"
+    providers="$(python3 -c 'import json, sys
+for agent in json.load(sys.stdin)["agents"]:
+    if agent["available"]:
+        print(agent["agent"])' <<<"$options")" || exit 1
+    if [ -z "$providers" ]; then
+      printf '%s\n' 'No available providers to probe; retain scratch until projections are restored.' >&2
+      exit 1
+    fi
     wait_for_termination() {
       local result
       result="$(al dispatch wait "$1" --condition termination_confirmed)" || return 1
@@ -135,12 +147,19 @@ termination of every invocation started, then restore projections with
 result = json.load(sys.stdin)
 sys.exit(0 if result.get("condition_met") is True and result.get("termination_confirmed") is True and result.get("state") == "completed" else 1)' <<<"$result"
     }
-    # For each enabled, available provider, use its name from options:
-    al dispatch start --agent <provider> --prompt 'Reply with exactly release-probe-fresh. Do not use tools or modify files.' || exit 1
-    wait_for_termination <handle> || exit 1
-    # After successful completion, continue the same handle:
-    al dispatch continue <handle> --prompt 'Reply with exactly release-probe-continue. Do not use tools or modify files.' || exit 1
-    wait_for_termination <handle> || exit 1
+    while IFS= read -r provider; do
+      started="$(al dispatch start --agent "$provider" --prompt 'Reply with exactly release-probe-fresh. Do not use tools or modify files.')" || exit 1
+      printf '%s\n' "$started"
+      handle="$(python3 -c 'import json, sys
+handle = json.load(sys.stdin)["handle"]
+if not isinstance(handle, str) or not handle:
+    raise ValueError("missing dispatch handle")
+print(handle)' <<<"$started")" || exit 1
+      wait_for_termination "$handle" || exit 1
+      # Continue the same handle after successful completion.
+      al dispatch continue "$handle" --prompt 'Reply with exactly release-probe-continue. Do not use tools or modify files.' || exit 1
+      wait_for_termination "$handle" || exit 1
+    done <<<"$providers"
   ) || exit 1
   # No probe worker may remain to regenerate projections after this restore.
   make al-sync || exit 1
@@ -148,8 +167,10 @@ sys.exit(0 if result.get("condition_met") is True and result.get("termination_co
 )
 ```
 
-Replace the angle-bracket placeholders with the selected provider and returned
-handle. Omit model and reasoning overrides so Agent Layer uses the local config.
+The block probes every enabled, available provider listed in options and captures
+each returned handle for both waits and continuation. Providers that are
+unavailable remain listed in the printed options with their reasons. Model and
+reasoning overrides are omitted so Agent Layer uses the local config.
 Record the effective targets and checkout commit alongside the CLI versions,
 fresh/continuation results, and provider session IDs. Each invocation's
 provider session ID is the `provider_session_id` field of

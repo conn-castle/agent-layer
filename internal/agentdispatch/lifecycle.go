@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/conn-castle/agent-layer/internal/executableimage"
+	"github.com/conn-castle/agent-layer/internal/fsutil"
 )
 
 type agentLayerBuildIdentity struct {
@@ -24,6 +25,7 @@ type agentLayerBuildIdentity struct {
 var buildIdentityOnce sync.Once
 var executingBuild agentLayerBuildIdentity
 
+// currentBuildIdentity captures executable provenance once for this process.
 func currentBuildIdentity() agentLayerBuildIdentity {
 	buildIdentityOnce.Do(func() {
 		executingBuild.Executable, _ = os.Executable()
@@ -45,9 +47,10 @@ func currentBuildIdentity() agentLayerBuildIdentity {
 	return executingBuild
 }
 
-// imageSHA256 is used only at startup; options calls compare file identity.
+// imageSHA256 streams a regular executable file into its hex SHA-256 identity.
+// Nonblocking regular-file opening prevents a replaced source from becoming a FIFO hang.
 func imageSHA256(path string) (string, error) {
-	file, err := os.Open(path) // #nosec G304 -- executing image or explicitly selected development executable.
+	file, err := fsutil.OpenRegularFile(path)
 	if err != nil {
 		return "", err
 	}
