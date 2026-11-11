@@ -75,7 +75,7 @@ for workflow in ci.yml release.yml; do
         conclusion="$(gh run view "${run_id}" --json conclusion --jq '.conclusion')"
         [[ "${conclusion}" == "success" ]] || die "CI verification ${run_id} concluded ${conclusion}"
         ;;
-      *) die "CI workflow has no successful run for ${head_sha} (${run_state})" ;;
+      *) die "CI workflow has no successful push-event run on main for ${head_sha} (${run_state})" ;;
     esac
     echo "Full CI verified for ${head_sha}."
     continue

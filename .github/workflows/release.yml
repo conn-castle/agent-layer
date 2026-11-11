@@ -60,7 +60,7 @@ jobs:
                   and .event == \"push\" and .headBranch == \"main\"))[0].url // \"\""
             )"
             if [[ -z "${certification_url}" ]]; then
-              echo "::error::No successful ${workflow} exists for exact source commit ${release_commit}."
+              echo "::error::No successful push-event ${workflow} run on main exists for exact source commit ${release_commit}."
               echo "::error::Run make release-certify AL_VERSION=${RELEASE_TAG} on clean, pushed main before tagging."
               exit 1
             fi

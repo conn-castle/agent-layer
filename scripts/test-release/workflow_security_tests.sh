@@ -181,7 +181,7 @@ EOF
           cat "$fixture/out"
         fi
       elif [[ "$kind" == ci ]] &&
-        grep -Fxq "::error::No successful ci.yml exists for exact source commit ${head_sha}." "$fixture/out" &&
+        grep -Fxq "::error::No successful push-event ci.yml run on main exists for exact source commit ${head_sha}." "$fixture/out" &&
         grep -Fxq "::error::Run make release-certify AL_VERSION=v9.8.7 on clean, pushed main before tagging." "$fixture/out"; then
         pass "release-readiness: $kind $scenario rejects missing evidence with certification guidance"
       elif [[ "$kind" == rehearsal ]] &&

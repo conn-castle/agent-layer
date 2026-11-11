@@ -149,7 +149,7 @@ EOF
   for scenario in ci-pr-success ci-pr-active ci-response-event-success ci-response-event-active \
     ci-response-branch-success ci-response-sha-active; do
     if run_certify "$scenario" || grep -q -e '^run watch' -e '^workflow run' -e '--workflow release.yml' "$log" ||
-       ! grep -q 'CI workflow has no successful run' "$fixture/$scenario.err" ||
+       ! grep -q 'CI workflow has no successful push-event run on main' "$fixture/$scenario.err" ||
        [[ "$(grep -c '^sleep 5$' "$log")" -ne 12 ]]; then
       fail "release-certification: $scenario must neither certify nor await unrelated CI evidence"
     else
