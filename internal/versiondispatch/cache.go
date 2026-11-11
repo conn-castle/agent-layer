@@ -10,12 +10,12 @@ import (
 	"net"
 	"net/http"
 	"os"
-	stdexec "os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/conn-castle/agent-layer/internal/fsutil"
 	"github.com/conn-castle/agent-layer/internal/messages"
 	"github.com/conn-castle/agent-layer/internal/update"
 )
@@ -117,10 +117,11 @@ func ensureCachedBinaryWithSystem(ctx context.Context, sys System, cacheRoot str
 
 // validateCachedBinary checks the Stat target, allowing symlinks to usable files.
 func validateCachedBinary(path string, info os.FileInfo) error {
-	if !info.Mode().IsRegular() {
+	err := fsutil.RequireExecutable(path, info)
+	if errors.Is(err, fsutil.ErrNotRegularFile) {
 		return fmt.Errorf(messages.DispatchCachedBinaryNotRegularFmt, path)
 	}
-	if _, err := stdexec.LookPath(path); err != nil {
+	if err != nil {
 		return fmt.Errorf(messages.DispatchCachedBinaryNotExecutableFmt, path)
 	}
 	return nil

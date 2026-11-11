@@ -630,10 +630,14 @@ MCP `dispatch_options` includes a provider-independent `server` object that is
 absent from CLI options output: `version`, the running image's `sha256`, and
 `snapshot` (boolean).
 In development mode it also includes `development` with `executable`, `replaced`
-(boolean), and a `notice`. For a snapshot-backed server, `replaced` reports changes
+(boolean), and an optional `notice` (omitted when unchanged). For a snapshot-backed server, `replaced` reports changes
 to the selected dev file's identity or mode, including deletion, a non-regular
-replacement or removed execute permission; the notice recommends reconnecting
-to run the current build. Identity comparison uses inode, size and modification
+replacement or removed execute permission. An unusable source is also reported
+as replaced when identity is unchanged (for example after access permissions
+change). A usable changed source gets a notice
+to reconnect for the current build; an unusable source gets a notice that start
+and continue are refused until the executable is restored, or projections are
+restored and the server reconnected. Identity comparison uses inode, size and modification
 time, so touching the file or replacing it with identical bytes also sets it.
 An in-place server refuses options after replacement with a freshness error
 instead of returning structured replacement status.
@@ -644,8 +648,10 @@ handoff/startup verification window, refuses work until reconnect. After success
 verification the server's own immutable snapshot gates code freshness. Options
 continues answering when the selected dev path is missing, non-regular or
 non-executable, reporting `replaced: true` and the reconnect notice. Start and
-continue additionally require that path to remain a regular executable: they
-refuse before projection sync or provider work when it is unusable, preserving
+continue perform an early usability check. Projection sync rechecks the selected
+dev executable under its project lock before any output steps, and launcher and
+HerdR construction reject an unusable source instead of persisting it or silently
+falling back to global `al`. These checks also cover CLI and nested sync, preserving
 operator-restored launchers and HerdR hooks. Restore an executable at the selected
 path to resume work, or restore project projections and reconnect the server.
 Rebuilds that leave a regular executable at that path keep accepting work on the

@@ -275,16 +275,19 @@ func TestDispatchLauncherDevelopmentExecutableSelection(t *testing.T) {
 			t.Setenv("AL_DEV_BYPASS_VERSION_DISPATCH", tc.bypass)
 			t.Setenv("AL_DEV_EXECUTABLE", tc.executable)
 			t.Setenv("AL_DEV_SOURCE_ROOT", root)
-			server, _ := RootedBuiltInDispatchServer(dispatchCallerConfig(ClientClaude), ClientClaude, root)
-			cmd := exec.Command(server.Command, server.Args...) // #nosec G204 -- generated launcher under test.
-			cmd.Env = []string{"PATH=" + bin}
-			out, err := cmd.Output()
+			server, _, projectionErr := RootedBuiltInDispatchServer(dispatchCallerConfig(ClientClaude), ClientClaude, root)
 			if tc.want == "" {
-				if err == nil {
-					t.Fatal("missing development executable must fail")
+				if projectionErr == nil {
+					t.Fatal("missing development executable must fail before projection")
 				}
 				return
 			}
+			if projectionErr != nil {
+				t.Fatal(projectionErr)
+			}
+			cmd := exec.Command(server.Command, server.Args...) // #nosec G204 -- generated launcher under test.
+			cmd.Env = []string{"PATH=" + bin}
+			out, err := cmd.Output()
 			if err != nil || string(out) != tc.want {
 				t.Fatalf("output %q, error %v; want %q", out, err, tc.want)
 			}
@@ -466,7 +469,7 @@ func TestEveryProjectedDevelopmentLauncherWorksWithoutParentSelection(t *testing
 	cfg.Agents.Grok.Enabled = &on
 	cfg.Agents.Muse.Enabled = &on
 	for _, client := range mcpClients {
-		server, ok := RootedBuiltInDispatchServer(cfg, client, root)
+		server, ok := mustRootedDispatchServer(t, cfg, client, root)
 		if !ok {
 			t.Fatalf("missing %s", client)
 		}
@@ -485,7 +488,7 @@ func TestEveryProjectedDevelopmentLauncherWorksWithoutParentSelection(t *testing
 	// A deliberate release projection drops the development selection, even
 	// when the host itself later inherits an unrelated development environment.
 	t.Setenv("AL_DEV_BYPASS_VERSION_DISPATCH", "")
-	server, _ := RootedBuiltInDispatchServer(cfg, ClientCodex, root)
+	server, _ := mustRootedDispatchServer(t, cfg, ClientCodex, root)
 	for _, arg := range server.Args {
 		if strings.Contains(arg, "${") {
 			t.Fatalf("release client-interpretable argv: %s", arg)
@@ -534,7 +537,7 @@ func TestReleaseLauncherRunsRecordedEntryWithoutClientPath(t *testing.T) {
 	installDir := filepath.Join(base, "install $() `false` ; space")
 	installed := writeExecutable(t, filepath.Join(installDir, "al"), "#!/bin/sh\nprintf '%s\\n' \"$PATH\" \"$PWD\" \"$AL_INSTALLED_EXECUTABLE\" \"$@\"\n")
 	t.Setenv("PATH", installDir)
-	server, _ := RootedBuiltInDispatchServer(dispatchCallerConfig(ClientCodex), ClientCodex, root)
+	server, _ := mustRootedDispatchServer(t, dispatchCallerConfig(ClientCodex), ClientCodex, root)
 	for _, arg := range server.Args {
 		if strings.Contains(arg, "${") {
 			t.Fatalf("client-interpretable argv: %s", arg)
@@ -565,7 +568,7 @@ func TestReleaseLauncherFallsBackWhenRecordedEntryIsGone(t *testing.T) {
 	fallbackDir := t.TempDir()
 	writeExecutable(t, filepath.Join(fallbackDir, "al"), "#!/bin/sh\nprintf fallback\n")
 	t.Setenv("PATH", filepath.Dir(installed))
-	server, _ := RootedBuiltInDispatchServer(dispatchCallerConfig(ClientCodex), ClientCodex, root)
+	server, _ := mustRootedDispatchServer(t, dispatchCallerConfig(ClientCodex), ClientCodex, root)
 	run := func() string {
 		cmd := exec.Command(server.Command, server.Args...) // #nosec G204 -- generated launcher under test.
 		cmd.Env = []string{"PATH=" + fallbackDir}
@@ -712,14 +715,27 @@ func TestInstalledExecutableFromImageCache(t *testing.T) {
 	// selection or al on PATH; all user state remains inside the fixture.
 	cmd.Env = []string{
 		helper + "=1", versiondispatch.EnvCacheDir + "=" + cache,
-		"GOMAXPROCS=" + os.Getenv("GOMAXPROCS"),
 		"HOME=" + base, "PATH=" + filepath.Join(base, "empty-bin"),
 		"XDG_CACHE_HOME=" + filepath.Join(base, "xdg-cache"),
 		"XDG_CONFIG_HOME=" + filepath.Join(base, "xdg-config"),
 		"XDG_DATA_HOME=" + filepath.Join(base, "xdg-data"),
 		"XDG_STATE_HOME=" + filepath.Join(base, "xdg-state"),
 	}
+	for _, key := range []string{"TMPDIR", "GOCOVERDIR", "GOMAXPROCS"} {
+		if value := os.Getenv(key); value != "" {
+			cmd.Env = append(cmd.Env, key+"="+value)
+		}
+	}
 	if output, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("image-cache helper: %v\n%s", err, output)
 	}
+}
+
+func mustRootedDispatchServer(t *testing.T, cfg config.Config, client, root string) (ResolvedMCPServer, bool) {
+	t.Helper()
+	server, ok, err := RootedBuiltInDispatchServer(cfg, client, root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return server, ok
 }

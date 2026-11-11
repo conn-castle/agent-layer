@@ -45,9 +45,14 @@ func TestMCPBuildIdentityCapturedAtConstruction(t *testing.T) {
 	cmd := exec.Command(self, "-test.run=^TestMCPBuildIdentityCapturedAtConstruction$")
 	cmd.Env = []string{
 		helper + "=1", "HOME=" + base, "AL_CACHE_DIR=" + filepath.Join(base, "cache"),
-		"PATH=" + testPath(t.TempDir()), "GOMAXPROCS=" + os.Getenv("GOMAXPROCS"),
+		"PATH=" + testPath(t.TempDir()),
 		"XDG_CONFIG_HOME=" + filepath.Join(base, "config"), "XDG_CACHE_HOME=" + filepath.Join(base, "xdg-cache"),
 		"XDG_DATA_HOME=" + filepath.Join(base, "data"), "XDG_STATE_HOME=" + filepath.Join(base, "state"),
+	}
+	for _, key := range []string{"TMPDIR", "GOCOVERDIR", "GOMAXPROCS"} {
+		if value := os.Getenv(key); value != "" {
+			cmd.Env = append(cmd.Env, key+"="+value)
+		}
 	}
 	if output, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("constructor identity helper: %v\n%s", err, output)
@@ -596,6 +601,9 @@ printf '%%s\n' '{"type":"thread.started","thread_id":"11111111-1111-4111-8111-11
 			}
 			if status.Server == nil || status.Server.SHA256 != hex.EncodeToString(hash[:]) || status.Server.Development == nil || !status.Server.Development.Replaced || status.Server.Development.Notice == "" {
 				t.Fatalf("%s dev source was not reported as changed: %+v", kind, status.Server)
+			}
+			if !strings.Contains(status.Server.Development.Notice, "start and continue are refused") {
+				t.Fatalf("unusable-source notice did not explain refusal: %s", status.Server.Development.Notice)
 			}
 			assertOperatorConfig()
 			for _, call := range []struct {

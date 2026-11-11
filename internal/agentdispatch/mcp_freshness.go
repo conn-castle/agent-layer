@@ -4,10 +4,10 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 
 	"github.com/conn-castle/agent-layer/internal/executableimage"
+	"github.com/conn-castle/agent-layer/internal/fsutil"
 	"github.com/conn-castle/agent-layer/internal/versiondispatch"
 )
 
@@ -71,22 +71,10 @@ func (s *dispatchToolServer) checkProviderWork() error {
 	if err := s.checkFreshness(); err != nil {
 		return err
 	}
-	if !s.development.snapshot {
-		return nil
+	if err := versiondispatch.ValidateDevelopmentExecutable(s.root); err != nil {
+		return fmt.Errorf("%w. No provider work was started and project projections were not changed. Restore that executable, or restore project projections and reconnect the agent-layer MCP server, then retry. Options, wait, inspect, output and cancel remain available", err)
 	}
-	info, err := os.Stat(s.development.path)
-	if err == nil && !info.Mode().IsRegular() {
-		err = errors.New("not a regular executable file")
-	}
-	if err == nil {
-		// Absolute-path lookup checks execute permission for this user without
-		// opening the file; execute bits for another class are insufficient.
-		_, err = exec.LookPath(s.development.path)
-	}
-	if err == nil {
-		return nil
-	}
-	return fmt.Errorf("selected development executable %q is missing or unusable: %v. No provider work was started and project projections were not changed. Restore that executable, or restore project projections and reconnect the agent-layer MCP server, then retry. Options, wait, inspect, output and cancel remain available", s.development.path, err)
+	return nil
 }
 
 // fresh reports whether a server started with this selection still runs what a
@@ -131,9 +119,9 @@ type developmentSelection struct {
 }
 
 // selectDevelopment verifies that the running cache image matches the selected dev build at startup.
-func selectDevelopment(root string) developmentSelection {
+func selectDevelopment(root string, snapshot bool) developmentSelection {
 	d := developmentSelection{path: versiondispatch.DevelopmentExecutable(root)}
-	if d.path == "" || !versiondispatch.RunningFromImageCache() {
+	if d.path == "" || !snapshot {
 		return d
 	}
 	// Treat an unverifiable image-cache launch as an error, never as a
@@ -154,8 +142,8 @@ func verifyDevelopmentExecutable(path, sha string) (os.FileInfo, error) {
 	if err != nil {
 		return nil, err
 	}
-	if !info.Mode().IsRegular() || info.Mode().Perm()&0o111 == 0 {
-		return nil, errors.New("selected development executable is not a regular executable file")
+	if err := fsutil.RequireExecutable(path, info); err != nil {
+		return nil, err
 	}
 	sum, err := imageSHA256(path)
 	switch {
@@ -188,9 +176,11 @@ func (d developmentSelection) changed() bool {
 	if d.info == nil {
 		return false
 	}
+	if executableimage.SameFile(d.info, d.path) != nil {
+		return true
+	}
 	info, err := os.Stat(d.path)
-	return err != nil || !os.SameFile(d.info, info) || d.info.Size() != info.Size() ||
-		!d.info.ModTime().Equal(info.ModTime()) || d.info.Mode() != info.Mode()
+	return err != nil || d.info.Mode() != info.Mode()
 }
 
 // serverCode reports the running code and any change to its selected development source.
@@ -198,9 +188,12 @@ func (s *dispatchToolServer) serverCode() *ServerCode {
 	build := currentBuildIdentity()
 	code := &ServerCode{Version: s.version, SHA256: build.SHA256, Snapshot: s.snapshot}
 	if s.development.path != "" {
-		replaced := s.development.changed()
+		unusable := versiondispatch.ValidateDevelopmentExecutable(s.root) != nil
+		replaced := unusable || s.development.changed()
 		code.Development = &DevelopmentCode{Executable: s.development.path, Replaced: replaced}
-		if replaced {
+		if unusable {
+			code.Development.Notice = "Selected development executable is missing or unusable; start and continue are refused until it is restored, or project projections are restored and the agent-layer MCP server is reconnected."
+		} else if replaced {
 			code.Development.Notice = "Development executable changed since the server started; reconnect the agent-layer MCP server to run the current build."
 		}
 	}

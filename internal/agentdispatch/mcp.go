@@ -185,7 +185,7 @@ func newDispatchToolServer(opts MCPServerOptions) (*dispatchToolServer, error) {
 	// procfs, before provider discovery can overlap an executable replacement.
 	currentBuildIdentity()
 	tools.start = selectRelease(root, tools.version)
-	tools.development = selectDevelopment(root)
+	tools.development = selectDevelopment(root, tools.snapshot)
 	return tools, nil
 }
 
