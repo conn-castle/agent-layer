@@ -49,18 +49,19 @@ type mcpLifecycleRecord struct {
 }
 
 type mcpLifecycle struct {
-	mu             sync.Mutex
-	file           *os.File
-	stderr         io.Writer
-	identity       mcpLifecycleRecord
-	closed         bool // local transport close has begun
-	finished       bool // no observations after the final record
-	rawEOF         bool
-	framedEOF      bool
-	startupError   bool
-	transportError bool
-	ambiguous      bool
-	observed       map[string]bool
+	mu                sync.Mutex
+	file              *os.File
+	stderr            io.Writer
+	identity          mcpLifecycleRecord
+	closed            bool  // local transport close has begun
+	finished          bool  // no observations after the final record
+	localReadCloseErr error // raw error attributable to closing our physical reader
+	rawEOF            bool
+	framedEOF         bool
+	startupError      bool
+	transportError    bool
+	ambiguous         bool
+	observed          map[string]bool
 }
 
 func newMCPLifecycle(opts MCPServerOptions, stderr io.Writer) *mcpLifecycle {
@@ -156,6 +157,11 @@ func (l *mcpLifecycle) observe(operation string, err error, ctx context.Context,
 		// evidence against an otherwise certain context cancellation.
 		return
 	}
+	if operation == mcpLifecycleRead && l.localReadCloseErr != nil && errors.Is(err, l.localReadCloseErr) {
+		// The raw reader proved this error came from our own Close. Keep
+		// returning it to the SDK/caller, but it is not competing evidence.
+		return
+	}
 	if mcpContextCondition(err) != "" {
 		return
 	}
@@ -221,12 +227,21 @@ type mcpObservedReader struct {
 	io.ReadCloser
 	lifecycle *mcpLifecycle
 	framing   *mcpFrameObserver
+	closing   bool // guarded by lifecycle.mu; transport reader Close has begun
 }
 
 func (r *mcpObservedReader) Read(p []byte) (int, error) {
 	n, err := r.ReadCloser.Read(p)
 	r.framing.read(p[:n])
 	r.lifecycle.mu.Lock()
+	if r.closing && (errors.Is(err, io.ErrClosedPipe) || errors.Is(err, os.ErrClosed)) {
+		// The transport exclusively owns its reader; peer closure yields EOF.
+		// Concurrent in-process closes by other holders are outside this contract.
+		// These identities specifically report use of a closed local reader.
+		// A sentinel, parser error, peer write failure, or input deadline is
+		// not proof of local-close fallout and must remain observable.
+		r.lifecycle.localReadCloseErr = err
+	}
 	if !r.lifecycle.closed && errors.Is(err, io.EOF) {
 		r.lifecycle.rawEOF = true
 	}
@@ -236,6 +251,7 @@ func (r *mcpObservedReader) Read(p []byte) (int, error) {
 
 func (r *mcpObservedReader) Close() error {
 	r.lifecycle.mu.Lock()
+	r.closing = true
 	r.lifecycle.closed = true
 	r.lifecycle.mu.Unlock()
 	return r.ReadCloser.Close()

@@ -27,7 +27,7 @@ func TestRunOwnsDescendants(t *testing.T) {
 	for _, mode := range []string{"deadline", "exited", "closed", "nonzero"} {
 		t.Run(mode, func(t *testing.T) {
 			pidFile := filepath.Join(t.TempDir(), "child")
-			script := `trap '' TERM; /bin/sleep 30 & echo $! > "$1"; echo retained; `
+			script := `trap '' TERM; /bin/sleep 30 & printf '%s\n' "$!" > "$1.tmp"; mv "$1.tmp" "$1"; echo retained; printf 'ready\n' >&3; `
 			switch mode {
 			case "exited":
 				script += "exit 0"
@@ -38,13 +38,7 @@ func TestRunOwnsDescendants(t *testing.T) {
 			default:
 				script += "wait"
 			}
-			// Only the timeout modes depend on the deadline; exit modes get slack
-			// so a slow start under -race cannot turn an exit into a timeout.
-			timeout := 5 * time.Second
-			if mode == "deadline" || mode == "closed" {
-				timeout = 300 * time.Millisecond
-			}
-			ctx, cancel := context.WithTimeout(context.Background(), timeout)
+			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 			t.Cleanup(func() {
 				if data, err := os.ReadFile(pidFile); t.Failed() && err == nil { // #nosec G304 -- owned fixture PID path.
@@ -56,17 +50,45 @@ func TestRunOwnsDescendants(t *testing.T) {
 			var output bytes.Buffer
 			cmd := exec.Command("/bin/sh", "-c", script, "fixture", pidFile)
 			cmd.Stdout, cmd.Stderr = &output, &output
-			start := time.Now()
-			err := Run(ctx, cmd)
+			awaitReady := fixtureReadiness(t, cmd)
+			done := make(chan error, 1)
+			joined := false
+			defer func() {
+				cancel()
+				if !joined {
+					select {
+					case <-done:
+					case <-time.After(5 * time.Second):
+						t.Error("fixture did not join after cleanup")
+					}
+				}
+			}()
+			go func() { done <- Run(ctx, cmd) }()
+			// fd 3 survives closed-mode output redirection; readiness follows atomic
+			// PID publication, so the PID record must still be checked.
+			awaitReady()
+			if data, err := os.ReadFile(pidFile); err != nil || strings.TrimSpace(string(data)) == "" { // #nosec G304 -- owned fixture PID path.
+				t.Fatalf("ready fixture PID: %q, %v", data, err)
+			}
+			// A pre-armed deadline could preempt PID publication; cancel after readiness.
+			// Run propagates ctx.Err() for both; TestRunDeadline covers real deadlines.
+			if mode == "deadline" || mode == "closed" {
+				timer := time.AfterFunc(300*time.Millisecond, cancel)
+				defer timer.Stop()
+			}
+			var err error
+			select {
+			case err = <-done:
+				joined = true
+			case <-time.After(2 * time.Second):
+				t.Fatal("unbounded return")
+			}
 			var cleanupErr *CleanupError
 			if errors.As(err, &cleanupErr) {
 				t.Fatalf("unexpected cleanup failure: %v", err)
 			}
-			if time.Since(start) > 2*time.Second {
-				t.Fatalf("unbounded return: %v", err)
-			}
 			if mode == "deadline" || mode == "closed" {
-				if !errors.Is(err, ctx.Err()) || ctx.Err() == nil || strings.Contains(err.Error(), "process group") {
+				if !errors.Is(err, context.Canceled) || !errors.Is(err, ctx.Err()) || strings.Contains(err.Error(), "process group") {
 					t.Fatalf("context outcome: %v", err)
 				}
 			} else if mode == "nonzero" {
@@ -111,15 +133,19 @@ func TestStartPreservesCallerOwnedOutput(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = reader.Close(); _ = writer.Close() }()
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	cmd := exec.Command("/bin/sh", "-c", `/bin/sleep 30 & echo $! > "$1"; echo retained; exit 0`, "fixture", pidFile)
+	cmd := exec.Command("/bin/sh", "-c", `/bin/sleep 30 & printf '%s\n' "$!" > "$1.tmp"; mv "$1.tmp" "$1"; echo retained; printf 'ready\n' >&3; exit 0`, "fixture", pidFile)
 	cmd.Stdout = writer
+	awaitReady := fixtureReadiness(t, cmd)
 	wait, err := Start(ctx, cmd)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer func() { cancel(); _ = wait() }()
+	awaitReady()
+	timer := time.AfterFunc(5*time.Second, cancel)
+	defer timer.Stop()
 	if cmd.Stdout != writer {
 		t.Fatal("caller-owned stdout was wrapped")
 	}
@@ -144,6 +170,34 @@ func TestStartPreservesCallerOwnedOutput(t *testing.T) {
 	}
 }
 
+func TestRunDeadline(t *testing.T) {
+	for _, mode := range []string{"running", "expired"} {
+		t.Run(mode, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+			defer cancel()
+			if mode == "expired" {
+				<-ctx.Done()
+			}
+			cmd := exec.Command("/bin/sleep", "30")
+			start := time.Now()
+			err := Run(ctx, cmd)
+			if time.Since(start) > 2*time.Second {
+				t.Fatalf("unbounded deadline return: %v", err)
+			}
+			if !errors.Is(err, context.DeadlineExceeded) {
+				t.Fatalf("deadline outcome: %v", err)
+			}
+			var cleanupErr *CleanupError
+			if errors.As(err, &cleanupErr) {
+				t.Fatalf("unexpected cleanup failure: %v", err)
+			}
+			if mode == "expired" && cmd.Process != nil {
+				t.Fatal("expired context started the process")
+			}
+		})
+	}
+}
+
 func TestRunResult(t *testing.T) {
 	observeErr := errors.New("observe failed")
 	cleanupErr := errors.New("stop unproven")
@@ -156,6 +210,7 @@ func TestRunResult(t *testing.T) {
 		{"plain wait", nil, nil, nil, waitErr},
 		{"cancelled", context.Canceled, nil, nil, nil},
 		{"cancelled wait", context.Canceled, nil, nil, waitErr},
+		{"deadline", context.DeadlineExceeded, nil, nil, waitErr},
 		{"observe", context.Canceled, observeErr, nil, waitErr},
 		{"cleanup", context.Canceled, nil, cleanupErr, waitErr},
 		{"both", context.Canceled, observeErr, cleanupErr, waitErr},
@@ -320,4 +375,25 @@ func sessionFixtureStopped(pid int) bool {
 	}
 	stat := strings.TrimSpace(string(state))
 	return stat == "" || strings.ContainsAny(stat[:1], "ZXx")
+}
+
+// fixtureReadiness uses fd 3 so closing stdout/stderr cannot hide readiness.
+func fixtureReadiness(t *testing.T, cmd *exec.Cmd) func() {
+	t.Helper()
+	reader, writer, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = reader.Close(); _ = writer.Close() })
+	cmd.ExtraFiles = []*os.File{writer}
+	return func() {
+		t.Helper()
+		if err := reader.SetReadDeadline(time.Now().Add(5 * time.Second)); err != nil {
+			t.Fatal(err)
+		}
+		line := make([]byte, len("ready\n"))
+		if _, err := io.ReadFull(reader, line); err != nil || string(line) != "ready\n" {
+			t.Fatalf("fixture readiness: %q, %v", line, err)
+		}
+	}
 }
