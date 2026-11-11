@@ -28,14 +28,7 @@ func currentBuildIdentity() agentLayerBuildIdentity {
 	buildIdentityOnce.Do(func() {
 		executingBuild.Executable, _ = os.Executable()
 		executable, _ := executableimage.Self()
-		file, err := os.Open(executable) // #nosec G304 -- own executable, no caller-controlled path.
-		if err == nil {
-			h := sha256.New()
-			if _, err := io.Copy(h, file); err == nil {
-				executingBuild.SHA256 = hex.EncodeToString(h.Sum(nil))
-			}
-			_ = file.Close()
-		}
+		executingBuild.SHA256, _ = imageSHA256(executable)
 		if info, ok := debug.ReadBuildInfo(); ok {
 			executingBuild.ModuleVersion = info.Main.Version
 			executingBuild.GoVersion = info.GoVersion
@@ -50,6 +43,20 @@ func currentBuildIdentity() agentLayerBuildIdentity {
 		}
 	})
 	return executingBuild
+}
+
+// imageSHA256 is used only at startup; options calls compare file identity.
+func imageSHA256(path string) (string, error) {
+	file, err := os.Open(path) // #nosec G304 -- executing image or explicitly selected development executable.
+	if err != nil {
+		return "", err
+	}
+	defer func() { _ = file.Close() }()
+	h := sha256.New()
+	if _, err := io.Copy(h, file); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
 // Fixed categories, IDs and local observations only. Never copy a provider

@@ -16,6 +16,23 @@ import (
 // OptionsResponse describes the agents that may be selected by dispatch start.
 type OptionsResponse struct {
 	Agents []AgentOption `json:"agents"`
+	// Server is present only on MCP responses, describing the long-lived process.
+	Server *ServerCode `json:"server,omitempty"`
+}
+
+// ServerCode identifies the code serving MCP requests, independently of providers.
+type ServerCode struct {
+	Version     string           `json:"version"`
+	SHA256      string           `json:"sha256"`
+	Snapshot    bool             `json:"snapshot"`
+	Development *DevelopmentCode `json:"development,omitempty"`
+}
+
+// DevelopmentCode reports whether reconnecting would select a rebuilt executable.
+type DevelopmentCode struct {
+	Executable string `json:"executable"`
+	Replaced   bool   `json:"replaced"`
+	Notice     string `json:"notice,omitempty"`
 }
 
 // AgentOption describes one selectable provider and its optional overrides.

@@ -1,6 +1,11 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## Unreleased
+
+### Fixed
+- Development `agent-layer` MCP servers run from verified content-addressed snapshots and keep accepting dispatch work after source rebuilds. `dispatch_options` reports the running version and image SHA-256 plus a reconnect notice when the selected dev executable has been replaced. Servers that cannot snapshot retain replacement refusal. Release probes build in a separate scratch directory so they do not replace the operator's development executable (#530).
+
 ## v1.2.1 - 2026-11-10
 
 ### Fixed

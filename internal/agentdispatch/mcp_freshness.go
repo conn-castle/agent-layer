@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"github.com/conn-castle/agent-layer/internal/executableimage"
 	"github.com/conn-castle/agent-layer/internal/versiondispatch"
@@ -46,9 +47,12 @@ func selectRelease(root, version string) releaseSelection {
 func (s *dispatchToolServer) checkFreshness() error {
 	var err error
 	selection := versiondispatch.DevelopmentExecutable(s.root)
-	if selection != "" {
+	switch {
+	case s.development.snapshot:
+		err = s.development.fresh(selection)
+	case selection != "":
 		err = executableimage.SameAs(selection)
-	} else {
+	default:
 		current := selectRelease(s.root, s.version)
 		selection = current.version
 		err = s.start.fresh(current)
@@ -89,4 +93,73 @@ func (start releaseSelection) fresh(current releaseSelection) error {
 		}
 	}
 	return nil
+}
+
+// developmentSelection binds a verified snapshot to the dev file selected at
+// startup. No handoff marker leaks into providers or their nested al commands.
+type developmentSelection struct {
+	path     string
+	info     os.FileInfo
+	snapshot bool
+	err      error
+}
+
+func selectDevelopment(root string) developmentSelection {
+	d := developmentSelection{path: versiondispatch.DevelopmentExecutable(root)}
+	if d.path == "" || !versiondispatch.RunningFromImageCache() {
+		return d
+	}
+	// Treat an unverifiable image-cache launch as an error, never as a
+	// successful snapshot just because its path lies somewhere in images/.
+	d.snapshot = true
+	build := currentBuildIdentity()
+	if build.SHA256 == "" || filepath.Base(build.Executable) != "al" || filepath.Base(filepath.Dir(build.Executable)) != build.SHA256 {
+		d.err = errors.New("running snapshot identity cannot be verified")
+		return d
+	}
+	d.info, d.err = os.Stat(d.path) // #nosec G703 -- selected development path, identity comparison only.
+	if d.err != nil {
+		return d
+	}
+	sum, err := imageSHA256(d.path)
+	switch {
+	case err != nil:
+		d.err = err
+	case sum != build.SHA256:
+		d.err = errors.New("running snapshot differs from the development executable selected at startup")
+	default:
+		d.err = executableimage.SameFile(d.info, d.path)
+	}
+	return d
+}
+
+func (d developmentSelection) fresh(path string) error {
+	if d.err != nil {
+		return d.err
+	}
+	if path != d.path || d.info == nil {
+		return errors.New("development selection changed or cannot be verified")
+	}
+	// A missing/unreadable development file is not evidence of a rebuild.
+	info, err := os.Stat(path) // #nosec G703 -- identity and executable-mode check only.
+	if err != nil {
+		return err
+	}
+	if !info.Mode().IsRegular() || info.Mode().Perm()&0o111 == 0 {
+		return errors.New("selected development executable is not an executable file")
+	}
+	return executableimage.Unchanged()
+}
+
+func (s *dispatchToolServer) serverCode() *ServerCode {
+	build := currentBuildIdentity()
+	code := &ServerCode{Version: s.version, SHA256: build.SHA256, Snapshot: versiondispatch.RunningFromImageCache()}
+	if s.development.path != "" {
+		replaced := s.development.info != nil && executableimage.SameFile(s.development.info, s.development.path) != nil
+		code.Development = &DevelopmentCode{Executable: s.development.path, Replaced: replaced}
+		if replaced {
+			code.Development.Notice = "Development executable replaced; reconnect the agent-layer MCP server to run the new build."
+		}
+	}
+	return code
 }

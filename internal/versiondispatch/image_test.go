@@ -236,3 +236,94 @@ func TestImageHandoffRequiresReleaseBuild(t *testing.T) {
 		t.Fatal("image handoff must require a release build and the MCP server option")
 	}
 }
+
+func TestDevelopmentImageHandoff(t *testing.T) {
+	for _, mode := range []string{"handoff", "already snapshot", "different image", "different root", "other command", "copy fails", "exec fails", "canceled"} {
+		t.Run(mode, func(t *testing.T) {
+			f := newImageHandoffFixture(t, "0.22.0")
+			f.env[EnvDevelopmentBypassVersionDispatch] = "1"
+			f.env[EnvDevelopmentSourceRoot] = f.root
+			f.env[EnvDevelopmentExecutable] = f.source
+			f.env[EnvVersionOverride] = "1.2.3"
+			env := []string{"KEEP=1", "PATH=/dev/bin:/usr/bin", EnvDevelopmentBypassVersionDispatch + "=1", EnvDevelopmentSourceRoot + "=" + f.root, EnvDevelopmentExecutable + "=" + f.source, EnvShimActive + "=inherited", EnvInstalledExecutable + "=/inherited/al"}
+			sys := f.system()
+			sys.EnvironFunc = func() []string { return env }
+			opts := execOptions{
+				runningImage: func() (string, string, error) { return f.source, f.running, f.runningErr },
+				sameAs: func(path string) error {
+					if path != f.source {
+						t.Fatalf("identity check of %q", path)
+					}
+					if mode == "different image" {
+						return errors.New("different image")
+					}
+					return nil
+				},
+			}
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			switch mode {
+			case "already snapshot":
+				f.running = f.imagePath(t)
+			case "different root":
+				f.env[EnvDevelopmentSourceRoot] = t.TempDir()
+			case "other command":
+				opts = execOptions{}
+			case "copy fails":
+				sys.CreateTempFunc = func(string, string) (*os.File, error) { return nil, errors.New("disk full") }
+			case "exec fails":
+				f.execErr = errors.New("exec failed")
+			case "canceled":
+				cancel()
+			}
+			current := "dev"
+			args := []string{f.source, "dispatch", "mcp-server"}
+			if mode == "different root" {
+				current = "1.2.3"
+			}
+			if mode == "other command" {
+				args[2] = "options"
+			}
+			err := maybeExecWithOptions(ctx, sys, args, current, f.root, opts)
+			switch mode {
+			case "handoff":
+				if !errors.Is(err, ErrDispatched) || f.execPath != f.imagePath(t) {
+					t.Fatalf("handoff: %q %v", f.execPath, err)
+				}
+				if !slices.Equal(f.execEnv, env) {
+					t.Fatalf("environment changed: %v", f.execEnv)
+				}
+				// Simulate the exec'd process. Its image is no longer the selected
+				// mutable dev entry, and the same inherited env must not loop.
+				opts.sameAs = func(string) error { return errors.New("snapshot") }
+				f.execPath = ""
+				if err := maybeExecWithOptions(ctx, sys, f.execArgs, current, f.root, opts); err != nil || f.execPath != "" {
+					t.Fatalf("second handoff: %q %v", f.execPath, err)
+				}
+			case "different root":
+				// Normal release selection remains in force outside the dev root.
+				if !errors.Is(err, ErrDispatched) || f.execPath != f.imagePath(t) {
+					t.Fatalf("release handoff: %q %v", f.execPath, err)
+				}
+				if !slices.Contains(f.execEnv, EnvShimActive+"=1") {
+					t.Fatalf("not release handoff: %v", f.execEnv)
+				}
+			case "copy fails", "exec fails":
+				if err != nil || strings.Count(f.stderr.String(), "immutable image copy") != 1 {
+					t.Fatalf("fallback: %v %s", err, f.stderr.String())
+				}
+			case "canceled":
+				if !errors.Is(err, context.Canceled) || f.execPath != "" {
+					t.Fatalf("cancellation: %q %v", f.execPath, err)
+				}
+			default:
+				if err != nil || f.execPath != "" {
+					t.Fatalf("unexpected handoff: %q %v", f.execPath, err)
+				}
+			}
+			if entries, _ := os.ReadDir(filepath.Join(f.cache, "versions")); len(entries) != 0 {
+				t.Fatalf("wrote release versions: %v", entries)
+			}
+		})
+	}
+}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -18,7 +19,7 @@ import (
 
 func freshnessWrite(t *testing.T, path, value string) {
 	t.Helper()
-	if err := os.WriteFile(path, []byte(value), 0o600); err != nil {
+	if err := os.WriteFile(path, []byte(value), 0o600); err != nil { // #nosec G703 -- test-owned temporary paths only.
 		t.Fatal(err)
 	}
 }
@@ -182,7 +183,7 @@ func TestMCPFreshnessRealImages(t *testing.T) {
 		t.Cleanup(func() { _ = session.Close() })
 		return session
 	}
-	for _, mode := range []string{"development", "legacy bypass", "unpinned", "unpinned symlink"} {
+	for _, mode := range []string{"development fallback", "legacy bypass", "unpinned", "unpinned symlink"} {
 		t.Run(mode, func(t *testing.T) {
 			root, bin := writeDispatchRepo(t, dispatchRepoConfig{}), t.TempDir()
 			image := filepath.Join(t.TempDir(), "al")
@@ -194,11 +195,15 @@ func TestMCPFreshnessRealImages(t *testing.T) {
 				copyImage(t, a, image)
 			}
 			var env []string
-			if mode == "development" || mode == "legacy bypass" {
+			if mode == "development fallback" || mode == "legacy bypass" {
 				freshnessWrite(t, filepath.Join(root, ".agent-layer", "al.version"), "0.22.0\n")
 				env = []string{"AL_DEV_BYPASS_VERSION_DISPATCH=1"}
-				if mode == "development" {
+				if mode == "development fallback" {
 					env = append(env, "AL_DEV_EXECUTABLE="+image, "AL_DEV_SOURCE_ROOT="+root)
+					// A file cannot contain images/: force the supported run-in-place fallback.
+					blockedCache := filepath.Join(t.TempDir(), "cache-file")
+					freshnessWrite(t, blockedCache, "blocked")
+					env = append(env, "AL_CACHE_DIR="+blockedCache)
 				}
 			}
 			marker := filepath.Join(t.TempDir(), "native-access")
@@ -346,6 +351,25 @@ printf '%%s\n' '{"type":"thread.started","thread_id":"11111111-1111-4111-8111-11
 			t.Fatalf("image entry was not reused: %v %v", entries, err)
 		}
 	})
+	t.Run("development snapshot with unverifiable startup identity", func(t *testing.T) {
+		root, cache := writeDispatchRepo(t, dispatchRepoConfig{}), t.TempDir()
+		data, err := os.ReadFile(a) // #nosec G304 -- test-built image.
+		if err != nil {
+			t.Fatal(err)
+		}
+		sum := sha256.Sum256(data)
+		for _, identity := range []string{"invalid", hex.EncodeToString(sum[:])} {
+			runner := filepath.Join(cache, "images", identity, "al")
+			if err := os.MkdirAll(filepath.Dir(runner), 0o700); err != nil { // #nosec G703 -- test-owned temporary image cache.
+				t.Fatal(err)
+			}
+			copyImage(t, a, runner)
+			// An image-cache path alone is insufficient: the selected dev build
+			// must match its content at startup as well as its cache key.
+			session := connect(t, root, runner, t.TempDir(), "AL_CACHE_DIR="+cache, "AL_DEV_EXECUTABLE="+b, "AL_DEV_SOURCE_ROOT="+root, "AL_DEV_BYPASS_VERSION_DISPATCH=1")
+			assertStaleProviderTools(t, session, "unknown")
+		}
+	})
 	t.Run("unpinned dispatched server tracks the installed entry", func(t *testing.T) {
 		root, bin := writeDispatchRepo(t, dispatchRepoConfig{}), t.TempDir()
 		runner, installed := filepath.Join(t.TempDir(), "al-cached"), filepath.Join(t.TempDir(), "al")
@@ -376,7 +400,7 @@ printf '%%s\n' '{"type":"thread.started","thread_id":"11111111-1111-4111-8111-11
 			assertStaleControls(t, unverifiable, root)
 		}
 	})
-	t.Run("admitted worker retains image after replacement", func(t *testing.T) {
+	t.Run("development snapshot retains server and worker image after replacement", func(t *testing.T) {
 		root, bin := writeDispatchRepo(t, dispatchRepoConfig{}), t.TempDir()
 		image, signalDir := filepath.Join(t.TempDir(), "al"), t.TempDir()
 		copyImage(t, a, image)
@@ -415,12 +439,6 @@ printf '%%s\n' '{"type":"thread.started","thread_id":"11111111-1111-4111-8111-11
 		if started.err != nil {
 			t.Fatal(started.err)
 		}
-		if runtime.GOOS != "linux" {
-			if !started.result.IsError || !strings.Contains(toolResultText(started.result), "replaced") {
-				t.Fatalf("replacement published work: %s", toolResultText(started.result))
-			}
-			return
-		}
 		result := decodeToolResult(t, started.result)
 		finished := decodeToolResult(t, callMCPTool(t, session, ToolWait, WaitInput{Handle: result.Handle}))
 		if finished.State != dispatchStateCompleted {
@@ -437,6 +455,51 @@ printf '%%s\n' '{"type":"thread.started","thread_id":"11111111-1111-4111-8111-11
 		hash := sha256.Sum256(data)
 		if record.AgentLayerBuild.SHA256 != hex.EncodeToString(hash[:]) {
 			t.Fatalf("worker used replacement: %+v", record.AgentLayerBuild)
+		}
+		optionsResult := callMCPTool(t, session, ToolOptions, OptionsInput{})
+		if optionsResult.IsError {
+			t.Fatalf("rebuilt dev server refused options: %s", toolResultText(optionsResult))
+		}
+		var options OptionsResponse
+		if err := json.Unmarshal([]byte(toolResultText(optionsResult)), &options); err != nil {
+			t.Fatal(err)
+		}
+		if options.Server == nil || options.Server.Version != "1.2.3" || options.Server.SHA256 != hex.EncodeToString(hash[:]) || !options.Server.Snapshot || options.Server.Development == nil || !options.Server.Development.Replaced || options.Server.Development.Notice == "" {
+			t.Fatalf("missing running/replacement identity: %+v", options.Server)
+		}
+		// New work after the replacement must still use A, including continuation.
+		for _, call := range []struct {
+			name  string
+			input any
+		}{
+			{ToolStart, StartInput{Agent: AgentCodex, Model: "gpt-test", Prompt: "fixture"}},
+			{ToolContinue, ContinueInput{Handle: result.Handle, Prompt: "fixture"}},
+		} {
+			next := decodeToolResult(t, callMCPTool(t, session, call.name, call.input))
+			if finished := decodeToolResult(t, callMCPTool(t, session, ToolWait, WaitInput{Handle: next.Handle})); finished.State != dispatchStateCompleted {
+				t.Fatalf("worker after rebuild: %+v", finished)
+			}
+			record, err := loadRunRecord(root, next.InvocationID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if record.AgentLayerBuild.SHA256 != hex.EncodeToString(hash[:]) {
+				t.Fatalf("worker used newer build: %+v", record.AgentLayerBuild)
+			}
+		}
+		// Regeneration must continue to launch the current dev entry, without
+		// recording the server's snapshot as an installed release fallback.
+		generated, err := os.ReadFile(filepath.Join(root, ".codex", "config.toml")) // #nosec G304 -- test-owned generated launcher.
+		if err != nil {
+			t.Fatal(err)
+		}
+		snapshot := filepath.Join("images", hex.EncodeToString(hash[:]), "al")
+		if strings.Contains(string(generated), snapshot) || !strings.Contains(string(generated), image) {
+			t.Fatalf("regenerated launcher lost dev provenance: %s", generated)
+		}
+		// Losing the selected executable is unverifiable rather than a verified rebuild.
+		if err := os.Remove(image); err != nil {
+			t.Fatal(err)
 		}
 		assertStaleProviderTools(t, session, result.Handle)
 	})

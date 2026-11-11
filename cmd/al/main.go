@@ -22,7 +22,7 @@ import (
 var maybeExecFunc = versiondispatch.MaybeExec
 
 // maybeExecMCPServerFunc dispatches `al dispatch mcp-server`, which also moves
-// a pinned server to an immutable image so al update does not make it stale.
+// a selected dev or pinned server to an immutable image so replacement does not make it stale.
 var maybeExecMCPServerFunc = versiondispatch.MaybeExecMCPServer
 var executeFunc = execute
 

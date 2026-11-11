@@ -97,18 +97,22 @@ defaults, redirect provider homes, or copy credentials into a test fixture.
 Disposable projects remain appropriate for install/upgrade tests, which do not
 validate live provider authentication.
 
-Build the candidate with `make al-dev-build`, then run the following in a
-subshell from the repository root (the environment setup matches the development
-launchers in `Makefile`):
+Build and run the candidate in a unique scratch directory from the repository
+root. The command-line `AL_DEV_BIN_DIR` override keeps the operator's
+`.agent-layer/tmp/dev-bin/al` and connected MCP server untouched; the probes do
+not require reconnecting that server. Keep the candidate until all probe workers
+have terminated, then remove the scratch directory if no longer needed:
 
 ```bash
 (
+  probe_bin_dir="$(mktemp -d "${TMPDIR:-/tmp}/al-release-probe.XXXXXX")" || exit 1
+  make al-dev-build AL_DEV_BIN_DIR="$probe_bin_dir" || exit 1
   unset AL_RUN_DIR AL_RUN_ID AL_DISPATCH_CALLER_AGENT AL_DISPATCH_ACTIVE AL_SHIM_ACTIVE
   unset AL_INSTALLED_EXECUTABLE
   unset CODEX_HOME CLAUDE_CONFIG_DIR AGY_CLI_DISABLE_AUTO_UPDATE GROK_HOME
-  export PATH="$PWD/.agent-layer/tmp/dev-bin:$PATH"
+  export PATH="$probe_bin_dir:$PATH"
   export AL_DEV_BYPASS_VERSION_DISPATCH=1
-  export AL_DEV_EXECUTABLE="$PWD/.agent-layer/tmp/dev-bin/al"
+  export AL_DEV_EXECUTABLE="$probe_bin_dir/al"
   export AL_DEV_SOURCE_ROOT="$PWD"
   al dispatch options || exit 1
   wait_for_termination() {

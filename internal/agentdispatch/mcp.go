@@ -69,7 +69,8 @@ type dispatchToolServer struct {
 	discoveryGate    chan struct{}
 	discoveryCleanup *agentoptions.DiscoveryCleanup
 	// start is the release selection at server start; freshness compares it.
-	start releaseSelection
+	start       releaseSelection
+	development developmentSelection
 }
 
 // OptionsInput is the (empty) input of dispatch_options.
@@ -178,6 +179,7 @@ func newDispatchToolServer(opts MCPServerOptions) (*dispatchToolServer, error) {
 		tools.workDir = root
 	}
 	tools.start = selectRelease(root, tools.version)
+	tools.development = selectDevelopment(root)
 	return tools, nil
 }
 
@@ -293,6 +295,7 @@ func (s *dispatchToolServer) handleOptions(ctx context.Context, _ *mcp.CallToolR
 	if err != nil {
 		return nil, nil, toolError(err)
 	}
+	options.Server = s.serverCode()
 	s.policy.constrainOptions(options)
 	return nil, options, nil
 }

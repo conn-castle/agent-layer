@@ -45,8 +45,12 @@ binary, so committing or first dirtying the tree changes the bytes. They explici
 and put that directory first on `PATH`.
 Sync embeds the absolute development executable as a quoted positional MCP
 launcher argument for every client. A client parent does not need these
-variables. After a rebuild replaces it, running MCP servers refuse new
-provider work until reconnected; admitted work keeps its original image. Bypass alone never promotes
+variables. Development MCP servers first run from a verified content-addressed
+snapshot under `<cache root>/images/<sha256>/al`. After a rebuild replaces the
+development executable, those servers keep accepting work on their original
+image; `dispatch_options.server` reports that build's version and SHA-256 and a
+notice to reconnect for the new build. If snapshot creation fails, the server
+runs in place and still refuses new work after replacement. Bypass alone never promotes
 an arbitrary executable or a transient `go run` path into persistent source selection. The root marker
 must match the project's configuration root (canonical symlink spellings are
 accepted). Inherited Make environment from repository A does not persist MCP
@@ -57,7 +61,7 @@ source selection, explicitly set `AL_DEV_SOURCE_ROOT` to that scratch root;
 Generated argv carries the matching root marker without persisting provider env.
 
 A release `al sync` without development selection restores the pin/override
-launcher. Reconnect after a rebuild replaces the executable or after changing
+launcher. Reconnect to use a rebuilt executable or after changing
 source/release mode; sync does
 not replace a running server, and a new chat may reuse it. See
 [MCP code freshness](AGENT-DISPATCH.md#mcp-code-freshness) for recovery and limits.

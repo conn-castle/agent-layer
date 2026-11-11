@@ -107,7 +107,9 @@ func InstalledExecutable() string {
 			return candidate
 		}
 	}
-	if len(os.Args) == 0 || os.Getenv(versiondispatch.EnvShimActive) != "" {
+	// Dev snapshots intentionally do not export a shim marker. Their argv[0]
+	// is still a cache image, never an installed entry for regenerated launchers.
+	if len(os.Args) == 0 || os.Getenv(versiondispatch.EnvShimActive) != "" || versiondispatch.RunningFromImageCache() {
 		return ""
 	}
 	invoked := os.Args[0]
