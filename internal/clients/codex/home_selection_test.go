@@ -85,10 +85,7 @@ func TestLaunchCapturesAbsoluteEffectiveHome(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	t.Chdir(root)
 	outside := t.TempDir()
-	physicalOutside, err := filepath.EvalSymlinks(outside)
-	if err != nil {
-		t.Fatal(err)
-	}
+	physicalOutside := testutil.PhysicalPath(t, outside)
 	if err := os.Mkdir(filepath.Join(outside, "child"), 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -252,17 +249,17 @@ func TestSubfolderHomeFallbackAndPhysicalOverrides(t *testing.T) {
 					projectHome := value != "link/../.codex" && value != "sub/../.codex" && !callerHomeExists
 					want := filepath.Join(root, ".codex")
 					if !projectHome {
-						want = filepath.Join(caller, ".codex")
+						want = filepath.Join(testutil.PhysicalPath(t, caller), ".codex")
 					}
 					if value == "link/../.codex" {
-						want = filepath.Join(outside, ".codex")
+						want = filepath.Join(testutil.PhysicalPath(t, outside), ".codex")
 					}
 					got, present := clients.GetEnv(env, "CODEX_HOME")
 					if !enabled && projectHome {
 						if present {
 							t.Fatalf("disabled project home retained as %q", got)
 						}
-					} else if !present || !filepath.IsAbs(got) || !clients.SamePath(got, want) {
+					} else if !present || got != want {
 						t.Fatalf("home=%q, want %q (present=%t)", got, want, present)
 					}
 					if (warning.Len() > 0) != (enabled && !projectHome) {

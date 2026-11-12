@@ -24,6 +24,7 @@ import (
 	"github.com/conn-castle/agent-layer/internal/clients"
 	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/ownedprocess"
+	"github.com/conn-castle/agent-layer/internal/testutil"
 )
 
 // The test executable doubles as a harness so protocol, environment, working
@@ -1121,10 +1122,7 @@ func TestMuseDiscoveryPreservesNativeEnvironment(t *testing.T) {
 
 func TestDiscoveryNormalizesHomesAndClearsDisabledCodexHome(t *testing.T) {
 	root := t.TempDir()
-	physicalRoot, err := filepath.EvalSymlinks(root)
-	if err != nil {
-		t.Fatal(err)
-	}
+	physicalRoot := testutil.PhysicalPath(t, root)
 	t.Setenv("HOME", t.TempDir())
 	t.Chdir(root)
 	alias := filepath.Join(t.TempDir(), "alias")

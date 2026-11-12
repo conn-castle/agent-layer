@@ -26,6 +26,7 @@ const (
 
 const (
 	executableName = "grok"
+	homeDirName    = ".grok-config"
 	// SupportedVersion is the Grok CLI version Agent Layer tests against.
 	SupportedVersion = "1.0.5"
 	// EnvHome is the Grok home directory override.
@@ -54,7 +55,7 @@ var execFunc = clients.ExecHandoff
 
 // HomeDir is the repo-local GROK_HOME Agent Layer always sets.
 func HomeDir(root string) string {
-	return filepath.Join(root, ".grok-config")
+	return filepath.Join(root, homeDirName)
 }
 
 // EnsureHome creates or tightens the repo-local GROK_HOME to owner-only
@@ -142,13 +143,13 @@ func ConfigureEnvironment(root string, env []string, cfg config.GrokConfig, warn
 // relative overrides absolute. Bare-name spellings fall back to .grok-config
 // under the project root only when the caller-relative entry is absent.
 func ClearStaleHome(root string, env []string) []string {
-	return clients.ClearStaleHome(root, env, EnvHome, ".grok-config")
+	return clients.ClearStaleHome(root, env, EnvHome, homeDirName)
 }
 
 func ensureGrokHomeWithWarning(root string, env []string, warning io.Writer) []string {
 	expected := HomeDir(root)
 	current, ok := clients.GetEnv(env, EnvHome)
-	if ok && current != "" && !clients.SamePath(current, expected) && warning != nil {
+	if ok && current != "" && !clients.SamePath(clients.ResolveRelativeHome(root, current, homeDirName), expected) && warning != nil {
 		_, _ = fmt.Fprintf(warning, messages.ClientsGrokHomeWarningFmt, current, expected)
 	}
 	return clients.SetUniqueEnv(env, EnvHome, expected)

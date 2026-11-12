@@ -87,7 +87,6 @@ func ensureClaudeConfigDirWithWarning(root string, env []string, warning io.Writ
 	}
 
 	selected := clients.ResolveRelativeHome(root, current, configDirName)
-	// Normalize relative homes and collapse duplicates before capture or exec.
 	env = clients.SetUniqueEnv(env, "CLAUDE_CONFIG_DIR", selected)
 	if !clients.SamePath(selected, expected) {
 		// Best-effort warning; a stderr write failure does not change the returned

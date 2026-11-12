@@ -24,14 +24,26 @@ func SamePath(a, b string) bool {
 	}
 	// EvalSymlinks need not normalize the spelling of an existing case alias.
 	// Compare parent objects when the leaf spelling is identical and missing.
-	ap, an := filepath.Split(strings.TrimRight(a, string(os.PathSeparator)))
-	bp, bn := filepath.Split(strings.TrimRight(b, string(os.PathSeparator)))
+	ap, an := splitMissingLeaf(a)
+	bp, bn := splitMissingLeaf(b)
 	if an != bn || !os.IsNotExist(ae) || !os.IsNotExist(be) {
 		return false
 	}
 	ai, ae = os.Stat(ap)
 	bi, be = os.Stat(bp)
 	return ae == nil && be == nil && os.SameFile(ai, bi)
+}
+
+// splitMissingLeaf ignores trailing dots and separators for missing-home
+// identity checks. Unresolved parent traversals must retain their meaning.
+func splitMissingLeaf(path string) (parent, leaf string) {
+	for {
+		parent, leaf = filepath.Split(strings.TrimRight(path, string(os.PathSeparator)))
+		if leaf != "." {
+			return parent, leaf
+		}
+		path = parent
+	}
 }
 
 // ResolvePath makes a path absolute without cleaning away symlink/.. pairs.
@@ -86,6 +98,9 @@ func ResolveRelativeHome(root, current, name string) string {
 		if _, err := os.Lstat(name); os.IsNotExist(err) {
 			return filepath.Join(root, name)
 		}
+	}
+	if expected := filepath.Join(root, name); SamePath(selected, expected) {
+		return expected
 	}
 	return selected
 }

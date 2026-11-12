@@ -304,6 +304,7 @@ func TestConfigureEnvironmentClaudeConfigDirRelativeValues(t *testing.T) {
 		for _, enabled := range []bool{true, false} {
 			t.Run(fmt.Sprintf("%s/local_config_dir=%t", tc.name, enabled), func(t *testing.T) {
 				root := t.TempDir()
+				physicalRoot := testutil.PhysicalPath(t, root)
 				expected := filepath.Join(root, ".claude-config")
 				for _, dir := range []string{expected, filepath.Join(root, "subfolder", "nested")} {
 					if err := os.MkdirAll(dir, 0o700); err != nil {
@@ -337,20 +338,20 @@ func TestConfigureEnvironmentClaudeConfigDirRelativeValues(t *testing.T) {
 					if tc.keep == "" && ok {
 						t.Fatalf("expected stale CLAUDE_CONFIG_DIR %q to be cleared, got %q", current, value)
 					}
-					if tc.keep != "" && (!filepath.IsAbs(value) || !clients.SamePath(value, filepath.Join(root, strings.ReplaceAll(tc.keep, "{base}", filepath.Base(root))))) {
+					if tc.keep != "" && value != filepath.Join(physicalRoot, strings.ReplaceAll(tc.keep, "{base}", filepath.Base(root))) {
 						t.Fatalf("expected user CLAUDE_CONFIG_DIR %q to be kept, got %q (present=%t)", current, value, ok)
 					}
 					return
 				}
 				if tc.keep == "" {
-					if !filepath.IsAbs(value) || !clients.SamePath(value, expected) || warning.Len() != 0 {
+					if value != expected || warning.Len() != 0 {
 						t.Fatalf("expected CLAUDE_CONFIG_DIR %s without warning, got %q with warning %q", expected, value, warning.String())
 					}
 					return
 				}
-				want := filepath.Join(root, strings.ReplaceAll(tc.keep, "{base}", filepath.Base(root)))
+				want := filepath.Join(physicalRoot, strings.ReplaceAll(tc.keep, "{base}", filepath.Base(root)))
 				wantWarning := fmt.Sprintf(messages.ClientsClaudeConfigDirWarningFmt, current, expected)
-				if !filepath.IsAbs(value) || !clients.SamePath(value, want) || warning.String() != wantWarning {
+				if value != want || warning.String() != wantWarning {
 					t.Fatalf("expected CLAUDE_CONFIG_DIR %s with warning %q, got %q with warning %q", want, wantWarning, value, warning.String())
 				}
 			})

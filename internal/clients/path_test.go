@@ -1,10 +1,13 @@
 package clients
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/conn-castle/agent-layer/internal/testutil"
 )
 
 func TestResolvePathSymlinkBeforeParentTraversal(t *testing.T) {
@@ -46,6 +49,61 @@ func TestSamePathMissingLeafRootAlias(t *testing.T) {
 	}
 	if SamePath(filepath.Join(root, ".codex"), filepath.Join(t.TempDir(), ".codex")) {
 		t.Fatal("different parents matched")
+	}
+}
+
+func TestSamePathMissingLeafDotSuffix(t *testing.T) {
+	root := t.TempDir()
+	home := filepath.Join(root, ".codex")
+	alias := filepath.Join(t.TempDir(), "alias")
+	if err := os.Symlink(root, alias); err != nil {
+		t.Fatal(err)
+	}
+	for _, parent := range []string{root, alias} {
+		for _, suffix := range []string{"/.", "//././"} {
+			path := filepath.Join(parent, ".codex") + suffix
+			if !SamePath(path, home) || !SamePath(home, path) {
+				t.Fatalf("missing home alias %q did not match %q", path, home)
+			}
+		}
+	}
+	for _, path := range []string{home + "/../.codex/.", filepath.Join(root, ".Codex") + "/.", filepath.Join(root, "other") + "/."} {
+		if SamePath(path, home) || SamePath(home, path) {
+			t.Fatalf("distinct or unresolved home %q matched %q", path, home)
+		}
+	}
+}
+
+func TestRelativeProjectHomeUsesRootSpelling(t *testing.T) {
+	for _, existing := range []bool{false, true} {
+		t.Run(fmt.Sprintf("existing=%t", existing), func(t *testing.T) {
+			root := t.TempDir()
+			alias := filepath.Join(t.TempDir(), "alias")
+			if err := os.Symlink(root, alias); err != nil {
+				t.Fatal(err)
+			}
+			t.Chdir(root)
+			for _, name := range []string{".codex", ".claude-config"} {
+				if existing {
+					if err := os.Mkdir(filepath.Join(root, name), 0o700); err != nil {
+						t.Fatal(err)
+					}
+				}
+				for _, value := range []string{name, "./" + name, name + "/."} {
+					if got, want := ResolveRelativeHome(alias, value, name), filepath.Join(alias, name); got != want {
+						t.Fatalf("home %q became %q, want project spelling %q", value, got, want)
+					}
+				}
+			}
+			physicalRoot := testutil.PhysicalPath(t, root)
+			if got, want := ResolveRelativeHome(alias, "elsewhere", ".codex"), filepath.Join(physicalRoot, "elsewhere"); got != want {
+				t.Fatalf("foreign home=%q, want physical %q", got, want)
+			}
+			absolute := filepath.Join(root, ".codex") + "/."
+			if got := ResolveRelativeHome(alias, absolute, ".codex"); got != absolute {
+				t.Fatalf("absolute override spelling changed: %q", got)
+			}
+		})
 	}
 }
 
@@ -106,10 +164,7 @@ func TestRelativeHomeFallbackDoesNotCleanParentTraversal(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Chdir(caller)
-	physicalCaller, err := filepath.EvalSymlinks(caller)
-	if err != nil {
-		t.Fatal(err)
-	}
+	physicalCaller := testutil.PhysicalPath(t, caller)
 	for _, name := range []string{".codex", ".claude-config"} {
 		value := "missing/../" + name
 		want := physicalCaller + "/" + value
@@ -126,10 +181,7 @@ func TestClearStaleHomeShorthandAndDuplicates(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Chdir(caller)
-	physicalCaller, err := filepath.EvalSymlinks(caller)
-	if err != nil {
-		t.Fatal(err)
-	}
+	physicalCaller := testutil.PhysicalPath(t, caller)
 	for _, home := range []struct{ key, name string }{{"CODEX_HOME", ".codex"}, {"CLAUDE_CONFIG_DIR", ".claude-config"}, {"GROK_HOME", ".grok-config"}} {
 		for _, value := range []string{home.name, home.name + "/", "./" + home.name + "/", ".//" + home.name, home.name + "/."} {
 			env := ClearStaleHome(root, []string{home.key + "=" + value, home.key + "=" + t.TempDir()}, home.key, home.name)

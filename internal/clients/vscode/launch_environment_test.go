@@ -9,6 +9,7 @@ import (
 	"github.com/conn-castle/agent-layer/internal/clients"
 	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/run"
+	"github.com/conn-castle/agent-layer/internal/testutil"
 )
 
 func TestLaunchAppliesOnlyProviderOwnedEnvironmentChanges(t *testing.T) {
@@ -24,6 +25,8 @@ func TestLaunchAppliesOnlyProviderOwnedEnvironmentChanges(t *testing.T) {
 		absent           []string
 		wantGrokHome0700 bool
 		callerHomes      bool
+		relativeHomes    bool
+		rootAlias        bool
 	}{
 		{
 			name:          "enabled providers receive repository homes",
@@ -76,6 +79,7 @@ func TestLaunchAppliesOnlyProviderOwnedEnvironmentChanges(t *testing.T) {
 
 		{
 			name:          "disabled local configs normalize caller-relative user homes",
+			relativeHomes: true,
 			vscodeEnabled: true, claudeEnabled: true,
 			inherited: func(string) map[string]string {
 				return map[string]string{"CODEX_HOME": "codex-user", "CLAUDE_CONFIG_DIR": "claude-user"}
@@ -97,6 +101,7 @@ func TestLaunchAppliesOnlyProviderOwnedEnvironmentChanges(t *testing.T) {
 
 		{
 			name:          "disabled local configs preserve existing bare caller homes",
+			relativeHomes: true,
 			vscodeEnabled: true, claudeEnabled: true, callerHomes: true,
 			inherited: func(string) map[string]string {
 				return map[string]string{"CODEX_HOME": "./.codex", "CLAUDE_CONFIG_DIR": ".claude-config"}
@@ -117,6 +122,7 @@ func TestLaunchAppliesOnlyProviderOwnedEnvironmentChanges(t *testing.T) {
 
 		{
 			name:       "disabled VS Code preserves the inherited absolute project home when local config is enabled",
+			rootAlias:  true,
 			codexLocal: true,
 			inherited: func(root string) map[string]string {
 				return map[string]string{"CODEX_HOME": filepath.Join(root, ".codex")}
@@ -126,9 +132,10 @@ func TestLaunchAppliesOnlyProviderOwnedEnvironmentChanges(t *testing.T) {
 			},
 		},
 		{
-			name:       "disabled VS Code normalizes a relative override when local config is enabled",
-			codexLocal: true,
-			inherited:  func(string) map[string]string { return map[string]string{"CODEX_HOME": "user-home"} },
+			name:          "disabled VS Code normalizes a relative override when local config is enabled",
+			relativeHomes: true,
+			codexLocal:    true,
+			inherited:     func(string) map[string]string { return map[string]string{"CODEX_HOME": "user-home"} },
 			want: func(root string) map[string]string {
 				return map[string]string{"CODEX_HOME": filepath.Join(root, "caller", "user-home")}
 			},
@@ -143,6 +150,13 @@ func TestLaunchAppliesOnlyProviderOwnedEnvironmentChanges(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			root := t.TempDir()
+			if test.rootAlias {
+				alias := filepath.Join(t.TempDir(), "alias")
+				if err := os.Symlink(root, alias); err != nil {
+					t.Fatal(err)
+				}
+				root = alias
+			}
 			t.Setenv("HOME", t.TempDir())
 			caller := filepath.Join(root, "caller")
 			if err := os.Mkdir(caller, 0o700); err != nil {
@@ -183,8 +197,12 @@ func TestLaunchAppliesOnlyProviderOwnedEnvironmentChanges(t *testing.T) {
 				t.Fatal(err)
 			}
 			launched := splitEnvironment(string(data))
-			for key, value := range test.want(root) {
-				if !filepath.IsAbs(launched[key]) || !clients.SamePath(launched[key], value) {
+			wantRoot := root
+			if test.relativeHomes {
+				wantRoot = testutil.PhysicalPath(t, root)
+			}
+			for key, value := range test.want(wantRoot) {
+				if launched[key] != value {
 					t.Fatalf("%s = %q, want %q", key, launched[key], value)
 				}
 			}

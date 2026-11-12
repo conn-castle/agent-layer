@@ -347,3 +347,37 @@ func TestLaunchCapturesSelectedHomeInsteadOfInheritedRelativeHome(t *testing.T) 
 		t.Fatalf("captured=%q child=%q", record.Home, childHome)
 	}
 }
+
+func TestConfigureEnvironmentSubfolderHomeShorthandWarning(t *testing.T) {
+	for _, entry := range []string{"missing", "directory", "dangling"} {
+		t.Run(entry, func(t *testing.T) {
+			root := t.TempDir()
+			caller := filepath.Join(root, "caller")
+			if err := os.Mkdir(caller, 0o700); err != nil {
+				t.Fatal(err)
+			}
+			name := filepath.Base(HomeDir(root))
+			switch entry {
+			case "directory":
+				if err := os.Mkdir(filepath.Join(caller, name), 0o700); err != nil {
+					t.Fatal(err)
+				}
+			case "dangling":
+				if err := os.Symlink(filepath.Join(root, "missing"), filepath.Join(caller, name)); err != nil {
+					t.Fatal(err)
+				}
+			}
+			t.Chdir(caller)
+			for _, value := range []string{name, "./" + name, name + "/", ".//" + name, name + "/."} {
+				var warning bytes.Buffer
+				env := ConfigureEnvironment(root, []string{EnvHome + "=" + value}, config.GrokConfig{}, &warning)
+				if got, _ := clients.GetEnv(env, EnvHome); got != HomeDir(root) {
+					t.Fatalf("selected home=%q", got)
+				}
+				if (warning.Len() > 0) != (entry != "missing") {
+					t.Fatalf("entry=%s value=%q warning=%q", entry, value, warning.String())
+				}
+			}
+		})
+	}
+}

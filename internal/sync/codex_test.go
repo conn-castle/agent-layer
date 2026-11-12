@@ -1409,9 +1409,9 @@ func TestCodexRulesCreatesPrivateHomePreservesExistingMode(t *testing.T) {
 		home := filepath.Join(root, ".codex")
 		var before os.FileMode
 		if existing {
-			if err := os.Mkdir(home, 0o755); err != nil {
+			if err := os.Mkdir(home, 0o755); err != nil { // #nosec G301 -- fixture verifies existing permissions are preserved.
 				t.Fatal(err)
-			} // #nosec G301 -- fixture verifies existing permissions are preserved.
+			}
 			info, err := os.Stat(home)
 			if err != nil {
 				t.Fatal(err)

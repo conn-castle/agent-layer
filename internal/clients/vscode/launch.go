@@ -30,15 +30,15 @@ func Launch(cfg *config.ProjectConfig, runInfo *run.Info, env []string, passArgs
 	}
 
 	if config.IsAgentEnabled(cfg.Config.Agents.VSCode.Enabled) && config.CodexLocalConfigDirEnabled(cfg.Config.Agents.Codex) {
-		codexHome := filepath.Join(cfg.Root, ".codex")
+		codexHome := filepath.Join(cfg.Root, codex.HomeDirName)
 		env = clients.SetUniqueEnv(env, "CODEX_HOME", codexHome)
 		if err := codex.EnsureSelectedHome(cfg.Root, env, cfg.Config.Agents.Codex); err != nil {
 			return err
 		}
 	} else if !config.CodexLocalConfigDirEnabled(cfg.Config.Agents.Codex) {
-		env = clients.ClearStaleHome(cfg.Root, env, "CODEX_HOME", ".codex")
+		env = codex.ConfigureEnvironment(cfg.Root, env, cfg.Config.Agents.Codex, nil)
 	} else if current, ok := clients.GetEnv(env, "CODEX_HOME"); ok {
-		env = clients.SetUniqueEnv(env, "CODEX_HOME", clients.ResolveRelativeHome(cfg.Root, current, ".codex"))
+		env = clients.SetUniqueEnv(env, "CODEX_HOME", clients.ResolveRelativeHome(cfg.Root, current, codex.HomeDirName))
 	}
 
 	if config.IsAgentEnabled(cfg.Config.Agents.Grok.Enabled) {

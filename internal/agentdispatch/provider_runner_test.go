@@ -18,6 +18,7 @@ import (
 	"github.com/conn-castle/agent-layer/internal/clients"
 	clientgrok "github.com/conn-castle/agent-layer/internal/clients/grok"
 	"github.com/conn-castle/agent-layer/internal/config"
+	"github.com/conn-castle/agent-layer/internal/testutil"
 )
 
 // TestProviderCommandArgv pins each provider's complete argv for fresh and
@@ -1413,10 +1414,7 @@ func TestGrokRunnerFailsProviderObservedPermissionDenial(t *testing.T) {
 
 func TestDispatchClearsDisabledCodexHome(t *testing.T) {
 	root := t.TempDir()
-	physicalRoot, err := filepath.EvalSymlinks(root)
-	if err != nil {
-		t.Fatal(err)
-	}
+	physicalRoot := testutil.PhysicalPath(t, root)
 	t.Setenv("HOME", t.TempDir())
 	t.Chdir(root)
 	alias := filepath.Join(t.TempDir(), "alias")
@@ -1440,6 +1438,71 @@ func TestDispatchClearsDisabledCodexHome(t *testing.T) {
 			}
 		} else if present {
 			t.Fatalf("dispatch retained stale home %q", got)
+		}
+	}
+}
+
+func TestDispatchEnsuresSelectedCodexHome(t *testing.T) {
+	for _, mode := range []string{dispatchModeFresh, dispatchModeResume} {
+		for _, tc := range []struct {
+			name, override           string
+			enabled, blocked, create bool
+		}{
+			{name: "missing default", enabled: true, create: true},
+			{name: "missing dot alias", override: "project-dot", enabled: true, create: true},
+			{name: "foreign home", override: "foreign", enabled: true},
+			{name: "disabled"},
+			{name: "blocking file", enabled: true, blocked: true},
+		} {
+			t.Run(mode+"/"+tc.name, func(t *testing.T) {
+				root := t.TempDir()
+				t.Setenv("HOME", t.TempDir())
+				home := filepath.Join(root, ".codex")
+				if tc.blocked {
+					if err := os.WriteFile(home, []byte("fixture"), 0o600); err != nil {
+						t.Fatal(err)
+					}
+				}
+				var env []string
+				foreign := filepath.Join(t.TempDir(), "foreign-home")
+				switch tc.override {
+				case "project-dot":
+					env = []string{"CODEX_HOME=" + home + "/."}
+				case "foreign":
+					env = []string{"CODEX_HOME=" + foreign}
+				}
+				project := &config.ProjectConfig{Root: root}
+				project.Config.Agents.Codex.LocalConfigDir = &tc.enabled
+				run, err := newDispatchRun(root, AgentCodex, supportedProviderVersions[AgentCodex], mode)
+				if err != nil {
+					t.Fatal(err)
+				}
+				target, _ := lookupTarget(AgentCodex)
+				command, err := buildProviderCommand(target, project, env, []byte("prompt"), "", "", false, mode, runtimeSessionID, run, io.Discard)
+				if tc.blocked {
+					requireDispatchExitCode(t, err, ExitConfig)
+					return
+				}
+				if err != nil {
+					t.Fatal(err)
+				}
+				info, err := os.Stat(home)
+				if tc.create {
+					if err != nil || !info.IsDir() || info.Mode().Perm()&0o077 != 0 {
+						t.Fatalf("selected home=%v err=%v, want private directory", info, err)
+					}
+				} else if !os.IsNotExist(err) {
+					t.Fatalf("unselected project home was created: %v", err)
+				}
+				if tc.override == "foreign" {
+					if got, _ := clients.GetEnv(command.Env, "CODEX_HOME"); got != foreign {
+						t.Fatalf("foreign home changed: %q", got)
+					}
+					if _, err := os.Stat(foreign); !os.IsNotExist(err) {
+						t.Fatalf("foreign home was created: %v", err)
+					}
+				}
+			})
 		}
 	}
 }

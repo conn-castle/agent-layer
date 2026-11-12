@@ -234,10 +234,13 @@ func TestEnsureSelectedHome(t *testing.T) {
 		external bool
 		alias    bool
 		trailing bool
+		dot      bool
 		existing os.FileMode
 		create   bool
 	}{
 		{name: "creates missing selected home", enabled: &enabled, create: true},
+		{name: "creates missing dot-suffixed home", enabled: &enabled, dot: true, create: true},
+		{name: "creates missing dot-suffixed home through alias", enabled: &enabled, dot: true, alias: true, create: true},
 		{name: "creates selected home with trailing separator", enabled: &enabled, trailing: true, create: true},
 		{name: "keeps existing selected home", enabled: &enabled, existing: 0o755},
 		{name: "keeps existing home with trailing separator", enabled: &enabled, trailing: true, existing: 0o755},
@@ -265,6 +268,9 @@ func TestEnsureSelectedHome(t *testing.T) {
 			}
 			if tc.trailing {
 				selected += string(filepath.Separator)
+			}
+			if tc.dot {
+				selected += "/."
 			}
 			if tc.existing != 0 {
 				if err := os.Mkdir(home, tc.existing); err != nil {
@@ -362,6 +368,7 @@ func TestConfigureEnvironmentCodexHomeRelativeValues(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			root := t.TempDir()
+			physicalRoot := testutil.PhysicalPath(t, root)
 			expected := filepath.Join(root, ".codex")
 			if err := os.MkdirAll(filepath.Join(root, "subfolder", "nested"), 0o700); err != nil {
 				t.Fatalf("mkdir subfolder: %v", err)
@@ -386,14 +393,14 @@ func TestConfigureEnvironmentCodexHomeRelativeValues(t *testing.T) {
 
 			value, _ := clients.GetEnv(out, "CODEX_HOME")
 			if tc.keep == "" {
-				if !filepath.IsAbs(value) || !clients.SamePath(value, expected) || warning.Len() != 0 {
+				if value != expected || warning.Len() != 0 {
 					t.Fatalf("expected CODEX_HOME %s without warning, got %q with warning %q", expected, value, warning.String())
 				}
 				return
 			}
-			want := filepath.Join(root, strings.ReplaceAll(tc.keep, "{base}", filepath.Base(root)))
+			want := filepath.Join(physicalRoot, strings.ReplaceAll(tc.keep, "{base}", filepath.Base(root)))
 			wantWarning := fmt.Sprintf(messages.ClientsCodexHomeWarningFmt, current, expected)
-			if !filepath.IsAbs(value) || !clients.SamePath(value, want) || warning.String() != wantWarning {
+			if value != want || warning.String() != wantWarning {
 				t.Fatalf("expected CODEX_HOME %s with warning %q, got %q with warning %q", want, wantWarning, value, warning.String())
 			}
 		})

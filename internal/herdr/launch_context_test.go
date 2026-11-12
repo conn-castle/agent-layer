@@ -11,6 +11,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/conn-castle/agent-layer/internal/messages"
 )
 
 // TestMuseLaunchContextChildProcess exercises the production boundary: a
@@ -385,14 +387,51 @@ func TestLaunchHomeRecoveryPreservesLegacyRecords(t *testing.T) {
 
 func TestCaptureLaunchRejectsRelativeProviderHome(t *testing.T) {
 	for _, provider := range []string{providerCodex, providerClaude, providerGrok} {
-		root := t.TempDir()
-		runDir := filepath.Join(root, ".agent-layer", "tmp", "runs", "capture")
-		if err := os.MkdirAll(runDir, 0o700); err != nil {
-			t.Fatal(err)
-		}
-		env := []string{EnvEnabled + "=1", EnvSocketPath + "=/fixture/socket", EnvPaneID + "=w1:p1", providerHomeKey(provider) + "=relative-home"}
-		if err := CaptureLaunch(root, runDir, env, provider); err == nil {
-			t.Fatalf("%s captured unresolved relative home", provider)
-		}
+		t.Run(provider, func(t *testing.T) {
+			root := t.TempDir()
+			runDir := filepath.Join(root, ".agent-layer", "tmp", "runs", "capture")
+			if err := os.MkdirAll(runDir, 0o700); err != nil {
+				t.Fatal(err)
+			}
+			cwd := t.TempDir()
+			t.Chdir(cwd)
+			if err := os.Remove(cwd); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := os.Getwd(); err == nil {
+				t.Fatal("fixture working directory still resolves")
+			}
+			// Reproduce the residual race after the CLI's working-directory checks.
+			env := []string{EnvEnabled + "=1", EnvSocketPath + "=/fixture/socket", EnvPaneID + "=w1:p1", providerHomeKey(provider) + "=relative-home"}
+			if err := CaptureLaunch(root, runDir, env, provider); err == nil || !strings.Contains(err.Error(), messages.HerdRProviderHomeInvalid) {
+				t.Fatalf("capture error=%v, want %q", err, messages.HerdRProviderHomeInvalid)
+			}
+			entries, err := os.ReadDir(runDir)
+			if err != nil || len(entries) != 0 {
+				t.Fatalf("invalid capture wrote records: entries=%v err=%v", entries, err)
+			}
+		})
+	}
+}
+
+func TestReadLaunchContextRejectsRelativeProviderHome(t *testing.T) {
+	for _, provider := range []string{providerCodex, providerClaude, providerGrok} {
+		t.Run(provider, func(t *testing.T) {
+			root, err := canonicalDirectory(t.TempDir())
+			if err != nil {
+				t.Fatal(err)
+			}
+			runDir := filepath.Join(root, ".agent-layer", "tmp", "runs", "capture")
+			if err := os.MkdirAll(runDir, 0o700); err != nil {
+				t.Fatal(err)
+			}
+			home := "relative-home"
+			context := launchContext{Version: 1, PID: os.Getpid(), ProcessStart: "fixture", ProjectRoot: root, Provider: provider, SocketPath: "/fixture/socket", PaneID: "w1:p1", ProviderHome: &home}
+			path := filepath.Join(runDir, launchContextName(context.PID, context.ProcessStart))
+			writeLaunchContextFixture(t, path, context)
+			if _, err := readLaunchContext(path, root, provider); err == nil || !strings.Contains(err.Error(), messages.HerdRProviderHomeInvalid) {
+				t.Fatalf("read error=%v, want %q", err, messages.HerdRProviderHomeInvalid)
+			}
+		})
 	}
 }

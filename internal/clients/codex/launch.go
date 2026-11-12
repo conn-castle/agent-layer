@@ -19,8 +19,8 @@ import (
 // execFunc is overridable for tests; on success it never returns.
 var execFunc = clients.ExecHandoff
 
-// homeDirName is the repo-local CODEX_HOME directory under the project root.
-const homeDirName = ".codex"
+// HomeDirName is the repo-local CODEX_HOME directory under the project root.
+const HomeDirName = ".codex"
 
 // Launch starts the Codex CLI with the configured options.
 func Launch(cfg *config.ProjectConfig, runInfo *run.Info, env []string, passArgs []string) error {
@@ -52,20 +52,15 @@ func Launch(cfg *config.ProjectConfig, runInfo *run.Info, env []string, passArgs
 // interactive launcher, headless Agent Dispatch, and model discovery.
 func ConfigureEnvironment(root string, env []string, cfg config.CodexConfig, warning io.Writer) []string {
 	if !config.CodexLocalConfigDirEnabled(cfg) {
-		return clients.ClearStaleHome(root, env, "CODEX_HOME", homeDirName)
+		return clients.ClearStaleHome(root, env, "CODEX_HOME", HomeDirName)
 	}
 
-	expected := filepath.Join(root, homeDirName)
+	expected := filepath.Join(root, HomeDirName)
 	current, ok := clients.GetEnv(env, "CODEX_HOME")
 	if !ok || current == "" {
 		return clients.SetUniqueEnv(env, "CODEX_HOME", expected)
 	}
-	selected := current
-	if !filepath.IsAbs(current) {
-		// Launch, dispatch, and discovery children run in different working
-		// directories, so a relative home is passed on as an absolute path.
-		selected = clients.ResolveRelativeHome(root, current, homeDirName)
-	}
+	selected := clients.ResolveRelativeHome(root, current, HomeDirName)
 	env = clients.SetUniqueEnv(env, "CODEX_HOME", selected)
 	if !clients.SamePath(selected, expected) && warning != nil {
 		_, _ = fmt.Fprintf(warning, messages.ClientsCodexHomeWarningFmt, current, expected)
@@ -79,7 +74,7 @@ func ConfigureEnvironment(root string, env []string, cfg config.CodexConfig, war
 // unchanged; inherited homes elsewhere are never created. Callers pass the
 // environment ConfigureEnvironment returned.
 func EnsureSelectedHome(root string, env []string, cfg config.CodexConfig) error {
-	home := filepath.Join(root, homeDirName)
+	home := filepath.Join(root, HomeDirName)
 	current, ok := clients.GetEnv(env, "CODEX_HOME")
 	if !config.CodexLocalConfigDirEnabled(cfg) || !ok || !clients.SamePath(current, home) {
 		return nil
