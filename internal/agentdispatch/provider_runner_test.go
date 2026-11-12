@@ -18,6 +18,7 @@ import (
 	"github.com/conn-castle/agent-layer/internal/clients"
 	clientgrok "github.com/conn-castle/agent-layer/internal/clients/grok"
 	"github.com/conn-castle/agent-layer/internal/config"
+	"github.com/conn-castle/agent-layer/internal/messages"
 	"github.com/conn-castle/agent-layer/internal/testutil"
 )
 
@@ -1450,6 +1451,8 @@ func TestDispatchEnsuresSelectedCodexHome(t *testing.T) {
 		}{
 			{name: "missing default", enabled: true, create: true},
 			{name: "missing dot alias", override: "project-dot", enabled: true, create: true},
+			{name: "relative shorthand from subfolder", override: "relative-project-dot", enabled: true, create: true},
+			{name: "symlinked root dot alias", override: "aliased-project-dot", enabled: true, create: true},
 			{name: "foreign home", override: "foreign", enabled: true},
 			{name: "disabled"},
 			{name: "blocking file", enabled: true, blocked: true},
@@ -1464,10 +1467,26 @@ func TestDispatchEnsuresSelectedCodexHome(t *testing.T) {
 					}
 				}
 				var env []string
+				wantHome := home
 				foreign := filepath.Join(t.TempDir(), "foreign-home")
 				switch tc.override {
 				case "project-dot":
-					env = []string{"CODEX_HOME=" + home + "/."}
+					wantHome = home + "/."
+					env = []string{"CODEX_HOME=" + wantHome}
+				case "relative-project-dot":
+					caller := filepath.Join(root, "caller")
+					if err := os.Mkdir(caller, 0o700); err != nil {
+						t.Fatal(err)
+					}
+					t.Chdir(caller)
+					env = []string{"CODEX_HOME=.codex/."}
+				case "aliased-project-dot":
+					alias := filepath.Join(t.TempDir(), "alias")
+					if err := os.Symlink(root, alias); err != nil {
+						t.Fatal(err)
+					}
+					wantHome = filepath.Join(alias, ".codex") + "/."
+					env = []string{"CODEX_HOME=" + wantHome}
 				case "foreign":
 					env = []string{"CODEX_HOME=" + foreign}
 				}
@@ -1481,6 +1500,9 @@ func TestDispatchEnsuresSelectedCodexHome(t *testing.T) {
 				command, err := buildProviderCommand(target, project, env, []byte("prompt"), "", "", false, mode, runtimeSessionID, run, io.Discard)
 				if tc.blocked {
 					requireDispatchExitCode(t, err, ExitConfig)
+					if want := fmt.Sprintf(messages.ClientsCodexHomeNotDirectoryFmt, home); err.Error() != want {
+						t.Fatalf("error=%q, want provider error %q", err, want)
+					}
 					return
 				}
 				if err != nil {
@@ -1488,6 +1510,9 @@ func TestDispatchEnsuresSelectedCodexHome(t *testing.T) {
 				}
 				info, err := os.Stat(home)
 				if tc.create {
+					if got, present := clients.GetEnv(command.Env, "CODEX_HOME"); !present || got != wantHome {
+						t.Fatalf("child home=%q (present=%t), want %q", got, present, wantHome)
+					}
 					if err != nil || !info.IsDir() || info.Mode().Perm()&0o077 != 0 {
 						t.Fatalf("selected home=%v err=%v, want private directory", info, err)
 					}

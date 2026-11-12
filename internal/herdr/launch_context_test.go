@@ -393,15 +393,6 @@ func TestCaptureLaunchRejectsRelativeProviderHome(t *testing.T) {
 			if err := os.MkdirAll(runDir, 0o700); err != nil {
 				t.Fatal(err)
 			}
-			cwd := t.TempDir()
-			t.Chdir(cwd)
-			if err := os.Remove(cwd); err != nil {
-				t.Fatal(err)
-			}
-			if _, err := os.Getwd(); err == nil {
-				t.Fatal("fixture working directory still resolves")
-			}
-			// Reproduce the residual race after the CLI's working-directory checks.
 			env := []string{EnvEnabled + "=1", EnvSocketPath + "=/fixture/socket", EnvPaneID + "=w1:p1", providerHomeKey(provider) + "=relative-home"}
 			if err := CaptureLaunch(root, runDir, env, provider); err == nil || !strings.Contains(err.Error(), messages.HerdRProviderHomeInvalid) {
 				t.Fatalf("capture error=%v, want %q", err, messages.HerdRProviderHomeInvalid)

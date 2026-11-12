@@ -24,6 +24,7 @@ func TestLaunchAppliesOnlyProviderOwnedEnvironmentChanges(t *testing.T) {
 		want             func(string) map[string]string
 		absent           []string
 		wantGrokHome0700 bool
+		wantCodexHome    bool
 		callerHomes      bool
 		relativeHomes    bool
 		rootAlias        bool
@@ -121,12 +122,22 @@ func TestLaunchAppliesOnlyProviderOwnedEnvironmentChanges(t *testing.T) {
 		},
 
 		{
-			name:       "disabled VS Code preserves the inherited absolute project home when local config is enabled",
-			rootAlias:  true,
-			codexLocal: true,
+			name:          "disabled VS Code preserves the inherited absolute project home when local config is enabled",
+			rootAlias:     true,
+			codexLocal:    true,
+			wantCodexHome: true,
 			inherited: func(root string) map[string]string {
 				return map[string]string{"CODEX_HOME": filepath.Join(root, ".codex")}
 			},
+			want: func(root string) map[string]string {
+				return map[string]string{"CODEX_HOME": filepath.Join(root, ".codex")}
+			},
+		},
+		{
+			name:          "disabled VS Code creates the inherited shorthand project home from a subfolder",
+			codexLocal:    true,
+			wantCodexHome: true,
+			inherited:     func(string) map[string]string { return map[string]string{"CODEX_HOME": ".codex/."} },
 			want: func(root string) map[string]string {
 				return map[string]string{"CODEX_HOME": filepath.Join(root, ".codex")}
 			},
@@ -211,10 +222,20 @@ func TestLaunchAppliesOnlyProviderOwnedEnvironmentChanges(t *testing.T) {
 					t.Fatalf("%s unexpectedly present as %q", key, launched[key])
 				}
 			}
-			if test.codexLocal && test.vscodeEnabled {
+			if test.codexLocal && (test.vscodeEnabled || test.wantCodexHome) {
 				info, err := os.Stat(filepath.Join(root, ".codex"))
 				if err != nil || !info.IsDir() || info.Mode().Perm()&0o077 != 0 {
 					t.Fatalf("Codex home=%v err=%v, want owner-only directory", info, err)
+				}
+			}
+			if test.codexLocal && !test.vscodeEnabled && !test.wantCodexHome {
+				for _, home := range []string{filepath.Join(root, ".codex"), launched["CODEX_HOME"]} {
+					if home == "" {
+						continue
+					}
+					if _, err := os.Lstat(home); !os.IsNotExist(err) {
+						t.Fatalf("unselected or foreign home %q was created: %v", home, err)
+					}
 				}
 			}
 			if test.wantGrokHome0700 {

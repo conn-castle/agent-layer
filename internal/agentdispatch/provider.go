@@ -385,7 +385,7 @@ func buildCodexCommand(command providerCommand, project *config.ProjectConfig, m
 	command.Args = args
 	command.Env = codex.ConfigureEnvironment(project.Root, command.Env, project.Config.Agents.Codex, diagnostics)
 	if err := codex.EnsureSelectedHome(project.Root, command.Env, project.Config.Agents.Codex); err != nil {
-		return providerCommand{}, wrapExitError(ExitConfig, "prepare Codex home", err)
+		return providerCommand{}, &ExitError{Code: ExitConfig, Err: err}
 	}
 	command.SessionID = sessionID
 	return command, nil

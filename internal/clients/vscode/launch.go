@@ -39,6 +39,9 @@ func Launch(cfg *config.ProjectConfig, runInfo *run.Info, env []string, passArgs
 		env = codex.ConfigureEnvironment(cfg.Root, env, cfg.Config.Agents.Codex, nil)
 	} else if current, ok := clients.GetEnv(env, "CODEX_HOME"); ok {
 		env = clients.SetUniqueEnv(env, "CODEX_HOME", clients.ResolveRelativeHome(cfg.Root, current, codex.HomeDirName))
+		if err := codex.EnsureSelectedHome(cfg.Root, env, cfg.Config.Agents.Codex); err != nil {
+			return err
+		}
 	}
 
 	if config.IsAgentEnabled(cfg.Config.Agents.Grok.Enabled) {
