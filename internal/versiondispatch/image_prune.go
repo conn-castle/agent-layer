@@ -18,8 +18,8 @@ import (
 const imagePruneGrace = 24 * time.Hour
 const imagePruneSampleSize = 128
 
-// pruneImages is deliberately silent and best effort. Nonblocking flocks and a
-// short scan budget keep cache maintenance off the handoff's critical path.
+// pruneImages is silent and best effort. Name enumeration is O(N); candidate
+// probes have a soft time budget that cannot preempt individual filesystem calls.
 func pruneImages(images, own string) {
 	pruneImagesWithRandom(images, own, mathrand.IntN)
 }
@@ -200,6 +200,7 @@ func pruneImage(root *os.Root, name string) {
 	}
 	lock := tryImageLock(root, filepath.Join(name, "al.lock"))
 	if lock == nil {
+		pruneEmptyImage(root, name)
 		return
 	}
 	defer func() { _ = lock.Close() }()
@@ -246,4 +247,35 @@ func pruneImage(root *os.Root, name string) {
 	}
 	_ = lock.Close()
 	_ = root.RemoveAll(dest)
+}
+
+// A crash before al.lock creation can leave an empty directory. Rmdir needs no
+// lock: it fails atomically if a writer creates anything, and a writer whose
+// lock open loses to rmdir retries from Mkdir in lockImageMode.
+func pruneEmptyImage(root *os.Root, name string) {
+	entry, err := root.OpenFile(name, os.O_RDONLY|unix.O_DIRECTORY|unix.O_NOFOLLOW, 0)
+	if err != nil {
+		return
+	}
+	defer func() { _ = entry.Close() }()
+	info, err := entry.Stat()
+	if err != nil || !info.IsDir() || !imagelease.Owned(info) || time.Since(info.ModTime()) <= imagePruneGrace {
+		return
+	}
+	names, err := entry.Readdirnames(1)
+	if err != io.EOF || len(names) != 0 {
+		return
+	}
+	current, err := root.Lstat(name)
+	if err != nil || !current.IsDir() || !imagelease.Owned(current) || !os.SameFile(info, current) || time.Since(current.ModTime()) <= imagePruneGrace {
+		return
+	}
+	parent, err := root.Open(".")
+	if err != nil {
+		return
+	}
+	defer func() { _ = parent.Close() }()
+	// AT_REMOVEDIR also refuses a raced-in regular file or symlink. Never use
+	// recursive removal here, and never create a lock solely for cleanup.
+	_ = unix.Unlinkat(int(parent.Fd()), name, unix.AT_REMOVEDIR)
 }

@@ -78,10 +78,18 @@ func imageHelper() {
 		if (imagelease.Current() != nil) != (mode == "direct") {
 			fail(fmt.Errorf("direct startup lease = %v", imagelease.Current()))
 		}
+	case "startup-wait", "startup-timeout":
+		fmt.Println("STARTING")
+		fail(MaybeExecMCPServer(context.Background(), []string{os.Args[0], "dispatch", "mcp-server"}, "dev", os.Getenv(EnvCacheDir), os.Stderr))
+		RetryRunningImageLease()
+		RetryRunningImageLease()
+		if (imagelease.Current() != nil) != (mode == "startup-wait") {
+			fail(fmt.Errorf("startup lease = %v in mode %s", imagelease.Current(), mode))
+		}
 	case "direct-spelling", "direct-unsafe":
 		// Linux resolves executable spelling in os.Executable; supply the actual
 		// invocation spelling to exercise the same path logic Darwin receives.
-		err := leaseRunningImage(os.Args[0])
+		err := leaseRunningImage(os.Args[0], imageStartupLeaseWait)
 		if mode == "direct-spelling" {
 			fail(err)
 			if imagelease.Current() == nil {
@@ -363,8 +371,16 @@ func TestImageHandoffPrunesAfterSecuringLease(t *testing.T) {
 	f := newImageHandoffFixture(t, "1.2.3")
 	images := filepath.Join(f.cache, "images")
 	stale := syntheticImage(t, images, "a")
+	// Seed an old marker so this detects a missing acquisition-time refresh,
+	// rather than passing merely because a new file got a fresh creation time.
+	own := filepath.Dir(f.imagePath(t))
+	require.NoError(t, os.MkdirAll(own, 0o700))
+	require.NoError(t, os.WriteFile(filepath.Join(own, "al.lease"), nil, 0o600))
+	oldImage(t, own)
+	start := time.Now()
 	sys := f.system()
 	sys.ExecBinaryFunc = func(path string, _ []string, _ []string) error {
+		execTime := time.Now()
 		require.NoDirExists(t, stale, "handoff must trigger maintenance")
 		probe, err := openImageFile(path+".lease", false)
 		require.NoError(t, err)
@@ -372,7 +388,8 @@ func TestImageHandoffPrunesAfterSecuringLease(t *testing.T) {
 		require.ErrorIs(t, unix.Flock(int(probe.Fd()), unix.LOCK_EX|unix.LOCK_NB), unix.EWOULDBLOCK)
 		info, err := probe.Stat()
 		require.NoError(t, err)
-		require.WithinDuration(t, time.Now(), info.ModTime(), time.Second)
+		require.False(t, info.ModTime().Before(start.Truncate(time.Second)), "lease must be refreshed after handoff starts, allowing filesystem timestamp granularity")
+		require.False(t, info.ModTime().After(execTime), "lease timestamp must not be after exec")
 		return nil
 	}
 	err := handOffToImage(context.Background(), sys, execOptions{

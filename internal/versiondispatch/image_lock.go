@@ -53,13 +53,13 @@ func openImageFile(path string, create bool) (*os.File, error) {
 // lockImage retries when a pruner renamed the directory after we opened its
 // lock. No caller may use an image through a detached lock inode.
 func lockImage(ctx context.Context, sys System, dir string) (*fileLock, error) {
-	return lockImageMode(ctx, sys, dir, true)
+	return lockImageMode(ctx, sys, dir, true, imageLockWaitTimeout)
 }
 
 // lockImageMode's existing-entry mode never recreates a directory or binary.
 // Check the running image before opening the lock as well as after locking, so
 // a stale process cannot opt a replacement entry into the lease protocol.
-func lockImageMode(ctx context.Context, sys System, dir string, create bool) (*fileLock, error) {
+func lockImageMode(ctx context.Context, sys System, dir string, create bool, wait time.Duration) (*fileLock, error) {
 	images := filepath.Dir(dir)
 	for range imageLockAttempts {
 		if create {
@@ -89,16 +89,12 @@ func lockImageMode(ctx context.Context, sys System, dir string, create bool) (*f
 		path := filepath.Join(dir, imageName+".lock")
 		f, err := openImageFile(path, true)
 		if os.IsNotExist(err) {
+			// Empty-entry cleanup can remove dir between Mkdir and this open.
+			// Retry the whole loop so creation mode recreates the directory.
 			continue
 		}
 		if err != nil {
 			return nil, err
-		}
-		wait := imageLockWaitTimeout
-		if !create {
-			// Direct startup and admission retries are best effort. A busy writer
-			// must not stall the server; a later launch can try once again.
-			wait = 0
 		}
 		if err := lockFile(ctx, sys, f, wait); err != nil {
 			_ = f.Close()
@@ -135,12 +131,18 @@ func leaseImage(path string) (*os.File, error) {
 		return nil, err
 	}
 	if err = unix.Flock(int(f.Fd()), unix.LOCK_SH|unix.LOCK_NB); err == nil {
-		now := time.Now()
-		err = os.Chtimes(path+".lease", now, now)
+		err = touchImageLease(f)
 	}
 	if err != nil {
 		_ = f.Close()
 		return nil, err
 	}
 	return f, nil
+}
+
+// Update the verified open description, never a path that can be swapped.
+func touchImageLease(f *os.File) error {
+	now := time.Now().Truncate(time.Microsecond)
+	tv := unix.NsecToTimeval(now.UnixNano())
+	return unix.Futimes(int(f.Fd()), []unix.Timeval{tv, tv})
 }

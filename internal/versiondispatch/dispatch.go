@@ -155,10 +155,13 @@ func maybeExecWithOptions(ctx context.Context, sys System, args []string, curren
 
 // execHandoff replaces this process with the cached binary at path.
 func execHandoff(sys System, path string, args []string, current string, cacheRoot string) error {
-	return execHandoffEnv(sys, path, args, current, cacheRoot, sys.Environ())
+	execArgs, env := handoffInvocation(sys, path, args, current, cacheRoot, sys.Environ())
+	return sys.ExecBinary(path, execArgs, env)
 }
 
-func execHandoffEnv(sys System, path string, args []string, current string, cacheRoot string, inherited []string) error {
+// handoffInvocation completes filesystem discovery and argument/environment
+// preparation before an image handoff enters its ForkLock critical section.
+func handoffInvocation(sys System, path string, args []string, current string, cacheRoot string, inherited []string) ([]string, []string) {
 	env := append([]string(nil), inherited...)
 	env = append(env, fmt.Sprintf("%s=1", EnvShimActive))
 	// The cached binary's argv[0] is its cache path, so pass the stable entry
@@ -170,7 +173,7 @@ func execHandoffEnv(sys System, path string, args []string, current string, cach
 		}
 	}
 	execArgs := append([]string{path}, args[1:]...)
-	return sys.ExecBinary(path, execArgs, env)
+	return execArgs, env
 }
 
 // invokingEntry returns the absolute al entry this process was invoked

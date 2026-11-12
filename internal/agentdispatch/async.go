@@ -338,9 +338,7 @@ func restorePreviousInvocation(root string, handle string, rejectedRunID string,
 }
 
 func launchDetachedWorker(root string, runID string, logPath string) (launchedWorker, error) {
-	if imagelease.Current() == nil {
-		versiondispatch.LeaseRunningImage()
-	}
+	versiondispatch.RetryRunningImageLease()
 	gateRead, gateWrite, err := os.Pipe()
 	if err != nil {
 		return launchedWorker{}, err
@@ -395,7 +393,6 @@ func launchDetachedWorker(root string, runID string, logPath string) (launchedWo
 
 // RunWorker executes one prepared invocation after its parent authorizes it.
 func RunWorker(root string, runID string, gate io.Reader) error {
-	versiondispatch.LeaseRunningImage()
 	var token [1]byte
 	if _, err := io.ReadFull(gate, token[:]); err != nil || token[0] != 1 {
 		cause := errors.New("dispatch worker was not authorized")
@@ -412,6 +409,7 @@ func RunWorker(root string, runID string, gate io.Reader) error {
 		}
 		return failWorkerBeforeExecution(root, runID, &preStartFailure{err: cause})
 	}
+	versiondispatch.LeaseRunningImage()
 	var request workerRequest
 	requestPath := filepath.Join(dispatchRunPath(root), runID, workerRequestFile)
 	if err := readJSON(requestPath, &request); err != nil {

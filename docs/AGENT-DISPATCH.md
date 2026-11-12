@@ -595,7 +595,9 @@ server running the selected development executable, or a release server whose
 project pin or `AL_VERSION` selects the running release, first re-executes from an
 immutable content-addressed copy of its own image,
 `<cache root>/images/<sha256>/al` (default cache root `~/.cache/agent-layer`,
-or `AL_CACHE_DIR`). The copy is written through a synced temporary file, verified
+or `AL_CACHE_DIR`). `images/` must be a real directory owned by the user: a
+symlinked or foreign-owned `images/` makes handoff run in place with its warning;
+to relocate storage, set `AL_CACHE_DIR` or symlink the cache root. The copy is written through a synced temporary file, verified
 by SHA-256, and renamed into place under a file lock. An existing entry is reused
 only after it is re-hashed. The copy never goes into `versions/<v>`, which
 holds only checksum-verified downloads. Image handoffs automatically prune
@@ -603,13 +605,16 @@ lease-aware entries with no live lease and no lease acquisition in the last
 24 hours. A long-running entry can therefore be pruned as soon as its last holder
 exits. Installed MCP entry launchers never execute image paths directly. Internal
 detached workers can execute image paths on macOS and inherit the server's lease.
-A direct launch leases at startup, but pruning can remove its path before that
-acquisition; the process keeps its mapped image, while later path-based worker launches on macOS
-can fail. Servers and detached dispatch workers hold lifetime leases, so a worker
+A direct launch waits up to five seconds for a busy creation lock before continuing
+unleased; another attempt before each detached-worker launch does not wait. Pruning can
+remove the path before acquisition, and retries do not recreate a missing entry.
+The process keeps its mapped image, while later path-based worker launches on
+macOS can fail. Servers and detached dispatch workers hold lifetime leases, so a worker
 that outlives its server keeps the image available. Complete images from earlier
 releases without lease files are retained. Incomplete entries without an executable
 can be pruned when their creation lock is free and their directory, lock and temp
-files have not changed for 24 hours. For manual cleanup, stop all `agent-layer` MCP
+files have not changed for 24 hours. Completely empty entry directories older
+than 24 hours are also removed, without creating a lock. For manual cleanup, stop all `agent-layer` MCP
 servers and dispatch workers; deleting `<cache root>/images/` or a specific entry
 is then safe, and the next snapshotted server start recreates its entry. If snapshot
 creation or handoff fails, the server runs in place after one stderr warning, and

@@ -7,7 +7,9 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -102,7 +104,11 @@ func TestImageWriterKilledAfterPublicationRemainsPrunable(t *testing.T) {
 }
 
 func TestRunningImageRootSpellings(t *testing.T) {
-	for _, mode := range []string{"aliased cache root", "aliased executable root", "relative cache root"} {
+	modes := []string{"aliased cache root", "aliased executable root", "relative cache root"}
+	if runtime.GOOS == "darwin" {
+		modes = append(modes, "darwin unresolved executable and cache root")
+	}
+	for _, mode := range modes {
 		t.Run(mode, func(t *testing.T) {
 			base := t.TempDir()
 			cache := filepath.Join(base, "cache")
@@ -122,6 +128,10 @@ func TestRunningImageRootSpellings(t *testing.T) {
 				helperMode = "direct-spelling"
 			case "relative cache root":
 				configured = "cache"
+			case "darwin unresolved executable and cache root":
+				// Preserve t.TempDir's /var/folders spelling on both sides and
+				// exercise os.Executable through the production direct helper.
+				executable, configured = path, cache
 			}
 			helper, _ := startImageHelperInDir(t, executable, helperMode, nil, nil, base,
 				EnvCacheDir+"="+configured, "HOME="+t.TempDir())
@@ -133,6 +143,76 @@ func TestRunningImageRootSpellings(t *testing.T) {
 			pruneImages(filepath.Join(cache, imagesDirName), "")
 			require.NoDirExists(t, filepath.Dir(path))
 		})
+	}
+}
+
+func TestImagePruneEmptyEntries(t *testing.T) {
+	images := filepath.Join(t.TempDir(), imagesDirName)
+	old := time.Now().Add(-imagePruneGrace - time.Hour)
+	empty := func(key string) string {
+		dir := filepath.Join(images, strings.Repeat(key, 64))
+		require.NoError(t, os.MkdirAll(dir, 0o700))
+		require.NoError(t, os.Chtimes(dir, old, old))
+		return dir
+	}
+	stale := empty("a")
+	recent := empty("b")
+	require.NoError(t, os.Chtimes(recent, time.Now(), time.Now()))
+	foreignFile := empty("c")
+	require.NoError(t, os.WriteFile(filepath.Join(foreignFile, "user-file"), []byte("keep"), 0o600))
+	require.NoError(t, os.Chtimes(foreignFile, old, old))
+	tempOnly := empty("d")
+	require.NoError(t, os.WriteFile(filepath.Join(tempOnly, "al.tmp-abandoned"), []byte("keep"), 0o600))
+	require.NoError(t, os.Chtimes(tempOnly, old, old))
+	own := empty("e")
+	outside := t.TempDir()
+	require.NoError(t, os.Chtimes(outside, old, old))
+	link := filepath.Join(images, strings.Repeat("f", 64))
+	require.NoError(t, os.Symlink(outside, link))
+	pruneImages(images, own)
+	require.NoDirExists(t, stale)
+	for _, kept := range []string{recent, foreignFile, tempOnly, own, outside} {
+		require.DirExists(t, kept)
+		require.NoFileExists(t, filepath.Join(kept, "al.lock"), "cleanup must not create locks")
+	}
+	target, err := os.Readlink(link)
+	require.NoError(t, err)
+	require.Equal(t, outside, target)
+	data, err := os.ReadFile(filepath.Join(foreignFile, "user-file")) // #nosec G304 -- disposable sentinel.
+	require.NoError(t, err)
+	require.Equal(t, "keep", string(data))
+}
+
+func TestImageEmptyPruneRacesWriter(t *testing.T) {
+	images := filepath.Join(t.TempDir(), imagesDirName)
+	require.NoError(t, os.Mkdir(images, 0o700))
+	root, err := os.OpenRoot(images)
+	require.NoError(t, err)
+	defer func() { _ = root.Close() }()
+	source := filepath.Join(t.TempDir(), "source")
+	require.NoError(t, os.WriteFile(source, []byte("verified racing image"), 0o600))
+	sum, err := fileSHA256(source)
+	require.NoError(t, err)
+	dir := filepath.Join(images, sum)
+	old := time.Now().Add(-imagePruneGrace - time.Hour)
+	for range 100 {
+		require.NoError(t, os.Mkdir(dir, 0o700))
+		require.NoError(t, os.Chtimes(dir, old, old))
+		start := make(chan struct{})
+		var wg sync.WaitGroup
+		wg.Go(func() { <-start; pruneImage(root, sum) })
+		close(start)
+		path, lease, err := ensureLeasedImage(context.Background(), RealSystem{}, images, source)
+		wg.Wait()
+		require.NoError(t, err)
+		require.NoError(t, verifyChecksum(path, sum))
+		require.True(t, samePath(lease, path+".lease"))
+		probe, err := openImageFile(path+".lease", false)
+		require.NoError(t, err)
+		require.ErrorIs(t, unix.Flock(int(probe.Fd()), unix.LOCK_EX|unix.LOCK_NB), unix.EWOULDBLOCK)
+		require.NoError(t, probe.Close())
+		require.NoError(t, lease.Close())
+		require.NoError(t, root.RemoveAll(sum))
 	}
 }
 

@@ -85,6 +85,36 @@ func (f *imageHandoffFixture) imagePath(t *testing.T) string {
 	return filepath.Join(f.cache, imagesDirName, fmt.Sprintf("%x", sha256.Sum256(data)), imageName)
 }
 
+func assertHandoffLease(t *testing.T, path string, env []string) {
+	t.Helper()
+	var marker string
+	markers := 0
+	for _, entry := range env {
+		if value, ok := strings.CutPrefix(entry, imagelease.EnvFD+"="); ok {
+			marker = value
+			markers++
+		}
+	}
+	require.Equal(t, 1, markers, "exec must receive exactly one inherited lease marker")
+	require.NotEmpty(t, marker, "release exec must receive the inherited lease marker")
+	fd, err := strconv.Atoi(marker)
+	require.NoError(t, err)
+	var borrowed syscall.Stat_t
+	require.NoError(t, syscall.Fstat(fd, &borrowed))
+	info, err := os.Lstat(path + ".lease") // #nosec G703 -- disposable handoff cache entry.
+	require.NoError(t, err)
+	want := info.Sys().(*syscall.Stat_t)
+	require.Equal(t, want.Dev, borrowed.Dev)
+	require.Equal(t, want.Ino, borrowed.Ino)
+	flags, err := unix.FcntlInt(uintptr(fd), unix.F_GETFD, 0)
+	require.NoError(t, err)
+	require.Zero(t, flags&unix.FD_CLOEXEC, "lease must survive the pending exec")
+	probe, err := os.OpenFile(path+".lease", os.O_RDWR, 0) // #nosec G304,G703 -- disposable test lease.
+	require.NoError(t, err)
+	defer func() { _ = probe.Close() }()
+	require.ErrorIs(t, unix.Flock(int(probe.Fd()), unix.LOCK_EX|unix.LOCK_NB), unix.EWOULDBLOCK)
+}
+
 func TestImageHandoffForPinAndOverride(t *testing.T) {
 	for _, tc := range []struct{ name, pin, override string }{
 		{name: "pin", pin: "1.2.3"},
@@ -96,29 +126,7 @@ func TestImageHandoffForPinAndOverride(t *testing.T) {
 			f.execCheck = func(path string, env []string) {
 				require.Contains(t, env, EnvShimActive+"=1")
 				require.Contains(t, env, EnvInstalledExecutable+"=/install/bin/al")
-				var marker string
-				for _, entry := range env {
-					if value, ok := strings.CutPrefix(entry, imagelease.EnvFD+"="); ok {
-						marker = value
-					}
-				}
-				require.NotEmpty(t, marker, "release exec must receive the inherited lease marker")
-				fd, err := strconv.Atoi(marker)
-				require.NoError(t, err)
-				var borrowed syscall.Stat_t
-				require.NoError(t, syscall.Fstat(fd, &borrowed))
-				info, err := os.Lstat(path + ".lease") // #nosec G703 -- disposable handoff cache entry.
-				require.NoError(t, err)
-				want := info.Sys().(*syscall.Stat_t)
-				require.Equal(t, want.Dev, borrowed.Dev)
-				require.Equal(t, want.Ino, borrowed.Ino)
-				flags, err := unix.FcntlInt(uintptr(fd), unix.F_GETFD, 0)
-				require.NoError(t, err)
-				require.Zero(t, flags&unix.FD_CLOEXEC, "lease must survive the pending exec")
-				probe, err := os.OpenFile(path+".lease", os.O_RDWR, 0) // #nosec G304,G703 -- disposable test lease.
-				require.NoError(t, err)
-				defer func() { _ = probe.Close() }()
-				require.ErrorIs(t, unix.Flock(int(probe.Fd()), unix.LOCK_EX|unix.LOCK_NB), unix.EWOULDBLOCK)
+				assertHandoffLease(t, path, env)
 			}
 			if err := f.run(t, "v1.2.3"); !errors.Is(err, ErrDispatched) {
 				t.Fatalf("expected handoff, got %v", err)
@@ -280,6 +288,7 @@ func TestDevelopmentImageHandoff(t *testing.T) {
 	for _, mode := range []string{"handoff", "already snapshot", "different image", "different root", "other command", "copy fails", "exec fails", "canceled"} {
 		t.Run(mode, func(t *testing.T) {
 			f := newImageHandoffFixture(t, "0.22.0")
+			f.execCheck = func(path string, env []string) { assertHandoffLease(t, path, env) }
 			f.env[EnvDevelopmentBypassVersionDispatch] = "1"
 			f.env[EnvDevelopmentSourceRoot] = f.root
 			f.env[EnvDevelopmentExecutable] = f.source

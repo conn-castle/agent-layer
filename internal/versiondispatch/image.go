@@ -87,7 +87,6 @@ func handOffToImage(ctx context.Context, sys System, opts execOptions, args []st
 		}
 		imagesDir := filepath.Join(cacheRoot, imagesDirName)
 		if withinDir(imagesDir, running) {
-			LeaseRunningImage()
 			return nil
 		}
 		path, lease, err := ensureLeasedImage(ctx, sys, imagesDir, source)
@@ -104,19 +103,19 @@ func handOffToImage(ctx context.Context, sys System, opts execOptions, args []st
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		env, restore, err := imagelease.ExecEnv(lease, sys.Environ())
+		execArgs := append([]string{path}, args[1:]...)
+		env := sys.Environ()
+		// A dev snapshot keeps inherited entries; release selection adds shim
+		// and installed-entry markers. Complete discovery before taking ForkLock.
+		if !development {
+			execArgs, env = handoffInvocation(sys, path, args, current, cacheRoot, env)
+		}
+		env, restore, err := imagelease.ExecEnv(lease, env)
 		if err != nil {
 			return err
 		}
 		defer restore()
-		if development {
-			// A dev snapshot is a process-local move, not version dispatch. Keep
-			// all inherited environment entries unchanged: a shim/installed-entry
-			// marker would affect projections and nested release selections.
-			if err := sys.ExecBinary(path, append([]string{path}, args[1:]...), env); err != nil {
-				return err
-			}
-		} else if err := execHandoffEnv(sys, path, args, current, cacheRoot, env); err != nil {
+		if err := sys.ExecBinary(path, execArgs, env); err != nil {
 			return err
 		}
 		return ErrDispatched

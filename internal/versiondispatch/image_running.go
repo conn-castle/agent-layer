@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"time"
 
 	"github.com/conn-castle/agent-layer/internal/imagelease"
 	"github.com/conn-castle/agent-layer/internal/messages"
@@ -14,18 +15,37 @@ import (
 var runningImageLeaseMu sync.Mutex
 var runningImageLeaseWarning sync.Once
 
+// Cover brief same-image verification/fsync holds (including slow ~4s copies)
+// without making direct startup wait the full image-creation timeout.
+const imageStartupLeaseWait = 5 * time.Second
+
 // LeaseRunningImage best-effort leases an existing image when startup did not
 // inherit a lease. It never recreates a vanished entry and diagnoses at most once.
 // Call before admitting work or launching children; workers' stderr is their log.
 func LeaseRunningImage() {
-	runningImageLeaseMu.Lock()
+	acquireRunningImageLease(imageStartupLeaseWait)
+}
+
+// RetryRunningImageLease makes one nonblocking admission-time acquisition attempt.
+func RetryRunningImageLease() {
+	acquireRunningImageLease(0)
+}
+
+func acquireRunningImageLease(wait time.Duration) {
+	if wait == 0 {
+		if !runningImageLeaseMu.TryLock() {
+			return
+		}
+	} else {
+		runningImageLeaseMu.Lock()
+	}
 	defer runningImageLeaseMu.Unlock()
 	if imagelease.Current() != nil {
 		return
 	}
 	path, err := os.Executable()
 	if err == nil {
-		err = leaseRunningImage(path)
+		err = leaseRunningImage(path, wait)
 	}
 	if err != nil {
 		runningImageLeaseWarning.Do(func() {
@@ -34,7 +54,7 @@ func LeaseRunningImage() {
 	}
 }
 
-func leaseRunningImage(path string) error {
+func leaseRunningImage(path string, wait time.Duration) error {
 	dir := filepath.Dir(path)
 	images := filepath.Dir(dir)
 	if filepath.Base(path) != imageName || !imagelease.ValidSHA(filepath.Base(dir)) || filepath.Base(images) != imagesDirName {
@@ -63,7 +83,7 @@ func leaseRunningImage(path string) error {
 	}
 	dir = filepath.Join(physicalRoot, imagesDirName, filepath.Base(dir))
 	path = filepath.Join(dir, imageName)
-	lock, err := lockImageMode(context.Background(), RealSystem{}, dir, false)
+	lock, err := lockImageMode(context.Background(), RealSystem{}, dir, false, wait)
 	if err != nil {
 		return err
 	}

@@ -96,13 +96,20 @@ func validFor(fd int, exe string) bool {
 		return false
 	}
 	pathStat, ok := i.Sys().(*syscall.Stat_t)
-	return ok && uint64(stat.Dev) == uint64(pathStat.Dev) && stat.Ino == pathStat.Ino //nolint:unconvert // Dev types differ on Darwin.
+	return ok && stat.Dev == pathStat.Dev && stat.Ino == pathStat.Ino
 }
 
 // ExecEnv clears CLOEXEC only around the handoff. The returned cleanup restores
 // it on a failed (or test-double) exec. Ordinary exec.Command children never get it.
 func ExecEnv(f *os.File, env []string) ([]string, func(), error) {
 	fd := int(f.Fd())
+	out := make([]string, 0, len(env)+1)
+	for _, entry := range env {
+		if !strings.HasPrefix(entry, EnvFD+"=") {
+			out = append(out, entry)
+		}
+	}
+	out = append(out, EnvFD+"="+strconv.Itoa(fd))
 	// Go forkExec takes ForkLock exclusively during fork. Exclude concurrent
 	// child creation during the only interval in which our lease lacks CLOEXEC.
 	// syscall.Exec itself does not take this lock; success replaces its memory.
@@ -111,13 +118,6 @@ func ExecEnv(f *os.File, env []string) ([]string, func(), error) {
 		syscall.ForkLock.Unlock()
 		return nil, nil, err
 	}
-	out := make([]string, 0, len(env)+1)
-	for _, entry := range env {
-		if !strings.HasPrefix(entry, EnvFD+"=") {
-			out = append(out, entry)
-		}
-	}
-	out = append(out, EnvFD+"="+strconv.Itoa(fd))
 	return out, func() {
 		unix.CloseOnExec(fd)
 		syscall.ForkLock.Unlock()

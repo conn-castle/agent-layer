@@ -76,7 +76,8 @@ eligible as soon as its last holder exits. Servers and detached dispatch workers
 hold lifetime leases, including workers that outlive their server. Complete legacy
 images from earlier releases without lease files are retained. Incomplete entries without
 an executable can be pruned after 24 hours without directory, lock or temp-file
-changes, when their creation lock is free. For manual cleanup, stop
+changes, when their creation lock is free. Completely empty entry directories
+older than 24 hours are also removed, without creating a lock. For manual cleanup, stop
 all `agent-layer` MCP servers and dispatch workers; deleting `<cache root>/images/`
 or a specific entry is then safe. The next snapshotted server start recreates
 its entry.
