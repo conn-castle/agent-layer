@@ -155,7 +155,12 @@ func maybeExecWithOptions(ctx context.Context, sys System, args []string, curren
 
 // execHandoff replaces this process with the cached binary at path.
 func execHandoff(sys System, path string, args []string, current string, cacheRoot string) error {
-	env := append(sys.Environ(), fmt.Sprintf("%s=1", EnvShimActive))
+	return execHandoffEnv(sys, path, args, current, cacheRoot, sys.Environ())
+}
+
+func execHandoffEnv(sys System, path string, args []string, current string, cacheRoot string, inherited []string) error {
+	env := append([]string(nil), inherited...)
+	env = append(env, fmt.Sprintf("%s=1", EnvShimActive))
 	// The cached binary's argv[0] is its cache path, so pass the stable entry
 	// that generated MCP launchers record (overriding an inherited one). Source
 	// builds such as go run and cached binaries are not installations.

@@ -3,6 +3,9 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+### Added
+- MCP image handoffs automatically prune lease-aware cache entries with no live server or worker lease and no lease acquisition in the last 24 hours, retaining legacy entries for manual cleanup (#525).
+
 ### Fixed
 - Development `agent-layer` MCP servers run from verified content-addressed snapshots and, after successful startup verification, keep accepting dispatch work across source rebuilds while the selected dev path remains a regular executable. If that path is missing or unusable, options still reports the change, while start and continue refuse before sync or provider work so they cannot re-project broken launchers or HerdR hooks. `dispatch_options` reports the running version and image SHA-256 plus a reconnect notice when the selected dev executable's file identity has changed. Servers that cannot snapshot retain replacement refusal. Release probes build in a separate scratch directory and restore generated launchers and HerdR hooks to the operator's normal dev build before removing the candidate (#530).
 - Unchanged Muse approval syncs no longer rewrite or reorder `approval-policy.json`. Stale Agent Layer grants for deleted roots or roots with missing or mismatched ownership receipts are removed by the next Muse-enabled `al sync` in any workspace using the same supported native policy directory, so a new project at a reused path no longer keeps inheriting those grants after that sync. Native-directory and workspace-root aliases are kept by filesystem identity. `al doctor` reports owned rule/root counts, orphaned roots, current-workspace receipt repair, and nested or possible throwaway copies with retirement guidance for disposable copies (#529).

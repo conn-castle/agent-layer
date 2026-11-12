@@ -598,11 +598,19 @@ immutable content-addressed copy of its own image,
 or `AL_CACHE_DIR`). The copy is written through a synced temporary file, verified
 by SHA-256, and renamed into place under a file lock. An existing entry is reused
 only after it is re-hashed. The copy never goes into `versions/<v>`, which
-holds only checksum-verified downloads. Entries are not pruned yet (#525); with
-no `agent-layer` MCP server running, deleting `<cache root>/images/` is safe and
-the next snapshotted server start recreates its entry. If any step fails, the server runs in
-place after one stderr warning, and replacing the installed `al` then makes it
-stale as before. A release server records its starting selection (version and
+holds only checksum-verified downloads. Image handoffs automatically prune
+lease-aware entries with no live lease and no lease acquisition in the last
+24 hours. A long-running entry can therefore be pruned as soon as its last holder
+exits. Supported launchers never execute image paths directly. A direct launch
+leases at startup, but pruning can remove its path before that acquisition; the
+process keeps its mapped image, while later path-based worker launches on macOS
+can fail. Servers and detached dispatch workers hold lifetime leases, so a worker that
+outlives its server keeps the image available. Entries from earlier releases
+without lease files are retained. For manual cleanup, stop all `agent-layer` MCP
+servers and dispatch workers; deleting `<cache root>/images/` or a specific entry
+is then safe, and the next snapshotted server start recreates its entry. If snapshot
+creation or handoff fails, the server runs in place after one stderr warning, and
+replacing the installed `al` then makes it stale as before. A release server records its starting selection (version and
 source: pin, `AL_VERSION`, or current). `dispatch_options`, `dispatch_start`
 and `dispatch_continue` refuse new provider work when any of these hold:
 

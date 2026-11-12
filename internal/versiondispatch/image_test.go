@@ -13,6 +13,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/conn-castle/agent-layer/internal/imagelease"
 	"github.com/conn-castle/agent-layer/internal/messages"
 )
 
@@ -292,7 +293,7 @@ func TestDevelopmentImageHandoff(t *testing.T) {
 				if !errors.Is(err, ErrDispatched) || f.execPath != f.imagePath(t) {
 					t.Fatalf("handoff: %q %v", f.execPath, err)
 				}
-				if !slices.Equal(f.execEnv, env) {
+				if !slices.Equal(withoutEnv(f.execEnv, imagelease.EnvFD), env) || len(f.execEnv) != len(env)+1 {
 					t.Fatalf("environment changed: %v", f.execEnv)
 				}
 				// Simulate the exec'd process. Its image is no longer the selected
