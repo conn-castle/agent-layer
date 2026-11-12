@@ -4,7 +4,7 @@ All notable changes to this project will be documented in this file.
 ## Unreleased
 
 ### Added
-- MCP image handoffs automatically prune lease-aware cache entries with no live server or worker lease and no lease acquisition in the last 24 hours, retaining legacy entries for manual cleanup (#525).
+- MCP image handoffs automatically prune lease-aware cache images with no live server or worker lease and no lease acquisition in the last 24 hours, plus old abandoned copies, retaining complete legacy images for manual cleanup (#525).
 
 ### Fixed
 - Development `agent-layer` MCP servers run from verified content-addressed snapshots and, after successful startup verification, keep accepting dispatch work across source rebuilds while the selected dev path remains a regular executable. If that path is missing or unusable, options still reports the change, while start and continue refuse before sync or provider work so they cannot re-project broken launchers or HerdR hooks. `dispatch_options` reports the running version and image SHA-256 plus a reconnect notice when the selected dev executable's file identity has changed. Servers that cannot snapshot retain replacement refusal. Release probes build in a separate scratch directory and restore generated launchers and HerdR hooks to the operator's normal dev build before removing the candidate (#530).

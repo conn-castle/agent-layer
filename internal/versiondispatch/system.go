@@ -102,7 +102,7 @@ func (RealSystem) Chmod(name string, mode os.FileMode) error {
 
 // Rename renames (moves) oldpath to newpath.
 func (RealSystem) Rename(oldpath, newpath string) error {
-	return os.Rename(oldpath, newpath) // #nosec G703 -- pass-through System wrapper; cache callers validate the layout.
+	return os.Rename(oldpath, newpath) // #nosec G703 -- System pass-through; callers supply CreateTemp/cache-layout paths.
 }
 
 // CreateTemp creates a new temporary file in the directory dir.

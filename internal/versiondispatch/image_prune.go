@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"io"
+	mathrand "math/rand/v2"
 	"os"
 	"path/filepath"
 	"strings"
@@ -15,10 +16,15 @@ import (
 )
 
 const imagePruneGrace = 24 * time.Hour
+const imagePruneSampleSize = 128
 
 // pruneImages is deliberately silent and best effort. Nonblocking flocks and a
 // short scan budget keep cache maintenance off the handoff's critical path.
 func pruneImages(images, own string) {
+	pruneImagesWithRandom(images, own, mathrand.IntN)
+}
+
+func pruneImagesWithRandom(images, own string, choose func(int) int) {
 	i, err := os.Lstat(images)
 	if err != nil || !i.IsDir() || !imagelease.Owned(i) {
 		return
@@ -37,25 +43,51 @@ func pruneImages(images, own string) {
 	if err != nil || !os.SameFile(i, fi) {
 		return
 	}
+	// Enumerate names only, across the whole directory, before expensive entry
+	// checks. A fixed prefix or a per-process cursor would starve later entries
+	// across handoffs. Reservoir sampling bounds memory and candidate work, not
+	// enumeration latency: an exceptionally large/slow directory can take longer.
+	names := sampleImageNames(dir, filepath.Base(own), choose)
+	if len(names) == 0 {
+		return
+	}
+	// Randomize the processing start too: an original reservoir slot must not
+	// remain permanently behind the time budget's cutoff across processes.
+	start := choose(len(names))
 	deadline := time.Now().Add(25 * time.Millisecond)
-	for time.Now().Before(deadline) {
-		names, err := dir.Readdirnames(16)
+	for offset := range names {
+		if time.Now().After(deadline) {
+			return
+		}
+		name := names[(start+offset)%len(names)]
+		if isImageTrash(name) {
+			pruneImageTrash(root, name)
+		} else {
+			pruneImage(root, name)
+		}
+	}
+}
+
+// Every candidate, regardless of directory position, has the same chance of
+// selection on each independent handoff. No persistent cursor is needed.
+func sampleImageNames(dir *os.File, own string, choose func(int) int) []string {
+	sample := make([]string, 0, imagePruneSampleSize)
+	seen := 0
+	for {
+		names, err := dir.Readdirnames(256)
 		for _, name := range names {
-			if time.Now().After(deadline) {
-				return
-			}
-			trash := isImageTrash(name)
-			if (!imagelease.ValidSHA(name) && !trash) || filepath.Join(images, name) == own {
+			if name == own || (!imagelease.ValidSHA(name) && !isImageTrash(name)) {
 				continue
 			}
-			if trash {
-				pruneImageTrash(root, name)
-			} else {
-				pruneImage(root, name)
+			seen++
+			if len(sample) < imagePruneSampleSize {
+				sample = append(sample, name)
+			} else if slot := choose(seen); slot < len(sample) {
+				sample[slot] = name
 			}
 		}
 		if err != nil {
-			return
+			return sample
 		}
 	}
 }
@@ -72,29 +104,41 @@ func isImageTrash(name string) bool {
 // imageShape excludes symlinks, foreign owners, subdirectories and user files.
 // Recheck under both locks before renaming, including leftover trash entries.
 func imageShape(root *os.Root, name string) bool {
+	_, _, ok := imageEntryInfo(root, name)
+	return ok
+}
+
+// imageEntryInfo also records the newest write, including the directory itself,
+// so an unfinished copy gets a full grace period after its last visible change.
+func imageEntryInfo(root *os.Root, name string) (newest time.Time, complete bool, ok bool) {
 	i, err := root.Lstat(name)
 	if err != nil || !i.IsDir() || !imagelease.Owned(i) {
-		return false
+		return newest, false, false
 	}
+	newest = i.ModTime()
 	dir, err := root.OpenFile(name, os.O_RDONLY|unix.O_DIRECTORY|unix.O_NOFOLLOW, 0)
 	if err != nil {
-		return false
+		return newest, false, false
 	}
 	defer func() { _ = dir.Close() }()
 	names, err := dir.Readdirnames(65)
 	if (err != nil && err != io.EOF) || len(names) > 64 {
-		return false
+		return newest, false, false
 	}
 	for _, child := range names {
 		if child != "al" && child != "al.lock" && child != "al.lease" && !strings.HasPrefix(child, "al.tmp-") {
-			return false
+			return newest, false, false
 		}
 		info, err := root.Lstat(filepath.Join(name, child))
 		if err != nil || !info.Mode().IsRegular() || !imagelease.Owned(info) {
-			return false
+			return newest, false, false
 		}
+		if info.ModTime().After(newest) {
+			newest = info.ModTime()
+		}
+		complete = complete || child == imageName
 	}
-	return true
+	return newest, complete, true
 }
 
 func tryImageLock(root *os.Root, path string) *os.File {
@@ -159,15 +203,32 @@ func pruneImage(root *os.Root, name string) {
 		return
 	}
 	defer func() { _ = lock.Close() }()
-	// Existence of al.lease is the opt-in marker. Never create it here:
-	// binaries predating leases can still run from legacy entries indefinitely.
-	lease := tryImageLock(root, filepath.Join(name, "al.lease"))
-	if lease == nil {
+	newest, complete, ok := imageEntryInfo(root, name)
+	if !ok {
 		return
 	}
-	defer func() { _ = lease.Close() }()
-	i, err := lease.Stat()
-	if err != nil || time.Since(i.ModTime()) <= imagePruneGrace || !imageShape(root, name) {
+	// Complete legacy images may still be executing without leases. Incomplete
+	// entries cannot supply an executable, but must have no busy writer, no live
+	// lease (if present), and no recent directory/lock/temp-file modification.
+	var lease *os.File
+	leasePath := filepath.Join(name, "al.lease")
+	if _, err := root.Lstat(leasePath); !os.IsNotExist(err) {
+		lease = tryImageLock(root, leasePath)
+		if lease == nil {
+			return
+		}
+		defer func() { _ = lease.Close() }()
+	} else if complete {
+		return
+	}
+	if complete {
+		i, err := lease.Stat()
+		if err != nil {
+			return
+		}
+		newest = i.ModTime()
+	}
+	if time.Since(newest) <= imagePruneGrace || !imageShape(root, name) {
 		return
 	}
 	var nonce [8]byte
@@ -180,7 +241,9 @@ func pruneImage(root *os.Root, name string) {
 	}
 	// Waiters with the old lock open must now retry. Release before removal;
 	// bounded os.Root removal cannot follow a symlink out of images/.
-	_ = lease.Close()
+	if lease != nil {
+		_ = lease.Close()
+	}
 	_ = lock.Close()
 	_ = root.RemoveAll(dest)
 }

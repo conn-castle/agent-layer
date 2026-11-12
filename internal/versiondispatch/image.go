@@ -132,8 +132,9 @@ func handOffToImage(ctx context.Context, sys System, opts execOptions, args []st
 	return nil
 }
 
-// ensureLeasedImage verifies and leases the image without releasing al.lock
-// between those operations. The caller owns the returned lease until exec.
+// ensureLeasedImage marks and leases the entry before verifying or writing its
+// image, all under al.lock. Even a crashed writer leaves a lease-aware entry.
+// The caller owns the returned lease until exec.
 func ensureLeasedImage(ctx context.Context, sys System, imagesDir string, source string) (string, *os.File, error) {
 	sum, err := fileSHA256(source)
 	if err != nil {
@@ -146,6 +147,16 @@ func ensureLeasedImage(ctx context.Context, sys System, imagesDir string, source
 		return "", nil, err
 	}
 	defer func() { _ = lock.release() }()
+	lease, err := leaseImage(path)
+	if err != nil {
+		return "", nil, err
+	}
+	ready := false
+	defer func() {
+		if !ready {
+			_ = lease.Close()
+		}
+	}()
 	if info, statErr := os.Lstat(path); statErr == nil && info.Mode().IsRegular() && info.Mode().Perm()&0o111 != 0 && verifyChecksum(path, sum) == nil { // #nosec G703 -- content-addressed path under the validated image cache.
 		// Verified cache hit.
 	} else {
@@ -156,17 +167,14 @@ func ensureLeasedImage(ctx context.Context, sys System, imagesDir string, source
 			return "", nil, err
 		}
 	}
-	lease, err := leaseImage(path)
-	if err != nil {
-		return "", nil, err
-	}
+	ready = true
 	return path, lease, nil
 }
 
 // writeImage copies source into place through a synced, verified temporary file
 // and an atomic rename, so readers see either nothing or a complete image.
 func writeImage(sys System, source string, dir string, path string, sum string) error {
-	in, err := os.Open(source) // #nosec G304,G703 -- own executable or content-addressed cache path.
+	in, err := os.Open(source) // #nosec G304,G703 -- own executable or content-addressed path, including isolated helper-process fixtures.
 	if err != nil {
 		return fmt.Errorf(messages.DispatchOpenFileFmt, source, err)
 	}
@@ -179,7 +187,7 @@ func writeImage(sys System, source string, dir string, path string, sum string) 
 	committed := false
 	defer func() {
 		if !committed {
-			_ = os.Remove(tmpName) // #nosec G703 -- temporary file created in the locked cache entry.
+			_ = os.Remove(tmpName) // #nosec G703 -- CreateTemp-generated name within the locked image entry.
 		}
 	}()
 	if _, err := io.Copy(tmp, in); err != nil {
@@ -208,7 +216,7 @@ func writeImage(sys System, source string, dir string, path string, sum string) 
 
 // fileSHA256 returns the hex SHA-256 of path's content, the image cache key.
 func fileSHA256(path string) (string, error) {
-	file, err := os.Open(path) // #nosec G304,G703 -- own executable or content-addressed cache path.
+	file, err := os.Open(path) // #nosec G304,G703 -- own executable or content-addressed path, including isolated helper-process fixtures.
 	if err != nil {
 		return "", fmt.Errorf(messages.DispatchOpenFileFmt, path, err)
 	}

@@ -15,6 +15,19 @@ import (
 )
 
 func TestMain(m *testing.M) {
+	if os.Getenv("AL_TEST_BUSY_LEASE") != "" {
+		var stat unix.Stat_t
+		if Current() != nil || unix.Fstat(4, &stat) != unix.EBADF || os.Getenv(EnvFD) != "" {
+			fmt.Fprintln(os.Stderr, "failed adoption did not close the proven lease")
+			os.Exit(2)
+		}
+		var gate [1]byte
+		if n, err := unix.Read(3, gate[:]); err != nil || n != 1 || gate[0] != 'g' {
+			fmt.Fprintln(os.Stderr, "failed lease adoption damaged gate")
+			os.Exit(2)
+		}
+		os.Exit(0)
+	}
 	if os.Getenv("AL_TEST_BORROWED_FD") != "" {
 		if err := checkBorrowedDescriptors(); err != nil {
 			fmt.Fprintln(os.Stderr, err)
@@ -23,6 +36,38 @@ func TestMain(m *testing.M) {
 		os.Exit(0)
 	}
 	os.Exit(m.Run())
+}
+
+func TestContendedLeaseAdoptionClosesOwnedDescriptor(t *testing.T) {
+	self, err := os.Executable()
+	require.NoError(t, err)
+	data, err := os.ReadFile(self) // #nosec G304 -- own test binary.
+	require.NoError(t, err)
+	cache := t.TempDir()
+	dir := filepath.Join(cache, "images", fmt.Sprintf("%x", sha256.Sum256(data)))
+	require.NoError(t, os.MkdirAll(dir, 0o700)) // #nosec G703 -- disposable cache.
+	path := filepath.Join(dir, "al")
+	require.NoError(t, os.WriteFile(path, data, 0o700))                     // #nosec G306,G703 -- disposable executable.
+	holder, err := os.OpenFile(path+".lease", os.O_CREATE|os.O_RDWR, 0o600) // #nosec G304,G703 -- disposable lease.
+	require.NoError(t, err)
+	defer func() { _ = holder.Close() }()
+	require.NoError(t, unix.Flock(int(holder.Fd()), unix.LOCK_EX|unix.LOCK_NB))
+	// A separate open description cannot acquire SH while holder has EX.
+	candidate, err := os.OpenFile(path+".lease", os.O_RDWR, 0) // #nosec G304,G703 -- disposable lease.
+	require.NoError(t, err)
+	defer func() { _ = candidate.Close() }()
+	gate, writer, err := os.Pipe()
+	require.NoError(t, err)
+	defer func() { _ = gate.Close(); _ = writer.Close() }()
+	_, err = writer.Write([]byte{'g'})
+	require.NoError(t, err)
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, path, "__dispatch-worker")
+	cmd.ExtraFiles = []*os.File{gate, candidate}
+	cmd.Env = append(os.Environ(), "AL_TEST_BUSY_LEASE=1", EnvFD+"=4", "AL_CACHE_DIR="+cache, "HOME="+t.TempDir())
+	output, err := cmd.CombinedOutput()
+	require.NoError(t, err, "%s", output)
 }
 
 // Use only raw fd operations here too: wrapping an unrelated descriptor in an

@@ -62,10 +62,14 @@ func adopt(fd int) *os.File {
 	}
 	// Until identity is proven this is a borrowed, untrusted descriptor. Do not
 	// wrap it, change flags, flock it or close it on the rejection path.
-	unix.CloseOnExec(fd)
+	if _, err := unix.FcntlInt(uintptr(fd), unix.F_SETFD, unix.FD_CLOEXEC); err != nil {
+		_ = unix.Close(fd) // Identity proved ownership; never leave an orphan.
+		return nil
+	}
 	// Reassert the shared lock, including when a matching but unlocked fd was
 	// supplied. Never retain an unprotected descriptor.
 	if unix.Flock(fd, unix.LOCK_SH|unix.LOCK_NB) != nil {
+		_ = unix.Close(fd)
 		return nil
 	}
 	return os.NewFile(uintptr(fd), "image-lease")
@@ -99,7 +103,7 @@ func validFor(fd int, exe string) bool {
 // it on a failed (or test-double) exec. Ordinary exec.Command children never get it.
 func ExecEnv(f *os.File, env []string) ([]string, func(), error) {
 	fd := int(f.Fd())
-	// exec.Command takes ForkLock for reading during fork. Exclude concurrent
+	// Go forkExec takes ForkLock exclusively during fork. Exclude concurrent
 	// child creation during the only interval in which our lease lacks CLOEXEC.
 	// syscall.Exec itself does not take this lock; success replaces its memory.
 	syscall.ForkLock.Lock()

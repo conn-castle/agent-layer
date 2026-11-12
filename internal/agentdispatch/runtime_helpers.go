@@ -31,14 +31,14 @@ func processStartIdentity(pid int) string {
 	if pid <= 0 {
 		return ""
 	}
-	if data, err := os.ReadFile(fmt.Sprintf("/proc/%d/stat", pid)); err == nil { // #nosec G703 -- procfs path contains only an integer PID.
+	if data, err := os.ReadFile(fmt.Sprintf("/proc/%d/stat", pid)); err == nil {
 		if start := procStatStartTime(string(data)); start != "" {
 			return "proc:" + start
 		}
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	out, err := exec.CommandContext(ctx, "ps", "-o", "lstart=", "-p", strconv.Itoa(pid)).Output() // #nosec G204,G702 -- pid is an Agent Layer-owned integer.
+	out, err := exec.CommandContext(ctx, "ps", "-o", "lstart=", "-p", strconv.Itoa(pid)).Output() // #nosec G204 -- pid is an Agent Layer-owned integer.
 	if err != nil {
 		return ""
 	}
@@ -80,12 +80,12 @@ func processIsZombie(pid int) bool {
 	if pid <= 0 {
 		return false
 	}
-	if data, err := os.ReadFile(fmt.Sprintf("/proc/%d/stat", pid)); err == nil { // #nosec G703 -- procfs path contains only an integer PID.
+	if data, err := os.ReadFile(fmt.Sprintf("/proc/%d/stat", pid)); err == nil {
 		return procStatState(string(data)) == "Z"
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	out, err := exec.CommandContext(ctx, "ps", "-o", "stat=", "-p", strconv.Itoa(pid)).Output() // #nosec G204,G702 -- pid is an Agent Layer-owned integer.
+	out, err := exec.CommandContext(ctx, "ps", "-o", "stat=", "-p", strconv.Itoa(pid)).Output() // #nosec G204 -- pid is an Agent Layer-owned integer.
 	if err != nil {
 		return false
 	}

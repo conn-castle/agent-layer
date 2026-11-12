@@ -94,7 +94,13 @@ func lockImageMode(ctx context.Context, sys System, dir string, create bool) (*f
 		if err != nil {
 			return nil, err
 		}
-		if err := lockFile(ctx, sys, f, imageLockWaitTimeout); err != nil {
+		wait := imageLockWaitTimeout
+		if !create {
+			// Direct startup and admission retries are best effort. A busy writer
+			// must not stall the server; a later launch can try once again.
+			wait = 0
+		}
+		if err := lockFile(ctx, sys, f, wait); err != nil {
 			_ = f.Close()
 			return nil, err
 		}

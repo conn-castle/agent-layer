@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -15,6 +16,7 @@ import (
 	"golang.org/x/sys/unix"
 
 	"github.com/conn-castle/agent-layer/internal/imagelease"
+	"github.com/conn-castle/agent-layer/internal/versiondispatch"
 )
 
 // detachedLeaseHelper exercises the production launcher from a real image
@@ -30,10 +32,10 @@ func detachedLeaseHelper() {
 			os.Exit(2)
 		}
 	}
-	if imagelease.Current() == nil {
-		fail(fmt.Errorf("image lease missing"))
-	}
 	if len(os.Args) > 1 && os.Args[1] == workerCommand {
+		if imagelease.Current() == nil {
+			fail(fmt.Errorf("worker did not inherit image lease"))
+		}
 		gate := os.NewFile(3, "gate")
 		var token [1]byte
 		_, err := io.ReadFull(gate, token[:])
@@ -49,8 +51,24 @@ func detachedLeaseHelper() {
 			time.Sleep(10 * time.Millisecond)
 		}
 	}
+	if os.Getenv("AL_TEST_RETRY_LEASE") != "" {
+		versiondispatch.LeaseRunningImage()
+		versiondispatch.LeaseRunningImage()
+		if imagelease.Current() != nil {
+			fail(fmt.Errorf("busy startup unexpectedly acquired lease"))
+		}
+		fmt.Println("UNLEASED")
+		var token [1]byte
+		_, err := io.ReadFull(os.Stdin, token[:])
+		fail(err)
+	} else if imagelease.Current() == nil {
+		fail(fmt.Errorf("server image lease missing"))
+	}
 	w, err := launchDetachedWorker(dir, "lease-test", filepath.Join(dir, "worker.log"))
 	fail(err)
+	if imagelease.Current() == nil {
+		fail(fmt.Errorf("worker admission did not retry the image lease"))
+	}
 	_, err = w.gate.Write([]byte{1})
 	fail(err)
 	fail(w.gate.Close())
@@ -60,6 +78,15 @@ func detachedLeaseHelper() {
 }
 
 func TestLaunchDetachedWorkerRetainsImageLease(t *testing.T) {
+	testDetachedWorkerLease(t, false)
+}
+
+func TestLaunchDetachedWorkerRetriesTransientLeaseFailure(t *testing.T) {
+	testDetachedWorkerLease(t, true)
+}
+
+func testDetachedWorkerLease(t *testing.T, retry bool) {
+	t.Helper()
 	cache := t.TempDir()
 	self, err := os.Executable()
 	require.NoError(t, err)
@@ -72,12 +99,23 @@ func TestLaunchDetachedWorkerRetainsImageLease(t *testing.T) {
 	lease, err := os.OpenFile(path+".lease", os.O_RDWR|os.O_CREATE, 0o600) // #nosec G304,G703 -- disposable image lease.
 	require.NoError(t, err)
 	defer func() { _ = lease.Close() }()
-	require.NoError(t, unix.Flock(int(lease.Fd()), unix.LOCK_SH))
 	control := t.TempDir()
 	parent := exec.Command(path)
-	parent.Env = append(os.Environ(), imagelease.EnvFD+"=3", "AL_TEST_DETACHED_LEASE="+control, "AL_CACHE_DIR="+cache)
-	parent.ExtraFiles = []*os.File{lease}
-	parent.Stderr = os.Stderr
+	parent.Env = append(os.Environ(), "AL_TEST_DETACHED_LEASE="+control, "AL_CACHE_DIR="+cache, "HOME="+t.TempDir())
+	var startupLock *os.File
+	if retry {
+		startupLock, err = os.OpenFile(path+".lock", os.O_CREATE|os.O_RDWR, 0o600) // #nosec G304,G703 -- disposable cache lock.
+		require.NoError(t, err)
+		defer func() { _ = startupLock.Close() }()
+		require.NoError(t, unix.Flock(int(startupLock.Fd()), unix.LOCK_EX|unix.LOCK_NB))
+		parent.Env = append(parent.Env, "AL_TEST_RETRY_LEASE=1")
+	} else {
+		require.NoError(t, unix.Flock(int(lease.Fd()), unix.LOCK_SH))
+		parent.Env = append(parent.Env, imagelease.EnvFD+"=3")
+		parent.ExtraFiles = []*os.File{lease}
+	}
+	var stderr strings.Builder
+	parent.Stderr = &stderr
 	input, err := parent.StdinPipe()
 	require.NoError(t, err)
 	output, err := parent.StdoutPipe()
@@ -89,18 +127,35 @@ func TestLaunchDetachedWorkerRetainsImageLease(t *testing.T) {
 		_ = input.Close()
 		_ = os.WriteFile(filepath.Join(control, "stop"), nil, 0o600)
 	})
-	ready := make(chan string, 1)
-	go func() { line, _ := bufio.NewReader(output).ReadString('\n'); ready <- line }()
-	select {
-	case line := <-ready:
-		require.Equal(t, "READY\n", line)
-	case <-time.After(15 * time.Second):
-		t.Fatal("server did not start")
+	ready := make(chan string, 2)
+	go func() {
+		scanner := bufio.NewScanner(output)
+		for scanner.Scan() {
+			ready <- scanner.Text()
+		}
+	}()
+	waitLine := func(want string) {
+		select {
+		case line := <-ready:
+			require.Equal(t, want, line)
+		case <-time.After(15 * time.Second):
+			t.Fatalf("server did not report %s", want)
+		}
 	}
+	if retry {
+		waitLine("UNLEASED")
+		require.NoError(t, startupLock.Close())
+		_, err = input.Write([]byte{1})
+		require.NoError(t, err)
+	}
+	waitLine("READY")
 	require.Eventually(t, func() bool { _, err := os.Stat(filepath.Join(control, "ready")); return err == nil }, 15*time.Second, 10*time.Millisecond)
 	require.NoError(t, lease.Close())
 	require.NoError(t, input.Close())
 	require.NoError(t, parent.Wait())
+	if retry {
+		require.Equal(t, 1, strings.Count(stderr.String(), "could not be leased"), "repeat failures must diagnose only once")
+	}
 	probe, err := os.OpenFile(path+".lease", os.O_RDWR, 0) // #nosec G304,G703 -- disposable image lease.
 	require.NoError(t, err)
 	defer func() { _ = probe.Close() }()

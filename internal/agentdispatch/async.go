@@ -338,6 +338,9 @@ func restorePreviousInvocation(root string, handle string, rejectedRunID string,
 }
 
 func launchDetachedWorker(root string, runID string, logPath string) (launchedWorker, error) {
+	if imagelease.Current() == nil {
+		versiondispatch.LeaseRunningImage()
+	}
 	gateRead, gateWrite, err := os.Pipe()
 	if err != nil {
 		return launchedWorker{}, err
@@ -348,12 +351,12 @@ func launchDetachedWorker(root string, runID string, logPath string) (launchedWo
 		cleanup()
 		return launchedWorker{}, err
 	}
-	log, err := os.OpenFile(logPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600) // #nosec G304,G703 -- Agent Layer-owned run directory.
+	log, err := os.OpenFile(logPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600) // #nosec G304,G703 -- Agent Layer-owned run directory, including isolated helper-process fixtures.
 	if err != nil {
 		cleanup()
 		return launchedWorker{}, err
 	}
-	cmd := exec.CommandContext(context.Background(), executable, "__dispatch-worker", "--root", root, "--run", runID) // #nosec G204,G702 -- executable is the current Agent Layer binary; the background worker intentionally outlives its caller.
+	cmd := exec.CommandContext(context.Background(), executable, "__dispatch-worker", "--root", root, "--run", runID) // #nosec G204,G702 -- executableimage.Self verifies the executing image; the background worker intentionally outlives its caller.
 	cmd.Env = os.Environ()
 	cmd.Stdin = nil
 	cmd.Stdout = log

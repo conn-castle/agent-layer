@@ -601,12 +601,15 @@ only after it is re-hashed. The copy never goes into `versions/<v>`, which
 holds only checksum-verified downloads. Image handoffs automatically prune
 lease-aware entries with no live lease and no lease acquisition in the last
 24 hours. A long-running entry can therefore be pruned as soon as its last holder
-exits. Supported launchers never execute image paths directly. A direct launch
-leases at startup, but pruning can remove its path before that acquisition; the
-process keeps its mapped image, while later path-based worker launches on macOS
-can fail. Servers and detached dispatch workers hold lifetime leases, so a worker that
-outlives its server keeps the image available. Entries from earlier releases
-without lease files are retained. For manual cleanup, stop all `agent-layer` MCP
+exits. Installed MCP entry launchers never execute image paths directly. Internal
+detached workers can execute image paths on macOS and inherit the server's lease.
+A direct launch leases at startup, but pruning can remove its path before that
+acquisition; the process keeps its mapped image, while later path-based worker launches on macOS
+can fail. Servers and detached dispatch workers hold lifetime leases, so a worker
+that outlives its server keeps the image available. Complete images from earlier
+releases without lease files are retained. Incomplete entries without an executable
+can be pruned when their creation lock is free and their directory, lock and temp
+files have not changed for 24 hours. For manual cleanup, stop all `agent-layer` MCP
 servers and dispatch workers; deleting `<cache root>/images/` or a specific entry
 is then safe, and the next snapshotted server start recreates its entry. If snapshot
 creation or handoff fails, the server runs in place after one stderr warning, and

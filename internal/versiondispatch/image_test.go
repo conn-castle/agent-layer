@@ -10,8 +10,13 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
+	"syscall"
 	"testing"
+
+	"github.com/stretchr/testify/require"
+	"golang.org/x/sys/unix"
 
 	"github.com/conn-castle/agent-layer/internal/imagelease"
 	"github.com/conn-castle/agent-layer/internal/messages"
@@ -26,6 +31,7 @@ type imageHandoffFixture struct {
 	execErr             error
 	running             string
 	runningErr          error
+	execCheck           func(string, []string)
 }
 
 func newImageHandoffFixture(t *testing.T, pin string) *imageHandoffFixture {
@@ -54,6 +60,9 @@ func (f *imageHandoffFixture) system() *testSystem {
 		EnvironFunc: func() []string { return []string{"KEEP=1"} },
 		StderrFunc:  func() io.Writer { return &f.stderr },
 		ExecBinaryFunc: func(path string, args []string, env []string) error {
+			if f.execCheck != nil {
+				f.execCheck(path, env)
+			}
 			f.execPath, f.execArgs, f.execEnv = path, args, env
 			return f.execErr
 		},
@@ -84,6 +93,33 @@ func TestImageHandoffForPinAndOverride(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			f := newImageHandoffFixture(t, tc.pin)
 			f.env[EnvVersionOverride] = tc.override
+			f.execCheck = func(path string, env []string) {
+				require.Contains(t, env, EnvShimActive+"=1")
+				require.Contains(t, env, EnvInstalledExecutable+"=/install/bin/al")
+				var marker string
+				for _, entry := range env {
+					if value, ok := strings.CutPrefix(entry, imagelease.EnvFD+"="); ok {
+						marker = value
+					}
+				}
+				require.NotEmpty(t, marker, "release exec must receive the inherited lease marker")
+				fd, err := strconv.Atoi(marker)
+				require.NoError(t, err)
+				var borrowed syscall.Stat_t
+				require.NoError(t, syscall.Fstat(fd, &borrowed))
+				info, err := os.Lstat(path + ".lease") // #nosec G703 -- disposable handoff cache entry.
+				require.NoError(t, err)
+				want := info.Sys().(*syscall.Stat_t)
+				require.Equal(t, want.Dev, borrowed.Dev)
+				require.Equal(t, want.Ino, borrowed.Ino)
+				flags, err := unix.FcntlInt(uintptr(fd), unix.F_GETFD, 0)
+				require.NoError(t, err)
+				require.Zero(t, flags&unix.FD_CLOEXEC, "lease must survive the pending exec")
+				probe, err := os.OpenFile(path+".lease", os.O_RDWR, 0) // #nosec G304,G703 -- disposable test lease.
+				require.NoError(t, err)
+				defer func() { _ = probe.Close() }()
+				require.ErrorIs(t, unix.Flock(int(probe.Fd()), unix.LOCK_EX|unix.LOCK_NB), unix.EWOULDBLOCK)
+			}
 			if err := f.run(t, "v1.2.3"); !errors.Is(err, ErrDispatched) {
 				t.Fatalf("expected handoff, got %v", err)
 			}

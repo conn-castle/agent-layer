@@ -42,6 +42,20 @@ func imageHelper() {
 		fail(err)
 		fail(unix.Flock(int(f.Fd()), unix.LOCK_SH))
 		held = f
+	case "crash-write":
+		sys := &testSystem{RenameFunc: func(from, to string) error {
+			if err := os.Rename(from, to); err != nil { // #nosec G703 -- disposable image write under al.lock.
+				return err
+			}
+			// Stop immediately after publication, before writeImage returns.
+			fmt.Println("READY")
+			_, _ = io.Copy(io.Discard, os.Stdin)
+			os.Exit(0)
+			return nil
+		}}
+		_, _, err := ensureLeasedImage(context.Background(), sys, filepath.Join(os.Getenv(EnvCacheDir), imagesDirName), os.Getenv("AL_TEST_IMAGE_SOURCE"))
+		fail(err)
+		fail(fmt.Errorf("image writer did not pause after publication"))
 	case "exec":
 		self, err := os.Executable()
 		fail(err)
@@ -63,6 +77,24 @@ func imageHelper() {
 		LeaseRunningImage() // Repeated startup calls must not repeat diagnostics.
 		if (imagelease.Current() != nil) != (mode == "direct") {
 			fail(fmt.Errorf("direct startup lease = %v", imagelease.Current()))
+		}
+	case "direct-spelling", "direct-unsafe":
+		// Linux resolves executable spelling in os.Executable; supply the actual
+		// invocation spelling to exercise the same path logic Darwin receives.
+		err := leaseRunningImage(os.Args[0])
+		if mode == "direct-spelling" {
+			fail(err)
+			if imagelease.Current() == nil {
+				fail(fmt.Errorf("aliased image did not acquire a lease"))
+			}
+		} else if err == nil || imagelease.Current() != nil {
+			fail(fmt.Errorf("unsafe layout was accepted"))
+		}
+	case "direct-unrelated":
+		LeaseRunningImage()
+		LeaseRunningImage()
+		if imagelease.Current() != nil {
+			fail(fmt.Errorf("unrelated image acquired a lease"))
 		}
 	case "server", "worker", "absent":
 		lease := imagelease.Current()
@@ -226,8 +258,13 @@ func oldImage(t *testing.T, dir string) {
 }
 
 func startImageHelper(t *testing.T, executable, mode string, args []string, files []*os.File, env ...string) (*exec.Cmd, io.WriteCloser) {
+	return startImageHelperInDir(t, executable, mode, args, files, "", env...)
+}
+
+func startImageHelperInDir(t *testing.T, executable, mode string, args []string, files []*os.File, dir string, env ...string) (*exec.Cmd, io.WriteCloser) {
 	t.Helper()
 	cmd := exec.Command(executable, args...)
+	cmd.Dir = dir
 	cmd.Env = append(withoutEnv(os.Environ(), "AL_TEST_IMAGE_HELPER"), "AL_TEST_IMAGE_HELPER="+mode)
 	cmd.Env = append(cmd.Env, env...)
 	cmd.ExtraFiles = files
