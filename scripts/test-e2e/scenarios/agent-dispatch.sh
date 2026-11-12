@@ -45,22 +45,17 @@ dispatch_json_field() {
   sed -nE "s/.*\"${field}\":\"([^\"]+)\".*/\1/p" "$path" | head -n 1
 }
 
-# Match the harness's bounded failure output for commands with JSON on stdout.
-dispatch_show_stderr() {
-  local path="$1"
+# Match the harness's bounded failure output for captured command diagnostics.
+dispatch_show_tail() {
+  local label="$1" path="$2" lines="$3"
   if [[ -s "$path" ]]; then
-    echo "  stderr (last 20 lines):"
-    tail -n 20 "$path" | sed 's/^/    /'
+    echo "  $label (last $lines lines):"
+    tail -n "$lines" "$path" | sed 's/^/    /'
   fi
 }
 
-# Invalid JSON results can explain a zero-exit command failure.
-dispatch_show_stdout() {
-  local path="$1"
-  if [[ -s "$path" ]]; then
-    echo "  stdout (last 5 lines):"
-    tail -n 5 "$path" | sed 's/^/    /'
-  fi
+dispatch_show_stderr() {
+  dispatch_show_tail stderr "$1" 20
 }
 
 # Optional state and invocation ID preserve each caller's additional assertions.
@@ -231,7 +226,7 @@ check_dispatch_parallel_conversations() {
       fail "dispatch start for parallel slot $index (exit code: $start_rc; expected a successful start with a handle)"
       dispatch_show_stderr "$start_stderr"
       if [[ $start_rc -eq 0 ]]; then
-        dispatch_show_stdout "$parallel_start"
+        dispatch_show_tail stdout "$parallel_start" 5
       fi
     fi
   done
@@ -253,7 +248,7 @@ check_dispatch_parallel_conversations() {
       fail "dispatch wait for parallel slot $index (exit code: $wait_rc; expected state completed)"
       dispatch_show_stderr "$wait_stderr"
       if [[ $wait_rc -eq 0 ]]; then
-        dispatch_show_stdout "$repo_dir/parallel-${index}-wait.json"
+        dispatch_show_tail stdout "$repo_dir/parallel-${index}-wait.json" 5
       fi
     fi
   done
