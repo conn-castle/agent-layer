@@ -184,7 +184,7 @@ func TestLaunchAppliesOnlyProviderOwnedEnvironmentChanges(t *testing.T) {
 			}
 			launched := splitEnvironment(string(data))
 			for key, value := range test.want(root) {
-				if launched[key] != value {
+				if !filepath.IsAbs(launched[key]) || !clients.SamePath(launched[key], value) {
 					t.Fatalf("%s = %q, want %q", key, launched[key], value)
 				}
 			}

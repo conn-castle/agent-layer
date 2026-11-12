@@ -85,6 +85,10 @@ func TestLaunchCapturesAbsoluteEffectiveHome(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	t.Chdir(root)
 	outside := t.TempDir()
+	physicalOutside, err := filepath.EvalSymlinks(outside)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if err := os.Mkdir(filepath.Join(outside, "child"), 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -115,7 +119,7 @@ func TestLaunchCapturesAbsoluteEffectiveHome(t *testing.T) {
 	if count != 1 {
 		t.Fatalf("exec received %d provider home entries: %v", count, call.Env)
 	}
-	if got, _ := clients.GetEnv(call.Env, "CLAUDE_CONFIG_DIR"); !call.Called || got != filepath.Join(outside, "relative-home") {
+	if got, _ := clients.GetEnv(call.Env, "CLAUDE_CONFIG_DIR"); !call.Called || got != filepath.Join(physicalOutside, "relative-home") {
 		t.Fatalf("child home %q", got)
 	}
 	paths, err := filepath.Glob(filepath.Join(runDir, "herdr-launch-*.json"))
@@ -132,7 +136,7 @@ func TestLaunchCapturesAbsoluteEffectiveHome(t *testing.T) {
 	if err := json.Unmarshal(data, &record); err != nil {
 		t.Fatal(err)
 	}
-	if record.ProviderHome != filepath.Join(outside, "relative-home") {
+	if record.ProviderHome != filepath.Join(physicalOutside, "relative-home") {
 		t.Fatalf("captured home %q", record.ProviderHome)
 	}
 }
@@ -176,7 +180,7 @@ func TestSubfolderHomeFallbackAndPhysicalOverrides(t *testing.T) {
 						if present {
 							t.Fatalf("disabled project home retained as %q", got)
 						}
-					} else if !present || got != want {
+					} else if !present || !filepath.IsAbs(got) || !clients.SamePath(got, want) {
 						t.Fatalf("home=%q, want %q (present=%t)", got, want, present)
 					}
 					if (warning.Len() > 0) != (enabled && !projectHome) {

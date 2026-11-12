@@ -81,7 +81,9 @@ func ResolveRelativeHome(root, current, name string) string {
 		return selected
 	}
 	if homeShorthand(current, name) {
-		if _, err := os.Lstat(selected); os.IsNotExist(err) {
+		// Inspect the bare caller-relative entry without following it. Trailing
+		// dot components would traverse a dangling symlink and report it absent.
+		if _, err := os.Lstat(name); os.IsNotExist(err) {
 			return filepath.Join(root, name)
 		}
 	}

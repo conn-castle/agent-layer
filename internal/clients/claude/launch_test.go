@@ -337,20 +337,20 @@ func TestConfigureEnvironmentClaudeConfigDirRelativeValues(t *testing.T) {
 					if tc.keep == "" && ok {
 						t.Fatalf("expected stale CLAUDE_CONFIG_DIR %q to be cleared, got %q", current, value)
 					}
-					if tc.keep != "" && value != root+"/"+strings.ReplaceAll(tc.keep, "{base}", filepath.Base(root)) {
+					if tc.keep != "" && (!filepath.IsAbs(value) || !clients.SamePath(value, filepath.Join(root, strings.ReplaceAll(tc.keep, "{base}", filepath.Base(root))))) {
 						t.Fatalf("expected user CLAUDE_CONFIG_DIR %q to be kept, got %q (present=%t)", current, value, ok)
 					}
 					return
 				}
 				if tc.keep == "" {
-					if value != expected || warning.Len() != 0 {
+					if !filepath.IsAbs(value) || !clients.SamePath(value, expected) || warning.Len() != 0 {
 						t.Fatalf("expected CLAUDE_CONFIG_DIR %s without warning, got %q with warning %q", expected, value, warning.String())
 					}
 					return
 				}
 				want := filepath.Join(root, strings.ReplaceAll(tc.keep, "{base}", filepath.Base(root)))
 				wantWarning := fmt.Sprintf(messages.ClientsClaudeConfigDirWarningFmt, current, expected)
-				if value != want || warning.String() != wantWarning {
+				if !filepath.IsAbs(value) || !clients.SamePath(value, want) || warning.String() != wantWarning {
 					t.Fatalf("expected CLAUDE_CONFIG_DIR %s with warning %q, got %q with warning %q", want, wantWarning, value, warning.String())
 				}
 			})

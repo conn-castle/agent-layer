@@ -1121,6 +1121,10 @@ func TestMuseDiscoveryPreservesNativeEnvironment(t *testing.T) {
 
 func TestDiscoveryNormalizesHomesAndClearsDisabledCodexHome(t *testing.T) {
 	root := t.TempDir()
+	physicalRoot, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		t.Fatal(err)
+	}
 	t.Setenv("HOME", t.TempDir())
 	t.Chdir(root)
 	alias := filepath.Join(t.TempDir(), "alias")
@@ -1137,7 +1141,7 @@ func TestDiscoveryNormalizesHomesAndClearsDisabledCodexHome(t *testing.T) {
 		}
 		got, present := clients.GetEnv(cmd.Env, "CODEX_HOME")
 		if value == "elsewhere" {
-			if got != filepath.Join(root, value) {
+			if got != filepath.Join(physicalRoot, value) {
 				t.Fatalf("discovery home=%q", got)
 			}
 		} else if present {

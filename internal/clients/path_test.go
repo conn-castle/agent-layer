@@ -106,9 +106,13 @@ func TestRelativeHomeFallbackDoesNotCleanParentTraversal(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Chdir(caller)
+	physicalCaller, err := filepath.EvalSymlinks(caller)
+	if err != nil {
+		t.Fatal(err)
+	}
 	for _, name := range []string{".codex", ".claude-config"} {
 		value := "missing/../" + name
-		want := caller + "/" + value
+		want := physicalCaller + "/" + value
 		if got := ResolveRelativeHome(root, value, name); got != want {
 			t.Fatalf("%q resolved to %q, want unresolved %q", value, got, want)
 		}
@@ -122,6 +126,10 @@ func TestClearStaleHomeShorthandAndDuplicates(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Chdir(caller)
+	physicalCaller, err := filepath.EvalSymlinks(caller)
+	if err != nil {
+		t.Fatal(err)
+	}
 	for _, home := range []struct{ key, name string }{{"CODEX_HOME", ".codex"}, {"CLAUDE_CONFIG_DIR", ".claude-config"}, {"GROK_HOME", ".grok-config"}} {
 		for _, value := range []string{home.name, home.name + "/", "./" + home.name + "/", ".//" + home.name, home.name + "/."} {
 			env := ClearStaleHome(root, []string{home.key + "=" + value, home.key + "=" + t.TempDir()}, home.key, home.name)
@@ -140,7 +148,7 @@ func TestClearStaleHomeShorthandAndDuplicates(t *testing.T) {
 			got, _ := GetEnv(env, home.key)
 			want := value
 			if value == "other-home" {
-				want = filepath.Join(caller, value)
+				want = filepath.Join(physicalCaller, value)
 			}
 			if count != 1 || got != want {
 				t.Fatalf("%s: entries=%d value=%q, want one %q", home.key, count, got, want)

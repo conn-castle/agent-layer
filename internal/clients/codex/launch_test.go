@@ -386,14 +386,14 @@ func TestConfigureEnvironmentCodexHomeRelativeValues(t *testing.T) {
 
 			value, _ := clients.GetEnv(out, "CODEX_HOME")
 			if tc.keep == "" {
-				if value != expected || warning.Len() != 0 {
+				if !filepath.IsAbs(value) || !clients.SamePath(value, expected) || warning.Len() != 0 {
 					t.Fatalf("expected CODEX_HOME %s without warning, got %q with warning %q", expected, value, warning.String())
 				}
 				return
 			}
 			want := filepath.Join(root, strings.ReplaceAll(tc.keep, "{base}", filepath.Base(root)))
 			wantWarning := fmt.Sprintf(messages.ClientsCodexHomeWarningFmt, current, expected)
-			if value != want || warning.String() != wantWarning {
+			if !filepath.IsAbs(value) || !clients.SamePath(value, want) || warning.String() != wantWarning {
 				t.Fatalf("expected CODEX_HOME %s with warning %q, got %q with warning %q", want, wantWarning, value, warning.String())
 			}
 		})
