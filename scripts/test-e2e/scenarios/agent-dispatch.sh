@@ -54,9 +54,8 @@ dispatch_show_tail() {
   fi
 }
 
-dispatch_show_stderr() {
-  dispatch_show_tail stderr "$1" 20
-}
+dispatch_show_stderr() { dispatch_show_tail stderr "$1" 20; }
+dispatch_show_stdout() { dispatch_show_tail stdout "$1" 5; }
 
 # Optional state and invocation ID preserve each caller's additional assertions.
 dispatch_wait_terminated() {
@@ -226,7 +225,7 @@ check_dispatch_parallel_conversations() {
       fail "dispatch start for parallel slot $index (exit code: $start_rc; expected a successful start with a handle)"
       dispatch_show_stderr "$start_stderr"
       if [[ $start_rc -eq 0 ]]; then
-        dispatch_show_tail stdout "$parallel_start" 5
+        dispatch_show_stdout "$parallel_start"
       fi
     fi
   done
@@ -248,7 +247,7 @@ check_dispatch_parallel_conversations() {
       fail "dispatch wait for parallel slot $index (exit code: $wait_rc; expected state completed)"
       dispatch_show_stderr "$wait_stderr"
       if [[ $wait_rc -eq 0 ]]; then
-        dispatch_show_tail stdout "$repo_dir/parallel-${index}-wait.json" 5
+        dispatch_show_stdout "$repo_dir/parallel-${index}-wait.json"
       fi
     fi
   done

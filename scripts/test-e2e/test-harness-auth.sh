@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# test-harness-auth.sh — regression tests for fixture isolation and release
-# authentication. Validates that the function sends an Authorization header
-# when GITHUB_TOKEN (or GH_TOKEN) is available, preventing GitHub API
-# rate-limit failures in CI.
+# test-harness-auth.sh — regression tests for release authentication and
+# fixture Git isolation. Validates that resolve_latest_release_version sends
+# an Authorization header when GITHUB_TOKEN (or GH_TOKEN) is available, and
+# that fixture Git initialization ignores inherited repository paths.
 #
 # Run: bash scripts/test-e2e/test-harness-auth.sh
 # Exit: 0 on all pass, 1 on any failure.

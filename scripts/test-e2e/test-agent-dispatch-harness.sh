@@ -193,11 +193,10 @@ else
   export MOCK_START_FAILURE_SLOT=all
   parallel_case="$TEST_TMP_DIR/parallel-all-starts-fail"
   run_parallel_case "$parallel_case"
-  if [[ -f "$parallel_case/counts" ]] \
-    && [[ "$(grep -c '^FAIL: dispatch start for parallel slot ' "$parallel_case/output")" -eq 8 ]]; then
-    pass "all failed starts report eight diagnostics and finish writing counters"
+  if [[ "$(grep -c '^FAIL: dispatch start for parallel slot ' "$parallel_case/output")" -eq 8 ]]; then
+    pass "all failed starts report eight start diagnostics"
   else
-    fail "all failed starts must report eight diagnostics and finish writing counters"
+    fail "all failed starts must report eight start diagnostics"
   fi
   assert_parallel_counts "$parallel_case" 0 9 "all failed starts record exactly zero passes and nine failures"
   assert_file_not_contains "$parallel_case/invocations" '<dispatch><wait>' "all failed starts issue zero waits"
@@ -227,12 +226,16 @@ else
   export MOCK_WAIT_FAILURE_SLOT=5
   parallel_case="$TEST_TMP_DIR/parallel-wait-failure"
   run_parallel_case "$parallel_case"
+  assert_parallel_counts "$parallel_case" 0 2 "nonzero wait records exactly zero passes and two failures"
+  assert_parallel_diagnostic "$parallel_case" wait 5 37 wait-error-slot-5 incomplete-slot-6
   assert_file_contains "$parallel_case/output" "FAIL: eight independent conversations complete in parallel" \
     "nonzero wait fails the aggregate even when all eight outputs say completed"
   unset MOCK_WAIT_FAILURE_SLOT
   export MOCK_INCOMPLETE_SLOT=6
   parallel_case="$TEST_TMP_DIR/parallel-incomplete-wait"
   run_parallel_case "$parallel_case"
+  assert_parallel_counts "$parallel_case" 0 2 "incomplete wait records exactly zero passes and two failures"
+  assert_parallel_diagnostic "$parallel_case" wait 6 0 incomplete-slot-6 wait-error-slot-5
   assert_file_contains "$parallel_case/output" "FAIL: eight independent conversations complete in parallel" \
     "zero-exit incomplete wait alone fails the aggregate"
   unset MOCK_INCOMPLETE_SLOT
