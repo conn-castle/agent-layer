@@ -60,6 +60,10 @@ func lockImage(ctx context.Context, sys System, dir string) (*fileLock, error) {
 // Check the running image before opening the lock as well as after locking, so
 // a stale process cannot opt a replacement entry into the lease protocol.
 func lockImageMode(ctx context.Context, sys System, dir string, create bool, wait time.Duration) (*fileLock, error) {
+	return lockImageModeWithOpen(ctx, sys, dir, create, wait, openImageFile)
+}
+
+func lockImageModeWithOpen(ctx context.Context, sys System, dir string, create bool, wait time.Duration, open func(string, bool) (*os.File, error)) (*fileLock, error) {
 	images := filepath.Dir(dir)
 	for range imageLockAttempts {
 		if create {
@@ -78,7 +82,8 @@ func lockImageMode(ctx context.Context, sys System, dir string, create bool, wai
 				return nil, err
 			}
 		}
-		if !ownedDir(dir) {
+		before, err := os.Lstat(dir) // #nosec G703 -- cache entry checked for ownership and symlinks.
+		if err != nil || !before.IsDir() || !imagelease.Owned(before) {
 			continue
 		}
 		if !create {
@@ -87,13 +92,14 @@ func lockImageMode(ctx context.Context, sys System, dir string, create bool, wai
 			}
 		}
 		path := filepath.Join(dir, imageName+".lock")
-		f, err := openImageFile(path, true)
-		if os.IsNotExist(err) {
-			// Empty-entry cleanup can remove dir between Mkdir and this open.
-			// Retry the whole loop so creation mode recreates the directory.
-			continue
-		}
+		f, err := open(path, true)
 		if err != nil {
+			// Empty-entry cleanup can remove dir during open (observed as EINVAL
+			// on Darwin). Retry from Mkdir based on identity, not the OS errno.
+			current, statErr := os.Lstat(dir) // #nosec G703 -- recheck the same validated cache entry.
+			if statErr != nil || !current.IsDir() || !imagelease.Owned(current) || !os.SameFile(before, current) {
+				continue
+			}
 			return nil, err
 		}
 		if err := lockFile(ctx, sys, f, wait); err != nil {
