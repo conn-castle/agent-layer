@@ -285,13 +285,13 @@ func TestConfigureEnvironmentClaudeConfigDirRelativeValues(t *testing.T) {
 		nestedDir bool
 		viaAlias  bool
 		// keep is the root-relative user directory that must be passed on, with
-		// a warning, when local config is enabled and kept unchanged when it is
+		// a warning, when local config is enabled and made absolute when it is
 		// disabled; empty means the repo directory, which is pinned when enabled
 		// and cleared as stale when disabled.
 		keep string
 	}{
 		{name: "root-relative from subfolder", cwd: "subfolder", value: ".claude-config"},
-		{name: "unclean root-relative from nested subfolder", cwd: "subfolder/nested", value: "./subfolder/../.claude-config"},
+		{name: "dot-prefixed root-relative from nested subfolder", cwd: "subfolder/nested", value: "./.claude-config"},
 		{name: "caller-relative from subfolder", cwd: "subfolder", value: "../.claude-config"},
 		{name: "caller-relative through root alias", cwd: "subfolder", value: "../.claude-config", viaAlias: true},
 		{name: "from root", cwd: ".", value: ".claude-config"},
@@ -337,7 +337,7 @@ func TestConfigureEnvironmentClaudeConfigDirRelativeValues(t *testing.T) {
 					if tc.keep == "" && ok {
 						t.Fatalf("expected stale CLAUDE_CONFIG_DIR %q to be cleared, got %q", current, value)
 					}
-					if tc.keep != "" && value != current {
+					if tc.keep != "" && value != root+"/"+strings.ReplaceAll(tc.keep, "{base}", filepath.Base(root)) {
 						t.Fatalf("expected user CLAUDE_CONFIG_DIR %q to be kept, got %q (present=%t)", current, value, ok)
 					}
 					return

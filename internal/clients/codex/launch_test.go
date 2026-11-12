@@ -350,7 +350,7 @@ func TestConfigureEnvironmentCodexHomeRelativeValues(t *testing.T) {
 		keep string
 	}{
 		{name: "root-relative from subfolder", cwd: "subfolder", value: ".codex"},
-		{name: "unclean root-relative from nested subfolder", cwd: "subfolder/nested", value: "./subfolder/../.codex"},
+		{name: "dot-prefixed root-relative from nested subfolder", cwd: "subfolder/nested", value: "./.codex"},
 		{name: "caller-relative from subfolder", cwd: "subfolder", value: "../.codex"},
 		{name: "caller-relative through root alias", cwd: "subfolder", value: "../.codex", viaAlias: true},
 		{name: "from root", cwd: ".", value: ".codex"},

@@ -9,6 +9,7 @@ import (
 
 	"github.com/conn-castle/agent-layer/internal/clients"
 	"github.com/conn-castle/agent-layer/internal/clients/claude"
+	"github.com/conn-castle/agent-layer/internal/clients/codex"
 	"github.com/conn-castle/agent-layer/internal/clients/grok"
 	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/messages"
@@ -31,6 +32,11 @@ func Launch(cfg *config.ProjectConfig, runInfo *run.Info, env []string, passArgs
 	if config.IsAgentEnabled(cfg.Config.Agents.VSCode.Enabled) && config.CodexLocalConfigDirEnabled(cfg.Config.Agents.Codex) {
 		codexHome := filepath.Join(cfg.Root, ".codex")
 		env = clients.SetEnv(env, "CODEX_HOME", codexHome)
+		if err := codex.EnsureSelectedHome(cfg.Root, env, cfg.Config.Agents.Codex); err != nil {
+			return err
+		}
+	} else {
+		env = clients.ClearStaleHome(cfg.Root, env, "CODEX_HOME", ".codex")
 	}
 
 	if config.IsAgentEnabled(cfg.Config.Agents.Grok.Enabled) {

@@ -1410,3 +1410,32 @@ func TestGrokRunnerFailsProviderObservedPermissionDenial(t *testing.T) {
 	}
 	requireDispatchExitCode(t, err, ExitTargetFailure)
 }
+
+func TestDispatchClearsDisabledCodexHome(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("HOME", t.TempDir())
+	t.Chdir(root)
+	alias := filepath.Join(t.TempDir(), "alias")
+	if err := os.Symlink(root, alias); err != nil {
+		t.Fatal(err)
+	}
+	target, _ := lookupTarget(AgentCodex)
+	run, err := newDispatchRun(root, AgentCodex, supportedProviderVersions[AgentCodex], dispatchModeFresh)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, value := range []string{filepath.Join(root, ".codex"), ".codex", filepath.Join(alias, ".codex"), "elsewhere"} {
+		command, err := buildProviderCommand(target, &config.ProjectConfig{Root: root}, []string{"CODEX_HOME=" + value}, []byte("prompt"), "", "", false, dispatchModeFresh, "", run, io.Discard)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got, present := clients.GetEnv(command.Env, "CODEX_HOME")
+		if value == "elsewhere" {
+			if got != filepath.Join(root, value) {
+				t.Fatalf("dispatch home=%q", got)
+			}
+		} else if present {
+			t.Fatalf("dispatch retained stale home %q", got)
+		}
+	}
+}

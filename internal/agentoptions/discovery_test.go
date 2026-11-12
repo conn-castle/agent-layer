@@ -1118,3 +1118,33 @@ func TestMuseDiscoveryPreservesNativeEnvironment(t *testing.T) {
 		}
 	}
 }
+
+func TestDiscoveryNormalizesHomesAndClearsDisabledCodexHome(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("HOME", t.TempDir())
+	t.Chdir(root)
+	alias := filepath.Join(t.TempDir(), "alias")
+	if err := os.Symlink(root, alias); err != nil {
+		t.Fatal(err)
+	}
+	for _, value := range []string{filepath.Join(root, ".codex"), ".codex", filepath.Join(alias, ".codex"), "elsewhere"} {
+		req := harnessRequest(t, "codex")
+		req.Env = []string{"CODEX_HOME=" + value}
+		req.Project = &config.ProjectConfig{Root: root}
+		cmd, err := discoveryCommand(agentCodex, req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got, present := clients.GetEnv(cmd.Env, "CODEX_HOME")
+		if value == "elsewhere" {
+			if got != filepath.Join(root, value) {
+				t.Fatalf("discovery home=%q", got)
+			}
+		} else if present {
+			t.Fatalf("discovery retained stale home %q", got)
+		}
+		if _, err := os.Stat(filepath.Join(root, ".codex")); !os.IsNotExist(err) {
+			t.Fatalf("disabled discovery created home: %v", err)
+		}
+	}
+}

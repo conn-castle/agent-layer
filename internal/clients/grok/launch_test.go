@@ -2,6 +2,7 @@ package grok
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/conn-castle/agent-layer/internal/clients"
 	"github.com/conn-castle/agent-layer/internal/config"
+	"github.com/conn-castle/agent-layer/internal/herdr"
 	"github.com/conn-castle/agent-layer/internal/run"
 	"github.com/conn-castle/agent-layer/internal/testutil"
 )
@@ -300,5 +302,39 @@ func TestLaunchExplicitOptionsReplaceDefaults(t *testing.T) {
 			t.Fatal(err)
 		}
 		call.AssertCalled(t, filepath.Join(binDir, "grok"), append([]string{"grok", "--no-auto-update"}, passed...))
+	}
+}
+
+func TestLaunchCapturesSelectedHomeInsteadOfInheritedRelativeHome(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("HOME", t.TempDir())
+	t.Chdir(root)
+	writeResolvableGrok(t)
+	call := testutil.CaptureExec(t, &execFunc, nil)
+	runDir := filepath.Join(root, ".agent-layer", "tmp", "runs", "capture")
+	if err := os.MkdirAll(runDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	env := []string{EnvHome + "=relative-home", herdr.EnvEnabled + "=1", herdr.EnvSocketPath + "=/fixture/socket", herdr.EnvPaneID + "=w1:p1"}
+	if err := Launch(&config.ProjectConfig{Root: root}, &run.Info{Dir: runDir}, env, nil); err != nil {
+		t.Fatal(err)
+	}
+	paths, err := filepath.Glob(filepath.Join(runDir, "herdr-launch-*.json"))
+	if err != nil || len(paths) != 1 {
+		t.Fatalf("records=%v err=%v", paths, err)
+	}
+	data, err := os.ReadFile(paths[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	var record struct {
+		Home string `json:"provider_home"`
+	}
+	if err := json.Unmarshal(data, &record); err != nil {
+		t.Fatal(err)
+	}
+	childHome, _ := clients.GetEnv(call.Env, EnvHome)
+	if record.Home != HomeDir(root) || record.Home != childHome {
+		t.Fatalf("captured=%q child=%q", record.Home, childHome)
 	}
 }

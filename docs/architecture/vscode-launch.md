@@ -35,9 +35,10 @@ directory names (including trailing newlines) when locating the project.
    - `code` command exists on `PATH`
    - `.vscode/settings.json` root-level managed marker line comments are not malformed/duplicated; sync and launch share lexical recognition that excludes values, block/header comments, and nested profiles
 5. Launch sets environment variables based on enabled agents:
-   - `CODEX_HOME=<repo>/.codex` only when `agents.vscode` is enabled and `agents.codex.local_config_dir` is `true` (otherwise inherited `CODEX_HOME` is preserved)
+   - `CODEX_HOME=<repo>/.codex` only when `agents.vscode` is enabled and `agents.codex.local_config_dir` is `true` (otherwise clears values selecting this repo home and makes other relative overrides absolute from the caller’s directory)
    - `GROK_HOME=<repo>/.grok-config` when `agents.grok` is enabled (when disabled, clears only stale repo-local values)
-   - `CLAUDE_CONFIG_DIR=<repo>/.claude-config` when **both** `agents.claude_vscode` is enabled **and** `agents.claude.local_config_dir` is `true` (when disabled, clears only stale repo-local values and preserves user-defined values that point outside the repository)
+   - `CLAUDE_CONFIG_DIR=<repo>/.claude-config` when **both** `agents.claude_vscode` is enabled **and** `agents.claude.local_config_dir` is `true` (when disabled, clears only stale repo-local values and makes other relative overrides absolute from the caller’s directory)
+   - Home comparisons follow symlinks before `..` and use filesystem identity for existing objects, including case aliases. Identical missing leaf names under aliased existing parents match; case-only aliases of a missing leaf are unsupported until the home exists. New `.codex` homes use `0700` without changing existing modes. Bare `.codex`/`.claude-config` (also prefixed with `./`) selects the repo home from subfolders only if the caller-relative entry is absent.
 6. Executes `code ...` with pass-through args, appending `.` only when no positional path/file arg is provided.
 
 For example, `al vscode -- --user-data-dir "/tmp/editor data" --profile "Web Development"`

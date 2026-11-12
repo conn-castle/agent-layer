@@ -23,6 +23,7 @@ func TestLaunchAppliesOnlyProviderOwnedEnvironmentChanges(t *testing.T) {
 		want             func(string) map[string]string
 		absent           []string
 		wantGrokHome0700 bool
+		callerHomes      bool
 	}{
 		{
 			name:          "enabled providers receive repository homes",
@@ -72,6 +73,47 @@ func TestLaunchAppliesOnlyProviderOwnedEnvironmentChanges(t *testing.T) {
 				return map[string]string{"CODEX_HOME": "/outside/codex", "CLAUDE_CONFIG_DIR": "/outside/claude", "GROK_HOME": "/outside/grok"}
 			},
 		},
+
+		{
+			name:          "disabled local configs normalize caller-relative user homes",
+			vscodeEnabled: true, claudeEnabled: true,
+			inherited: func(string) map[string]string {
+				return map[string]string{"CODEX_HOME": "codex-user", "CLAUDE_CONFIG_DIR": "claude-user"}
+			},
+			want: func(root string) map[string]string {
+				return map[string]string{"CODEX_HOME": filepath.Join(root, "caller", "codex-user"), "CLAUDE_CONFIG_DIR": filepath.Join(root, "caller", "claude-user")}
+			},
+		},
+
+		{
+			name:          "disabled local configs clear bare project-home fallback from subfolder",
+			vscodeEnabled: true, claudeEnabled: true,
+			inherited: func(string) map[string]string {
+				return map[string]string{"CODEX_HOME": ".codex", "CLAUDE_CONFIG_DIR": "./.claude-config"}
+			},
+			want:   func(string) map[string]string { return nil },
+			absent: []string{"CODEX_HOME", "CLAUDE_CONFIG_DIR"},
+		},
+
+		{
+			name:          "disabled local configs preserve existing bare caller homes",
+			vscodeEnabled: true, claudeEnabled: true, callerHomes: true,
+			inherited: func(string) map[string]string {
+				return map[string]string{"CODEX_HOME": "./.codex", "CLAUDE_CONFIG_DIR": ".claude-config"}
+			},
+			want: func(root string) map[string]string {
+				return map[string]string{"CODEX_HOME": filepath.Join(root, "caller", ".codex"), "CLAUDE_CONFIG_DIR": filepath.Join(root, "caller", ".claude-config")}
+			},
+		},
+		{
+			name:          "disabled local configs clear caller-relative project homes",
+			vscodeEnabled: true, claudeEnabled: true,
+			inherited: func(string) map[string]string {
+				return map[string]string{"CODEX_HOME": "../.codex", "CLAUDE_CONFIG_DIR": "../.claude-config"}
+			},
+			want:   func(string) map[string]string { return nil },
+			absent: []string{"CODEX_HOME", "CLAUDE_CONFIG_DIR"},
+		},
 		{
 			name:       "disabled VS Code does not opt Codex into a repository home",
 			codexLocal: true,
@@ -82,6 +124,19 @@ func TestLaunchAppliesOnlyProviderOwnedEnvironmentChanges(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			root := t.TempDir()
+			t.Setenv("HOME", t.TempDir())
+			caller := filepath.Join(root, "caller")
+			if err := os.Mkdir(caller, 0o700); err != nil {
+				t.Fatal(err)
+			}
+			if test.callerHomes {
+				for _, name := range []string{".codex", ".claude-config"} {
+					if err := os.Mkdir(filepath.Join(caller, name), 0o700); err != nil {
+						t.Fatal(err)
+					}
+				}
+			}
+			t.Chdir(caller)
 			binDir := t.TempDir()
 			envPath := filepath.Join(t.TempDir(), "environment")
 			codePath := filepath.Join(binDir, "code")

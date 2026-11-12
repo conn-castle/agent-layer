@@ -7,6 +7,7 @@ import (
 	"io"
 	"net"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"strconv"
@@ -887,6 +888,11 @@ func TestHandleForRootStoresNonMuseLaunchIdentity(t *testing.T) {
 				t.Fatal(err)
 			}
 			env := []string{EnvEnabled + "=1", EnvSocketPath + "=" + socket, EnvPaneID + "=w1:p1"}
+			home := filepath.Join(t.TempDir(), "effective-home")
+			key := providerHomeKey(tc.provider)
+			if key != "" {
+				env = append(env, key+"="+home)
+			}
 			if err := CaptureLaunch(root, runDir, env, tc.provider); err != nil {
 				t.Fatal(err)
 			}
@@ -902,12 +908,34 @@ func TestHandleForRootStoresNonMuseLaunchIdentity(t *testing.T) {
 			params := (<-reports)["params"].(map[string]any)
 			got := params[requestResumeArgvKey].([]any)
 			want := tc.want
+			if key != "" {
+				want = append([]string{commandEnv, key + "=" + home}, want...)
+			}
 			if len(got) != len(want) {
 				t.Fatalf("argv = %v, want %v", got, want)
 			}
 			for i, argument := range want {
 				if got[i] != argument {
 					t.Fatalf("argv = %v, want %v", got, want)
+				}
+			}
+
+			if key != "" {
+				binDir := t.TempDir()
+				stub := filepath.Join(binDir, "al")
+				if err := os.WriteFile(stub, []byte("#!/bin/sh\nprintf '%s' \"$"+key+"\"\n"), 0o700); err != nil { // #nosec G306 -- executable stub in a test-owned directory.
+					t.Fatal(err)
+				}
+				argv := make([]string, len(got))
+				for i, arg := range got {
+					argv[i] = arg.(string)
+				}
+				command := exec.Command(argv[0], argv[1:]...)
+				command.Dir = t.TempDir()
+				command.Env = []string{"HOME=" + t.TempDir(), "PATH=" + binDir + ":/usr/bin:/bin", key + "=wrong-relative-home"}
+				output, err := command.Output()
+				if err != nil || string(output) != home {
+					t.Fatalf("recovered home=%q err=%v, want %q", output, err, home)
 				}
 			}
 			if tc.provider == providerAgy && out.String() != "{}\n" {

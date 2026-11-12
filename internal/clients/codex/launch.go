@@ -26,18 +26,21 @@ const homeDirName = ".codex"
 func Launch(cfg *config.ProjectConfig, runInfo *run.Info, env []string, passArgs []string) error {
 	args := append([]string{}, passArgs...)
 
-	if runInfo != nil {
-		if err := herdr.CaptureLaunch(cfg.Root, runInfo.Dir, env, "codex"); err != nil {
-			return fmt.Errorf("prepare Codex HerdR recovery: %w", err)
-		}
-	}
-	env = ConfigureEnvironment(cfg.Root, env, cfg.Config.Agents.Codex, os.Stderr)
-
 	path, err := exec.LookPath("codex")
 	if err != nil {
 		return fmt.Errorf(messages.ClientsExecLookupErrorFmt, "codex", err)
 	}
 
+	env = ConfigureEnvironment(cfg.Root, env, cfg.Config.Agents.Codex, os.Stderr)
+	if err := EnsureSelectedHome(cfg.Root, env, cfg.Config.Agents.Codex); err != nil {
+		return err
+	}
+
+	if runInfo != nil {
+		if err := herdr.CaptureLaunch(cfg.Root, runInfo.Dir, env, "codex"); err != nil {
+			return fmt.Errorf("prepare Codex HerdR recovery: %w", err)
+		}
+	}
 	argv := append([]string{"codex"}, args...)
 	if err := execFunc(path, argv, env); err != nil {
 		return fmt.Errorf(messages.ClientsExecHandoffErrorFmt, "codex", err)
@@ -49,7 +52,7 @@ func Launch(cfg *config.ProjectConfig, runInfo *run.Info, env []string, passArgs
 // interactive launcher, headless Agent Dispatch, and model discovery.
 func ConfigureEnvironment(root string, env []string, cfg config.CodexConfig, warning io.Writer) []string {
 	if !config.CodexLocalConfigDirEnabled(cfg) {
-		return env
+		return clients.ClearStaleHome(root, env, "CODEX_HOME", homeDirName)
 	}
 
 	expected := filepath.Join(root, homeDirName)
@@ -77,10 +80,8 @@ func ConfigureEnvironment(root string, env []string, cfg config.CodexConfig, war
 // environment ConfigureEnvironment returned.
 func EnsureSelectedHome(root string, env []string, cfg config.CodexConfig) error {
 	home := filepath.Join(root, homeDirName)
-	// Compare parents: symlink resolution cannot match aliases of a missing leaf.
 	current, ok := clients.GetEnv(env, "CODEX_HOME")
-	current = filepath.Clean(current)
-	if !config.CodexLocalConfigDirEnabled(cfg) || !ok || filepath.Base(current) != homeDirName || !clients.SamePath(filepath.Dir(current), root) {
+	if !config.CodexLocalConfigDirEnabled(cfg) || !ok || !clients.SamePath(current, home) {
 		return nil
 	}
 	err := os.Mkdir(home, 0o700)

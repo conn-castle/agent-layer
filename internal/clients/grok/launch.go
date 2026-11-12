@@ -112,13 +112,12 @@ func Launch(cfg *config.ProjectConfig, runInfo *run.Info, env []string, passArgs
 	if err := EnsureHome(cfg.Root); err != nil {
 		return err
 	}
+	env = ConfigureEnvironment(cfg.Root, env, cfg.Config.Agents.Grok, os.Stderr)
 	if runInfo != nil {
 		if err := herdr.CaptureLaunch(cfg.Root, runInfo.Dir, env, "grok"); err != nil {
 			return fmt.Errorf("prepare Grok HerdR recovery: %w", err)
 		}
 	}
-	env = ConfigureEnvironment(cfg.Root, env, cfg.Config.Agents.Grok, os.Stderr)
-
 	argv := append([]string{executableName}, args...)
 	if err := execFunc(path, argv, env); err != nil {
 		return fmt.Errorf(messages.ClientsExecHandoffErrorFmt, executableName, err)
@@ -142,12 +141,7 @@ func ConfigureEnvironment(root string, env []string, cfg config.GrokConfig, warn
 // ClearStaleHome removes GROK_HOME only when it points at this repo's
 // .grok-config directory.
 func ClearStaleHome(root string, env []string) []string {
-	expected := HomeDir(root)
-	current, ok := clients.GetEnv(env, EnvHome)
-	if ok && clients.SamePath(current, expected) {
-		return clients.UnsetEnv(env, EnvHome)
-	}
-	return env
+	return clients.ClearStaleHome(root, env, EnvHome, ".grok-config")
 }
 
 func ensureGrokHomeWithWarning(root string, env []string, warning io.Writer) []string {

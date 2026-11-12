@@ -58,7 +58,7 @@ func writeCodexConfigWithCLISettings(sys System, root string, project *config.Pr
 	}
 
 	codexDir := filepath.Join(root, ".codex")
-	if err := sys.MkdirAll(codexDir, 0o755); err != nil {
+	if err := sys.MkdirAll(codexDir, 0o700); err != nil {
 		return fmt.Errorf(messages.SyncCreateDirFailedFmt, codexDir, err)
 	}
 
