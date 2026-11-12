@@ -201,6 +201,53 @@ check_dispatch_reservations() {
   fi
 }
 
+# Keep independent slots running after failures, but only wait on valid starts.
+check_dispatch_parallel_conversations() {
+  local repo_dir="$1"
+  local index start_rc wait_rc handle completed=0
+  local parallel_start start_stderr wait_stderr
+  local handles=() waiter_pids=()
+
+  for index in {1..8}; do
+    parallel_start="$repo_dir/parallel-${index}-start.json"
+    start_stderr="$repo_dir/parallel-${index}-start.stderr"
+    start_rc=0
+    (cd "$repo_dir" && MOCK_DISPATCH_DELAY_SECONDS=0.3 al dispatch start --agent codex \
+      --model gpt-test --reasoning-effort high --prompt "Review ${index}" \
+      >"$parallel_start" 2>"$start_stderr") || start_rc=$?
+    handle="$(dispatch_json_field "$parallel_start" handle)"
+    if [[ $start_rc -eq 0 && -n "$handle" ]]; then
+      handles[$index]="$handle"
+    else
+      fail "dispatch start for parallel slot $index (exit code: $start_rc; expected a successful start with a handle)"
+      dispatch_show_stderr "$start_stderr"
+    fi
+  done
+
+  for index in "${!handles[@]}"; do
+    (cd "$repo_dir" && al dispatch wait "${handles[$index]}" \
+      >"$repo_dir/parallel-${index}-wait.json" 2>"$repo_dir/parallel-${index}-wait.stderr") &
+    waiter_pids[$index]="$!"
+  done
+  for index in "${!waiter_pids[@]}"; do
+    wait_rc=0
+    wait "${waiter_pids[$index]}" || wait_rc=$?
+    wait_stderr="$repo_dir/parallel-${index}-wait.stderr"
+    if [[ $wait_rc -eq 0 ]] && grep -q '"state":"completed"' "$repo_dir/parallel-${index}-wait.json"; then
+      completed=$((completed + 1))
+    else
+      fail "dispatch wait for parallel slot $index (exit code: $wait_rc; expected state completed)"
+      dispatch_show_stderr "$wait_stderr"
+    fi
+  done
+
+  if [[ $completed -eq 8 ]]; then
+    pass "eight independent conversations complete in parallel"
+  else
+    fail "eight independent conversations complete in parallel"
+  fi
+}
+
 run_scenario_agent_dispatch() {
   section "Agent Dispatch"
 
@@ -313,28 +360,7 @@ SKILL
   fi
   assert_file_contains "$MOCK_DISPATCH_CODEX_PROMPT" '$e2e-skill' "start invokes the selected skill"
 
-  rc=0
-  local handles=()
-  local index
-  for index in {1..8}; do
-    local parallel_start="$repo_dir/parallel-${index}-start.json"
-    (cd "$repo_dir" && MOCK_DISPATCH_DELAY_SECONDS=0.3 al dispatch start --agent codex \
-      --model gpt-test --reasoning-effort high --prompt "Review ${index}" >"$parallel_start") || rc=$?
-    handles+=("$(dispatch_json_field "$parallel_start" handle)")
-  done
-  local waiter_pids=()
-  for index in {1..8}; do
-    (cd "$repo_dir" && al dispatch wait "${handles[$((index - 1))]}" >"$repo_dir/parallel-${index}-wait.json") &
-    waiter_pids+=("$!")
-  done
-  for index in "${waiter_pids[@]}"; do
-    wait "$index" || rc=$?
-  done
-  if [[ $rc -eq 0 ]] && [[ "$(grep -l '"state":"completed"' "$repo_dir"/parallel-*-wait.json | wc -l | tr -d ' ')" -eq 8 ]]; then
-    pass "eight independent conversations complete in parallel"
-  else
-    fail "eight independent conversations complete in parallel"
-  fi
+  check_dispatch_parallel_conversations "$repo_dir"
 
   start_rc=0
   (cd "$repo_dir" && MOCK_DISPATCH_DELAY_SECONDS=5 al dispatch start --agent codex \

@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # test-harness-auth.sh — regression tests for fixture isolation and release
-# authentication. Validates that the function sends an Authorization header
-# when GITHUB_TOKEN (or GH_TOKEN) is available, preventing GitHub API
-# rate-limit failures in CI.
+# authentication and parallel dispatch diagnostics. Validates the release
+# Authorization header when GITHUB_TOKEN (or GH_TOKEN) is available, preventing
+# GitHub API rate-limit failures in CI.
 #
 # Run: bash scripts/test-e2e/test-harness-auth.sh
 # Exit: 0 on all pass, 1 on any failure.
@@ -180,6 +180,153 @@ OLD_AL
 else
   fail "fixture Git initialization escaped its scenario or changed external state"
 fi
+
+# Exercise the actual scenario block, retaining the harness's accumulating
+# pass/fail helpers. Expected scenario failures stay inside a subshell.
+# shellcheck source=scenarios/agent-dispatch.sh
+source "$SCRIPT_DIR/scenarios/agent-dispatch.sh"
+section "Harness dispatch: parallel conversation diagnostics"
+
+cat > "$MOCK_BIN_DIR/al" <<'MOCK_AL'
+#!/usr/bin/env bash
+set -euo pipefail
+# One write per invocation preserves argument boundaries even for empty handles.
+printf '%s\n' "$(printf '<%s>' "$@")" >> "$MOCK_PARALLEL_LOG"
+[[ "$1" == dispatch ]]
+case "$2" in
+  start)
+    while [[ $# -gt 0 && "$1" != --prompt ]]; do shift; done
+    slot="${2#Review }"
+    if [[ "$slot" == "${MOCK_START_FAILURE_SLOT:-}" ]]; then
+      echo "start-error-slot-$slot" >&2
+      exit 23
+    fi
+    if [[ "$slot" == "${MOCK_EMPTY_HANDLE_SLOT:-}" ]]; then
+      echo "empty-handle-slot-$slot" >&2
+      echo '{}'
+      exit 0
+    fi
+    printf '{"handle":"slot-%s"}\n' "$slot"
+    ;;
+  wait)
+    slot="${3#slot-}"
+    if [[ "$slot" == "${MOCK_WAIT_FAILURE_SLOT:-}" ]]; then
+      echo "wait-error-slot-$slot" >&2
+      # Completed-looking output must not hide a nonzero exit status.
+      echo '{"state":"completed"}'
+      exit 37
+    fi
+    if [[ "$slot" == "${MOCK_INCOMPLETE_SLOT:-}" ]]; then
+      echo "incomplete-slot-$slot" >&2
+      echo '{"state":"running"}'
+      exit 0
+    fi
+    echo '{"state":"completed"}'
+    ;;
+  *) exit 99 ;;
+esac
+MOCK_AL
+chmod +x "$MOCK_BIN_DIR/al"
+
+# Capture counters in the same subshell that runs the function, since command
+# substitution alone would discard them. Do not turn scenario failures into
+# shell exits: fail() records assertions and deliberately returns success.
+run_parallel_case() {
+  local case_dir="$1"
+  mkdir -p "$case_dir"
+  (
+    E2E_PASS_COUNT=0
+    E2E_FAIL_COUNT=0
+    export MOCK_PARALLEL_LOG="$case_dir/invocations"
+    : > "$MOCK_PARALLEL_LOG"
+    # Seed stale outputs, including a valid slot whose start will fail.
+    local slot
+    for slot in {1..9}; do
+      printf '{"state":"completed"}\n' > "$case_dir/parallel-$slot-wait.json"
+    done
+    check_dispatch_parallel_conversations "$case_dir"
+    printf '%s %s\n' "$E2E_PASS_COUNT" "$E2E_FAIL_COUNT" > "$case_dir/counts"
+  ) > "$case_dir/output" 2>&1
+}
+
+assert_parallel_diagnostic() {
+  local case_dir="$1" command="$2" slot="$3" code="$4" marker="$5" other_marker="$6"
+  local diagnostic
+  diagnostic="$(awk -v label="FAIL: dispatch $command for parallel slot $slot " '
+    index($0, label) == 1 { printing = 1; print; next }
+    printing && /^(PASS|FAIL):/ { exit }
+    printing { print }
+  ' "$case_dir/output")"
+  if [[ "$diagnostic" == *"exit code: $code"* && "$diagnostic" == *"$marker"* \
+    && "$diagnostic" != *"$other_marker"* ]]; then
+    pass "parallel $command slot $slot reports its exit code and own stderr"
+  else
+    fail "parallel $command slot $slot diagnostic missing or mixed: $diagnostic"
+  fi
+}
+
+parallel_case="$MOCK_BIN_DIR/parallel-failures"
+export MOCK_START_FAILURE_SLOT=2 MOCK_WAIT_FAILURE_SLOT=5
+run_parallel_case "$parallel_case"
+read -r parallel_passes parallel_failures < "$parallel_case/counts"
+if [[ $parallel_failures -gt 0 ]]; then
+  pass "parallel start/wait failures increase the failure count"
+else
+  fail "parallel start/wait failures did not increase the failure count"
+fi
+assert_file_contains "$parallel_case/output" "FAIL: eight independent conversations complete in parallel" \
+  "parallel aggregate fails despite stale completed outputs"
+assert_parallel_diagnostic "$parallel_case" start 2 23 start-error-slot-2 wait-error-slot-5
+assert_parallel_diagnostic "$parallel_case" wait 5 37 wait-error-slot-5 start-error-slot-2
+assert_file_not_contains "$parallel_case/invocations" '<dispatch><wait><>' "parallel never waits on an empty handle"
+assert_file_not_contains "$parallel_case/invocations" '<dispatch><wait><slot-2>' "parallel skips wait after a failed start"
+for slot in 1 3 4 5 6 7 8; do
+  assert_file_contains "$parallel_case/invocations" "<dispatch><wait><slot-$slot>" \
+    "parallel still waits on independent slot $slot"
+done
+
+unset MOCK_START_FAILURE_SLOT MOCK_WAIT_FAILURE_SLOT
+export MOCK_EMPTY_HANDLE_SLOT=3 MOCK_INCOMPLETE_SLOT=6
+parallel_case="$MOCK_BIN_DIR/parallel-invalid-results"
+run_parallel_case "$parallel_case"
+read -r parallel_passes parallel_failures < "$parallel_case/counts"
+if [[ $parallel_failures -gt 0 ]]; then
+  pass "empty handle and incomplete wait increase the failure count"
+else
+  fail "empty handle and incomplete wait did not increase the failure count"
+fi
+assert_file_contains "$parallel_case/output" "FAIL: eight independent conversations complete in parallel" \
+  "empty handle and incomplete wait fail the parallel aggregate"
+assert_parallel_diagnostic "$parallel_case" start 3 0 empty-handle-slot-3 incomplete-slot-6
+assert_parallel_diagnostic "$parallel_case" wait 6 0 incomplete-slot-6 empty-handle-slot-3
+assert_file_not_contains "$parallel_case/invocations" '<dispatch><wait><>' "empty start result never schedules an empty-handle wait"
+assert_file_not_contains "$parallel_case/invocations" '<dispatch><wait><slot-3>' "empty start result skips its dependent wait"
+
+unset MOCK_EMPTY_HANDLE_SLOT MOCK_INCOMPLETE_SLOT
+# Isolate wait failures so a failed start cannot mask incorrect aggregation of
+# a nonzero wait with completed-looking stdout, or a zero-exit incomplete wait.
+export MOCK_WAIT_FAILURE_SLOT=5
+parallel_case="$MOCK_BIN_DIR/parallel-wait-failure"
+run_parallel_case "$parallel_case"
+assert_file_contains "$parallel_case/output" "FAIL: eight independent conversations complete in parallel" \
+  "nonzero wait fails the aggregate even when all eight outputs say completed"
+unset MOCK_WAIT_FAILURE_SLOT
+export MOCK_INCOMPLETE_SLOT=6
+parallel_case="$MOCK_BIN_DIR/parallel-incomplete-wait"
+run_parallel_case "$parallel_case"
+assert_file_contains "$parallel_case/output" "FAIL: eight independent conversations complete in parallel" \
+  "zero-exit incomplete wait alone fails the aggregate"
+unset MOCK_INCOMPLETE_SLOT
+
+parallel_case="$MOCK_BIN_DIR/parallel-success"
+run_parallel_case "$parallel_case"
+assert_file_contains "$parallel_case/counts" "1 0" "all eight parallel conversations pass without failures"
+assert_file_contains "$parallel_case/output" "PASS: eight independent conversations complete in parallel" \
+  "parallel aggregate passes with eight completions even with unrelated stale output"
+for slot in {1..8}; do
+  assert_file_contains "$parallel_case/invocations" "<dispatch><wait><slot-$slot>" \
+    "successful parallel run waits on slot $slot"
+done
 
 # ---------------------------------------------------------------------------
 # Summary
