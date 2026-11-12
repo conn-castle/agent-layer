@@ -7,28 +7,37 @@ import (
 )
 
 type MockSystem struct {
-	Fallback            System
-	LookPathFunc        func(file string) (string, error)
-	StatFunc            func(name string) (os.FileInfo, error)
-	LstatFunc           func(name string) (os.FileInfo, error)
-	ReadlinkFunc        func(name string) (string, error)
-	SymlinkFunc         func(oldname, newname string) error
-	MkdirAllFunc        func(path string, perm os.FileMode) error
-	ChmodFunc           func(path string, perm os.FileMode) error
-	WriteFileAtomicFunc func(filename string, data []byte, perm os.FileMode) error
-	MarshalIndentFunc   func(v any, prefix, indent string) ([]byte, error)
-	ReadFileFunc        func(name string) ([]byte, error)
-	ReadDirFunc         func(name string) ([]os.DirEntry, error)
-	RemoveFunc          func(name string) error
-	RemoveAllFunc       func(path string) error
-	RenameFunc          func(oldpath string, newpath string) error
-	CloseFunc           func(file *os.File) error
-	FlockFunc           func(fd int, how int) error
-	NowFunc             func() time.Time
-	SleepFunc           func(d time.Duration)
+	Fallback                    System
+	OmitInstalledExecutableFunc func() bool
+	LookPathFunc                func(file string) (string, error)
+	StatFunc                    func(name string) (os.FileInfo, error)
+	LstatFunc                   func(name string) (os.FileInfo, error)
+	ReadlinkFunc                func(name string) (string, error)
+	SymlinkFunc                 func(oldname, newname string) error
+	MkdirAllFunc                func(path string, perm os.FileMode) error
+	ChmodFunc                   func(path string, perm os.FileMode) error
+	WriteFileAtomicFunc         func(filename string, data []byte, perm os.FileMode) error
+	MarshalIndentFunc           func(v any, prefix, indent string) ([]byte, error)
+	ReadFileFunc                func(name string) ([]byte, error)
+	ReadDirFunc                 func(name string) ([]os.DirEntry, error)
+	RemoveFunc                  func(name string) error
+	RemoveAllFunc               func(path string) error
+	RenameFunc                  func(oldpath string, newpath string) error
+	CloseFunc                   func(file *os.File) error
+	FlockFunc                   func(fd int, how int) error
+	NowFunc                     func() time.Time
+	SleepFunc                   func(d time.Duration)
 }
 
-func (*MockSystem) OmitInstalledExecutable() bool { return false }
+func (m *MockSystem) OmitInstalledExecutable() bool {
+	if m.OmitInstalledExecutableFunc != nil {
+		return m.OmitInstalledExecutableFunc()
+	}
+	if m.Fallback != nil {
+		return m.Fallback.OmitInstalledExecutable()
+	}
+	return false
+}
 
 func (m *MockSystem) LookPath(file string) (string, error) {
 	if m.LookPathFunc != nil {

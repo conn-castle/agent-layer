@@ -342,6 +342,7 @@ func TestSyncDispatchLauncherInstalledEntry(t *testing.T) {
 						{"ordinary", RealSystem{}, false},
 						{"omitted", portableLauncherSystem{omit: true}, true},
 						{"omitted-through-wrapper", struct{ System }{portableLauncherSystem{omit: true}}, true},
+						{"omitted-through-mock", &MockSystem{Fallback: portableLauncherSystem{omit: true}}, true},
 						{"ordinary-after-omission", RealSystem{}, false},
 						{"explicit-retain", portableLauncherSystem{}, false},
 					} {
