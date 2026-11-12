@@ -202,7 +202,8 @@ func TestWorkerWithoutInheritedLeaseLeasesOwnImage(t *testing.T) {
 	dir := filepath.Join(cache, "images", fmt.Sprintf("%x", sha256.Sum256(data)))
 	require.NoError(t, os.MkdirAll(dir, 0o700)) // #nosec G703 -- disposable test cache.
 	path := filepath.Join(dir, "al")
-	require.NoError(t, os.WriteFile(path, data, 0o700)) // #nosec G306,G703 -- disposable executable.
+	require.NoError(t, os.WriteFile(path+".lock", nil, 0o600)) // #nosec G703 -- writers create the lock before publishing an image.
+	require.NoError(t, os.WriteFile(path, data, 0o700))        // #nosec G306,G703 -- disposable executable.
 	gate, writer, err := os.Pipe()
 	require.NoError(t, err)
 	defer func() { _ = gate.Close(); _ = writer.Close() }()

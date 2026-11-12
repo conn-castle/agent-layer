@@ -48,7 +48,7 @@ func TestImagePruneSamplesBeyondRetainedPrefix(t *testing.T) {
 	// the last entry into the first candidate slot, without timing assertions.
 	pruneImagesWithRandom(images, "", func(n int) int { return n - 1 })
 	require.DirExists(t, eligible)
-	pruneImagesWithRandom(images, "", func(int) int { return 0 })
+	pruneUntilRemoved(t, func() { pruneImagesWithRandom(images, "", func(int) int { return 0 }) }, eligible)
 	require.NoDirExists(t, eligible)
 	require.Len(t, readNames(), count-1, "legacy prefix must remain intact")
 }
@@ -78,7 +78,7 @@ func TestImageWriteFailureClosesEarlyLease(t *testing.T) {
 	for _, path := range []string{filepath.Join(dir, "al.lock"), filepath.Join(dir, "al.lease"), dir} {
 		require.NoError(t, os.Chtimes(path, old, old))
 	}
-	pruneImages(images, "")
+	pruneUntilRemoved(t, func() { pruneImages(images, "") }, dir)
 	require.NoDirExists(t, dir)
 }
 
@@ -99,7 +99,7 @@ func TestImageWriterKilledAfterPublicationRemainsPrunable(t *testing.T) {
 	require.DirExists(t, dir, "writer still holds its creation lock and lease")
 	require.NoError(t, helper.Process.Kill())
 	require.Error(t, helper.Wait())
-	pruneImages(filepath.Dir(dir), "")
+	pruneUntilRemoved(t, func() { pruneImages(filepath.Dir(dir), "") }, dir)
 	require.NoDirExists(t, dir, "a killed lease-aware writer must not leave an immortal legacy entry")
 }
 
@@ -140,7 +140,7 @@ func TestRunningImageRootSpellings(t *testing.T) {
 			require.FileExists(t, path, "a legitimate root spelling must retain its image")
 			require.NoError(t, helper.Process.Kill())
 			require.Error(t, helper.Wait())
-			pruneImages(filepath.Join(cache, imagesDirName), "")
+			pruneUntilRemoved(t, func() { pruneImages(filepath.Join(cache, imagesDirName), "") }, filepath.Dir(path))
 			require.NoDirExists(t, filepath.Dir(path))
 		})
 	}
@@ -164,13 +164,21 @@ func TestImagePruneEmptyEntries(t *testing.T) {
 	tempOnly := empty("d")
 	require.NoError(t, os.WriteFile(filepath.Join(tempOnly, "al.tmp-abandoned"), []byte("keep"), 0o600))
 	require.NoError(t, os.Chtimes(tempOnly, old, old))
+	busy := empty("1")
+	lock, err := openImageFile(filepath.Join(busy, "al.lock"), true)
+	require.NoError(t, err)
+	defer func() { _ = lock.Close() }()
+	require.NoError(t, unix.Flock(int(lock.Fd()), unix.LOCK_EX|unix.LOCK_NB))
+	require.NoError(t, os.Chtimes(filepath.Join(busy, "al.lock"), old, old))
+	require.NoError(t, os.Chtimes(busy, old, old))
 	own := empty("e")
 	outside := t.TempDir()
 	require.NoError(t, os.Chtimes(outside, old, old))
 	link := filepath.Join(images, strings.Repeat("f", 64))
 	require.NoError(t, os.Symlink(outside, link))
-	pruneImages(images, own)
+	pruneUntilRemoved(t, func() { pruneImages(images, own) }, stale)
 	require.NoDirExists(t, stale)
+	require.FileExists(t, filepath.Join(busy, "al.lock"), "busy entries must be skipped")
 	for _, kept := range []string{recent, foreignFile, tempOnly, own, outside} {
 		require.DirExists(t, kept)
 		require.NoFileExists(t, filepath.Join(kept, "al.lock"), "cleanup must not create locks")
@@ -232,6 +240,9 @@ func TestRunningImageRejectsSymlinkedLayout(t *testing.T) {
 	for _, component := range []string{"images", "entry"} {
 		t.Run(component, func(t *testing.T) {
 			path := copyTestImage(t, t.TempDir())
+			// Rejection must create nothing through the unsafe layout, so remove
+			// the lock that a normal writer would already have created.
+			require.NoError(t, os.Remove(path+".lock"))
 			cache := t.TempDir()
 			images := filepath.Join(cache, imagesDirName)
 			if component == "images" {
@@ -292,7 +303,7 @@ func TestImagePruneIncompleteEntries(t *testing.T) {
 	for _, p := range []string{filepath.Join(legacy, "al"), filepath.Join(legacy, "al.lock"), legacy} {
 		require.NoError(t, os.Chtimes(p, old, old))
 	}
-	pruneImages(images, "")
+	pruneUntilRemoved(t, func() { pruneImages(images, "") }, stale)
 	require.NoDirExists(t, stale)
 	for _, kept := range []string{busy, recentTemp, recentDir, recentLock, extra, symlink, legacy} {
 		require.DirExists(t, kept)
@@ -301,6 +312,6 @@ func TestImagePruneIncompleteEntries(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "keep", string(data))
 	require.NoError(t, lock.Close())
-	pruneImages(images, "")
+	pruneUntilRemoved(t, func() { pruneImages(images, "") }, busy)
 	require.NoDirExists(t, busy, "abandoned writer becomes collectable after lock release")
 }

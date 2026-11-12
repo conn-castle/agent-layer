@@ -111,16 +111,12 @@ func imageShape(root *os.Root, name string) bool {
 // imageEntryInfo also records the newest write, including the directory itself,
 // so an unfinished copy gets a full grace period after its last visible change.
 func imageEntryInfo(root *os.Root, name string) (newest time.Time, complete bool, ok bool) {
-	i, err := root.Lstat(name)
-	if err != nil || !i.IsDir() || !imagelease.Owned(i) {
-		return newest, false, false
-	}
-	newest = i.ModTime()
-	dir, err := root.OpenFile(name, os.O_RDONLY|unix.O_DIRECTORY|unix.O_NOFOLLOW, 0)
+	dir, info, err := openImageEntry(root, name)
 	if err != nil {
 		return newest, false, false
 	}
 	defer func() { _ = dir.Close() }()
+	newest = info.ModTime()
 	names, err := dir.Readdirnames(65)
 	if (err != nil && err != io.EOF) || len(names) > 64 {
 		return newest, false, false
@@ -139,6 +135,25 @@ func imageEntryInfo(root *os.Root, name string) (newest time.Time, complete bool
 		complete = complete || child == imageName
 	}
 	return newest, complete, true
+}
+
+// Return the validated directory's open descriptor and identity snapshot. Never
+// follow a symlink at the entry, even when its target is an owned directory.
+func openImageEntry(root *os.Root, name string) (*os.File, os.FileInfo, error) {
+	original, err := root.Lstat(name)
+	if err != nil || !original.IsDir() || !imagelease.Owned(original) {
+		return nil, nil, errImageMoved
+	}
+	dir, err := root.OpenFile(name, os.O_RDONLY|unix.O_DIRECTORY|unix.O_NOFOLLOW, 0)
+	if err != nil {
+		return nil, nil, err
+	}
+	info, err := dir.Stat()
+	if err != nil || !os.SameFile(original, info) || !imagelease.Owned(info) {
+		_ = dir.Close()
+		return nil, nil, errImageMoved
+	}
+	return dir, info, nil
 }
 
 func tryImageLock(root *os.Root, path string) *os.File {
@@ -198,9 +213,12 @@ func pruneImage(root *os.Root, name string) {
 	if !imageShape(root, name) {
 		return
 	}
-	lock := tryImageLock(root, filepath.Join(name, "al.lock"))
+	lockPath := filepath.Join(name, "al.lock")
+	lock := tryImageLock(root, lockPath)
 	if lock == nil {
-		pruneEmptyImage(root, name)
+		if _, err := root.Lstat(lockPath); os.IsNotExist(err) {
+			pruneEmptyImage(root, name)
+		}
 		return
 	}
 	defer func() { _ = lock.Close() }()
@@ -253,13 +271,12 @@ func pruneImage(root *os.Root, name string) {
 // lock: it fails atomically if a writer creates anything, and a writer whose
 // lock open loses to rmdir retries from Mkdir in lockImageMode.
 func pruneEmptyImage(root *os.Root, name string) {
-	entry, err := root.OpenFile(name, os.O_RDONLY|unix.O_DIRECTORY|unix.O_NOFOLLOW, 0)
+	entry, info, err := openImageEntry(root, name)
 	if err != nil {
 		return
 	}
 	defer func() { _ = entry.Close() }()
-	info, err := entry.Stat()
-	if err != nil || !info.IsDir() || !imagelease.Owned(info) || time.Since(info.ModTime()) <= imagePruneGrace {
+	if time.Since(info.ModTime()) <= imagePruneGrace {
 		return
 	}
 	names, err := entry.Readdirnames(1)
@@ -267,7 +284,9 @@ func pruneEmptyImage(root *os.Root, name string) {
 		return
 	}
 	current, err := root.Lstat(name)
-	if err != nil || !current.IsDir() || !imagelease.Owned(current) || !os.SameFile(info, current) || time.Since(current.ModTime()) <= imagePruneGrace {
+	// SameFile proves the directory type, but ownership and mtime can change on
+	// that inode (including a writer creating then deleting its temporary file).
+	if err != nil || !os.SameFile(info, current) || !imagelease.Owned(current) || time.Since(current.ModTime()) <= imagePruneGrace {
 		return
 	}
 	parent, err := root.Open(".")

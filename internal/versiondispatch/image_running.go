@@ -74,7 +74,10 @@ func leaseRunningImage(path string, wait time.Duration) error {
 	}
 	// Resolve only the root after rejecting symlinked images/ and entries. Resolving
 	// the entire executable first would hide those unsafe layout components.
-	if !ownedDir(images) || !ownedDir(dir) {
+	if _, err := ownedDir(images); err != nil {
+		return errImageMoved
+	}
+	if _, err := ownedDir(dir); err != nil {
 		return errImageMoved
 	}
 	physicalRoot, err := filepath.EvalSymlinks(filepath.Dir(images))

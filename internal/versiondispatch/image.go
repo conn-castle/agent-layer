@@ -103,13 +103,9 @@ func handOffToImage(ctx context.Context, sys System, opts execOptions, args []st
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		execArgs := append([]string{path}, args[1:]...)
-		env := sys.Environ()
 		// A dev snapshot keeps inherited entries; release selection adds shim
 		// and installed-entry markers. Complete discovery before taking ForkLock.
-		if !development {
-			execArgs, env = handoffInvocation(sys, path, args, current, cacheRoot, env)
-		}
+		execArgs, env := handoffInvocation(sys, path, args, current, cacheRoot, sys.Environ(), development)
 		env, restore, err := imagelease.ExecEnv(lease, env)
 		if err != nil {
 			return err

@@ -17,9 +17,15 @@ var errImageMoved = errors.New("image cache entry moved or is unsafe")
 
 const imageLockAttempts = 8
 
-func ownedDir(path string) bool {
+func ownedDir(path string) (os.FileInfo, error) {
 	i, err := os.Lstat(path) // #nosec G703 -- cache paths checked for ownership and symlinks.
-	return err == nil && i.IsDir() && imagelease.Owned(i)
+	if err != nil {
+		return nil, err
+	}
+	if !i.IsDir() || !imagelease.Owned(i) {
+		return nil, errImageMoved
+	}
+	return i, nil
 }
 
 func samePath(f *os.File, path string) bool {
@@ -60,18 +66,23 @@ func lockImage(ctx context.Context, sys System, dir string) (*fileLock, error) {
 // Check the running image before opening the lock as well as after locking, so
 // a stale process cannot opt a replacement entry into the lease protocol.
 func lockImageMode(ctx context.Context, sys System, dir string, create bool, wait time.Duration) (*fileLock, error) {
-	return lockImageModeWithOpen(ctx, sys, dir, create, wait, openImageFile)
+	return lockImageModeWithFiles(ctx, sys, dir, create, wait, openImageFile, ownedDir)
 }
 
-func lockImageModeWithOpen(ctx context.Context, sys System, dir string, create bool, wait time.Duration, open func(string, bool) (*os.File, error)) (*fileLock, error) {
+func lockImageModeWithFiles(ctx context.Context, sys System, dir string, create bool, wait time.Duration, open func(string, bool) (*os.File, error), dirInfo func(string) (os.FileInfo, error)) (*fileLock, error) {
 	images := filepath.Dir(dir)
-	for range imageLockAttempts {
+	attempts := imageLockAttempts
+	if !create {
+		// A vanished running entry cannot be recovered by recreating it.
+		attempts = 1
+	}
+	for range attempts {
 		if create {
 			if err := os.MkdirAll(images, 0o755); err != nil { // #nosec G301,G703 -- executable cache directory.
 				return nil, err
 			}
 		}
-		if !ownedDir(images) {
+		if _, err := dirInfo(images); err != nil {
 			return nil, errImageMoved
 		}
 		if create {
@@ -82,9 +93,12 @@ func lockImageModeWithOpen(ctx context.Context, sys System, dir string, create b
 				return nil, err
 			}
 		}
-		before, err := os.Lstat(dir) // #nosec G703 -- cache entry checked for ownership and symlinks.
-		if err != nil || !before.IsDir() || !imagelease.Owned(before) {
-			continue
+		before, err := dirInfo(dir)
+		if err != nil {
+			if create && os.IsNotExist(err) {
+				continue
+			}
+			return nil, errImageMoved
 		}
 		if !create {
 			if err := verifyRunningImage(filepath.Join(dir, imageName)); err != nil {
@@ -92,12 +106,19 @@ func lockImageModeWithOpen(ctx context.Context, sys System, dir string, create b
 			}
 		}
 		path := filepath.Join(dir, imageName+".lock")
-		f, err := open(path, true)
+		f, err := open(path, create)
 		if err != nil {
 			// Empty-entry cleanup can remove dir during open (observed as EINVAL
-			// on Darwin). Retry from Mkdir based on identity, not the OS errno.
-			current, statErr := os.Lstat(dir) // #nosec G703 -- recheck the same validated cache entry.
-			if statErr != nil || !current.IsDir() || !imagelease.Owned(current) || !os.SameFile(before, current) {
+			// on Darwin). ENOENT also requires a retry when inode reuse or an
+			// unstable filesystem makes directory identities appear unchanged.
+			current, statErr := dirInfo(dir)
+			if statErr != nil && !os.IsNotExist(statErr) {
+				return nil, errImageMoved
+			}
+			if os.IsNotExist(err) || statErr != nil || !os.SameFile(before, current) {
+				if !create {
+					return nil, errImageMoved
+				}
 				continue
 			}
 			return nil, err
@@ -107,7 +128,9 @@ func lockImageModeWithOpen(ctx context.Context, sys System, dir string, create b
 			return nil, err
 		}
 		lock := &fileLock{file: f, sys: sys}
-		if ownedDir(images) && ownedDir(dir) && samePath(f, path) {
+		_, imagesErr := dirInfo(images)
+		_, entryErr := dirInfo(dir)
+		if imagesErr == nil && entryErr == nil && samePath(f, path) {
 			if !create {
 				if err := verifyRunningImage(filepath.Join(dir, imageName)); err != nil {
 					_ = lock.release()
@@ -117,6 +140,9 @@ func lockImageModeWithOpen(ctx context.Context, sys System, dir string, create b
 			return lock, nil
 		}
 		_ = lock.release()
+		if (imagesErr != nil && !os.IsNotExist(imagesErr)) || (entryErr != nil && !os.IsNotExist(entryErr)) {
+			return nil, errImageMoved
+		}
 	}
 	return nil, errImageMoved
 }

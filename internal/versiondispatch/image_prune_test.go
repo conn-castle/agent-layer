@@ -86,6 +86,36 @@ func imageHelper() {
 		if (imagelease.Current() != nil) != (mode == "startup-wait") {
 			fail(fmt.Errorf("startup lease = %v in mode %s", imagelease.Current(), mode))
 		}
+	case "existing-lock-replaced":
+		self, err := os.Executable()
+		fail(err)
+		dir := filepath.Dir(self)
+		opens := 0
+		lock, err := lockImageModeWithFiles(context.Background(), RealSystem{}, dir, false, 0, func(path string, create bool) (*os.File, error) {
+			opens++
+			if create {
+				fail(fmt.Errorf("existing entry tried to create a lock"))
+			}
+			if opens == 1 {
+				fail(os.Rename(dir, dir+".detached")) // #nosec G703 -- own disposable image entry.
+				fail(os.Mkdir(dir, 0o700))            // #nosec G703 -- replacement disposable image entry.
+				// The same running file in a new directory would pass the image
+				// check again if existing-entry mode incorrectly retried.
+				fail(os.Link(filepath.Join(dir+".detached", imageName), self)) // #nosec G703 -- hard link between disposable fixture entries.
+			}
+			return openImageFile(path, create)
+		}, ownedDir)
+		if lock != nil || err != errImageMoved || opens != 1 {
+			fail(fmt.Errorf("existing entry retried: lock=%v err=%v opens=%d", lock, err, opens))
+		}
+	case "existing-lockless":
+		self, err := os.Executable()
+		fail(err)
+		fail(os.Remove(self + ".lock")) // #nosec G703 -- remove only the disposable image fixture's lock.
+		lock, err := lockImageMode(context.Background(), RealSystem{}, filepath.Dir(self), false, 0)
+		if lock != nil || err != errImageMoved {
+			fail(fmt.Errorf("lockless existing entry: lock=%v err=%v", lock, err))
+		}
 	case "direct-spelling", "direct-unsafe":
 		// Linux resolves executable spelling in os.Executable; supply the actual
 		// invocation spelling to exercise the same path logic Darwin receives.
@@ -168,7 +198,9 @@ func copyTestImage(t *testing.T, cache string) string {
 	data, err := os.ReadFile(self) // #nosec G304 -- own test executable.
 	require.NoError(t, err)
 	path := filepath.Join(dir, imageName)
-	require.NoError(t, os.WriteFile(path, data, 0o700)) // #nosec G306,G703 -- disposable test executable.
+	// Real writers create the lock before publishing the executable.
+	require.NoError(t, os.WriteFile(path+".lock", nil, 0o600)) // #nosec G703 -- disposable image fixture.
+	require.NoError(t, os.WriteFile(path, data, 0o700))        // #nosec G306,G703 -- disposable test executable.
 	return path
 }
 
@@ -194,7 +226,7 @@ func TestDirectImageStartupLeasesExistingEntry(t *testing.T) {
 			require.DirExists(t, dir, "direct startup must pin its existing image")
 			require.NoError(t, helper.Process.Kill())
 			require.Error(t, helper.Wait())
-			pruneImages(filepath.Dir(dir), "")
+			pruneUntilRemoved(t, func() { pruneImages(filepath.Dir(dir), "") }, dir)
 			require.NoDirExists(t, dir)
 		})
 	}
@@ -265,6 +297,27 @@ func oldImage(t *testing.T, dir string) {
 	require.NoError(t, os.Chtimes(filepath.Join(dir, "al.lease"), old, old))
 }
 
+// Maintenance is sampled and budgeted. Exercise it until the requested entries
+// are actually gone; a real eligibility/removal regression still hits the bound.
+func pruneUntilRemoved(t *testing.T, run func(), paths ...string) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		run()
+		gone := true
+		for _, path := range paths {
+			if _, err := os.Lstat(path); !os.IsNotExist(err) { // #nosec G703 -- disposable prune-test entries.
+				gone = false
+			}
+		}
+		if gone {
+			return
+		}
+		require.True(t, time.Now().Before(deadline), "eligible entries were not pruned: %v", paths)
+		time.Sleep(time.Millisecond)
+	}
+}
+
 func startImageHelper(t *testing.T, executable, mode string, args []string, files []*os.File, env ...string) (*exec.Cmd, io.WriteCloser) {
 	return startImageHelperInDir(t, executable, mode, args, files, "", env...)
 }
@@ -309,7 +362,7 @@ func TestImagePruneProcessLeasesAndSIGKILL(t *testing.T) {
 	require.DirExists(t, dir, "second server must keep the entry pinned")
 	require.NoError(t, b.Process.Kill())
 	require.Error(t, b.Wait())
-	pruneImages(images, "")
+	pruneUntilRemoved(t, func() { pruneImages(images, "") }, dir)
 	require.NoDirExists(t, dir, "kernel must release leases on SIGKILL")
 }
 
@@ -344,7 +397,7 @@ func TestImagePruneSafetyAndTrash(t *testing.T) {
 	require.NoError(t, err)
 	defer func() { _ = lock.Close() }()
 	require.NoError(t, unix.Flock(int(lock.Fd()), unix.LOCK_EX))
-	pruneImages(images, own)
+	pruneUntilRemoved(t, func() { pruneImages(images, own) }, trashName, partialName, eligible)
 	for _, dir := range []string{own, legacy, recent, extra, outside, nonhex, uppercase, symlinkFile, busy} {
 		require.DirExists(t, dir)
 	}
@@ -381,7 +434,6 @@ func TestImageHandoffPrunesAfterSecuringLease(t *testing.T) {
 	sys := f.system()
 	sys.ExecBinaryFunc = func(path string, _ []string, _ []string) error {
 		execTime := time.Now()
-		require.NoDirExists(t, stale, "handoff must trigger maintenance")
 		probe, err := openImageFile(path+".lease", false)
 		require.NoError(t, err)
 		defer func() { _ = probe.Close() }()
@@ -392,10 +444,12 @@ func TestImageHandoffPrunesAfterSecuringLease(t *testing.T) {
 		require.False(t, info.ModTime().After(execTime), "lease timestamp must not be after exec")
 		return nil
 	}
-	err := handOffToImage(context.Background(), sys, execOptions{
-		runningImage: func() (string, string, error) { return f.source, f.source, nil },
-	}, []string{f.source, "dispatch", "mcp-server"}, "1.2.3", false)
-	require.ErrorIs(t, err, ErrDispatched)
+	pruneUntilRemoved(t, func() {
+		err := handOffToImage(context.Background(), sys, execOptions{
+			runningImage: func() (string, string, error) { return f.source, f.source, nil },
+		}, []string{f.source, "dispatch", "mcp-server"}, "1.2.3", false)
+		require.ErrorIs(t, err, ErrDispatched)
+	}, stale)
 }
 
 func TestImageLockRetriesDetachedInode(t *testing.T) {
@@ -510,6 +564,6 @@ func TestImageLeaseAcrossExecAndWorkerInheritance(t *testing.T) {
 	}
 	require.NoError(t, worker.Process.Kill())
 	require.Error(t, worker.Wait())
-	pruneImages(images, "")
+	pruneUntilRemoved(t, func() { pruneImages(images, "") }, dir)
 	require.NoDirExists(t, dir)
 }

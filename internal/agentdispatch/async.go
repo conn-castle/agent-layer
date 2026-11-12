@@ -409,7 +409,7 @@ func RunWorker(root string, runID string, gate io.Reader) error {
 		}
 		return failWorkerBeforeExecution(root, runID, &preStartFailure{err: cause})
 	}
-	versiondispatch.LeaseRunningImage()
+	versiondispatch.RetryRunningImageLease()
 	var request workerRequest
 	requestPath := filepath.Join(dispatchRunPath(root), runID, workerRequestFile)
 	if err := readJSON(requestPath, &request); err != nil {
