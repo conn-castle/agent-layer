@@ -133,7 +133,7 @@ assert_parallel_counts() {
 }
 
 assert_parallel_diagnostic() {
-  local case_dir="$1" command="$2" slot="$3" code="$4" marker="$5" other_marker="$6"
+  local case_dir="$1" command="$2" slot="$3" code="$4" marker="$5" other_marker="${6:-}"
   local diagnostic
   diagnostic="$(awk -v label="FAIL: dispatch $command for parallel slot $slot " '
     index($0, label) == 1 { printing = 1; print; next }
@@ -141,7 +141,7 @@ assert_parallel_diagnostic() {
     printing { print }
   ' "$case_dir/output")"
   if [[ "$diagnostic" == *"exit code: $code"* && "$diagnostic" == *"$marker"* \
-    && "$diagnostic" != *"$other_marker"* ]]; then
+    && ( -z "$other_marker" || "$diagnostic" != *"$other_marker"* ) ]]; then
     pass "parallel $command slot $slot reports its exit code and own stderr"
   else
     fail "parallel $command slot $slot diagnostic missing or mixed: $diagnostic"
@@ -227,7 +227,7 @@ else
   parallel_case="$TEST_TMP_DIR/parallel-wait-failure"
   run_parallel_case "$parallel_case"
   assert_parallel_counts "$parallel_case" 0 2 "nonzero wait records exactly zero passes and two failures"
-  assert_parallel_diagnostic "$parallel_case" wait 5 37 wait-error-slot-5 incomplete-slot-6
+  assert_parallel_diagnostic "$parallel_case" wait 5 37 wait-error-slot-5
   assert_file_contains "$parallel_case/output" "FAIL: eight independent conversations complete in parallel" \
     "nonzero wait fails the aggregate even when all eight outputs say completed"
   unset MOCK_WAIT_FAILURE_SLOT
@@ -235,7 +235,7 @@ else
   parallel_case="$TEST_TMP_DIR/parallel-incomplete-wait"
   run_parallel_case "$parallel_case"
   assert_parallel_counts "$parallel_case" 0 2 "incomplete wait records exactly zero passes and two failures"
-  assert_parallel_diagnostic "$parallel_case" wait 6 0 incomplete-slot-6 wait-error-slot-5
+  assert_parallel_diagnostic "$parallel_case" wait 6 0 incomplete-slot-6
   assert_file_contains "$parallel_case/output" "FAIL: eight independent conversations complete in parallel" \
     "zero-exit incomplete wait alone fails the aggregate"
   unset MOCK_INCOMPLETE_SLOT

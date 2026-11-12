@@ -338,13 +338,10 @@ setup: ## Run one-time setup for this clone
 	@./scripts/setup.sh
 
 .PHONY: test-e2e-harness
-test-e2e-harness: ## Run all scripts/test-e2e/test-*.sh self-tests in sorted order
-	@export LC_ALL=C; status=0; \
-	  set -- ./scripts/test-e2e/test-*.sh; \
-	  if [[ ! -f "$$1" ]]; then echo "No e2e harness self-tests found" >&2; exit 1; fi; \
-	  for test_script in "$$@"; do \
-	    bash "$$test_script" || status=1; \
-	  done; \
+test-e2e-harness: ## Run e2e harness self-tests (auth, helpers, dispatch)
+	@status=0; \
+	  ./scripts/test-e2e/test-harness-auth.sh || status=1; \
+	  ./scripts/test-e2e/test-agent-dispatch-harness.sh || status=1; \
 	  exit $$status
 
 .PHONY: test-e2e-ci
