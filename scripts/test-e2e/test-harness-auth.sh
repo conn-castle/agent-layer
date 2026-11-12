@@ -197,8 +197,10 @@ case "$2" in
   start)
     while [[ $# -gt 0 && "$1" != --prompt ]]; do shift; done
     slot="${2#Review }"
-    if [[ "$slot" == "${MOCK_START_FAILURE_SLOT:-}" ]]; then
+    if [[ "${MOCK_START_FAILURE_SLOT:-}" == all || "$slot" == "${MOCK_START_FAILURE_SLOT:-}" ]]; then
       echo "start-error-slot-$slot" >&2
+      # A handle must not override the failed command's exit status.
+      printf '{"handle":"slot-%s"}\n' "$slot"
       exit 23
     fi
     if [[ "$slot" == "${MOCK_EMPTY_HANDLE_SLOT:-}" ]]; then
@@ -237,6 +239,8 @@ run_parallel_case() {
   (
     E2E_PASS_COUNT=0
     E2E_FAIL_COUNT=0
+    # The harness may have been sourced on a terminal before redirection.
+    _RED='' _GREEN='' _YELLOW='' _NC=''
     export MOCK_PARALLEL_LOG="$case_dir/invocations"
     : > "$MOCK_PARALLEL_LOG"
     # Seed stale outputs, including a valid slot whose start will fail.
@@ -285,7 +289,24 @@ for slot in 1 3 4 5 6 7 8; do
     "parallel still waits on independent slot $slot"
 done
 
-unset MOCK_START_FAILURE_SLOT MOCK_WAIT_FAILURE_SLOT
+unset MOCK_WAIT_FAILURE_SLOT
+export MOCK_START_FAILURE_SLOT=all
+parallel_case="$MOCK_BIN_DIR/parallel-all-starts-fail"
+run_parallel_case "$parallel_case"
+if [[ -f "$parallel_case/counts" ]] \
+  && [[ "$(grep -c '^FAIL: dispatch start for parallel slot ' "$parallel_case/output")" -eq 8 ]]; then
+  pass "all failed starts report eight diagnostics and finish writing counters"
+else
+  fail "all failed starts must report eight diagnostics and finish writing counters"
+fi
+assert_file_not_contains "$parallel_case/invocations" '<dispatch><wait>' "all failed starts issue zero waits"
+assert_file_contains "$parallel_case/output" "FAIL: eight independent conversations complete in parallel" \
+  "all failed starts fail the aggregate despite stale completed outputs"
+for slot in {1..8}; do
+  assert_parallel_diagnostic "$parallel_case" start "$slot" 23 "start-error-slot-$slot" wait-error
+done
+
+unset MOCK_START_FAILURE_SLOT
 export MOCK_EMPTY_HANDLE_SLOT=3 MOCK_INCOMPLETE_SLOT=6
 parallel_case="$MOCK_BIN_DIR/parallel-invalid-results"
 run_parallel_case "$parallel_case"
@@ -299,6 +320,8 @@ assert_file_contains "$parallel_case/output" "FAIL: eight independent conversati
   "empty handle and incomplete wait fail the parallel aggregate"
 assert_parallel_diagnostic "$parallel_case" start 3 0 empty-handle-slot-3 incomplete-slot-6
 assert_parallel_diagnostic "$parallel_case" wait 6 0 incomplete-slot-6 empty-handle-slot-3
+assert_file_contains "$parallel_case/output" '    {}' "empty-handle diagnostic shows the start JSON"
+assert_file_contains "$parallel_case/output" '    {"state":"running"}' "incomplete-wait diagnostic shows the wait JSON"
 assert_file_not_contains "$parallel_case/invocations" '<dispatch><wait><>' "empty start result never schedules an empty-handle wait"
 assert_file_not_contains "$parallel_case/invocations" '<dispatch><wait><slot-3>' "empty start result skips its dependent wait"
 

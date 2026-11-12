@@ -54,6 +54,15 @@ dispatch_show_stderr() {
   fi
 }
 
+# Invalid JSON results can explain a zero-exit command failure.
+dispatch_show_stdout() {
+  local path="$1"
+  if [[ -s "$path" ]]; then
+    echo "  stdout (last 5 lines):"
+    tail -n 5 "$path" | sed 's/^/    /'
+  fi
+}
+
 # Optional state and invocation ID preserve each caller's additional assertions.
 dispatch_wait_terminated() {
   local repo_dir="$1" handle="$2" wait_file="$3" stderr_file="$4" label="$5"
@@ -221,15 +230,20 @@ check_dispatch_parallel_conversations() {
     else
       fail "dispatch start for parallel slot $index (exit code: $start_rc; expected a successful start with a handle)"
       dispatch_show_stderr "$start_stderr"
+      if [[ $start_rc -eq 0 ]]; then
+        dispatch_show_stdout "$parallel_start"
+      fi
     fi
   done
 
-  for index in "${!handles[@]}"; do
+  for index in {1..8}; do
+    [[ -n "${handles[$index]:-}" ]] || continue
     (cd "$repo_dir" && al dispatch wait "${handles[$index]}" \
       >"$repo_dir/parallel-${index}-wait.json" 2>"$repo_dir/parallel-${index}-wait.stderr") &
     waiter_pids[$index]="$!"
   done
-  for index in "${!waiter_pids[@]}"; do
+  for index in {1..8}; do
+    [[ -n "${waiter_pids[$index]:-}" ]] || continue
     wait_rc=0
     wait "${waiter_pids[$index]}" || wait_rc=$?
     wait_stderr="$repo_dir/parallel-${index}-wait.stderr"
@@ -238,6 +252,9 @@ check_dispatch_parallel_conversations() {
     else
       fail "dispatch wait for parallel slot $index (exit code: $wait_rc; expected state completed)"
       dispatch_show_stderr "$wait_stderr"
+      if [[ $wait_rc -eq 0 ]]; then
+        dispatch_show_stdout "$repo_dir/parallel-${index}-wait.json"
+      fi
     fi
   done
 
