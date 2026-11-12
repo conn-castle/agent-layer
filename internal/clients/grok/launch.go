@@ -138,8 +138,9 @@ func ConfigureEnvironment(root string, env []string, cfg config.GrokConfig, warn
 	return env
 }
 
-// ClearStaleHome removes GROK_HOME only when it points at this repo's
-// .grok-config directory.
+// ClearStaleHome removes this project's inherited GROK_HOME and makes other
+// relative overrides absolute. Bare-name spellings fall back to .grok-config
+// under the project root only when the caller-relative entry is absent.
 func ClearStaleHome(root string, env []string) []string {
 	return clients.ClearStaleHome(root, env, EnvHome, ".grok-config")
 }
@@ -150,5 +151,5 @@ func ensureGrokHomeWithWarning(root string, env []string, warning io.Writer) []s
 	if ok && current != "" && !clients.SamePath(current, expected) && warning != nil {
 		_, _ = fmt.Fprintf(warning, messages.ClientsGrokHomeWarningFmt, current, expected)
 	}
-	return clients.SetEnv(env, EnvHome, expected)
+	return clients.SetUniqueEnv(env, EnvHome, expected)
 }

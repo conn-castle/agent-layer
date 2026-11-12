@@ -72,10 +72,9 @@ func ConfigureEnvironment(root string, env []string, cfg config.ClaudeConfig, wa
 	return ClearStaleConfigDir(root, env)
 }
 
-// ClearStaleConfigDir removes CLAUDE_CONFIG_DIR from the environment only when
-// its value selects the repo-local path Agent Layer would have set. This
-// prevents a stale value from leaking across repos while preserving any
-// intentional user override that points elsewhere.
+// ClearStaleConfigDir removes this project's inherited CLAUDE_CONFIG_DIR and
+// makes other relative overrides absolute. Bare-name spellings fall back to
+// the project home from subfolders only when the caller-relative entry is absent.
 func ClearStaleConfigDir(root string, env []string) []string {
 	return clients.ClearStaleHome(root, env, "CLAUDE_CONFIG_DIR", configDirName)
 }
@@ -84,16 +83,12 @@ func ensureClaudeConfigDirWithWarning(root string, env []string, warning io.Writ
 	expected := filepath.Join(root, configDirName)
 	current, ok := clients.GetEnv(env, "CLAUDE_CONFIG_DIR")
 	if !ok || current == "" {
-		return clients.SetEnv(env, "CLAUDE_CONFIG_DIR", expected)
+		return clients.SetUniqueEnv(env, "CLAUDE_CONFIG_DIR", expected)
 	}
 
 	selected := clients.ResolveRelativeHome(root, current, configDirName)
-	if selected != current {
-		// Launch, dispatch, and discovery children run in different working
-		// directories, so a relative config directory is passed on as an
-		// absolute path.
-		env = clients.SetEnv(env, "CLAUDE_CONFIG_DIR", selected)
-	}
+	// Normalize relative homes and collapse duplicates before capture or exec.
+	env = clients.SetUniqueEnv(env, "CLAUDE_CONFIG_DIR", selected)
 	if !clients.SamePath(selected, expected) {
 		// Best-effort warning; a stderr write failure does not change the returned
 		// env (the user's CLAUDE_CONFIG_DIR is kept, made absolute if relative).

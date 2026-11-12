@@ -42,8 +42,21 @@ func TestHomeSelectionPhysicalPathsAndDisabledCleanup(t *testing.T) {
 		} {
 			var warning strings.Builder
 			cfg := config.CodexConfig{LocalConfigDir: &enabled}
-			env := ConfigureEnvironment(root, []string{"CODEX_HOME=" + tc.value}, cfg, &warning)
+			env := ConfigureEnvironment(root, []string{"CODEX_HOME=" + tc.value, "CODEX_HOME=" + filepath.Join(t.TempDir(), "second-home")}, cfg, &warning)
 			got, present := clients.GetEnv(env, "CODEX_HOME")
+			count := 0
+			for _, entry := range env {
+				if strings.HasPrefix(entry, "CODEX_HOME=") {
+					count++
+				}
+			}
+			wantCount := 1
+			if !enabled && tc.local {
+				wantCount = 0
+			}
+			if count != wantCount {
+				t.Fatalf("provider home entries=%d, want %d: %v", count, wantCount, env)
+			}
 			if !enabled && tc.local {
 				if present {
 					t.Fatalf("disabled config retained project home %q", got)
@@ -71,6 +84,13 @@ func TestLaunchCapturesAbsoluteEffectiveHome(t *testing.T) {
 	root := t.TempDir()
 	t.Setenv("HOME", t.TempDir())
 	t.Chdir(root)
+	outside := t.TempDir()
+	if err := os.Mkdir(filepath.Join(outside, "child"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(outside, "child"), filepath.Join(root, "link")); err != nil {
+		t.Fatal(err)
+	}
 	binDir := t.TempDir()
 	testutil.WriteStub(t, binDir, "codex")
 	t.Setenv("PATH", binDir)
@@ -79,14 +99,23 @@ func TestLaunchCapturesAbsoluteEffectiveHome(t *testing.T) {
 	if err := os.MkdirAll(runDir, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	env := []string{"CODEX_HOME=relative-home", herdr.EnvEnabled + "=1", herdr.EnvSocketPath + "=/fixture/socket", herdr.EnvPaneID + "=w1:p1"}
+	env := []string{"CODEX_HOME=link/../relative-home", "CODEX_HOME=" + filepath.Join(t.TempDir(), "second-home"), herdr.EnvEnabled + "=1", herdr.EnvSocketPath + "=/fixture/socket", herdr.EnvPaneID + "=w1:p1"}
 	enabled := true
 	cfg := &config.ProjectConfig{Root: root}
 	cfg.Config.Agents.Codex = config.CodexConfig{LocalConfigDir: &enabled}
 	if err := Launch(cfg, &run.Info{Dir: runDir}, env, nil); err != nil {
 		t.Fatal(err)
 	}
-	if got, _ := clients.GetEnv(call.Env, "CODEX_HOME"); !call.Called || got != filepath.Join(root, "relative-home") {
+	count := 0
+	for _, entry := range call.Env {
+		if strings.HasPrefix(entry, "CODEX_HOME=") {
+			count++
+		}
+	}
+	if count != 1 {
+		t.Fatalf("exec received %d provider home entries: %v", count, call.Env)
+	}
+	if got, _ := clients.GetEnv(call.Env, "CODEX_HOME"); !call.Called || got != filepath.Join(outside, "relative-home") {
 		t.Fatalf("child home %q", got)
 	}
 	paths, err := filepath.Glob(filepath.Join(runDir, "herdr-launch-*.json"))
@@ -103,7 +132,7 @@ func TestLaunchCapturesAbsoluteEffectiveHome(t *testing.T) {
 	if err := json.Unmarshal(data, &record); err != nil {
 		t.Fatal(err)
 	}
-	if record.ProviderHome != filepath.Join(root, "relative-home") {
+	if record.ProviderHome != filepath.Join(outside, "relative-home") {
 		t.Fatalf("captured home %q", record.ProviderHome)
 	}
 }
@@ -193,13 +222,13 @@ func TestLaunchCreatesPrivateSelectedProjectHome(t *testing.T) {
 func TestSubfolderHomeFallbackAndPhysicalOverrides(t *testing.T) {
 	for _, enabled := range []bool{true, false} {
 		for _, callerHomeExists := range []bool{false, true} {
-			for _, value := range []string{".codex", "./.codex", "././.codex", "link/../.codex"} {
+			for _, value := range []string{".codex", "./.codex", "././.codex", ".codex/", "./.codex/", ".//.codex", ".codex/.", "././/.codex//././", "link/../.codex", "sub/../.codex"} {
 				t.Run(fmt.Sprintf("enabled=%t/existing=%t/%s", enabled, callerHomeExists, value), func(t *testing.T) {
 					root := t.TempDir()
 					t.Setenv("HOME", t.TempDir())
 					caller := filepath.Join(root, "sub")
 					outside := t.TempDir()
-					for _, dir := range []string{caller, filepath.Join(outside, "child"), filepath.Join(outside, ".codex")} {
+					for _, dir := range []string{caller, filepath.Join(caller, "sub"), filepath.Join(outside, "child"), filepath.Join(outside, ".codex")} {
 						if err := os.Mkdir(dir, 0o700); err != nil {
 							t.Fatal(err)
 						}
@@ -216,7 +245,7 @@ func TestSubfolderHomeFallbackAndPhysicalOverrides(t *testing.T) {
 					cfg := config.CodexConfig{LocalConfigDir: &enabled}
 					var warning strings.Builder
 					env := ConfigureEnvironment(root, []string{"CODEX_HOME=" + value}, cfg, &warning)
-					projectHome := value != "link/../.codex" && !callerHomeExists
+					projectHome := value != "link/../.codex" && value != "sub/../.codex" && !callerHomeExists
 					want := filepath.Join(root, ".codex")
 					if !projectHome {
 						want = filepath.Join(caller, ".codex")
@@ -235,7 +264,7 @@ func TestSubfolderHomeFallbackAndPhysicalOverrides(t *testing.T) {
 					if (warning.Len() > 0) != (enabled && !projectHome) {
 						t.Fatalf("warning=%q", warning.String())
 					}
-					if !projectHome {
+					if !projectHome && (callerHomeExists || strings.HasPrefix(value, "link/")) {
 						selected, err := os.Stat(got)
 						if err != nil {
 							t.Fatal(err)

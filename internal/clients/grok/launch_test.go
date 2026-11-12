@@ -315,7 +315,7 @@ func TestLaunchCapturesSelectedHomeInsteadOfInheritedRelativeHome(t *testing.T) 
 	if err := os.MkdirAll(runDir, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	env := []string{EnvHome + "=relative-home", herdr.EnvEnabled + "=1", herdr.EnvSocketPath + "=/fixture/socket", herdr.EnvPaneID + "=w1:p1"}
+	env := []string{EnvHome + "=relative-home", EnvHome + "=" + filepath.Join(t.TempDir(), "second-home"), herdr.EnvEnabled + "=1", herdr.EnvSocketPath + "=/fixture/socket", herdr.EnvPaneID + "=w1:p1"}
 	if err := Launch(&config.ProjectConfig{Root: root}, &run.Info{Dir: runDir}, env, nil); err != nil {
 		t.Fatal(err)
 	}
@@ -332,6 +332,15 @@ func TestLaunchCapturesSelectedHomeInsteadOfInheritedRelativeHome(t *testing.T) 
 	}
 	if err := json.Unmarshal(data, &record); err != nil {
 		t.Fatal(err)
+	}
+	count := 0
+	for _, entry := range call.Env {
+		if strings.HasPrefix(entry, EnvHome+"=") {
+			count++
+		}
+	}
+	if count != 1 {
+		t.Fatalf("exec received %d home entries: %v", count, call.Env)
 	}
 	childHome, _ := clients.GetEnv(call.Env, EnvHome)
 	if record.Home != HomeDir(root) || record.Home != childHome {

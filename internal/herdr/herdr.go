@@ -253,8 +253,8 @@ func handleCodexRooted(root string, spec providerSpec, in io.Reader, env map[str
 			candidateEnv[EnvDevBypass], candidateEnv[EnvDevExecutable] = "1", launch.DevExecutable
 		}
 		argv, err := resumeArgv(spec, id, candidateEnv)
-		argv = withLaunchHome(argv, launch)
 		if err == nil {
+			argv = withLaunchHome(argv, launch)
 			// Recheck ownership before every write; never wait on a changed selection.
 			revalidate := func() (bool, error) {
 				matchErr := codexContextMatchesPane(launch, id, deadline)
@@ -464,16 +464,9 @@ func withLaunchHome(argv []string, launch launchContext) []string {
 func withRecoveryGeneration(argv []string, generation string) []string {
 	marker := envRecoveryGeneration + "=" + generation
 	if len(argv) > 0 && argv[0] == commandEnv {
-		// env stops parsing options at the first assignment. Keep all generated
-		// unset options before the generation marker, including around dev handoffs.
-		insert := 1
-		for insert+1 < len(argv) && argv[insert] == "-u" {
-			insert += 2
-		}
 		withMarker := make([]string, 0, len(argv)+1)
-		withMarker = append(withMarker, argv[:insert]...)
-		withMarker = append(withMarker, marker)
-		return append(withMarker, argv[insert:]...)
+		withMarker = append(withMarker, commandEnv, marker)
+		return append(withMarker, argv[1:]...)
 	}
 	return append([]string{commandEnv, marker}, argv...)
 }

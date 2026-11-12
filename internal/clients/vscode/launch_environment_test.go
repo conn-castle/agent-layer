@@ -114,6 +114,25 @@ func TestLaunchAppliesOnlyProviderOwnedEnvironmentChanges(t *testing.T) {
 			want:   func(string) map[string]string { return nil },
 			absent: []string{"CODEX_HOME", "CLAUDE_CONFIG_DIR"},
 		},
+
+		{
+			name:       "disabled VS Code preserves the inherited absolute project home when local config is enabled",
+			codexLocal: true,
+			inherited: func(root string) map[string]string {
+				return map[string]string{"CODEX_HOME": filepath.Join(root, ".codex")}
+			},
+			want: func(root string) map[string]string {
+				return map[string]string{"CODEX_HOME": filepath.Join(root, ".codex")}
+			},
+		},
+		{
+			name:       "disabled VS Code normalizes a relative override when local config is enabled",
+			codexLocal: true,
+			inherited:  func(string) map[string]string { return map[string]string{"CODEX_HOME": "user-home"} },
+			want: func(root string) map[string]string {
+				return map[string]string{"CODEX_HOME": filepath.Join(root, "caller", "user-home")}
+			},
+		},
 		{
 			name:       "disabled VS Code does not opt Codex into a repository home",
 			codexLocal: true,
@@ -172,6 +191,12 @@ func TestLaunchAppliesOnlyProviderOwnedEnvironmentChanges(t *testing.T) {
 			for _, key := range test.absent {
 				if _, present := launched[key]; present {
 					t.Fatalf("%s unexpectedly present as %q", key, launched[key])
+				}
+			}
+			if test.codexLocal && test.vscodeEnabled {
+				info, err := os.Stat(filepath.Join(root, ".codex"))
+				if err != nil || !info.IsDir() || info.Mode().Perm()&0o077 != 0 {
+					t.Fatalf("Codex home=%v err=%v, want owner-only directory", info, err)
 				}
 			}
 			if test.wantGrokHome0700 {

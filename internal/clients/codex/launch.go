@@ -58,15 +58,15 @@ func ConfigureEnvironment(root string, env []string, cfg config.CodexConfig, war
 	expected := filepath.Join(root, homeDirName)
 	current, ok := clients.GetEnv(env, "CODEX_HOME")
 	if !ok || current == "" {
-		return clients.SetEnv(env, "CODEX_HOME", expected)
+		return clients.SetUniqueEnv(env, "CODEX_HOME", expected)
 	}
 	selected := current
 	if !filepath.IsAbs(current) {
 		// Launch, dispatch, and discovery children run in different working
 		// directories, so a relative home is passed on as an absolute path.
 		selected = clients.ResolveRelativeHome(root, current, homeDirName)
-		env = clients.SetEnv(env, "CODEX_HOME", selected)
 	}
+	env = clients.SetUniqueEnv(env, "CODEX_HOME", selected)
 	if !clients.SamePath(selected, expected) && warning != nil {
 		_, _ = fmt.Fprintf(warning, messages.ClientsCodexHomeWarningFmt, current, expected)
 	}

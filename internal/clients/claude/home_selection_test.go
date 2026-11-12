@@ -42,8 +42,21 @@ func TestHomeSelectionPhysicalPathsAndDisabledCleanup(t *testing.T) {
 		} {
 			var warning strings.Builder
 			cfg := config.ClaudeConfig{LocalConfigDir: &enabled}
-			env := ConfigureEnvironment(root, []string{"CLAUDE_CONFIG_DIR=" + tc.value}, cfg, &warning)
+			env := ConfigureEnvironment(root, []string{"CLAUDE_CONFIG_DIR=" + tc.value, "CLAUDE_CONFIG_DIR=" + filepath.Join(t.TempDir(), "second-home")}, cfg, &warning)
 			got, present := clients.GetEnv(env, "CLAUDE_CONFIG_DIR")
+			count := 0
+			for _, entry := range env {
+				if strings.HasPrefix(entry, "CLAUDE_CONFIG_DIR=") {
+					count++
+				}
+			}
+			wantCount := 1
+			if !enabled && tc.local {
+				wantCount = 0
+			}
+			if count != wantCount {
+				t.Fatalf("provider home entries=%d, want %d: %v", count, wantCount, env)
+			}
 			if !enabled && tc.local {
 				if present {
 					t.Fatalf("disabled config retained project home %q", got)
@@ -71,6 +84,13 @@ func TestLaunchCapturesAbsoluteEffectiveHome(t *testing.T) {
 	root := t.TempDir()
 	t.Setenv("HOME", t.TempDir())
 	t.Chdir(root)
+	outside := t.TempDir()
+	if err := os.Mkdir(filepath.Join(outside, "child"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(outside, "child"), filepath.Join(root, "link")); err != nil {
+		t.Fatal(err)
+	}
 	binDir := t.TempDir()
 	testutil.WriteStub(t, binDir, "claude")
 	t.Setenv("PATH", binDir)
@@ -79,14 +99,23 @@ func TestLaunchCapturesAbsoluteEffectiveHome(t *testing.T) {
 	if err := os.MkdirAll(runDir, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	env := []string{"CLAUDE_CONFIG_DIR=relative-home", herdr.EnvEnabled + "=1", herdr.EnvSocketPath + "=/fixture/socket", herdr.EnvPaneID + "=w1:p1"}
+	env := []string{"CLAUDE_CONFIG_DIR=link/../relative-home", "CLAUDE_CONFIG_DIR=" + filepath.Join(t.TempDir(), "second-home"), herdr.EnvEnabled + "=1", herdr.EnvSocketPath + "=/fixture/socket", herdr.EnvPaneID + "=w1:p1"}
 	enabled := true
 	cfg := &config.ProjectConfig{Root: root}
 	cfg.Config.Agents.Claude = config.ClaudeConfig{LocalConfigDir: &enabled}
 	if err := Launch(cfg, &run.Info{Dir: runDir}, env, nil); err != nil {
 		t.Fatal(err)
 	}
-	if got, _ := clients.GetEnv(call.Env, "CLAUDE_CONFIG_DIR"); !call.Called || got != filepath.Join(root, "relative-home") {
+	count := 0
+	for _, entry := range call.Env {
+		if strings.HasPrefix(entry, "CLAUDE_CONFIG_DIR=") {
+			count++
+		}
+	}
+	if count != 1 {
+		t.Fatalf("exec received %d provider home entries: %v", count, call.Env)
+	}
+	if got, _ := clients.GetEnv(call.Env, "CLAUDE_CONFIG_DIR"); !call.Called || got != filepath.Join(outside, "relative-home") {
 		t.Fatalf("child home %q", got)
 	}
 	paths, err := filepath.Glob(filepath.Join(runDir, "herdr-launch-*.json"))
@@ -103,7 +132,7 @@ func TestLaunchCapturesAbsoluteEffectiveHome(t *testing.T) {
 	if err := json.Unmarshal(data, &record); err != nil {
 		t.Fatal(err)
 	}
-	if record.ProviderHome != filepath.Join(root, "relative-home") {
+	if record.ProviderHome != filepath.Join(outside, "relative-home") {
 		t.Fatalf("captured home %q", record.ProviderHome)
 	}
 }
@@ -111,13 +140,13 @@ func TestLaunchCapturesAbsoluteEffectiveHome(t *testing.T) {
 func TestSubfolderHomeFallbackAndPhysicalOverrides(t *testing.T) {
 	for _, enabled := range []bool{true, false} {
 		for _, callerHomeExists := range []bool{false, true} {
-			for _, value := range []string{".claude-config", "./.claude-config", "././.claude-config", "link/../.claude-config"} {
+			for _, value := range []string{".claude-config", "./.claude-config", "././.claude-config", ".claude-config/", "./.claude-config/", ".//.claude-config", ".claude-config/.", "././/.claude-config//././", "link/../.claude-config", "sub/../.claude-config"} {
 				t.Run(fmt.Sprintf("enabled=%t/existing=%t/%s", enabled, callerHomeExists, value), func(t *testing.T) {
 					root := t.TempDir()
 					t.Setenv("HOME", t.TempDir())
 					caller := filepath.Join(root, "sub")
 					outside := t.TempDir()
-					for _, dir := range []string{caller, filepath.Join(outside, "child"), filepath.Join(outside, ".claude-config")} {
+					for _, dir := range []string{caller, filepath.Join(caller, "sub"), filepath.Join(outside, "child"), filepath.Join(outside, ".claude-config")} {
 						if err := os.Mkdir(dir, 0o700); err != nil {
 							t.Fatal(err)
 						}
@@ -134,7 +163,7 @@ func TestSubfolderHomeFallbackAndPhysicalOverrides(t *testing.T) {
 					cfg := config.ClaudeConfig{LocalConfigDir: &enabled}
 					var warning strings.Builder
 					env := ConfigureEnvironment(root, []string{"CLAUDE_CONFIG_DIR=" + value}, cfg, &warning)
-					projectHome := value != "link/../.claude-config" && !callerHomeExists
+					projectHome := value != "link/../.claude-config" && value != "sub/../.claude-config" && !callerHomeExists
 					want := filepath.Join(root, ".claude-config")
 					if !projectHome {
 						want = filepath.Join(caller, ".claude-config")
@@ -153,7 +182,7 @@ func TestSubfolderHomeFallbackAndPhysicalOverrides(t *testing.T) {
 					if (warning.Len() > 0) != (enabled && !projectHome) {
 						t.Fatalf("warning=%q", warning.String())
 					}
-					if !projectHome {
+					if !projectHome && (callerHomeExists || strings.HasPrefix(value, "link/")) {
 						selected, err := os.Stat(got)
 						if err != nil {
 							t.Fatal(err)

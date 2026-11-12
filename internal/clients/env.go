@@ -61,6 +61,12 @@ func SetEnv(env []string, key string, value string) []string {
 	return append(env, entry)
 }
 
+// SetUniqueEnv replaces all entries for key with one key=value entry. Provider
+// homes use it so launch capture and children agree despite duplicate inputs.
+func SetUniqueEnv(env []string, key, value string) []string {
+	return SetEnv(UnsetEnv(env, key), key, value)
+}
+
 // UnsetEnv removes all entries for the given key from an env slice.
 // If key is empty, it returns env unchanged.
 func UnsetEnv(env []string, key string) []string {

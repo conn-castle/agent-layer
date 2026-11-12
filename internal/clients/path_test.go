@@ -3,6 +3,7 @@ package clients
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -110,6 +111,40 @@ func TestRelativeHomeFallbackDoesNotCleanParentTraversal(t *testing.T) {
 		want := caller + "/" + value
 		if got := ResolveRelativeHome(root, value, name); got != want {
 			t.Fatalf("%q resolved to %q, want unresolved %q", value, got, want)
+		}
+	}
+}
+
+func TestClearStaleHomeShorthandAndDuplicates(t *testing.T) {
+	root := t.TempDir()
+	caller := filepath.Join(root, "caller")
+	if err := os.Mkdir(caller, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(caller)
+	for _, home := range []struct{ key, name string }{{"CODEX_HOME", ".codex"}, {"CLAUDE_CONFIG_DIR", ".claude-config"}, {"GROK_HOME", ".grok-config"}} {
+		for _, value := range []string{home.name, home.name + "/", "./" + home.name + "/", ".//" + home.name, home.name + "/."} {
+			env := ClearStaleHome(root, []string{home.key + "=" + value, home.key + "=" + t.TempDir()}, home.key, home.name)
+			if value, present := GetEnv(env, home.key); present {
+				t.Fatalf("%s stale shorthand retained as %q", home.key, value)
+			}
+		}
+		for _, value := range []string{t.TempDir(), "other-home", ""} {
+			env := ClearStaleHome(root, []string{home.key + "=" + value, home.key + "=" + t.TempDir()}, home.key, home.name)
+			count := 0
+			for _, entry := range env {
+				if strings.HasPrefix(entry, home.key+"=") {
+					count++
+				}
+			}
+			got, _ := GetEnv(env, home.key)
+			want := value
+			if value == "other-home" {
+				want = filepath.Join(caller, value)
+			}
+			if count != 1 || got != want {
+				t.Fatalf("%s: entries=%d value=%q, want one %q", home.key, count, got, want)
+			}
 		}
 	}
 }

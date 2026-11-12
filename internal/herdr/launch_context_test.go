@@ -374,18 +374,8 @@ func writeLaunchContextFixture(t *testing.T, path string, context launchContext)
 	}
 }
 
-func TestLaunchHomeRecoveryUnsetAndLegacy(t *testing.T) {
-	empty := ""
+func TestLaunchHomeRecoveryPreservesLegacyRecords(t *testing.T) {
 	for _, provider := range []string{providerCodex, providerClaude, providerGrok} {
-		key := providerHomeKey(provider)
-		// A missing override must not inherit a different home's relative path.
-		argv := withLaunchHome([]string{"/bin/sh", "-c", "test -z \"${" + key + "+present}\""}, launchContext{Provider: provider, ProviderHome: &empty})
-		command := exec.Command(argv[0], argv[1:]...)
-		command.Dir = t.TempDir()
-		command.Env = []string{"HOME=" + t.TempDir(), "PATH=/usr/bin:/bin", key + "=wrong-relative-home"}
-		if output, err := command.CombinedOutput(); err != nil {
-			t.Fatalf("%s unset recovery: %v %s", provider, err, output)
-		}
 		legacy := []string{"al", provider, "resume", "fixture"}
 		if got := withLaunchHome(legacy, launchContext{Provider: provider}); !slices.Equal(got, legacy) {
 			t.Fatalf("legacy recovery changed: %v", got)

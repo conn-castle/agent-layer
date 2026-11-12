@@ -72,19 +72,15 @@ func ResolveHome(current string) string {
 }
 
 // ResolveRelativeHome preserves the project-home shorthand from subfolders:
-// an exact bare name (optionally prefixed with ./) selects the project home
-// only when the caller-relative entry is absent. Other relative values retain
+// the home name with only dot or empty path components selects the project
+// home when the caller-relative entry is absent. Other relative values retain
 // physical symlink-before-.. semantics; they are never lexically cleaned.
 func ResolveRelativeHome(root, current, name string) string {
 	selected := ResolveHome(current)
 	if current == "" || filepath.IsAbs(current) {
 		return selected
 	}
-	bare := current
-	for strings.HasPrefix(bare, "./") {
-		bare = strings.TrimPrefix(bare, "./")
-	}
-	if bare == name {
+	if homeShorthand(current, name) {
 		if _, err := os.Lstat(selected); os.IsNotExist(err) {
 			return filepath.Join(root, name)
 		}
@@ -92,19 +88,35 @@ func ResolveRelativeHome(root, current, name string) string {
 	return selected
 }
 
+// homeShorthand recognizes spelling variations without cleaning .. or other
+// components, whose meaning may depend on the filesystem.
+func homeShorthand(current, name string) bool {
+	found := false
+	for _, part := range strings.FieldsFunc(current, func(r rune) bool { return r == '/' || r == rune(os.PathSeparator) }) {
+		switch part {
+		case ".":
+		case name:
+			if found {
+				return false
+			}
+			found = true
+		default:
+			return false
+		}
+	}
+	return found
+}
+
 // ClearStaleHome clears this project's managed home and normalizes any other
 // relative override before a child changes its working directory.
 func ClearStaleHome(root string, env []string, key, name string) []string {
 	current, ok := GetEnv(env, key)
-	if !ok || current == "" {
+	if !ok {
 		return env
 	}
 	selected := ResolveRelativeHome(root, current, name)
-	if SamePath(selected, filepath.Join(root, name)) {
+	if current != "" && SamePath(selected, filepath.Join(root, name)) {
 		return UnsetEnv(env, key)
 	}
-	if selected != current {
-		return SetEnv(env, key, selected)
-	}
-	return env
+	return SetUniqueEnv(env, key, selected)
 }
