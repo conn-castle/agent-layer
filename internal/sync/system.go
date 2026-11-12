@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/conn-castle/agent-layer/internal/fsutil"
+	"github.com/conn-castle/agent-layer/internal/projection"
 	"github.com/conn-castle/agent-layer/internal/projectlock"
 )
 
@@ -105,4 +106,14 @@ func (RealSystem) RemoveAll(path string) error {
 // staged skill tree and to roll a failed publication back.
 func (RealSystem) Rename(oldpath string, newpath string) error {
 	return os.Rename(oldpath, newpath)
+}
+
+// dispatchLauncherOptions reads an optional per-sync capability. Systems without
+// it retain installed executable discovery; portable staging can omit host paths.
+func dispatchLauncherOptions(sys System) projection.DispatchLauncherOptions {
+	options := projection.DispatchLauncherOptions{}
+	if portable, ok := sys.(interface{ OmitInstalledExecutable() bool }); ok {
+		options.OmitInstalledExecutable = portable.OmitInstalledExecutable()
+	}
+	return options
 }

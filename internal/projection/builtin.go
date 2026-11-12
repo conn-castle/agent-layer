@@ -61,6 +61,13 @@ func BuiltInDispatchServer(cfg config.Config, client string) (ResolvedMCPServer,
 	}, true
 }
 
+// DispatchLauncherOptions controls per-call generation of the built-in launcher.
+// The zero value preserves ordinary installed executable discovery.
+type DispatchLauncherOptions struct {
+	// OmitInstalledExecutable keeps host installation paths out of portable projections.
+	OmitInstalledExecutable bool
+}
+
 // RootedBuiltInDispatchServer returns the built-in server with a launcher that
 // enters repoRoot before invoking al. This lets version dispatch find the repo
 // pin even when an MCP client chooses a different server working directory.
@@ -68,7 +75,8 @@ func BuiltInDispatchServer(cfg config.Config, client string) (ResolvedMCPServer,
 // InstalledExecutable) and appends its directory to PATH, so GUI and background
 // clients without the terminal PATH can start it. It falls back to al on PATH
 // when nothing was recorded or the recorded entry is no longer executable.
-func RootedBuiltInDispatchServer(cfg config.Config, client string, repoRoot string) (ResolvedMCPServer, bool, error) {
+// Options can omit the installed entry when generating portable projections.
+func RootedBuiltInDispatchServer(cfg config.Config, client string, repoRoot string, options ...DispatchLauncherOptions) (ResolvedMCPServer, bool, error) {
 	builtIn, ok := BuiltInDispatchServer(cfg, client)
 	if !ok {
 		return ResolvedMCPServer{}, false, nil
@@ -81,7 +89,10 @@ func RootedBuiltInDispatchServer(cfg config.Config, client string, repoRoot stri
 		// arguments compatible with cached older binaries, which ignore the extra
 		// environment variable and run safely from the canonical root.
 		builtIn.Command = builtInDispatchShell
-		installed, installedDir := InstalledExecutable(), ""
+		installed, installedDir := "", ""
+		if !slices.ContainsFunc(options, func(option DispatchLauncherOptions) bool { return option.OmitInstalledExecutable }) {
+			installed = InstalledExecutable()
+		}
 		if installed != "" {
 			installedDir = filepath.Dir(installed)
 		}
@@ -190,13 +201,13 @@ func clientAgentEnabled(cfg config.Config, client string) bool {
 // EffectiveMCPServers returns every MCP server a client actually receives: the
 // user's enabled servers plus the derived built-in Agent Dispatch server. A nil
 // resolver keeps resolved env values.
-func EffectiveMCPServers(cfg config.Config, env map[string]string, client string, resolver EnvVarResolver) ([]ResolvedMCPServer, error) {
+func EffectiveMCPServers(cfg config.Config, env map[string]string, client string, resolver EnvVarResolver, options ...DispatchLauncherOptions) ([]ResolvedMCPServer, error) {
 	resolved, err := resolveServers(clientServers(cfg.MCP.Servers, client), env, resolver)
 	if err != nil {
 		return nil, err
 	}
 	sortServersByID(resolved)
-	builtIn, ok, err := RootedBuiltInDispatchServer(cfg, client, env[config.BuiltinRepoRootEnvVar])
+	builtIn, ok, err := RootedBuiltInDispatchServer(cfg, client, env[config.BuiltinRepoRootEnvVar], options...)
 	if err != nil {
 		return nil, err
 	}

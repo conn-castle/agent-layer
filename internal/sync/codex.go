@@ -226,7 +226,7 @@ func buildCodexManagedConfigWithSystem(sys System, root string, project *config.
 	placeholderEnv := project.PlaceholderEnv()
 	var resolved []projection.ResolvedMCPServer
 	if config.HasProviderPassthroughKey(agentSpecific, config.CodexMCPServersKey) {
-		builtIn, ok, err := projection.RootedBuiltInDispatchServer(project.Config, projection.ClientCodex, root)
+		builtIn, ok, err := projection.RootedBuiltInDispatchServer(project.Config, projection.ClientCodex, root, dispatchLauncherOptions(sys))
 		if err != nil {
 			return codexManagedConfig{}, err
 		}
@@ -248,6 +248,7 @@ func buildCodexManagedConfigWithSystem(sys System, root string, project *config.
 			placeholderEnv,
 			projection.ClientCodex,
 			projection.ClientPlaceholderResolver("${%s}"),
+			dispatchLauncherOptions(sys),
 		)
 		if err != nil {
 			return codexManagedConfig{}, err

@@ -27,7 +27,7 @@ type copilotMCPServer struct {
 
 // writeCopilotMCPConfig generates .copilot/mcp-config.json for GitHub Copilot CLI.
 func writeCopilotMCPConfig(sys System, root string, project *config.ProjectConfig) error {
-	cfg, err := buildCopilotMCPConfig(project)
+	cfg, err := buildCopilotMCPConfig(project, dispatchLauncherOptions(sys))
 	if err != nil {
 		return err
 	}
@@ -51,7 +51,7 @@ func writeCopilotMCPConfig(sys System, root string, project *config.ProjectConfi
 	return nil
 }
 
-func buildCopilotMCPConfig(project *config.ProjectConfig) (*copilotMCPConfig, error) {
+func buildCopilotMCPConfig(project *config.ProjectConfig, options ...projection.DispatchLauncherOptions) (*copilotMCPConfig, error) {
 	cfg := &copilotMCPConfig{
 		Servers: make(map[string]copilotMCPServer),
 	}
@@ -61,6 +61,7 @@ func buildCopilotMCPConfig(project *config.ProjectConfig) (*copilotMCPConfig, er
 		project.PlaceholderEnv(),
 		projection.ClientCopilot,
 		projection.ClientPlaceholderResolver("${%s}"),
+		options...,
 	)
 	if err != nil {
 		return nil, err

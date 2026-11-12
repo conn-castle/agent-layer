@@ -24,7 +24,7 @@ type vscodeMCPServer struct {
 
 // writeVSCodeMCPConfig generates .vscode/mcp.json.
 func writeVSCodeMCPConfig(sys System, root string, project *config.ProjectConfig) error {
-	cfg, err := buildVSCodeMCPConfig(project)
+	cfg, err := buildVSCodeMCPConfig(project, dispatchLauncherOptions(sys))
 	if err != nil {
 		return err
 	}
@@ -48,7 +48,7 @@ func writeVSCodeMCPConfig(sys System, root string, project *config.ProjectConfig
 	return nil
 }
 
-func buildVSCodeMCPConfig(project *config.ProjectConfig) (*vscodeMCPConfig, error) {
+func buildVSCodeMCPConfig(project *config.ProjectConfig, options ...projection.DispatchLauncherOptions) (*vscodeMCPConfig, error) {
 	cfg := &vscodeMCPConfig{
 		Servers: make(map[string]vscodeMCPServer),
 	}
@@ -59,6 +59,7 @@ func buildVSCodeMCPConfig(project *config.ProjectConfig) (*vscodeMCPConfig, erro
 		project.PlaceholderEnv(),
 		projection.ClientVSCode,
 		projection.ClientPlaceholderResolver("${env:%s}"),
+		options...,
 	)
 	if err != nil {
 		return nil, err
