@@ -48,7 +48,7 @@ func writeVSCodeMCPConfig(sys System, root string, project *config.ProjectConfig
 	return nil
 }
 
-func buildVSCodeMCPConfig(project *config.ProjectConfig, options ...projection.DispatchLauncherOptions) (*vscodeMCPConfig, error) {
+func buildVSCodeMCPConfig(project *config.ProjectConfig, options projection.DispatchLauncherOptions) (*vscodeMCPConfig, error) {
 	cfg := &vscodeMCPConfig{
 		Servers: make(map[string]vscodeMCPServer),
 	}
@@ -59,7 +59,7 @@ func buildVSCodeMCPConfig(project *config.ProjectConfig, options ...projection.D
 		project.PlaceholderEnv(),
 		projection.ClientVSCode,
 		projection.ClientPlaceholderResolver("${env:%s}"),
-		options...,
+		options,
 	)
 	if err != nil {
 		return nil, err

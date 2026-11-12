@@ -322,7 +322,7 @@ func ensureAntigravityPathRealParentContained(root string, path string) error {
 	return nil
 }
 
-func buildAntigravityMCPConfig(project *config.ProjectConfig, options ...projection.DispatchLauncherOptions) (*antigravityMCPConfig, error) {
+func buildAntigravityMCPConfig(project *config.ProjectConfig, options projection.DispatchLauncherOptions) (*antigravityMCPConfig, error) {
 	cfg := &antigravityMCPConfig{
 		Servers: make(map[string]antigravityMCPServer),
 	}
@@ -334,7 +334,7 @@ func buildAntigravityMCPConfig(project *config.ProjectConfig, options ...project
 		project.PlaceholderEnv(),
 		antigravityClientID,
 		projection.ClientPlaceholderResolver("${%s}"),
-		options...,
+		options,
 	)
 	if err != nil {
 		return nil, err

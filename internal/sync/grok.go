@@ -103,7 +103,7 @@ func grokConfigIsManaged(data []byte) bool {
 		bytes.HasPrefix(data, []byte(grokLegacyGeneratedLine))
 }
 
-func buildGrokConfig(project *config.ProjectConfig, options ...projection.DispatchLauncherOptions) (string, error) {
+func buildGrokConfig(project *config.ProjectConfig, options projection.DispatchLauncherOptions) (string, error) {
 	var builder strings.Builder
 	builder.WriteString(grokHeader)
 
@@ -129,7 +129,7 @@ func buildGrokConfig(project *config.ProjectConfig, options ...projection.Dispat
 		project.PlaceholderEnv(),
 		projection.ClientGrok,
 		projection.ClientPlaceholderResolver("${%s}"),
-		options...,
+		options,
 	)
 	if err != nil {
 		return "", err
@@ -165,7 +165,7 @@ func buildGrokConfig(project *config.ProjectConfig, options ...projection.Dispat
 			clients = append(clients, projection.ClientClaude)
 		}
 		for _, client := range clients {
-			servers, err := projection.EffectiveMCPServers(project.Config, project.PlaceholderEnv(), client, projection.ClientPlaceholderResolver("${%s}"), options...)
+			servers, err := projection.EffectiveMCPServers(project.Config, project.PlaceholderEnv(), client, projection.ClientPlaceholderResolver("${%s}"), options)
 			if err != nil {
 				return "", err
 			}

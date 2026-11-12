@@ -67,7 +67,7 @@ func writeMCPConfig(sys System, root string, project *config.ProjectConfig) erro
 	return nil
 }
 
-func buildMCPConfig(project *config.ProjectConfig, options ...projection.DispatchLauncherOptions) (*mcpConfig, error) {
+func buildMCPConfig(project *config.ProjectConfig, options projection.DispatchLauncherOptions) (*mcpConfig, error) {
 	cfg := &mcpConfig{
 		GeneratedBy: mcpGeneratedBy,
 		Servers:     make(map[string]mcpServer),
@@ -80,7 +80,7 @@ func buildMCPConfig(project *config.ProjectConfig, options ...projection.Dispatc
 	var resolved []projection.ResolvedMCPServer
 	if config.IsAgentEnabled(project.Config.Agents.Claude.Enabled) || config.IsAgentEnabled(project.Config.Agents.ClaudeVSCode.Enabled) {
 		var err error
-		resolved, err = projection.EffectiveMCPServers(project.Config, project.PlaceholderEnv(), projection.ClientClaude, projection.ClientPlaceholderResolver("${%s}"), options...)
+		resolved, err = projection.EffectiveMCPServers(project.Config, project.PlaceholderEnv(), projection.ClientClaude, projection.ClientPlaceholderResolver("${%s}"), options)
 		if err != nil {
 			return nil, err
 		}
@@ -88,7 +88,7 @@ func buildMCPConfig(project *config.ProjectConfig, options ...projection.Dispatc
 	museEnabled := config.IsAgentEnabled(project.Config.Agents.Muse.Enabled)
 	museIDs := make(map[string]bool)
 	if museEnabled {
-		museServers, err := projection.EffectiveMCPServers(project.Config, project.PlaceholderEnv(), projection.ClientMuse, nil, options...)
+		museServers, err := projection.EffectiveMCPServers(project.Config, project.PlaceholderEnv(), projection.ClientMuse, nil, options)
 		if err != nil {
 			return nil, err
 		}

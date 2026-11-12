@@ -13,6 +13,12 @@ import (
 
 // System abstracts system-level operations to enable dependency injection in sync logic.
 type System interface {
+	// OmitInstalledExecutable reports whether generated Agent Dispatch launchers omit
+	// the host's installed al entry: true for portable staging such as benchmark
+	// bundles; false for ordinary sync. Implementations must return a constant,
+	// side-effect-free answer for the whole sync run because each launcher writer
+	// reads it independently.
+	OmitInstalledExecutable() bool
 	LookPath(file string) (string, error)
 	Stat(name string) (os.FileInfo, error)
 	Lstat(name string) (os.FileInfo, error)
@@ -35,6 +41,9 @@ type System interface {
 
 // RealSystem implements System using actual system calls.
 type RealSystem struct{ projectlock.RealSystem }
+
+// OmitInstalledExecutable returns false: ordinary sync records the installed entry.
+func (RealSystem) OmitInstalledExecutable() bool { return false }
 
 // LookPath searches for an executable named file in the directories named by the PATH environment variable.
 func (RealSystem) LookPath(file string) (string, error) {
@@ -108,12 +117,7 @@ func (RealSystem) Rename(oldpath string, newpath string) error {
 	return os.Rename(oldpath, newpath)
 }
 
-// dispatchLauncherOptions reads an optional per-sync capability. Systems without
-// it retain installed executable discovery; portable staging can omit host paths.
+// dispatchLauncherOptions reads the per-sync launcher capability.
 func dispatchLauncherOptions(sys System) projection.DispatchLauncherOptions {
-	options := projection.DispatchLauncherOptions{}
-	if portable, ok := sys.(interface{ OmitInstalledExecutable() bool }); ok {
-		options.OmitInstalledExecutable = portable.OmitInstalledExecutable()
-	}
-	return options
+	return projection.DispatchLauncherOptions{OmitInstalledExecutable: sys.OmitInstalledExecutable()}
 }

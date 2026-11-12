@@ -51,7 +51,7 @@ func writeCopilotMCPConfig(sys System, root string, project *config.ProjectConfi
 	return nil
 }
 
-func buildCopilotMCPConfig(project *config.ProjectConfig, options ...projection.DispatchLauncherOptions) (*copilotMCPConfig, error) {
+func buildCopilotMCPConfig(project *config.ProjectConfig, options projection.DispatchLauncherOptions) (*copilotMCPConfig, error) {
 	cfg := &copilotMCPConfig{
 		Servers: make(map[string]copilotMCPServer),
 	}
@@ -61,7 +61,7 @@ func buildCopilotMCPConfig(project *config.ProjectConfig, options ...projection.
 		project.PlaceholderEnv(),
 		projection.ClientCopilot,
 		projection.ClientPlaceholderResolver("${%s}"),
-		options...,
+		options,
 	)
 	if err != nil {
 		return nil, err

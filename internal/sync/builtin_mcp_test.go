@@ -52,7 +52,7 @@ func wantBuiltInDispatchInvocation(t *testing.T, command string, args []string, 
 func TestClaudeReceivesTheBuiltInDispatchServer(t *testing.T) {
 	t.Parallel()
 	project := builtInProject(t)
-	cfg, err := buildMCPConfig(project)
+	cfg, err := buildMCPConfig(project, projection.DispatchLauncherOptions{})
 	if err != nil {
 		t.Fatalf("build claude mcp config: %v", err)
 	}
@@ -75,7 +75,7 @@ func TestClaudeReceivesTheBuiltInDispatchServer(t *testing.T) {
 func TestAntigravityReceivesTheBuiltInDispatchServer(t *testing.T) {
 	t.Parallel()
 	project := builtInProject(t)
-	cfg, err := buildAntigravityMCPConfig(project)
+	cfg, err := buildAntigravityMCPConfig(project, projection.DispatchLauncherOptions{})
 	if err != nil {
 		t.Fatalf("build antigravity mcp config: %v", err)
 	}
@@ -94,7 +94,7 @@ func TestAntigravityReceivesTheBuiltInDispatchServer(t *testing.T) {
 func TestCopilotReceivesTheBuiltInDispatchServer(t *testing.T) {
 	t.Parallel()
 	project := builtInProject(t)
-	cfg, err := buildCopilotMCPConfig(project)
+	cfg, err := buildCopilotMCPConfig(project, projection.DispatchLauncherOptions{})
 	if err != nil {
 		t.Fatalf("build copilot mcp config: %v", err)
 	}
@@ -116,7 +116,7 @@ func TestCopilotReceivesTheBuiltInDispatchServer(t *testing.T) {
 func TestVSCodeReceivesTheBuiltInDispatchServer(t *testing.T) {
 	t.Parallel()
 	project := builtInProject(t)
-	cfg, err := buildVSCodeMCPConfig(project)
+	cfg, err := buildVSCodeMCPConfig(project, projection.DispatchLauncherOptions{})
 	if err != nil {
 		t.Fatalf("build vscode mcp config: %v", err)
 	}
@@ -339,8 +339,9 @@ func TestSyncDispatchLauncherInstalledEntry(t *testing.T) {
 						sys  System
 						omit bool
 					}{
-						{"ordinary-without-capability", RealSystem{}, false},
+						{"ordinary", RealSystem{}, false},
 						{"omitted", portableLauncherSystem{omit: true}, true},
+						{"omitted-through-wrapper", struct{ System }{portableLauncherSystem{omit: true}}, true},
 						{"ordinary-after-omission", RealSystem{}, false},
 						{"explicit-retain", portableLauncherSystem{}, false},
 					} {

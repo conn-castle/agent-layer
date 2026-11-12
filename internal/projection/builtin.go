@@ -62,8 +62,7 @@ func BuiltInDispatchServer(cfg config.Config, client string) (ResolvedMCPServer,
 }
 
 // DispatchLauncherOptions controls per-call generation of the built-in launcher.
-// The zero value preserves ordinary installed executable discovery. When several
-// options are passed, any with OmitInstalledExecutable set omits the entry.
+// The zero value preserves ordinary installed executable discovery.
 type DispatchLauncherOptions struct {
 	// OmitInstalledExecutable keeps host installation paths out of portable projections.
 	OmitInstalledExecutable bool
@@ -77,7 +76,7 @@ type DispatchLauncherOptions struct {
 // clients without the terminal PATH can start it. It falls back to al on PATH
 // when nothing was recorded or the recorded entry is no longer executable.
 // Options can omit the installed entry when generating portable projections.
-func RootedBuiltInDispatchServer(cfg config.Config, client string, repoRoot string, options ...DispatchLauncherOptions) (ResolvedMCPServer, bool, error) {
+func RootedBuiltInDispatchServer(cfg config.Config, client string, repoRoot string, options DispatchLauncherOptions) (ResolvedMCPServer, bool, error) {
 	builtIn, ok := BuiltInDispatchServer(cfg, client)
 	if !ok {
 		return ResolvedMCPServer{}, false, nil
@@ -91,7 +90,7 @@ func RootedBuiltInDispatchServer(cfg config.Config, client string, repoRoot stri
 		// environment variable and run safely from the canonical root.
 		builtIn.Command = builtInDispatchShell
 		installed, installedDir := "", ""
-		if !slices.ContainsFunc(options, func(option DispatchLauncherOptions) bool { return option.OmitInstalledExecutable }) {
+		if !options.OmitInstalledExecutable {
 			installed = InstalledExecutable()
 		}
 		if installed != "" {
@@ -202,13 +201,13 @@ func clientAgentEnabled(cfg config.Config, client string) bool {
 // EffectiveMCPServers returns every MCP server a client actually receives: the
 // user's enabled servers plus the derived built-in Agent Dispatch server. A nil
 // resolver keeps resolved env values.
-func EffectiveMCPServers(cfg config.Config, env map[string]string, client string, resolver EnvVarResolver, options ...DispatchLauncherOptions) ([]ResolvedMCPServer, error) {
+func EffectiveMCPServers(cfg config.Config, env map[string]string, client string, resolver EnvVarResolver, options DispatchLauncherOptions) ([]ResolvedMCPServer, error) {
 	resolved, err := resolveServers(clientServers(cfg.MCP.Servers, client), env, resolver)
 	if err != nil {
 		return nil, err
 	}
 	sortServersByID(resolved)
-	builtIn, ok, err := RootedBuiltInDispatchServer(cfg, client, env[config.BuiltinRepoRootEnvVar], options...)
+	builtIn, ok, err := RootedBuiltInDispatchServer(cfg, client, env[config.BuiltinRepoRootEnvVar], options)
 	if err != nil {
 		return nil, err
 	}
