@@ -324,6 +324,15 @@ func TestSyncDispatchLauncherInstalledEntry(t *testing.T) {
 						}
 					}
 
+					wantEntry, wantEntryDir := installed, installedDir
+					// Cover exported-entry precedence over PATH in one existing case.
+					if layout == "all-clients" && provenance == "release" {
+						wantEntryDir = t.TempDir()
+						wantEntry = filepath.Join(wantEntryDir, "al")
+						require.NoError(t, os.WriteFile(wantEntry, []byte("#!/bin/sh\n"), 0o700)) // #nosec G306 -- test-owned executable fixture.
+						t.Setenv(versiondispatch.EnvInstalledExecutable, wantEntry)
+					}
+
 					var ordinary map[string][]string
 					for _, mode := range []struct {
 						name string
@@ -346,7 +355,7 @@ func TestSyncDispatchLauncherInstalledEntry(t *testing.T) {
 								require.Len(t, args, 7, path)
 								require.Equal(t, root, args[3], path)
 								require.Equal(t, wantDevelopment, args[4], path)
-								wantInstalled, wantDir := installed, installedDir
+								wantInstalled, wantDir := wantEntry, wantEntryDir
 								if mode.omit {
 									wantInstalled, wantDir = "", ""
 								}

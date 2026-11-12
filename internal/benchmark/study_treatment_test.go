@@ -509,11 +509,12 @@ func TestStudyTreatmentBundleIdentityIsDeterministic(t *testing.T) {
 // TestStudyTreatmentBundleIdentityIgnoresHostInstalledAl proves the staged
 // launchers do not record the host's installed al, so the manifest hash does
 // not depend on where the staging machine installed it. Every client that
-// receives the built-in server is enabled and the whole bundle is scanned, so a
-// launcher file missing from treatmentMCPLauncherFiles fails the test.
+// receives the built-in server is enabled. The whole staged bundle is scanned,
+// so any generated file recording the host install directory fails the test.
+// The local list pins the expected launcher files and count.
 func TestStudyTreatmentBundleIdentityIgnoresHostInstalledAl(t *testing.T) {
 	// Claude/Muse share a launcher; Antigravity uses either legacy or migrated paths.
-	var treatmentMCPLauncherFiles = []string{
+	launcherFiles := []string{
 		".mcp.json",
 		filepath.Join(".vscode", "mcp.json"),
 		filepath.Join(".codex", "config.toml"),
@@ -579,7 +580,7 @@ func TestStudyTreatmentBundleIdentityIgnoresHostInstalledAl(t *testing.T) {
 			t.Fatal(err)
 		}
 		launchers := 0
-		for _, generated := range treatmentMCPLauncherFiles {
+		for _, generated := range launcherFiles {
 			data, err := os.ReadFile(filepath.Join(bundle.Root, generated)) // #nosec G304 -- generated is a fixed path inside the test-owned bundle.
 			if errors.Is(err, fs.ErrNotExist) {
 				continue

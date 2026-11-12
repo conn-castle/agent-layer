@@ -62,7 +62,8 @@ func BuiltInDispatchServer(cfg config.Config, client string) (ResolvedMCPServer,
 }
 
 // DispatchLauncherOptions controls per-call generation of the built-in launcher.
-// The zero value preserves ordinary installed executable discovery.
+// The zero value preserves ordinary installed executable discovery. When several
+// options are passed, any with OmitInstalledExecutable set omits the entry.
 type DispatchLauncherOptions struct {
 	// OmitInstalledExecutable keeps host installation paths out of portable projections.
 	OmitInstalledExecutable bool
