@@ -2,6 +2,7 @@ package grok
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/conn-castle/agent-layer/internal/clients"
 	"github.com/conn-castle/agent-layer/internal/config"
+	"github.com/conn-castle/agent-layer/internal/herdr"
 	"github.com/conn-castle/agent-layer/internal/run"
 	"github.com/conn-castle/agent-layer/internal/testutil"
 )
@@ -300,5 +302,82 @@ func TestLaunchExplicitOptionsReplaceDefaults(t *testing.T) {
 			t.Fatal(err)
 		}
 		call.AssertCalled(t, filepath.Join(binDir, "grok"), append([]string{"grok", "--no-auto-update"}, passed...))
+	}
+}
+
+func TestLaunchCapturesSelectedHomeInsteadOfInheritedRelativeHome(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("HOME", t.TempDir())
+	t.Chdir(root)
+	writeResolvableGrok(t)
+	call := testutil.CaptureExec(t, &execFunc, nil)
+	runDir := filepath.Join(root, ".agent-layer", "tmp", "runs", "capture")
+	if err := os.MkdirAll(runDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	env := []string{EnvHome + "=relative-home", EnvHome + "=" + filepath.Join(t.TempDir(), "second-home"), herdr.EnvEnabled + "=1", herdr.EnvSocketPath + "=/fixture/socket", herdr.EnvPaneID + "=w1:p1"}
+	if err := Launch(&config.ProjectConfig{Root: root}, &run.Info{Dir: runDir}, env, nil); err != nil {
+		t.Fatal(err)
+	}
+	paths, err := filepath.Glob(filepath.Join(runDir, "herdr-launch-*.json"))
+	if err != nil || len(paths) != 1 {
+		t.Fatalf("records=%v err=%v", paths, err)
+	}
+	data, err := os.ReadFile(paths[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	var record struct {
+		Home string `json:"provider_home"`
+	}
+	if err := json.Unmarshal(data, &record); err != nil {
+		t.Fatal(err)
+	}
+	count := 0
+	for _, entry := range call.Env {
+		if strings.HasPrefix(entry, EnvHome+"=") {
+			count++
+		}
+	}
+	if count != 1 {
+		t.Fatalf("exec received %d home entries: %v", count, call.Env)
+	}
+	childHome, _ := clients.GetEnv(call.Env, EnvHome)
+	if record.Home != HomeDir(root) || record.Home != childHome {
+		t.Fatalf("captured=%q child=%q", record.Home, childHome)
+	}
+}
+
+func TestConfigureEnvironmentSubfolderHomeShorthandWarning(t *testing.T) {
+	for _, entry := range []string{"missing", "directory", "dangling"} {
+		t.Run(entry, func(t *testing.T) {
+			root := t.TempDir()
+			caller := filepath.Join(root, "caller")
+			if err := os.Mkdir(caller, 0o700); err != nil {
+				t.Fatal(err)
+			}
+			name := filepath.Base(HomeDir(root))
+			switch entry {
+			case "directory":
+				if err := os.Mkdir(filepath.Join(caller, name), 0o700); err != nil {
+					t.Fatal(err)
+				}
+			case "dangling":
+				if err := os.Symlink(filepath.Join(root, "missing"), filepath.Join(caller, name)); err != nil {
+					t.Fatal(err)
+				}
+			}
+			t.Chdir(caller)
+			for _, value := range []string{name, "./" + name, name + "/", ".//" + name, name + "/."} {
+				var warning bytes.Buffer
+				env := ConfigureEnvironment(root, []string{EnvHome + "=" + value}, config.GrokConfig{}, &warning)
+				if got, _ := clients.GetEnv(env, EnvHome); got != HomeDir(root) {
+					t.Fatalf("selected home=%q", got)
+				}
+				if (warning.Len() > 0) != (entry != "missing") {
+					t.Fatalf("entry=%s value=%q warning=%q", entry, value, warning.String())
+				}
+			}
+		})
 	}
 }

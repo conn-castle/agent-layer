@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net"
 	"os"
@@ -856,64 +857,119 @@ func TestHandleForRootDoesNotClaimPlainNativePane(t *testing.T) {
 	}
 }
 
-func TestHandleForRootStoresNonMuseLaunchIdentity(t *testing.T) {
+func TestHandleForRootStoresAndExecutesLaunchIdentity(t *testing.T) {
 	cases := []struct {
-		provider, payload string
-		want              []string
+		name, provider, payload string
+		unset                   bool
+		want                    []string
 	}{
-		{providerClaude, `{"hook_event_name":"SessionStart","session_id":"native-id"}`, []string{"al", "claude", "--resume", "native-id"}},
-		{providerCodex, `{"hook_event_name":"SessionStart","session_id":"01a1138f-7df0-7fa0-94ae-820334783a29"}`, []string{"al", "codex", "resume", "01a1138f-7df0-7fa0-94ae-820334783a29"}},
-		{providerGrok, `{"hookEventName":"SessionStart","sessionId":"native-id"}`, []string{"al", "grok", "--resume", "native-id"}},
-		{providerAgy, `{"conversationId":"native-id"}`, []string{"al", "agy", "--conversation", "native-id"}},
+		{"Claude selected home", providerClaude, `{"hook_event_name":"SessionStart","session_id":"native-id"}`, false, []string{"al", "claude", "--resume", "native-id"}},
+		{"Claude unset home", providerClaude, `{"hook_event_name":"SessionStart","session_id":"native-id"}`, true, []string{"al", "claude", "--resume", "native-id"}},
+		{"Codex selected home", providerCodex, `{"hook_event_name":"SessionStart","session_id":"01a1138f-7df0-7fa0-94ae-820334783a29"}`, false, []string{"al", "codex", "resume", "01a1138f-7df0-7fa0-94ae-820334783a29"}},
+		{"Grok selected home", providerGrok, `{"hookEventName":"SessionStart","sessionId":"native-id"}`, false, []string{"al", "grok", "--resume", "native-id"}},
+		{"Muse generation", providerMuse, `{"hook_event_name":"SessionStart","session_id":"native-id"}`, false, []string{"al", "muse", "resume", "native-id"}},
+		{"Agy identity", providerAgy, `{"conversationId":"native-id"}`, false, []string{"al", "agy", "--conversation", "native-id"}},
 	}
 	for _, tc := range cases {
-		t.Run(tc.provider, func(t *testing.T) {
-			options := fakeHerdROptions{paneGetsExpected: 1}
-			if tc.provider == providerCodex {
-				// Codex recovery requires the projected title and live foreground owner.
-				options.requestsExpected = 6
-				options.codexPanes = []fakeCodexPane{{
-					paneID: "w1:p1", title: "✳ 01a1138f-7df0-7fa0-94ae-820334783a29 | selected",
-					processPID: os.Getpid(), processArgv: []any{"codex"},
-				}}
-			}
-			socket, reports, done := fakeHerdR(t, options)
-			root, err := os.Getwd()
-			if err != nil {
-				t.Fatal(err)
-			}
-			runDir := filepath.Join(root, ".agent-layer", "tmp", "runs", "identity")
-			if err := os.MkdirAll(runDir, 0o700); err != nil {
-				t.Fatal(err)
-			}
-			env := []string{EnvEnabled + "=1", EnvSocketPath + "=" + socket, EnvPaneID + "=w1:p1"}
-			if err := CaptureLaunch(root, runDir, env, tc.provider); err != nil {
-				t.Fatal(err)
-			}
-			hookEnv := env
-			if tc.provider == providerAgy {
-				hookEnv = nil
-			}
-			var out bytes.Buffer
-			if err := HandleForRoot(tc.provider, root, strings.NewReader(tc.payload), &out, io.Discard, hookEnv); err != nil {
-				t.Fatal(err)
-			}
-			waitFakeHerdR(t, done)
-			params := (<-reports)["params"].(map[string]any)
-			got := params[requestResumeArgvKey].([]any)
-			want := tc.want
-			if len(got) != len(want) {
-				t.Fatalf("argv = %v, want %v", got, want)
-			}
-			for i, argument := range want {
-				if got[i] != argument {
-					t.Fatalf("argv = %v, want %v", got, want)
+		for _, dev := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/dev=%t", tc.name, dev), func(t *testing.T) {
+				options := fakeHerdROptions{paneGetsExpected: 1}
+				if tc.provider == providerCodex {
+					// Route through the rooted Codex flow with native foreground ownership.
+					options.requestsExpected = 6
+					options.codexPanes = []fakeCodexPane{{paneID: "w1:p1", title: "✳ 01a1138f-7df0-7fa0-94ae-820334783a29 | selected", processPID: os.Getpid(), processArgv: []any{"codex"}}}
 				}
-			}
-			if tc.provider == providerAgy && out.String() != "{}\n" {
-				t.Fatalf("Agy response = %q", out.String())
-			}
-		})
+				socket, reports, done := fakeHerdR(t, options)
+				root, err := os.Getwd()
+				if err != nil {
+					t.Fatal(err)
+				}
+				t.Setenv("HOME", t.TempDir())
+				runDir := filepath.Join(root, ".agent-layer", "tmp", "runs", "identity")
+				if err := os.MkdirAll(runDir, 0o700); err != nil {
+					t.Fatal(err)
+				}
+				binDir, devExecutable := recoveryExecutables(t)
+				canonicalDev, err := filepath.EvalSymlinks(devExecutable)
+				if err != nil {
+					t.Fatal(err)
+				}
+				env := []string{EnvEnabled + "=1", EnvSocketPath + "=" + socket, EnvPaneID + "=w1:p1"}
+				home := filepath.Join(t.TempDir(), "effective-home")
+				if tc.provider == providerGrok {
+					home = filepath.Join(root, ".grok-config")
+				}
+				key := providerHomeKey(tc.provider)
+				if key != "" && !tc.unset {
+					env = append(env, key+"="+home)
+				}
+				if dev {
+					env = append(env, EnvDevBypass+"=1", EnvDevExecutable+"="+devExecutable)
+				}
+				if err := CaptureLaunch(root, runDir, env, tc.provider); err != nil {
+					t.Fatal(err)
+				}
+				hookEnv := env
+				if tc.provider == providerAgy {
+					hookEnv = nil
+				}
+				var out bytes.Buffer
+				if err := HandleForRoot(tc.provider, root, strings.NewReader(tc.payload), &out, io.Discard, hookEnv); err != nil {
+					t.Fatal(err)
+				}
+				waitFakeHerdR(t, done)
+				params := (<-reports)["params"].(map[string]any)
+				argv := interfaceStrings(params[requestResumeArgvKey])
+				want := slices.Clone(tc.want)
+				wantEnv := map[string]string{"CODEX_HOME": "conflicting-codex", "CLAUDE_CONFIG_DIR": "conflicting-claude", "GROK_HOME": "conflicting-grok", envRecoveryGeneration: "<unset>", EnvDevBypass: "<unset>"}
+				if dev {
+					want = append([]string{commandEnv, EnvDevBypass + "=1", EnvDevExecutable + "=" + canonicalDev, canonicalDev}, want[1:]...)
+					wantEnv[EnvDevBypass] = "1"
+				}
+				if key != "" {
+					if tc.unset {
+						want = append([]string{commandEnv, "-u", key}, want...)
+						wantEnv[key] = "<unset>"
+					} else {
+						want = append([]string{commandEnv, key + "=" + home}, want...)
+						wantEnv[key] = home
+					}
+				}
+				if tc.provider == providerMuse {
+					_, start, err := processLineage(os.Getpid())
+					if err != nil {
+						t.Fatal(err)
+					}
+					generation := launchGeneration(os.Getpid(), start)
+					wantEnv[envRecoveryGeneration] = generation
+					if dev {
+						want = append([]string{commandEnv, envRecoveryGeneration + "=" + generation}, want[1:]...)
+					} else {
+						want = append([]string{commandEnv, envRecoveryGeneration + "=" + generation}, want...)
+					}
+				}
+				if !slices.Equal(argv, want) {
+					t.Fatalf("reported argv=%v, want %v", argv, want)
+				}
+				path, err := sessionPath(socket)
+				if err != nil {
+					t.Fatal(err)
+				}
+				spec := providers[tc.provider]
+				if stored, err := storedResumeAt(path, "w1:p1", spec, argv); err != nil || !stored {
+					t.Fatalf("persisted recipe match=%t err=%v", stored, err)
+				}
+				changed := slices.Clone(argv)
+				changed[len(changed)-1] = "different-session"
+				if stored, err := storedResumeAt(path, "w1:p1", spec, changed); err != nil || stored {
+					t.Fatalf("changed recipe match=%t err=%v", stored, err)
+				}
+				assertRecoveryExecutes(t, argv, binDir, wantEnv, tc.want[1:], dev)
+				if tc.provider == providerAgy && out.String() != "{}\n" {
+					t.Fatalf("Agy response=%q", out.String())
+				}
+			})
+		}
 	}
 }
 

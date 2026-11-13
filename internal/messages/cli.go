@@ -329,6 +329,7 @@ const (
 	ClientsVSCodeCodeNotFoundFmt         = "vscode preflight failed: 'code' command not found on PATH: %w"
 	ClientsVSCodeManagedBlockConflictFmt = "vscode preflight failed: managed settings block conflict in %s (%s); run `al sync` to repair `.vscode/settings.json`"
 
+	HerdRProviderHomeInvalid         = "provider home is not absolute or provider has no home override"
 	ClientsCodexHomeWarningFmt       = "Warning: CODEX_HOME is set to %s; expected %s\n"
 	ClientsCodexHomeEnsureFailedFmt  = "prepare repo-local CODEX_HOME %s: %w"
 	ClientsCodexHomeNotDirectoryFmt  = "repo-local CODEX_HOME %s exists but is not a directory; move it aside or set agents.codex.local_config_dir = false"

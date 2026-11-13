@@ -55,6 +55,8 @@ const (
 	// DispatchMCPImageFallbackFmt reports a pinned MCP server that could not move
 	// to its immutable image copy and keeps running from the installed path.
 	DispatchMCPImageFallbackFmt = "warning: could not run the agent-layer MCP server from an immutable image copy (%v); running in place, so replacing the installed al (for example with al update) will require reconnecting this server\n"
+	// DispatchImageLeaseUnavailableFmt reports best-effort direct-image startup.
+	DispatchImageLeaseUnavailableFmt = "warning: running image cache entry could not be leased: %v\n"
 	// DispatchMCPDevImageFallbackFmt reports a development MCP server that
 	// could not snapshot and will refuse new work after a dev rebuild.
 	DispatchMCPDevImageFallbackFmt = "warning: could not run the agent-layer MCP server from an immutable image copy (%v); running in place, so a development rebuild that replaces the executable will make this server refuse new dispatch work until reconnected\n"

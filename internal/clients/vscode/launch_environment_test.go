@@ -9,6 +9,7 @@ import (
 	"github.com/conn-castle/agent-layer/internal/clients"
 	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/run"
+	"github.com/conn-castle/agent-layer/internal/testutil"
 )
 
 func TestLaunchAppliesOnlyProviderOwnedEnvironmentChanges(t *testing.T) {
@@ -23,6 +24,10 @@ func TestLaunchAppliesOnlyProviderOwnedEnvironmentChanges(t *testing.T) {
 		want             func(string) map[string]string
 		absent           []string
 		wantGrokHome0700 bool
+		wantCodexHome    bool
+		callerHomes      bool
+		relativeHomes    bool
+		rootAlias        bool
 	}{
 		{
 			name:          "enabled providers receive repository homes",
@@ -72,6 +77,80 @@ func TestLaunchAppliesOnlyProviderOwnedEnvironmentChanges(t *testing.T) {
 				return map[string]string{"CODEX_HOME": "/outside/codex", "CLAUDE_CONFIG_DIR": "/outside/claude", "GROK_HOME": "/outside/grok"}
 			},
 		},
+
+		{
+			name:          "disabled local configs normalize caller-relative user homes",
+			relativeHomes: true,
+			vscodeEnabled: true, claudeEnabled: true,
+			inherited: func(string) map[string]string {
+				return map[string]string{"CODEX_HOME": "codex-user", "CLAUDE_CONFIG_DIR": "claude-user"}
+			},
+			want: func(root string) map[string]string {
+				return map[string]string{"CODEX_HOME": filepath.Join(root, "caller", "codex-user"), "CLAUDE_CONFIG_DIR": filepath.Join(root, "caller", "claude-user")}
+			},
+		},
+
+		{
+			name:          "disabled local configs clear bare project-home fallback from subfolder",
+			vscodeEnabled: true, claudeEnabled: true,
+			inherited: func(string) map[string]string {
+				return map[string]string{"CODEX_HOME": ".codex", "CLAUDE_CONFIG_DIR": "./.claude-config"}
+			},
+			want:   func(string) map[string]string { return nil },
+			absent: []string{"CODEX_HOME", "CLAUDE_CONFIG_DIR"},
+		},
+
+		{
+			name:          "disabled local configs preserve existing bare caller homes",
+			relativeHomes: true,
+			vscodeEnabled: true, claudeEnabled: true, callerHomes: true,
+			inherited: func(string) map[string]string {
+				return map[string]string{"CODEX_HOME": "./.codex", "CLAUDE_CONFIG_DIR": ".claude-config"}
+			},
+			want: func(root string) map[string]string {
+				return map[string]string{"CODEX_HOME": filepath.Join(root, "caller", ".codex"), "CLAUDE_CONFIG_DIR": filepath.Join(root, "caller", ".claude-config")}
+			},
+		},
+		{
+			name:          "disabled local configs clear caller-relative project homes",
+			vscodeEnabled: true, claudeEnabled: true,
+			inherited: func(string) map[string]string {
+				return map[string]string{"CODEX_HOME": "../.codex", "CLAUDE_CONFIG_DIR": "../.claude-config"}
+			},
+			want:   func(string) map[string]string { return nil },
+			absent: []string{"CODEX_HOME", "CLAUDE_CONFIG_DIR"},
+		},
+
+		{
+			name:          "disabled VS Code preserves the inherited absolute project home when local config is enabled",
+			rootAlias:     true,
+			codexLocal:    true,
+			wantCodexHome: true,
+			inherited: func(root string) map[string]string {
+				return map[string]string{"CODEX_HOME": filepath.Join(root, ".codex")}
+			},
+			want: func(root string) map[string]string {
+				return map[string]string{"CODEX_HOME": filepath.Join(root, ".codex")}
+			},
+		},
+		{
+			name:          "disabled VS Code creates the inherited shorthand project home from a subfolder",
+			codexLocal:    true,
+			wantCodexHome: true,
+			inherited:     func(string) map[string]string { return map[string]string{"CODEX_HOME": ".codex/."} },
+			want: func(root string) map[string]string {
+				return map[string]string{"CODEX_HOME": filepath.Join(root, ".codex")}
+			},
+		},
+		{
+			name:          "disabled VS Code normalizes a relative override when local config is enabled",
+			relativeHomes: true,
+			codexLocal:    true,
+			inherited:     func(string) map[string]string { return map[string]string{"CODEX_HOME": "user-home"} },
+			want: func(root string) map[string]string {
+				return map[string]string{"CODEX_HOME": filepath.Join(root, "caller", "user-home")}
+			},
+		},
 		{
 			name:       "disabled VS Code does not opt Codex into a repository home",
 			codexLocal: true,
@@ -82,6 +161,26 @@ func TestLaunchAppliesOnlyProviderOwnedEnvironmentChanges(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			root := t.TempDir()
+			if test.rootAlias {
+				alias := filepath.Join(t.TempDir(), "alias")
+				if err := os.Symlink(root, alias); err != nil {
+					t.Fatal(err)
+				}
+				root = alias
+			}
+			t.Setenv("HOME", t.TempDir())
+			caller := filepath.Join(root, "caller")
+			if err := os.Mkdir(caller, 0o700); err != nil {
+				t.Fatal(err)
+			}
+			if test.callerHomes {
+				for _, name := range []string{".codex", ".claude-config"} {
+					if err := os.Mkdir(filepath.Join(caller, name), 0o700); err != nil {
+						t.Fatal(err)
+					}
+				}
+			}
+			t.Chdir(caller)
 			binDir := t.TempDir()
 			envPath := filepath.Join(t.TempDir(), "environment")
 			codePath := filepath.Join(binDir, "code")
@@ -109,7 +208,11 @@ func TestLaunchAppliesOnlyProviderOwnedEnvironmentChanges(t *testing.T) {
 				t.Fatal(err)
 			}
 			launched := splitEnvironment(string(data))
-			for key, value := range test.want(root) {
+			wantRoot := root
+			if test.relativeHomes {
+				wantRoot = testutil.PhysicalPath(t, root)
+			}
+			for key, value := range test.want(wantRoot) {
 				if launched[key] != value {
 					t.Fatalf("%s = %q, want %q", key, launched[key], value)
 				}
@@ -117,6 +220,22 @@ func TestLaunchAppliesOnlyProviderOwnedEnvironmentChanges(t *testing.T) {
 			for _, key := range test.absent {
 				if _, present := launched[key]; present {
 					t.Fatalf("%s unexpectedly present as %q", key, launched[key])
+				}
+			}
+			if test.codexLocal && (test.vscodeEnabled || test.wantCodexHome) {
+				info, err := os.Stat(filepath.Join(root, ".codex"))
+				if err != nil || !info.IsDir() || info.Mode().Perm()&0o077 != 0 {
+					t.Fatalf("Codex home=%v err=%v, want owner-only directory", info, err)
+				}
+			}
+			if test.codexLocal && !test.vscodeEnabled && !test.wantCodexHome {
+				for _, home := range []string{filepath.Join(root, ".codex"), launched["CODEX_HOME"]} {
+					if home == "" {
+						continue
+					}
+					if _, err := os.Lstat(home); !os.IsNotExist(err) {
+						t.Fatalf("unselected or foreign home %q was created: %v", home, err)
+					}
 				}
 			}
 			if test.wantGrokHome0700 {

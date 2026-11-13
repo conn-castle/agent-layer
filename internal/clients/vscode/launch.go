@@ -9,6 +9,7 @@ import (
 
 	"github.com/conn-castle/agent-layer/internal/clients"
 	"github.com/conn-castle/agent-layer/internal/clients/claude"
+	"github.com/conn-castle/agent-layer/internal/clients/codex"
 	"github.com/conn-castle/agent-layer/internal/clients/grok"
 	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/messages"
@@ -29,8 +30,18 @@ func Launch(cfg *config.ProjectConfig, runInfo *run.Info, env []string, passArgs
 	}
 
 	if config.IsAgentEnabled(cfg.Config.Agents.VSCode.Enabled) && config.CodexLocalConfigDirEnabled(cfg.Config.Agents.Codex) {
-		codexHome := filepath.Join(cfg.Root, ".codex")
-		env = clients.SetEnv(env, "CODEX_HOME", codexHome)
+		codexHome := filepath.Join(cfg.Root, codex.HomeDirName)
+		env = clients.SetUniqueEnv(env, "CODEX_HOME", codexHome)
+		if err := codex.EnsureSelectedHome(cfg.Root, env, cfg.Config.Agents.Codex); err != nil {
+			return err
+		}
+	} else if !config.CodexLocalConfigDirEnabled(cfg.Config.Agents.Codex) {
+		env = codex.ConfigureEnvironment(cfg.Root, env, cfg.Config.Agents.Codex, nil)
+	} else if current, ok := clients.GetEnv(env, "CODEX_HOME"); ok {
+		env = clients.SetUniqueEnv(env, "CODEX_HOME", clients.ResolveRelativeHome(cfg.Root, current, codex.HomeDirName))
+		if err := codex.EnsureSelectedHome(cfg.Root, env, cfg.Config.Agents.Codex); err != nil {
+			return err
+		}
 	}
 
 	if config.IsAgentEnabled(cfg.Config.Agents.Grok.Enabled) {
@@ -45,7 +56,7 @@ func Launch(cfg *config.ProjectConfig, runInfo *run.Info, env []string, passArgs
 	localConfigDir := cfg.Config.Agents.Claude.LocalConfigDir != nil && *cfg.Config.Agents.Claude.LocalConfigDir
 	if config.IsAgentEnabled(cfg.Config.Agents.ClaudeVSCode.Enabled) && localConfigDir {
 		claudeConfigDir := filepath.Join(cfg.Root, ".claude-config")
-		env = clients.SetEnv(env, "CLAUDE_CONFIG_DIR", claudeConfigDir)
+		env = clients.SetUniqueEnv(env, "CLAUDE_CONFIG_DIR", claudeConfigDir)
 	} else {
 		env = claude.ClearStaleConfigDir(cfg.Root, env)
 	}

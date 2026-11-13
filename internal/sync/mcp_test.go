@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/conn-castle/agent-layer/internal/config"
+	"github.com/conn-castle/agent-layer/internal/projection"
 )
 
 func TestBuildMCPConfig(t *testing.T) {
@@ -39,7 +40,7 @@ func TestBuildMCPConfig(t *testing.T) {
 		Root: root,
 	}
 
-	cfg, err := buildMCPConfig(project)
+	cfg, err := buildMCPConfig(project, projection.DispatchLauncherOptions{})
 	if err != nil {
 		t.Fatalf("buildMCPConfig error: %v", err)
 	}
@@ -148,7 +149,7 @@ func TestBuildMCPConfigMissingEnv(t *testing.T) {
 		Root: root,
 	}
 
-	_, err := buildMCPConfig(project)
+	_, err := buildMCPConfig(project, projection.DispatchLauncherOptions{})
 	if err == nil {
 		t.Fatalf("expected error")
 	}
@@ -188,7 +189,7 @@ func TestBuildMCPConfigResolvesProcessEnv(t *testing.T) {
 		Root: t.TempDir(),
 	}
 
-	cfg, err := buildMCPConfig(project)
+	cfg, err := buildMCPConfig(project, projection.DispatchLauncherOptions{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -226,7 +227,7 @@ func TestBuildMCPConfigStdioServer(t *testing.T) {
 		Root: root,
 	}
 
-	cfg, err := buildMCPConfig(project)
+	cfg, err := buildMCPConfig(project, projection.DispatchLauncherOptions{})
 	if err != nil {
 		t.Fatalf("buildMCPConfig error: %v", err)
 	}
@@ -346,7 +347,7 @@ func TestSharedMuseClaudeMCP(t *testing.T) {
 	}
 	project.Config.Agents.Claude.Enabled = nil
 	project.Config.MCP.Servers[1].Args = []string{"${MISSING_CLAUDE_ONLY_TOKEN}"}
-	cfg, err := buildMCPConfig(project)
+	cfg, err := buildMCPConfig(project, projection.DispatchLauncherOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -354,7 +355,7 @@ func TestSharedMuseClaudeMCP(t *testing.T) {
 		t.Fatal("Muse-only installation acquired Claude server")
 	}
 	project.Config.MCP.Servers[0].HTTPTransport = config.HTTPTransportSSE
-	if _, err := buildMCPConfig(project); err == nil {
+	if _, err := buildMCPConfig(project, projection.DispatchLauncherOptions{}); err == nil {
 		t.Fatal("Muse SSE should fail explicitly")
 	}
 }

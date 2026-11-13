@@ -509,9 +509,20 @@ func TestStudyTreatmentBundleIdentityIsDeterministic(t *testing.T) {
 // TestStudyTreatmentBundleIdentityIgnoresHostInstalledAl proves the staged
 // launchers do not record the host's installed al, so the manifest hash does
 // not depend on where the staging machine installed it. Every client that
-// receives the built-in server is enabled and the whole bundle is scanned, so a
-// launcher file missing from treatmentMCPLauncherFiles fails the test.
+// receives the built-in server is enabled. The whole staged bundle is scanned,
+// so any generated file recording the host install directory fails the test.
+// The local list pins the expected launcher files and count.
 func TestStudyTreatmentBundleIdentityIgnoresHostInstalledAl(t *testing.T) {
+	// Claude/Muse share a launcher; Antigravity uses either legacy or migrated paths.
+	launcherFiles := []string{
+		".mcp.json",
+		filepath.Join(".vscode", "mcp.json"),
+		filepath.Join(".codex", "config.toml"),
+		filepath.Join(".copilot", "mcp-config.json"),
+		filepath.Join(".grok", "config.toml"),
+		filepath.Join(".agy", "antigravity-cli", "mcp_config.json"),
+		filepath.Join(".agy", "config", "mcp_config.json"),
+	}
 	root := t.TempDir()
 	configPath := writeStudyTreatmentConfig(t, root)
 	configData, err := os.ReadFile(configPath) // #nosec G304 -- configPath is created inside this test's private temporary directory.
@@ -569,7 +580,7 @@ func TestStudyTreatmentBundleIdentityIgnoresHostInstalledAl(t *testing.T) {
 			t.Fatal(err)
 		}
 		launchers := 0
-		for _, generated := range treatmentMCPLauncherFiles {
+		for _, generated := range launcherFiles {
 			data, err := os.ReadFile(filepath.Join(bundle.Root, generated)) // #nosec G304 -- generated is a fixed path inside the test-owned bundle.
 			if errors.Is(err, fs.ErrNotExist) {
 				continue
@@ -593,33 +604,6 @@ func TestStudyTreatmentBundleIdentityIgnoresHostInstalledAl(t *testing.T) {
 	if first.ManifestHash != second.ManifestHash {
 		t.Fatalf("host al location changed the bundle identity: %s != %s", first.ManifestHash, second.ManifestHash)
 	}
-}
-
-// TestOmitHostInstalledExecutablePreservesStudyInputs proves only generated
-// launcher files lose the host entry: a supplied input that happens to contain
-// the same quoted pair is staged as written.
-func TestOmitHostInstalledExecutablePreservesStudyInputs(t *testing.T) {
-	root := t.TempDir()
-	pair := `["/opt/host/bin/al", "/opt/host/bin"]`
-	launcher := filepath.Join(root, ".codex", "config.toml")
-	input := filepath.Join(root, ".agent-layer", "instructions", "notes.md")
-	for _, path := range []string{launcher, input} {
-		require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o700))
-		require.NoError(t, os.WriteFile(path, []byte("args = "+pair+"\n"), 0o600))
-	}
-	require.NoError(t, omitHostInstalledExecutable(root, "/opt/host/bin/al"))
-	data, err := os.ReadFile(launcher) // #nosec G304 -- test-owned staged file.
-	require.NoError(t, err)
-	require.Equal(t, "args = [\"\", \"\"]\n", string(data))
-	data, err = os.ReadFile(input) // #nosec G304 -- test-owned staged file.
-	require.NoError(t, err)
-	require.Equal(t, "args = "+pair+"\n", string(data))
-
-	// A launcher path that is not a regular file is refused, as the root
-	// rewrite refuses it.
-	require.NoError(t, os.Remove(launcher))
-	require.NoError(t, os.Symlink(input, launcher))
-	require.ErrorContains(t, omitHostInstalledExecutable(root, "/opt/host/bin/al"), "non-regular file")
 }
 
 func TestTreatmentStudyDryRunIdentityIsDeterministicAcrossInvocations(t *testing.T) {

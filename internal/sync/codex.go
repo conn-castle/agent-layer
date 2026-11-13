@@ -58,7 +58,7 @@ func writeCodexConfigWithCLISettings(sys System, root string, project *config.Pr
 	}
 
 	codexDir := filepath.Join(root, ".codex")
-	if err := sys.MkdirAll(codexDir, 0o755); err != nil {
+	if err := sys.MkdirAll(codexDir, 0o700); err != nil {
 		return fmt.Errorf(messages.SyncCreateDirFailedFmt, codexDir, err)
 	}
 
@@ -107,7 +107,11 @@ func codexHerdRTitleDisabledWarning(sys System, root string) (*warnings.Warning,
 // writeCodexRules generates .codex/rules/default.rules.
 func writeCodexRules(sys System, root string, project *config.ProjectConfig) error {
 	content := buildCodexRules(project)
-	rulesDir := filepath.Join(root, ".codex", "rules")
+	codexDir := filepath.Join(root, ".codex")
+	if err := sys.MkdirAll(codexDir, 0o700); err != nil {
+		return fmt.Errorf(messages.SyncCreateDirFailedFmt, codexDir, err)
+	}
+	rulesDir := filepath.Join(codexDir, "rules")
 	if err := sys.MkdirAll(rulesDir, 0o755); err != nil {
 		return fmt.Errorf(messages.SyncCreateDirFailedFmt, rulesDir, err)
 	}
@@ -226,7 +230,7 @@ func buildCodexManagedConfigWithSystem(sys System, root string, project *config.
 	placeholderEnv := project.PlaceholderEnv()
 	var resolved []projection.ResolvedMCPServer
 	if config.HasProviderPassthroughKey(agentSpecific, config.CodexMCPServersKey) {
-		builtIn, ok, err := projection.RootedBuiltInDispatchServer(project.Config, projection.ClientCodex, root)
+		builtIn, ok, err := projection.RootedBuiltInDispatchServer(project.Config, projection.ClientCodex, root, dispatchLauncherOptions(sys))
 		if err != nil {
 			return codexManagedConfig{}, err
 		}
@@ -248,6 +252,7 @@ func buildCodexManagedConfigWithSystem(sys System, root string, project *config.
 			placeholderEnv,
 			projection.ClientCodex,
 			projection.ClientPlaceholderResolver("${%s}"),
+			dispatchLauncherOptions(sys),
 		)
 		if err != nil {
 			return codexManagedConfig{}, err

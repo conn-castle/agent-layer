@@ -1,80 +1,210 @@
 package clients
 
 import (
-	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+
+	"github.com/conn-castle/agent-layer/internal/testutil"
 )
 
-func TestResolvePath_EvalSymlinksSuccess(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "real")
-	if err := os.WriteFile(path, []byte(""), 0o600); err != nil {
-		t.Fatalf("write file: %v", err)
+func TestResolvePathSymlinkBeforeParentTraversal(t *testing.T) {
+	root := t.TempDir()
+	target := filepath.Join(t.TempDir(), "child")
+	if err := os.Mkdir(target, 0o700); err != nil {
+		t.Fatal(err)
 	}
-
-	resolved := ResolvePath(path)
-	if resolved == "" {
-		t.Fatalf("expected resolved path")
+	if err := os.Symlink(target, filepath.Join(root, "link")); err != nil {
+		t.Fatal(err)
 	}
-}
-
-func TestResolvePath_EvalSymlinksFailure(t *testing.T) {
-	path := "/non-existent/path/xyz"
-	resolved := ResolvePath(path)
-	if resolved == "" {
-		t.Fatalf("expected resolved path")
-	}
-	if !filepath.IsAbs(resolved) {
-		t.Fatalf("expected absolute path")
-	}
-}
-
-func TestResolvePath_AbsErrorReturnsOriginalPath(t *testing.T) {
-	origAbs := filepathAbs
-	origEval := filepathEvalSymlinks
-	filepathAbs = func(string) (string, error) { return "", errors.New("abs failed") }
-	filepathEvalSymlinks = func(path string) (string, error) { return path, nil }
-	t.Cleanup(func() {
-		filepathAbs = origAbs
-		filepathEvalSymlinks = origEval
-	})
-
-	path := "relative-path"
-	resolved := ResolvePath(path)
-	if resolved != path {
-		t.Fatalf("expected original path on Abs error, got %q", resolved)
+	t.Chdir(root)
+	for _, leaf := range []string{"existing", "missing"} {
+		want := filepath.Join(filepath.Dir(target), leaf)
+		if leaf == "existing" {
+			if err := os.Mkdir(want, 0o700); err != nil {
+				t.Fatal(err)
+			}
+		}
+		value := "link/../" + leaf
+		got := ResolveHome(value)
+		if !filepath.IsAbs(got) || !SamePath(got, want) {
+			t.Fatalf("%q resolved to %q, want %q", value, got, want)
+		}
+		if SamePath(got, filepath.Join(root, leaf)) {
+			t.Fatalf("symlink/.. was cleaned lexically: %q", got)
+		}
 	}
 }
 
-func TestResolvePath_EvalSymlinksErrorReturnsAbsPath(t *testing.T) {
-	origAbs := filepathAbs
-	origEval := filepathEvalSymlinks
-	filepathAbs = func(string) (string, error) { return "/abs/path", nil }
-	filepathEvalSymlinks = func(string) (string, error) { return "", errors.New("eval failed") }
-	t.Cleanup(func() {
-		filepathAbs = origAbs
-		filepathEvalSymlinks = origEval
-	})
-
-	resolved := ResolvePath("ignored")
-	if resolved != "/abs/path" {
-		t.Fatalf("expected abs path on eval error, got %q", resolved)
+func TestSamePathMissingLeafRootAlias(t *testing.T) {
+	root := t.TempDir()
+	alias := filepath.Join(t.TempDir(), "alias")
+	if err := os.Symlink(root, alias); err != nil {
+		t.Fatal(err)
+	}
+	if !SamePath(filepath.Join(root, ".codex"), filepath.Join(alias, ".codex")) {
+		t.Fatal("missing leaf under alias did not match")
+	}
+	if SamePath(filepath.Join(root, ".codex"), filepath.Join(t.TempDir(), ".codex")) {
+		t.Fatal("different parents matched")
 	}
 }
 
-func TestSamePath_Identical(t *testing.T) {
-	dir := t.TempDir()
-	if !SamePath(dir, dir) {
-		t.Fatalf("expected identical paths to match")
+func TestSamePathMissingLeafDotSuffix(t *testing.T) {
+	root := t.TempDir()
+	home := filepath.Join(root, ".codex")
+	alias := filepath.Join(t.TempDir(), "alias")
+	if err := os.Symlink(root, alias); err != nil {
+		t.Fatal(err)
+	}
+	for _, parent := range []string{root, alias} {
+		for _, suffix := range []string{"/.", "//././"} {
+			path := filepath.Join(parent, ".codex") + suffix
+			if !SamePath(path, home) || !SamePath(home, path) {
+				t.Fatalf("missing home alias %q did not match %q", path, home)
+			}
+		}
+	}
+	for _, path := range []string{home + "/../.codex/.", filepath.Join(root, ".Codex") + "/.", filepath.Join(root, "other") + "/."} {
+		if SamePath(path, home) || SamePath(home, path) {
+			t.Fatalf("distinct or unresolved home %q matched %q", path, home)
+		}
 	}
 }
 
-func TestSamePath_Different(t *testing.T) {
-	a := t.TempDir()
-	b := t.TempDir()
-	if SamePath(a, b) {
-		t.Fatalf("expected different paths to not match")
+func TestRelativeProjectHomeUsesRootSpelling(t *testing.T) {
+	for _, existing := range []bool{false, true} {
+		t.Run(fmt.Sprintf("existing=%t", existing), func(t *testing.T) {
+			root := t.TempDir()
+			alias := filepath.Join(t.TempDir(), "alias")
+			if err := os.Symlink(root, alias); err != nil {
+				t.Fatal(err)
+			}
+			t.Chdir(root)
+			for _, name := range []string{".codex", ".claude-config"} {
+				if existing {
+					if err := os.Mkdir(filepath.Join(root, name), 0o700); err != nil {
+						t.Fatal(err)
+					}
+				}
+				for _, value := range []string{name, "./" + name, name + "/."} {
+					if got, want := ResolveRelativeHome(alias, value, name), filepath.Join(alias, name); got != want {
+						t.Fatalf("home %q became %q, want project spelling %q", value, got, want)
+					}
+				}
+			}
+			physicalRoot := testutil.PhysicalPath(t, root)
+			if got, want := ResolveRelativeHome(alias, "elsewhere", ".codex"), filepath.Join(physicalRoot, "elsewhere"); got != want {
+				t.Fatalf("foreign home=%q, want physical %q", got, want)
+			}
+			absolute := filepath.Join(root, ".codex") + "/."
+			if got := ResolveRelativeHome(alias, absolute, ".codex"); got != absolute {
+				t.Fatalf("absolute override spelling changed: %q", got)
+			}
+		})
+	}
+}
+
+func TestSamePathCaseAliasesFollowFilesystem(t *testing.T) {
+	root := t.TempDir()
+	home := filepath.Join(root, ".codex")
+	alias := filepath.Join(root, ".Codex")
+	if err := os.Mkdir(home, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(alias)
+	if os.IsNotExist(err) {
+		if SamePath(home, alias) {
+			t.Fatal("missing case-only alias matched on case-sensitive filesystem")
+		}
+		if err := os.Mkdir(alias, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if SamePath(home, alias) {
+			t.Fatal("distinct case-only directories matched")
+		}
+		t.Run("case-insensitive identity", func(t *testing.T) { t.Skip("fixture filesystem is case-sensitive") })
+		return
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	original, err := os.Stat(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !os.SameFile(original, info) || !SamePath(home, alias) {
+		t.Fatal("filesystem case alias did not match")
+	}
+}
+
+func TestSamePathMissingLeafUnderCaseAliasParent(t *testing.T) {
+	root := t.TempDir()
+	parent := filepath.Join(root, "parent")
+	alias := filepath.Join(root, "PARENT")
+	if err := os.Mkdir(parent, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	_, err := os.Stat(alias)
+	same := err == nil
+	if err != nil && !os.IsNotExist(err) {
+		t.Fatal(err)
+	}
+	if got := SamePath(filepath.Join(parent, ".codex"), filepath.Join(alias, ".codex")); got != same {
+		t.Fatalf("parent alias same=%t, missing leaf match=%t", same, got)
+	}
+}
+
+func TestRelativeHomeFallbackDoesNotCleanParentTraversal(t *testing.T) {
+	root := t.TempDir()
+	caller := filepath.Join(root, "sub")
+	if err := os.Mkdir(caller, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(caller)
+	physicalCaller := testutil.PhysicalPath(t, caller)
+	for _, name := range []string{".codex", ".claude-config"} {
+		value := "missing/../" + name
+		want := physicalCaller + "/" + value
+		if got := ResolveRelativeHome(root, value, name); got != want {
+			t.Fatalf("%q resolved to %q, want unresolved %q", value, got, want)
+		}
+	}
+}
+
+func TestClearStaleHomeShorthandAndDuplicates(t *testing.T) {
+	root := t.TempDir()
+	caller := filepath.Join(root, "caller")
+	if err := os.Mkdir(caller, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(caller)
+	physicalCaller := testutil.PhysicalPath(t, caller)
+	for _, home := range []struct{ key, name string }{{"CODEX_HOME", ".codex"}, {"CLAUDE_CONFIG_DIR", ".claude-config"}, {"GROK_HOME", ".grok-config"}} {
+		for _, value := range []string{home.name, home.name + "/", "./" + home.name + "/", ".//" + home.name, home.name + "/."} {
+			env := ClearStaleHome(root, []string{home.key + "=" + value, home.key + "=" + t.TempDir()}, home.key, home.name)
+			if value, present := GetEnv(env, home.key); present {
+				t.Fatalf("%s stale shorthand retained as %q", home.key, value)
+			}
+		}
+		for _, value := range []string{t.TempDir(), "other-home", ""} {
+			env := ClearStaleHome(root, []string{home.key + "=" + value, home.key + "=" + t.TempDir()}, home.key, home.name)
+			count := 0
+			for _, entry := range env {
+				if strings.HasPrefix(entry, home.key+"=") {
+					count++
+				}
+			}
+			got, _ := GetEnv(env, home.key)
+			want := value
+			if value == "other-home" {
+				want = filepath.Join(physicalCaller, value)
+			}
+			if count != 1 || got != want {
+				t.Fatalf("%s: entries=%d value=%q, want one %q", home.key, count, got, want)
+			}
+		}
 	}
 }

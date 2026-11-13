@@ -19,14 +19,12 @@ import (
 	"runtime/debug"
 	"slices"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
 
 	alconfig "github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/fsutil"
 	"github.com/conn-castle/agent-layer/internal/gitenv"
-	"github.com/conn-castle/agent-layer/internal/projection"
 	"github.com/conn-castle/agent-layer/internal/sync"
 	"github.com/conn-castle/agent-layer/internal/update"
 	"github.com/conn-castle/agent-layer/internal/version"
@@ -46,6 +44,11 @@ var renameStudyTreatmentPin = os.Rename
 // benchmark root /app has no user decision time and must be byte-stable.
 type benchmarkSyncSystem struct {
 	sync.RealSystem
+}
+
+// OmitInstalledExecutable keeps staging independent of the host al installation.
+func (benchmarkSyncSystem) OmitInstalledExecutable() bool {
+	return true
 }
 
 func (benchmarkSyncSystem) Now() time.Time {
@@ -378,15 +381,8 @@ func BuildStudyTreatmentBundle(repoRoot string, experiment preparedStudyExperime
 	if err := os.WriteFile(stagedConfig, []byte(orderedConfig), 0o600); err != nil { // #nosec G703 -- stagedConfig is inside the controlled private staging root.
 		return nil, err
 	}
-	// The staging sync records whichever installed al this host resolves; the
-	// container re-syncs with its own entry, so drop the host entry to keep the
-	// content-addressed manifest independent of the machine that staged it.
-	hostEntry := projection.InstalledExecutable()
 	if _, err := sync.RunWithSystemFS(benchmarkSyncSystem{}, os.DirFS(root), root); err != nil {
 		return nil, fmt.Errorf("synchronize staged study inputs: %w", err)
-	}
-	if err := omitHostInstalledExecutable(root, hostEntry); err != nil {
-		return nil, err
 	}
 	if err := materializeTreatmentInstructions(root); err != nil {
 		return nil, fmt.Errorf("materialize bundled instructions: %w", err)
@@ -585,66 +581,6 @@ func materializeTreatmentInstructions(root string) error {
 		return err
 	}
 	return fsutil.WriteFileAtomic(path, data, 0o600)
-}
-
-// treatmentMCPLauncherFiles are the staged paths where sync writes the built-in
-// Agent Dispatch launcher: Claude and Muse share .mcp.json, and Antigravity
-// writes its legacy or migrated path. Only these files are generated launcher
-// configuration; every other staged file is a study input left untouched.
-var treatmentMCPLauncherFiles = []string{
-	".mcp.json",
-	filepath.Join(".vscode", "mcp.json"),
-	filepath.Join(".codex", "config.toml"),
-	filepath.Join(".copilot", "mcp-config.json"),
-	filepath.Join(".grok", "config.toml"),
-	filepath.Join(".agy", "antigravity-cli", "mcp_config.json"),
-	filepath.Join(".agy", "config", "mcp_config.json"),
-}
-
-// omitHostInstalledExecutable empties the adjacent installed-entry and
-// directory launcher arguments for entry, the launcher's form when no installed
-// entry is recorded. Contract: only treatmentMCPLauncherFiles are rewritten;
-// a missing launcher file is skipped; a launcher path that is a symlink or
-// other non-regular file is an error. Both the strconv.Quote (TOML) and
-// json.Marshal (JSON) encodings of the pair are matched.
-func omitHostInstalledExecutable(root, entry string) error {
-	if entry == "" {
-		return nil
-	}
-	var patterns []*regexp.Regexp
-	for _, quote := range []func(string) string{strconv.Quote, jsonQuote} {
-		patterns = append(patterns, regexp.MustCompile(regexp.QuoteMeta(quote(entry))+`(\s*,\s*)`+regexp.QuoteMeta(quote(filepath.Dir(entry)))))
-	}
-	omit := func(data []byte) []byte {
-		for _, pattern := range patterns {
-			data = pattern.ReplaceAll(data, []byte(`""${1}""`))
-		}
-		return data
-	}
-	restricted, err := os.OpenRoot(root)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = restricted.Close() }()
-	for _, path := range treatmentMCPLauncherFiles {
-		info, err := restricted.Lstat(path)
-		if errors.Is(err, fs.ErrNotExist) {
-			continue
-		}
-		if err != nil {
-			return err
-		}
-		if err := rewriteTreatmentFile(restricted, path, fs.FileInfoToDirEntry(info), omit); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-// jsonQuote returns value as a JSON string literal.
-func jsonQuote(value string) string {
-	encoded, _ := json.Marshal(value) // #nosec G104 -- marshaling a string cannot fail.
-	return string(encoded)
 }
 
 // rewriteTreatmentProjectionRoot replaces every occurrence of from, and of its

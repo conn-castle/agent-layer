@@ -53,7 +53,7 @@ func ensureCachedBinaryWithSystem(ctx context.Context, sys System, cacheRoot str
 	}
 
 	lockPath := binPath + ".lock"
-	if err := os.MkdirAll(filepath.Dir(binPath), 0o755); err != nil { // #nosec G301 -- user-level cache dir (~/.cache/agent-layer/...) must be traversable by the user's shell to invoke the cached 0o755 binary; the lock file is created separately.
+	if err := os.MkdirAll(filepath.Dir(binPath), 0o755); err != nil { // #nosec G301,G703 -- explicit cache root plus validated version/platform; user-level cache dir (~/.cache/agent-layer/...) must be traversable by the user's shell to invoke the cached 0o755 binary; the lock file is created separately.
 		return "", fmt.Errorf(messages.DispatchCreateCacheDirFmt, err)
 	}
 
@@ -73,7 +73,7 @@ func ensureCachedBinaryWithSystem(ctx context.Context, sys System, cacheRoot str
 		committed := false
 		defer func() {
 			if !committed {
-				_ = os.Remove(tmpName)
+				_ = os.Remove(tmpName) // #nosec G703 -- CreateTemp-generated name within the selected cache directory.
 			}
 		}()
 
@@ -168,7 +168,7 @@ func getWithRetry(ctx context.Context, sys System, url string, limits downloadLi
 		retry, err := func() (bool, error) {
 			attemptCtx, watchdog, stop := startDownloadAttempt(opCtx, limits.stall)
 			defer stop()
-			req, err := http.NewRequestWithContext(attemptCtx, http.MethodGet, url, nil)
+			req, err := http.NewRequestWithContext(attemptCtx, http.MethodGet, url, nil) // #nosec G704 -- callers build URLs from the fixed release base plus validated version/platform.
 			if err != nil {
 				return false, fmt.Errorf(messages.DispatchDownloadFailedFmt, url, err)
 			}

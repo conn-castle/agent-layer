@@ -93,7 +93,7 @@ func TestEffectiveServersKeepUserServersIntact(t *testing.T) {
 		{ID: "alpha", Enabled: &on, Transport: config.TransportStdio, Command: "alpha-server"},
 		{ID: "disabled", Enabled: new(bool), Transport: config.TransportStdio, Command: "nope"},
 	}
-	resolved, err := EffectiveMCPServers(cfg, map[string]string{}, ClientClaude, nil)
+	resolved, err := EffectiveMCPServers(cfg, map[string]string{}, ClientClaude, nil, DispatchLauncherOptions{})
 	if err != nil {
 		t.Fatalf("resolve effective servers: %v", err)
 	}
@@ -128,7 +128,7 @@ func TestEffectiveDispatchServerCarriesRepoRoot(t *testing.T) {
 	root := "/workspace/older-pinned-repo"
 	resolved, err := EffectiveMCPServers(cfg, map[string]string{
 		config.BuiltinRepoRootEnvVar: root,
-	}, ClientClaude, nil)
+	}, ClientClaude, nil, DispatchLauncherOptions{})
 	if err != nil {
 		t.Fatalf("resolve effective servers: %v", err)
 	}
@@ -173,7 +173,7 @@ func TestEffectiveDispatchInvocationSelectsRepoBeforeAl(t *testing.T) {
 	}
 	resolved, err := EffectiveMCPServers(cfg, map[string]string{
 		config.BuiltinRepoRootEnvVar: root,
-	}, ClientClaude, nil)
+	}, ClientClaude, nil, DispatchLauncherOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -228,7 +228,7 @@ func TestEffectiveServersDoNotDuplicateReservedID(t *testing.T) {
 		Command:   "configured-server",
 	}}
 
-	resolved, err := EffectiveMCPServers(cfg, map[string]string{}, ClientCodex, nil)
+	resolved, err := EffectiveMCPServers(cfg, map[string]string{}, ClientCodex, nil, DispatchLauncherOptions{})
 	if err != nil {
 		t.Fatalf("resolve effective servers: %v", err)
 	}
@@ -275,7 +275,7 @@ func TestDispatchLauncherDevelopmentExecutableSelection(t *testing.T) {
 			t.Setenv("AL_DEV_BYPASS_VERSION_DISPATCH", tc.bypass)
 			t.Setenv("AL_DEV_EXECUTABLE", tc.executable)
 			t.Setenv("AL_DEV_SOURCE_ROOT", root)
-			server, _, projectionErr := RootedBuiltInDispatchServer(dispatchCallerConfig(ClientClaude), ClientClaude, root)
+			server, _, projectionErr := RootedBuiltInDispatchServer(dispatchCallerConfig(ClientClaude), ClientClaude, root, DispatchLauncherOptions{})
 			if tc.want == "" {
 				if projectionErr == nil {
 					t.Fatal("missing development executable must fail before projection")
@@ -733,7 +733,7 @@ func TestInstalledExecutableFromImageCache(t *testing.T) {
 
 func mustRootedDispatchServer(t *testing.T, cfg config.Config, client, root string) (ResolvedMCPServer, bool) {
 	t.Helper()
-	server, ok, err := RootedBuiltInDispatchServer(cfg, client, root)
+	server, ok, err := RootedBuiltInDispatchServer(cfg, client, root, DispatchLauncherOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}

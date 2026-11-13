@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/conn-castle/agent-layer/internal/config"
+	"github.com/conn-castle/agent-layer/internal/projection"
 )
 
 func TestBuildVSCodeMCPConfig(t *testing.T) {
@@ -28,7 +29,7 @@ func TestBuildVSCodeMCPConfig(t *testing.T) {
 		Env: map[string]string{"TOKEN": "abc"},
 	}
 
-	cfg, err := buildVSCodeMCPConfig(project)
+	cfg, err := buildVSCodeMCPConfig(project, projection.DispatchLauncherOptions{})
 	if err != nil {
 		t.Fatalf("buildVSCodeMCPConfig error: %v", err)
 	}
@@ -73,7 +74,7 @@ func TestBuildVSCodeMCPConfigHeadersAndEnv(t *testing.T) {
 		Env: map[string]string{"TOKEN": "abc", "KEY": "123"},
 	}
 
-	cfg, err := buildVSCodeMCPConfig(project)
+	cfg, err := buildVSCodeMCPConfig(project, projection.DispatchLauncherOptions{})
 	if err != nil {
 		t.Fatalf("buildVSCodeMCPConfig error: %v", err)
 	}
