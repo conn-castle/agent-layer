@@ -549,10 +549,11 @@ func TestGrokDiscoveryDistinguishesLoginFileObservations(t *testing.T) {
 				}
 				credential = filepath.Join(grokFixtureDir(t), "login.json")
 				childAuthPath = credential
-				if tc.selection == "project-override" {
+				switch tc.selection {
+				case "project-override":
 					credential = filepath.Join(req.Project.Root, "login.json")
 					childAuthPath = "login.json"
-				} else if tc.selection == "relative-override" {
+				case "relative-override":
 					cwd, err := os.Getwd()
 					if err != nil {
 						t.Fatal(err)
