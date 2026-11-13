@@ -45,7 +45,7 @@ func runModelHarness(mode string) {
 		if err != nil {
 			os.Exit(14)
 		}
-		_, err = fmt.Fprintf(file, "%q %q\n", os.Getenv(grok.EnvHome), os.Getenv("GROK_AUTH_PATH"))
+		_, err = fmt.Fprintf(file, "%q %q\n", os.Getenv(grok.EnvHome), os.Getenv(grok.EnvAuthPath))
 		closeErr := file.Close()
 		if err != nil || closeErr != nil {
 			os.Exit(15)
@@ -153,7 +153,7 @@ func runModelHarness(mode string) {
 		return
 	}
 	if strings.HasPrefix(mode, "grok-login-") {
-		credential := os.Getenv("GROK_AUTH_PATH")
+		credential := os.Getenv(grok.EnvAuthPath)
 		if credential == "" {
 			credential = filepath.Join(os.Getenv(grok.EnvHome), "auth.json")
 		}
@@ -484,17 +484,19 @@ func TestGrokDiscoveryDistinguishesLoginFileObservations(t *testing.T) {
 		{"default-home", "unauthenticated-empty", "default", "file", "", "present", 0o600},
 		{"empty-home-override", "unauthenticated-empty", "empty", "file", "", "present", 0o600},
 		{"duplicate-home-override", "grok-login-removed", "duplicate", "file", "", "removed", 0o600},
-		{"api-key", "unauthenticated-empty", "inherited", "file", "XAI_API_KEY=dummy-marker", "generic", 0o600},
-		{"api-key-alias", "unauthenticated-empty", "inherited", "file", "GROK_CODE_XAI_API_KEY=dummy-marker", "generic", 0o600},
-		{"inline-auth", "unauthenticated-empty", "inherited", "file", "GROK_AUTH=dummy-marker", "generic", 0o600},
-		{"empty-api-key", "unauthenticated-empty", "inherited", "file", "XAI_API_KEY=", "present", 0o600},
-		{"empty-inline-auth", "unauthenticated-empty", "inherited", "file", "GROK_AUTH=", "present", 0o600},
+		{"api-key", "unauthenticated-empty", "inherited", "file", grok.EnvAPIKey + "=dummy-marker", "generic", 0o600},
+		{"api-key-alias", "unauthenticated-empty", "inherited", "file", grok.EnvCodeAPIKey + "=dummy-marker", "generic", 0o600},
+		{"inline-auth", "unauthenticated-empty", "inherited", "file", grok.EnvAuth + "=dummy-marker", "generic", 0o600},
+		{"empty-api-key", "unauthenticated-empty", "inherited", "file", grok.EnvAPIKey + "=", "generic", 0o600},
+		{"empty-api-key-alias", "unauthenticated-empty", "inherited", "file", grok.EnvCodeAPIKey + "=", "generic", 0o600},
+		{"empty-inline-auth", "unauthenticated-empty", "inherited", "file", grok.EnvAuth + "=", "present", 0o600},
+		{"empty-auth-path", "unauthenticated-empty", "inherited", "file", grok.EnvAuthPath + "=", "present", 0o600},
 		{"project-api-key", "unauthenticated-empty", "project-key", "file", "", "generic", 0o600},
 		{"auth-path", "grok-login-removed", "override", "file", "", "removed", 0o600},
 		{"absent-auth-path", "unauthenticated-empty", "override", "", "", "absent", 0o600},
 		{"relative-auth-path", "grok-login-removed", "relative-override", "file", "", "removed", 0o600},
 		{"project-relative-auth-path", "grok-login-removed", "project-override", "file", "", "removed", 0o600},
-		{"api-key-with-auth-path", "unauthenticated-empty", "override", "file", "XAI_API_KEY=dummy-marker", "generic", 0o600},
+		{"api-key-with-auth-path", "unauthenticated-empty", "override", "file", grok.EnvAPIKey + "=dummy-marker", "generic", 0o600},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			req := harnessRequest(t, tc.mode)
@@ -515,7 +517,7 @@ func TestGrokDiscoveryDistinguishesLoginFileObservations(t *testing.T) {
 				}
 				req.Env = append(req.Env, grok.EnvHome+"="+inherited)
 				if tc.selection == "project-key" {
-					req.Project.Env["XAI_API_KEY"] = "dummy-marker"
+					req.Project.Env[grok.EnvAPIKey] = "dummy-marker"
 				}
 			case "relative":
 				cwd, err := os.Getwd()
@@ -564,7 +566,7 @@ func TestGrokDiscoveryDistinguishesLoginFileObservations(t *testing.T) {
 						t.Fatal(err)
 					}
 				}
-				req.Env = append(req.Env, "GROK_AUTH_PATH="+childAuthPath)
+				req.Env = append(req.Env, grok.EnvAuthPath+"="+childAuthPath)
 			}
 			switch tc.entry {
 			case "file", "empty":
@@ -663,12 +665,19 @@ func TestGrokLoginErrorBoundsAndQuotesPath(t *testing.T) {
 		strings.Repeat("x", 510) + "\n\x1b" + strings.Repeat("y", 1024),
 		strings.Repeat("\n\x00\x1b", 1024),
 		strings.Repeat("界", 1024),
+		strings.Repeat("界\x1b\n", 1024),
 	} {
 		for _, state := range []struct{ stored, removed bool }{{}, {true, true}, {true, false}} {
 			err := &grokLoginError{grokLoginState: grokLoginState{path: path, stored: state.stored}, removed: state.removed, cause: errGrokUnauthenticated}
 			message := err.Error()
-			if !utf8.ValidString(message) || strings.ContainsAny(message, "\n\x00\x1b") || !strings.Contains(message, `..."`) || len(message) > 700 {
+			if !utf8.ValidString(message) || strings.ContainsAny(message, "\n\x00\x1b") || !strings.Contains(message, `"...`) || len(message) > 700 {
 				t.Fatalf("unbounded or unsanitized diagnostic: %q", message)
+			}
+			start := strings.IndexByte(message, '"')
+			quotedPath, _, truncated := strings.Cut(message[start:], "...")
+			prefix, quoteErr := strconv.Unquote(quotedPath)
+			if !truncated || quoteErr != nil || !strings.HasPrefix(path, prefix) || len(quotedPath)+len("...") > 512 {
+				t.Fatalf("invalid or unbounded quoted prefix %q: %v", quotedPath, quoteErr)
 			}
 			if !errors.Is(err, errGrokUnauthenticated) {
 				t.Fatal("authentication sentinel lost")

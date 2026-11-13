@@ -284,14 +284,17 @@ type grokLoginState struct {
 func inspectGrokLogin(cmd *exec.Cmd) grokLoginState {
 	// Environ applies exec's duplicate-key rules, matching the child process.
 	env := cmd.Environ()
-	for _, key := range []string{"XAI_API_KEY", "GROK_CODE_XAI_API_KEY", "GROK_AUTH"} {
-		if value, _ := clients.GetEnv(env, key); value != "" {
-			// With a key or inline session, the file may not be Grok's auth source.
-			// Keep the generic diagnostic.
+	// API-key presence (even empty) or a non-empty inline session may mean
+	// the login file was not Grok's auth source. Keep the generic diagnostic.
+	for _, key := range []string{grok.EnvAPIKey, grok.EnvCodeAPIKey} {
+		if _, present := clients.GetEnv(env, key); present {
 			return grokLoginState{}
 		}
 	}
-	path, _ := clients.GetEnv(env, "GROK_AUTH_PATH")
+	if auth, _ := clients.GetEnv(env, grok.EnvAuth); auth != "" {
+		return grokLoginState{}
+	}
+	path, _ := clients.GetEnv(env, grok.EnvAuthPath)
 	if path == "" {
 		home, _ := clients.GetEnv(env, grok.EnvHome)
 		if home == "" {
@@ -324,14 +327,15 @@ func inspectGrokLogin(cmd *exec.Cmd) grokLoginState {
 
 func inspectGrokLoginFile(path string) grokLoginState {
 	info, err := os.Stat(path) // Metadata only; follow symlinks without opening credentials.
-	if err == nil {
-		return grokLoginState{path: path, stored: info.Mode().IsRegular(), known: info.Mode().IsRegular()}
+	if err == nil && info.Mode().IsRegular() {
+		return grokLoginState{path: path, stored: true, known: true}
 	}
 	if os.IsNotExist(err) {
 		// Stat also reports not-exist for dangling symlinks. Those do not prove
 		// the login entry was absent, so retain the generic diagnostic.
-		_, linkErr := os.Lstat(path)
-		return grokLoginState{path: path, known: os.IsNotExist(linkErr)}
+		if _, linkErr := os.Lstat(path); os.IsNotExist(linkErr) {
+			return grokLoginState{path: path, known: true}
+		}
 	}
 	return grokLoginState{}
 }
@@ -346,7 +350,15 @@ func (e *grokLoginError) Error() string {
 	// Bound the escaped diagnostic, including control bytes and invalid UTF-8.
 	path := strconv.QuoteToASCII(e.path)
 	if len(path) > 512 {
-		path = path[:508] + `..."`
+		// Shorten at raw rune boundaries so quoted escapes remain complete.
+		end := 0
+		for next := range e.path {
+			if len(strconv.QuoteToASCII(e.path[:next]))+len("...") > 512 {
+				break
+			}
+			end = next
+		}
+		path = strconv.QuoteToASCII(e.path[:end]) + "..."
 	}
 	if !e.stored {
 		return fmt.Sprintf("harness is not authenticated; no Grok login file was present at %s before discovery; sign in using al grok", path)
