@@ -10,6 +10,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"slices"
 	"strings"
 	"time"
@@ -76,15 +77,19 @@ func DiscoverModels(agent string, req DiscoveryRequest) ([]string, error) {
 	req.Context = ctx
 	var models []string
 	var err error
+	var grokLogin grokLoginState
 	if agent == agentClaude && req.Cleanup != nil {
 		models, err = discoverClaudeModelsInBackground(req)
 	} else {
-		models, err = discoverCommandModels(agent, req, nil)
+		models, err = discoverCommandModels(agent, req, nil, &grokLogin)
 	}
 	if errors.Is(err, errGrokUnauthenticated) && ownedCleanupError(err) == nil {
 		// Grok prints its authentication status before it silently refreshes an
 		// expired session, so a second run reports the refresh the first persisted.
-		models, err = discoverCommandModels(agent, req, nil)
+		models, err = discoverCommandModels(agent, req, nil, nil)
+		if errors.Is(err, errGrokUnauthenticated) && grokLogin.known {
+			err = &grokLoginError{grokLoginState: grokLogin, cause: err}
+		}
 	}
 	// Claude captures the lookup deadline at its reply, then preserves native
 	// shutdown errors even if graceful cleanup outlasts that deadline.
@@ -126,7 +131,7 @@ func discoverClaudeModelsInBackground(req DiscoveryRequest) ([]string, error) {
 				}
 			},
 			shutdown: func(err error) { shutdownErr = err },
-		})
+		}, nil)
 		if !delivered {
 			// A failed lookup is reported once. If the caller already timed
 			// out, retain native shutdown failures for the cleanup owner.
@@ -265,7 +270,56 @@ func discoveryCommand(agent string, req DiscoveryRequest) (*exec.Cmd, error) {
 	return cmd, nil
 }
 
-func discoverCommandModels(agent string, req DiscoveryRequest, observer *claudeProbeObserver) (models []string, resultErr error) {
+// grokLoginState records metadata before Grok can clear a rejected login.
+type grokLoginState struct {
+	home   string
+	stored bool
+	known  bool
+}
+
+func inspectGrokLogin(cmd *exec.Cmd) grokLoginState {
+	// Environ applies exec's duplicate-key rules, matching the child process.
+	env := cmd.Environ()
+	home, _ := clients.GetEnv(env, grok.EnvHome)
+	if home == "" {
+		userHome, _ := clients.GetEnv(env, "HOME")
+		if userHome == "" {
+			return grokLoginState{}
+		}
+		home = userHome + string(os.PathSeparator) + ".grok"
+	}
+	if !filepath.IsAbs(home) && cmd.Dir != "" {
+		home = cmd.Dir + string(os.PathSeparator) + home
+	}
+	home = clients.ResolveHome(home)
+	if !filepath.IsAbs(home) {
+		return grokLoginState{}
+	}
+	// Concatenation preserves symlink/.. semantics. Never open the credential.
+	_, err := os.Lstat(home + string(os.PathSeparator) + "auth.json")
+	return grokLoginState{home: home, stored: err == nil, known: err == nil || os.IsNotExist(err)}
+}
+
+type grokLoginError struct {
+	grokLoginState
+	cause error
+}
+
+func (e *grokLoginError) Error() string {
+	// Quote control characters and bound user-controlled path diagnostics.
+	home := e.home
+	if len(home) > 512 {
+		home = home[:512] + "..."
+	}
+	if e.stored {
+		return fmt.Sprintf("Grok still reported no usable login after its silent refresh of the stored login in %q (refresh rejected, login revoked, or signed out); sign in again using al grok", home)
+	}
+	return fmt.Sprintf("Grok has no stored login in %q; sign in using al grok", home)
+}
+
+func (e *grokLoginError) Unwrap() error { return e.cause }
+
+func discoverCommandModels(agent string, req DiscoveryRequest, observer *claudeProbeObserver, grokLogin *grokLoginState) (models []string, resultErr error) {
 	// Long-lived protocol servers have their owned group stopped and joined after
 	// their reply. Claude uses EOF and waits for its credential-safe shutdown.
 	ctx, cancel := context.WithCancel(req.Context)
@@ -274,6 +328,9 @@ func discoverCommandModels(agent string, req DiscoveryRequest, observer *claudeP
 	cmd, err := discoveryCommand(agent, req)
 	if err != nil {
 		return nil, err
+	}
+	if agent == agentGrok && grokLogin != nil {
+		*grokLogin = inspectGrokLogin(cmd)
 	}
 	// Own this pipe: Claude's Wait must observe native exit independently of any
 	// descendant that inherited stdout, and an owned reap must not discard

@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/conn-castle/agent-layer/internal/clients"
+	"github.com/conn-castle/agent-layer/internal/clients/grok"
 	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/ownedprocess"
 	"github.com/conn-castle/agent-layer/internal/testutil"
@@ -38,6 +39,17 @@ func TestMain(m *testing.M) {
 }
 
 func runModelHarness(mode string) {
+	if path := os.Getenv("AL_TEST_GROK_RUNS"); path != "" {
+		file, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600) // #nosec G304,G703 -- test-owned run log.
+		if err != nil {
+			os.Exit(14)
+		}
+		_, err = fmt.Fprintf(file, "%q\n", os.Getenv(grok.EnvHome))
+		closeErr := file.Close()
+		if err != nil || closeErr != nil {
+			os.Exit(15)
+		}
+	}
 	if mode == "retained-child" {
 		// Publish readiness only once a group SIGINT/SIGTERM can no longer stop it.
 		signal.Ignore(syscall.SIGINT, syscall.SIGTERM)
@@ -137,6 +149,14 @@ func runModelHarness(mode string) {
 			os.Exit(3)
 		}
 		fmt.Println("\nAvailable models:\n  * refreshed-model (default)")
+		return
+	}
+	if mode == "grok-rejected-session" {
+		credential := filepath.Join(os.Getenv(grok.EnvHome), "auth.json")
+		if err := os.Remove(credential); err != nil && !os.IsNotExist(err) { // #nosec G703 -- test-owned dummy credential.
+			os.Exit(3)
+		}
+		fmt.Println("You are not authenticated.")
 		return
 	}
 	if mode == "unauthenticated-empty" {
@@ -384,13 +404,161 @@ func TestDiscoverModelsThroughHarnessProtocols(t *testing.T) {
 
 func TestGrokDiscoveryReportsSilentlyRefreshedSession(t *testing.T) {
 	req := harnessRequest(t, "grok-expired-session")
-	req.Env = append(req.Env, "AL_TEST_GROK_REFRESHED="+filepath.Join(t.TempDir(), "refreshed"))
+	home := t.TempDir()
+	credential := filepath.Join(home, "auth.json")
+	if err := os.WriteFile(credential, []byte("{}"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	runs := filepath.Join(t.TempDir(), "runs")
+	req.Env = append(req.Env, grok.EnvHome+"="+home, "AL_TEST_GROK_RUNS="+runs,
+		"AL_TEST_GROK_REFRESHED="+filepath.Join(t.TempDir(), "refreshed"))
 	got, err := DiscoverModels("grok", req)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if want := []string{"refreshed-model"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("models=%v want=%v", got, want)
+	}
+	content, err := os.ReadFile(credential) // #nosec G304 -- test-owned dummy credential.
+	if err != nil || string(content) != "{}" {
+		t.Fatalf("dummy credential changed: content=%q err=%v", content, err)
+	}
+	assertGrokHarnessRuns(t, runs, home, 2)
+}
+
+func assertGrokHarnessRuns(t *testing.T, path, home string, count int) {
+	t.Helper()
+	content, err := os.ReadFile(path) // #nosec G304 -- test-owned run log.
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := strings.Repeat(strconv.Quote(home)+"\n", count); string(content) != want {
+		t.Fatalf("harness runs/homes=%q want=%q", content, want)
+	}
+}
+
+func TestGrokDiscoveryDistinguishesStoredLogin(t *testing.T) {
+	for _, tc := range []struct {
+		name, mode, selection string
+		stored                bool
+		permissions           os.FileMode
+	}{
+		{"absent", "unauthenticated-empty", "inherited", false, 0o600},
+		{"rejected", "grok-rejected-session", "inherited", true, 0o600},
+		{"unreadable", "unauthenticated-empty", "inherited", true, 0o000},
+		{"project-rejected", "grok-rejected-session", "project", true, 0o600},
+		{"project-absent", "unauthenticated-empty", "project", false, 0o600},
+		{"relative-inherited", "grok-rejected-session", "relative", true, 0o600},
+		{"default-home", "unauthenticated-empty", "default", true, 0o600},
+		{"empty-override", "unauthenticated-empty", "empty", true, 0o600},
+		{"duplicate-override", "grok-rejected-session", "duplicate", true, 0o600},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			req := harnessRequest(t, tc.mode)
+			userHome := t.TempDir()
+			home := t.TempDir()
+			childHome := home
+			req.Env = append(req.Env, "HOME="+userHome)
+			switch tc.selection {
+			case "project":
+				req.Project = &config.ProjectConfig{Root: t.TempDir(), Env: map[string]string{grok.EnvHome: t.TempDir()}}
+				home = grok.HomeDir(req.Project.Root)
+				childHome = home
+				// An inherited login must not classify an empty project home.
+				inherited := t.TempDir()
+				if err := os.WriteFile(filepath.Join(inherited, "auth.json"), []byte("{}"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+				req.Env = append(req.Env, grok.EnvHome+"="+inherited)
+			case "relative":
+				cwd, err := os.Getwd()
+				if err != nil {
+					t.Fatal(err)
+				}
+				childHome, err = filepath.Rel(cwd, home)
+				if err != nil {
+					t.Fatal(err)
+				}
+				req.Env = append(req.Env, grok.EnvHome+"="+childHome)
+			case "default", "empty":
+				home = filepath.Join(userHome, ".grok")
+				childHome = ""
+				if tc.selection == "empty" {
+					req.Env = append(req.Env, grok.EnvHome+"=")
+				}
+			case "duplicate":
+				// exec passes the last value for duplicate environment keys.
+				req.Env = append(req.Env, grok.EnvHome+"="+t.TempDir(), grok.EnvHome+"="+home)
+			default:
+				req.Env = append(req.Env, grok.EnvHome+"="+home)
+			}
+			if err := os.MkdirAll(home, 0o700); err != nil {
+				t.Fatal(err)
+			}
+			credential := filepath.Join(home, "auth.json")
+			if tc.stored {
+				if err := os.WriteFile(credential, []byte("{}"), tc.permissions); err != nil {
+					t.Fatal(err)
+				}
+			}
+			runs := filepath.Join(t.TempDir(), "runs")
+			req.Env = append(req.Env, "AL_TEST_GROK_RUNS="+runs)
+			models, err := DiscoverModels(agentGrok, req)
+			if models != nil || !errors.Is(err, errGrokUnauthenticated) {
+				t.Fatalf("models=%v error=%v, want unauthenticated", models, err)
+			}
+			want := fmt.Sprintf("grok model discovery: Grok has no stored login in %q; sign in using al grok", home)
+			if tc.stored {
+				want = fmt.Sprintf("grok model discovery: Grok still reported no usable login after its silent refresh of the stored login in %q (refresh rejected, login revoked, or signed out); sign in again using al grok", home)
+			}
+			if err.Error() != want {
+				t.Fatalf("error=%q want=%q", err, want)
+			}
+			assertGrokHarnessRuns(t, runs, childHome, 2)
+			info, statErr := os.Lstat(credential)
+			if tc.mode == "grok-rejected-session" || !tc.stored {
+				if !os.IsNotExist(statErr) {
+					t.Fatalf("credential should be absent after discovery: %v", statErr)
+				}
+			} else if statErr != nil || info.Mode().Perm() != tc.permissions {
+				t.Fatalf("credential metadata changed: info=%v err=%v", info, statErr)
+			}
+		})
+	}
+}
+
+func TestGrokDiscoveryUnknownLoginStateKeepsGenericError(t *testing.T) {
+	for _, state := range []string{"no-home", "stat-error"} {
+		t.Run(state, func(t *testing.T) {
+			req := harnessRequest(t, "unauthenticated-empty")
+			if state == "stat-error" {
+				// Traversing a symlink loop deterministically fails, even as root.
+				loop := filepath.Join(t.TempDir(), "loop")
+				if err := os.Symlink("loop", loop); err != nil {
+					t.Fatal(err)
+				}
+				req.Env = append(req.Env, grok.EnvHome+"="+loop)
+			}
+			runs := filepath.Join(t.TempDir(), "runs")
+			req.Env = append(req.Env, "AL_TEST_GROK_RUNS="+runs)
+			_, err := DiscoverModels(agentGrok, req)
+			if !errors.Is(err, errGrokUnauthenticated) || err.Error() != "grok model discovery: "+errGrokUnauthenticated.Error() {
+				t.Fatalf("unknown login state error=%v", err)
+			}
+			childHome, _ := clients.GetEnv(req.Env, grok.EnvHome)
+			assertGrokHarnessRuns(t, runs, childHome, 2)
+		})
+	}
+}
+
+func TestGrokLoginErrorBoundsAndQuotesHome(t *testing.T) {
+	err := &grokLoginError{grokLoginState: grokLoginState{home: strings.Repeat("x", 510) + "\n\x1b" + strings.Repeat("y", 1024)}, cause: errGrokUnauthenticated}
+	message := err.Error()
+	if strings.ContainsAny(message, "\n\x1b") || !strings.Contains(message, `\n\x1b...`) || len(message) > 700 {
+		t.Fatalf("unbounded or unsanitized diagnostic: %q", message)
+	}
+	if !errors.Is(err, errGrokUnauthenticated) {
+		t.Fatal("authentication sentinel lost")
 	}
 }
 
@@ -673,11 +841,12 @@ func TestDiscoveryFailuresRemainExplicit(t *testing.T) {
 		{"copilot_cli", "copilot-error", "-32603: Failed to list models"},
 		{"copilot_cli", "copilot-empty", ""}, {"copilot_cli", "copilot-malformed", ""}, {"copilot_cli", "copilot-oversized", ""},
 		{"claude", "claude-error", ""}, {"codex", "codex-error", ""}, {"codex", "codex-loop", ""},
-		{"grok", "unauthenticated", "sign in using al grok"}, {"grok", "unauthenticated-exit-error", "sign in using al grok"}, {"grok", "bad-output", ""}, {"grok", "exit-error", ""},
+		{"grok", "unauthenticated", "no stored login"}, {"grok", "unauthenticated-exit-error", "no stored login"}, {"grok", "bad-output", ""}, {"grok", "exit-error", ""},
 		{"antigravity", "bad-output", "invalid model row"}, {"antigravity", "exit-error", "exit status 2"},
 	} {
 		t.Run(tc.mode, func(t *testing.T) {
 			req := harnessRequest(t, tc.mode)
+			req.Env = append(req.Env, "HOME="+t.TempDir())
 			req.Live = true
 			option := Resolve(config.Config{}, tc.agent, KindModel, req)
 			if option.DiscoveryError == "" || option.Source != "unavailable" || len(option.Suggestions) != 0 {
