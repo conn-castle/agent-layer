@@ -11,6 +11,9 @@ All notable changes to this project will be documented in this file.
 - Codex and Claude home selection stays consistent across launch, dispatch, model discovery, VS Code, and HerdR recovery: relative overrides follow symlinks before `..`, bare home names retain the subfolder fallback, and disabled local isolation clears only this repo’s inherited home. Root aliases are recognized before the home exists, and newly created `.codex` directories are owner-only without changing existing permissions (#518).
 - Unchanged Muse approval syncs no longer rewrite or reorder `approval-policy.json`. Stale Agent Layer grants for deleted roots or roots with missing or mismatched ownership receipts are removed by the next Muse-enabled `al sync` in any workspace using the same supported native policy directory, so a new project at a reused path no longer keeps inheriting those grants after that sync. Native-directory and workspace-root aliases are kept by filesystem identity. `al doctor` reports owned rule/root counts, orphaned roots, current-workspace receipt repair, and nested or possible throwaway copies with retirement guidance for disposable copies (#529).
 
+### Security
+- Release builds use Go 1.27.4 to address GO-2026-6859 in `net/http`. Source builders need Go 1.27.4 or newer to include this fix (#549).
+
 ## v1.2.1 - 2026-11-10
 
 ### Fixed
