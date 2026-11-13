@@ -485,6 +485,7 @@ func TestGrokDiscoveryDistinguishesLoginFileObservations(t *testing.T) {
 		{"empty-home-override", "unauthenticated-empty", "empty", "file", "", "present", 0o600},
 		{"duplicate-home-override", "grok-login-removed", "duplicate", "file", "", "removed", 0o600},
 		{"api-key", "unauthenticated-empty", "inherited", "file", "XAI_API_KEY=dummy-marker", "generic", 0o600},
+		{"api-key-alias", "unauthenticated-empty", "inherited", "file", "GROK_CODE_XAI_API_KEY=dummy-marker", "generic", 0o600},
 		{"inline-auth", "unauthenticated-empty", "inherited", "file", "GROK_AUTH=dummy-marker", "generic", 0o600},
 		{"empty-api-key", "unauthenticated-empty", "inherited", "file", "XAI_API_KEY=", "present", 0o600},
 		{"empty-inline-auth", "unauthenticated-empty", "inherited", "file", "GROK_AUTH=", "present", 0o600},
@@ -493,7 +494,7 @@ func TestGrokDiscoveryDistinguishesLoginFileObservations(t *testing.T) {
 		{"absent-auth-path", "unauthenticated-empty", "override", "", "", "absent", 0o600},
 		{"relative-auth-path", "grok-login-removed", "relative-override", "file", "", "removed", 0o600},
 		{"project-relative-auth-path", "grok-login-removed", "project-override", "file", "", "removed", 0o600},
-		{"api-key-overrides-auth-path", "unauthenticated-empty", "override", "file", "XAI_API_KEY=dummy-marker", "generic", 0o600},
+		{"api-key-with-auth-path", "unauthenticated-empty", "override", "file", "XAI_API_KEY=dummy-marker", "generic", 0o600},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			req := harnessRequest(t, tc.mode)

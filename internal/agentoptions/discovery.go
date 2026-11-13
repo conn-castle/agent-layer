@@ -284,9 +284,10 @@ type grokLoginState struct {
 func inspectGrokLogin(cmd *exec.Cmd) grokLoginState {
 	// Environ applies exec's duplicate-key rules, matching the child process.
 	env := cmd.Environ()
-	for _, key := range []string{"XAI_API_KEY", "GROK_AUTH"} {
+	for _, key := range []string{"XAI_API_KEY", "GROK_CODE_XAI_API_KEY", "GROK_AUTH"} {
 		if value, _ := clients.GetEnv(env, key); value != "" {
-			// A key or inline session overrides the file; never diagnose that file.
+			// With a key or inline session, the file may not be Grok's auth source.
+			// Keep the generic diagnostic.
 			return grokLoginState{}
 		}
 	}
