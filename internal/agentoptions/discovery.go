@@ -10,7 +10,9 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -76,15 +78,22 @@ func DiscoverModels(agent string, req DiscoveryRequest) ([]string, error) {
 	req.Context = ctx
 	var models []string
 	var err error
+	var grokLogin grokLoginState
 	if agent == agentClaude && req.Cleanup != nil {
 		models, err = discoverClaudeModelsInBackground(req)
 	} else {
-		models, err = discoverCommandModels(agent, req, nil)
+		models, err = discoverCommandModels(agent, req, nil, &grokLogin)
 	}
 	if errors.Is(err, errGrokUnauthenticated) && ownedCleanupError(err) == nil {
 		// Grok prints its authentication status before it silently refreshes an
 		// expired session, so a second run reports the refresh the first persisted.
-		models, err = discoverCommandModels(agent, req, nil)
+		models, err = discoverCommandModels(agent, req, nil, nil)
+		if errors.Is(err, errGrokUnauthenticated) && ownedCleanupError(err) == nil && grokLogin.known {
+			after := inspectGrokLoginFile(grokLogin.path)
+			if after.known {
+				err = &grokLoginError{grokLoginState: grokLogin, removed: !after.stored, cause: err}
+			}
+		}
 	}
 	// Claude captures the lookup deadline at its reply, then preserves native
 	// shutdown errors even if graceful cleanup outlasts that deadline.
@@ -126,7 +135,7 @@ func discoverClaudeModelsInBackground(req DiscoveryRequest) ([]string, error) {
 				}
 			},
 			shutdown: func(err error) { shutdownErr = err },
-		})
+		}, nil)
 		if !delivered {
 			// A failed lookup is reported once. If the caller already timed
 			// out, retain native shutdown failures for the cleanup owner.
@@ -265,7 +274,104 @@ func discoveryCommand(agent string, req DiscoveryRequest) (*exec.Cmd, error) {
 	return cmd, nil
 }
 
-func discoverCommandModels(agent string, req DiscoveryRequest, observer *claudeProbeObserver) (models []string, resultErr error) {
+// grokLoginState records only the selected login file's metadata.
+type grokLoginState struct {
+	path   string
+	stored bool
+	known  bool
+}
+
+func inspectGrokLogin(cmd *exec.Cmd) grokLoginState {
+	// Environ applies exec's duplicate-key rules, matching the child process.
+	env := cmd.Environ()
+	// API-key presence (even empty) or a non-empty inline session may mean
+	// the login file was not Grok's auth source. Keep the generic diagnostic.
+	for _, key := range []string{grok.EnvAPIKey, grok.EnvCodeAPIKey} {
+		if _, present := clients.GetEnv(env, key); present {
+			return grokLoginState{}
+		}
+	}
+	if auth, _ := clients.GetEnv(env, grok.EnvAuth); auth != "" {
+		return grokLoginState{}
+	}
+	path, _ := clients.GetEnv(env, grok.EnvAuthPath)
+	if path == "" {
+		home, _ := clients.GetEnv(env, grok.EnvHome)
+		if home == "" {
+			userHome, _ := clients.GetEnv(env, "HOME")
+			if userHome == "" {
+				return grokLoginState{}
+			}
+			home = userHome + string(os.PathSeparator) + ".grok"
+		}
+		path = home + string(os.PathSeparator) + "auth.json"
+	}
+	if !filepath.IsAbs(path) {
+		if cmd.Dir != "" {
+			path = cmd.Dir + string(os.PathSeparator) + path
+		}
+		parent, leaf := filepath.Split(path)
+		if parent == "" {
+			parent = "."
+		}
+		// Resolve the parent only: retain the login entry for both snapshots,
+		// including when it is a symlink. Never clean away symlink/.. pairs.
+		parent = clients.ResolveHome(parent)
+		path = strings.TrimRight(parent, string(os.PathSeparator)) + string(os.PathSeparator) + leaf
+		if !filepath.IsAbs(parent) {
+			return grokLoginState{}
+		}
+	}
+	return inspectGrokLoginFile(path)
+}
+
+func inspectGrokLoginFile(path string) grokLoginState {
+	info, err := os.Stat(path) // Metadata only; follow symlinks without opening credentials.
+	if err == nil && info.Mode().IsRegular() {
+		return grokLoginState{path: path, stored: true, known: true}
+	}
+	if os.IsNotExist(err) {
+		// Stat also reports not-exist for dangling symlinks. Those do not prove
+		// the login entry was absent, so retain the generic diagnostic.
+		if _, linkErr := os.Lstat(path); os.IsNotExist(linkErr) {
+			return grokLoginState{path: path, known: true}
+		}
+	}
+	return grokLoginState{}
+}
+
+type grokLoginError struct {
+	grokLoginState
+	removed bool
+	cause   error
+}
+
+func (e *grokLoginError) Error() string {
+	// Bound the escaped diagnostic, including control bytes and invalid UTF-8.
+	path := strconv.QuoteToASCII(e.path)
+	if len(path) > 512 {
+		// Shorten at raw rune boundaries so quoted escapes remain complete.
+		end := 0
+		for next := range e.path {
+			if len(strconv.QuoteToASCII(e.path[:next]))+len("...") > 512 {
+				break
+			}
+			end = next
+		}
+		path = strconv.QuoteToASCII(e.path[:end]) + "..."
+	}
+	if !e.stored {
+		return fmt.Sprintf("harness is not authenticated; no Grok login file was present at %s before discovery; sign in using al grok", path)
+	}
+	if e.removed {
+		return fmt.Sprintf("harness is not authenticated; the Grok login file present at %s before discovery was removed during lookup; sign in again using al grok", path)
+	}
+	return fmt.Sprintf("harness is not authenticated although a Grok login file was present at %s before discovery; run al grok to let Grok refresh it or sign in again", path)
+}
+
+func (e *grokLoginError) Unwrap() error { return e.cause }
+
+func discoverCommandModels(agent string, req DiscoveryRequest, observer *claudeProbeObserver, grokLogin *grokLoginState) (models []string, resultErr error) {
 	// Long-lived protocol servers have their owned group stopped and joined after
 	// their reply. Claude uses EOF and waits for its credential-safe shutdown.
 	ctx, cancel := context.WithCancel(req.Context)
@@ -274,6 +380,9 @@ func discoverCommandModels(agent string, req DiscoveryRequest, observer *claudeP
 	cmd, err := discoveryCommand(agent, req)
 	if err != nil {
 		return nil, err
+	}
+	if agent == agentGrok && grokLogin != nil {
+		*grokLogin = inspectGrokLogin(cmd)
 	}
 	// Own this pipe: Claude's Wait must observe native exit independently of any
 	// descendant that inherited stdout, and an owned reap must not discard

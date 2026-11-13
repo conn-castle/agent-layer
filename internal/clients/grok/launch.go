@@ -31,6 +31,14 @@ const (
 	SupportedVersion = "1.0.5"
 	// EnvHome is the Grok home directory override.
 	EnvHome = "GROK_HOME"
+	// EnvAuth supplies an inline Grok session.
+	EnvAuth = "GROK_AUTH"
+	// EnvAuthPath selects Grok's stored login file path.
+	EnvAuthPath = "GROK_AUTH_PATH"
+	// EnvAPIKey selects Grok's API-key mode, including when empty.
+	EnvAPIKey = "XAI_API_KEY" // #nosec G101 -- environment variable name, not a credential.
+	// EnvCodeAPIKey is Grok's alternative API-key environment variable.
+	EnvCodeAPIKey = "GROK_CODE_XAI_API_KEY" // #nosec G101 -- environment variable name, not a credential.
 	// EnvClaudeAgents disables Grok discovery of Claude-named instruction files
 	// under ~/.claude/ and <dir>/.claude/CLAUDE*.md.
 	EnvClaudeAgents = "GROK_CLAUDE_AGENTS_ENABLED"
