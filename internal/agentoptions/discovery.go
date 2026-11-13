@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -87,8 +88,11 @@ func DiscoverModels(agent string, req DiscoveryRequest) ([]string, error) {
 		// Grok prints its authentication status before it silently refreshes an
 		// expired session, so a second run reports the refresh the first persisted.
 		models, err = discoverCommandModels(agent, req, nil, nil)
-		if errors.Is(err, errGrokUnauthenticated) && grokLogin.known {
-			err = &grokLoginError{grokLoginState: grokLogin, cause: err}
+		if errors.Is(err, errGrokUnauthenticated) && ownedCleanupError(err) == nil && grokLogin.known {
+			after := inspectGrokLoginFile(grokLogin.path)
+			if after.known {
+				err = &grokLoginError{grokLoginState: grokLogin, removed: !after.stored, cause: err}
+			}
 		}
 	}
 	// Claude captures the lookup deadline at its reply, then preserves native
@@ -270,9 +274,9 @@ func discoveryCommand(agent string, req DiscoveryRequest) (*exec.Cmd, error) {
 	return cmd, nil
 }
 
-// grokLoginState records metadata before Grok can clear a rejected login.
+// grokLoginState records only the selected login file's metadata.
 type grokLoginState struct {
-	home   string
+	path   string
 	stored bool
 	known  bool
 }
@@ -280,41 +284,76 @@ type grokLoginState struct {
 func inspectGrokLogin(cmd *exec.Cmd) grokLoginState {
 	// Environ applies exec's duplicate-key rules, matching the child process.
 	env := cmd.Environ()
-	home, _ := clients.GetEnv(env, grok.EnvHome)
-	if home == "" {
-		userHome, _ := clients.GetEnv(env, "HOME")
-		if userHome == "" {
+	for _, key := range []string{"XAI_API_KEY", "GROK_AUTH"} {
+		if value, _ := clients.GetEnv(env, key); value != "" {
+			// A key or inline session overrides the file; never diagnose that file.
 			return grokLoginState{}
 		}
-		home = userHome + string(os.PathSeparator) + ".grok"
 	}
-	if !filepath.IsAbs(home) && cmd.Dir != "" {
-		home = cmd.Dir + string(os.PathSeparator) + home
+	path, _ := clients.GetEnv(env, "GROK_AUTH_PATH")
+	if path == "" {
+		home, _ := clients.GetEnv(env, grok.EnvHome)
+		if home == "" {
+			userHome, _ := clients.GetEnv(env, "HOME")
+			if userHome == "" {
+				return grokLoginState{}
+			}
+			home = userHome + string(os.PathSeparator) + ".grok"
+		}
+		path = home + string(os.PathSeparator) + "auth.json"
 	}
-	home = clients.ResolveHome(home)
-	if !filepath.IsAbs(home) {
-		return grokLoginState{}
+	if !filepath.IsAbs(path) {
+		if cmd.Dir != "" {
+			path = cmd.Dir + string(os.PathSeparator) + path
+		}
+		parent, leaf := filepath.Split(path)
+		if parent == "" {
+			parent = "."
+		}
+		// Resolve the parent only: retain the login entry for both snapshots,
+		// including when it is a symlink. Never clean away symlink/.. pairs.
+		parent = clients.ResolveHome(parent)
+		path = strings.TrimRight(parent, string(os.PathSeparator)) + string(os.PathSeparator) + leaf
+		if !filepath.IsAbs(parent) {
+			return grokLoginState{}
+		}
 	}
-	// Concatenation preserves symlink/.. semantics. Never open the credential.
-	_, err := os.Lstat(home + string(os.PathSeparator) + "auth.json")
-	return grokLoginState{home: home, stored: err == nil, known: err == nil || os.IsNotExist(err)}
+	return inspectGrokLoginFile(path)
+}
+
+func inspectGrokLoginFile(path string) grokLoginState {
+	info, err := os.Stat(path) // Metadata only; follow symlinks without opening credentials.
+	if err == nil {
+		return grokLoginState{path: path, stored: info.Mode().IsRegular(), known: info.Mode().IsRegular()}
+	}
+	if os.IsNotExist(err) {
+		// Stat also reports not-exist for dangling symlinks. Those do not prove
+		// the login entry was absent, so retain the generic diagnostic.
+		_, linkErr := os.Lstat(path)
+		return grokLoginState{path: path, known: os.IsNotExist(linkErr)}
+	}
+	return grokLoginState{}
 }
 
 type grokLoginError struct {
 	grokLoginState
-	cause error
+	removed bool
+	cause   error
 }
 
 func (e *grokLoginError) Error() string {
-	// Quote control characters and bound user-controlled path diagnostics.
-	home := e.home
-	if len(home) > 512 {
-		home = home[:512] + "..."
+	// Bound the escaped diagnostic, including control bytes and invalid UTF-8.
+	path := strconv.QuoteToASCII(e.path)
+	if len(path) > 512 {
+		path = path[:508] + `..."`
 	}
-	if e.stored {
-		return fmt.Sprintf("Grok still reported no usable login after its silent refresh of the stored login in %q (refresh rejected, login revoked, or signed out); sign in again using al grok", home)
+	if !e.stored {
+		return fmt.Sprintf("harness is not authenticated; no Grok login file was present at %s before discovery; sign in using al grok", path)
 	}
-	return fmt.Sprintf("Grok has no stored login in %q; sign in using al grok", home)
+	if e.removed {
+		return fmt.Sprintf("harness is not authenticated; the Grok login file present at %s before discovery was removed during lookup; sign in again using al grok", path)
+	}
+	return fmt.Sprintf("harness is not authenticated although a Grok login file was present at %s before discovery; run al grok to let Grok refresh it or sign in again", path)
 }
 
 func (e *grokLoginError) Unwrap() error { return e.cause }

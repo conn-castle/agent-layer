@@ -20,6 +20,7 @@ import (
 	"syscall"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/conn-castle/agent-layer/internal/clients"
 	"github.com/conn-castle/agent-layer/internal/clients/grok"
@@ -44,7 +45,7 @@ func runModelHarness(mode string) {
 		if err != nil {
 			os.Exit(14)
 		}
-		_, err = fmt.Fprintf(file, "%q\n", os.Getenv(grok.EnvHome))
+		_, err = fmt.Fprintf(file, "%q %q\n", os.Getenv(grok.EnvHome), os.Getenv("GROK_AUTH_PATH"))
 		closeErr := file.Close()
 		if err != nil || closeErr != nil {
 			os.Exit(15)
@@ -151,9 +152,24 @@ func runModelHarness(mode string) {
 		fmt.Println("\nAvailable models:\n  * refreshed-model (default)")
 		return
 	}
-	if mode == "grok-rejected-session" {
-		credential := filepath.Join(os.Getenv(grok.EnvHome), "auth.json")
+	if strings.HasPrefix(mode, "grok-login-") {
+		credential := os.Getenv("GROK_AUTH_PATH")
+		if credential == "" {
+			credential = filepath.Join(os.Getenv(grok.EnvHome), "auth.json")
+		}
 		if err := os.Remove(credential); err != nil && !os.IsNotExist(err) { // #nosec G703 -- test-owned dummy credential.
+			os.Exit(3)
+		}
+		var err error
+		switch mode {
+		case "grok-login-directory":
+			err = os.Mkdir(credential, 0o700) // #nosec G703 -- test-owned credential path.
+		case "grok-login-dangling":
+			err = os.Symlink("missing-target", credential) // #nosec G703 -- test-owned credential path.
+		case "grok-login-stat-error":
+			err = os.Symlink(filepath.Base(credential), credential) // #nosec G703 -- test-owned symlink loop.
+		}
+		if err != nil {
 			os.Exit(3)
 		}
 		fmt.Println("You are not authenticated.")
@@ -423,53 +439,83 @@ func TestGrokDiscoveryReportsSilentlyRefreshedSession(t *testing.T) {
 	if err != nil || string(content) != "{}" {
 		t.Fatalf("dummy credential changed: content=%q err=%v", content, err)
 	}
-	assertGrokHarnessRuns(t, runs, home, 2)
+	assertGrokHarnessRuns(t, runs, home, "", 2)
 }
 
-func assertGrokHarnessRuns(t *testing.T, path, home string, count int) {
+func assertGrokHarnessRuns(t *testing.T, path, home, authPath string, count int) {
 	t.Helper()
 	content, err := os.ReadFile(path) // #nosec G304 -- test-owned run log.
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want := strings.Repeat(strconv.Quote(home)+"\n", count); string(content) != want {
+	if want := strings.Repeat(strconv.Quote(home)+" "+strconv.Quote(authPath)+"\n", count); string(content) != want {
 		t.Fatalf("harness runs/homes=%q want=%q", content, want)
 	}
 }
 
-func TestGrokDiscoveryDistinguishesStoredLogin(t *testing.T) {
+func grokFixtureDir(t *testing.T) string {
+	t.Helper()
+	path, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+func TestGrokDiscoveryDistinguishesLoginFileObservations(t *testing.T) {
 	for _, tc := range []struct {
-		name, mode, selection string
-		stored                bool
-		permissions           os.FileMode
+		name, mode, selection, entry, authEnv, outcome string
+		permissions                                    os.FileMode
 	}{
-		{"absent", "unauthenticated-empty", "inherited", false, 0o600},
-		{"rejected", "grok-rejected-session", "inherited", true, 0o600},
-		{"unreadable", "unauthenticated-empty", "inherited", true, 0o000},
-		{"project-rejected", "grok-rejected-session", "project", true, 0o600},
-		{"project-absent", "unauthenticated-empty", "project", false, 0o600},
-		{"relative-inherited", "grok-rejected-session", "relative", true, 0o600},
-		{"default-home", "unauthenticated-empty", "default", true, 0o600},
-		{"empty-override", "unauthenticated-empty", "empty", true, 0o600},
-		{"duplicate-override", "grok-rejected-session", "duplicate", true, 0o600},
+		{"absent", "unauthenticated-empty", "inherited", "", "", "absent", 0o600},
+		{"removed", "grok-login-removed", "inherited", "file", "", "removed", 0o600},
+		{"still-present", "unauthenticated-empty", "inherited", "file", "", "present", 0o600},
+		{"unreadable", "unauthenticated-empty", "inherited", "file", "", "present", 0o000},
+		{"empty-file", "unauthenticated-empty", "inherited", "empty", "", "present", 0o600},
+		{"directory", "unauthenticated-empty", "inherited", "directory", "", "generic", 0o700},
+		{"dangling-symlink", "unauthenticated-empty", "inherited", "dangling", "", "generic", 0o600},
+		{"regular-symlink", "unauthenticated-empty", "inherited", "symlink", "", "present", 0o600},
+		{"directory-after-retry", "grok-login-directory", "inherited", "file", "", "generic", 0o600},
+		{"dangling-after-retry", "grok-login-dangling", "inherited", "file", "", "generic", 0o600},
+		{"stat-error-after-retry", "grok-login-stat-error", "inherited", "file", "", "generic", 0o600},
+		{"project-removed", "grok-login-removed", "project", "file", "", "removed", 0o600},
+		{"project-absent", "unauthenticated-empty", "project", "", "", "absent", 0o600},
+		{"relative-inherited", "grok-login-removed", "relative", "file", "", "removed", 0o600},
+		{"default-home", "unauthenticated-empty", "default", "file", "", "present", 0o600},
+		{"empty-home-override", "unauthenticated-empty", "empty", "file", "", "present", 0o600},
+		{"duplicate-home-override", "grok-login-removed", "duplicate", "file", "", "removed", 0o600},
+		{"api-key", "unauthenticated-empty", "inherited", "file", "XAI_API_KEY=dummy-marker", "generic", 0o600},
+		{"inline-auth", "unauthenticated-empty", "inherited", "file", "GROK_AUTH=dummy-marker", "generic", 0o600},
+		{"empty-api-key", "unauthenticated-empty", "inherited", "file", "XAI_API_KEY=", "present", 0o600},
+		{"empty-inline-auth", "unauthenticated-empty", "inherited", "file", "GROK_AUTH=", "present", 0o600},
+		{"project-api-key", "unauthenticated-empty", "project-key", "file", "", "generic", 0o600},
+		{"auth-path", "grok-login-removed", "override", "file", "", "removed", 0o600},
+		{"absent-auth-path", "unauthenticated-empty", "override", "", "", "absent", 0o600},
+		{"relative-auth-path", "grok-login-removed", "relative-override", "file", "", "removed", 0o600},
+		{"project-relative-auth-path", "grok-login-removed", "project-override", "file", "", "removed", 0o600},
+		{"api-key-overrides-auth-path", "unauthenticated-empty", "override", "file", "XAI_API_KEY=dummy-marker", "generic", 0o600},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			req := harnessRequest(t, tc.mode)
-			userHome := t.TempDir()
-			home := t.TempDir()
+			userHome := grokFixtureDir(t)
+			home := grokFixtureDir(t)
 			childHome := home
+			childAuthPath := ""
 			req.Env = append(req.Env, "HOME="+userHome)
 			switch tc.selection {
-			case "project":
-				req.Project = &config.ProjectConfig{Root: t.TempDir(), Env: map[string]string{grok.EnvHome: t.TempDir()}}
+			case "project", "project-key", "project-override":
+				req.Project = &config.ProjectConfig{Root: grokFixtureDir(t), Env: map[string]string{grok.EnvHome: grokFixtureDir(t)}}
 				home = grok.HomeDir(req.Project.Root)
 				childHome = home
 				// An inherited login must not classify an empty project home.
-				inherited := t.TempDir()
+				inherited := grokFixtureDir(t)
 				if err := os.WriteFile(filepath.Join(inherited, "auth.json"), []byte("{}"), 0o600); err != nil {
 					t.Fatal(err)
 				}
 				req.Env = append(req.Env, grok.EnvHome+"="+inherited)
+				if tc.selection == "project-key" {
+					req.Project.Env["XAI_API_KEY"] = "dummy-marker"
+				}
 			case "relative":
 				cwd, err := os.Getwd()
 				if err != nil {
@@ -488,7 +534,7 @@ func TestGrokDiscoveryDistinguishesStoredLogin(t *testing.T) {
 				}
 			case "duplicate":
 				// exec passes the last value for duplicate environment keys.
-				req.Env = append(req.Env, grok.EnvHome+"="+t.TempDir(), grok.EnvHome+"="+home)
+				req.Env = append(req.Env, grok.EnvHome+"="+grokFixtureDir(t), grok.EnvHome+"="+home)
 			default:
 				req.Env = append(req.Env, grok.EnvHome+"="+home)
 			}
@@ -496,10 +542,54 @@ func TestGrokDiscoveryDistinguishesStoredLogin(t *testing.T) {
 				t.Fatal(err)
 			}
 			credential := filepath.Join(home, "auth.json")
-			if tc.stored {
-				if err := os.WriteFile(credential, []byte("{}"), tc.permissions); err != nil {
+			if strings.Contains(tc.selection, "override") {
+				// The default file is unrelated when GROK_AUTH_PATH is set.
+				if err := os.WriteFile(credential, []byte("{}"), 0o600); err != nil {
 					t.Fatal(err)
 				}
+				credential = filepath.Join(grokFixtureDir(t), "login.json")
+				childAuthPath = credential
+				if tc.selection == "project-override" {
+					credential = filepath.Join(req.Project.Root, "login.json")
+					childAuthPath = "login.json"
+				} else if tc.selection == "relative-override" {
+					cwd, err := os.Getwd()
+					if err != nil {
+						t.Fatal(err)
+					}
+					childAuthPath, err = filepath.Rel(cwd, credential)
+					if err != nil {
+						t.Fatal(err)
+					}
+				}
+				req.Env = append(req.Env, "GROK_AUTH_PATH="+childAuthPath)
+			}
+			switch tc.entry {
+			case "file", "empty":
+				content := []byte("{}")
+				if tc.entry == "empty" {
+					content = nil
+				}
+				if err := os.WriteFile(credential, content, tc.permissions); err != nil {
+					t.Fatal(err)
+				}
+			case "directory":
+				if err := os.Mkdir(credential, tc.permissions); err != nil {
+					t.Fatal(err)
+				}
+			case "dangling", "symlink":
+				target := filepath.Join(grokFixtureDir(t), "target.json")
+				if tc.entry == "symlink" {
+					if err := os.WriteFile(target, []byte("{}"), 0o600); err != nil {
+						t.Fatal(err)
+					}
+				}
+				if err := os.Symlink(target, credential); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if tc.authEnv != "" {
+				req.Env = append(req.Env, tc.authEnv)
 			}
 			runs := filepath.Join(t.TempDir(), "runs")
 			req.Env = append(req.Env, "AL_TEST_GROK_RUNS="+runs)
@@ -507,21 +597,36 @@ func TestGrokDiscoveryDistinguishesStoredLogin(t *testing.T) {
 			if models != nil || !errors.Is(err, errGrokUnauthenticated) {
 				t.Fatalf("models=%v error=%v, want unauthenticated", models, err)
 			}
-			want := fmt.Sprintf("grok model discovery: Grok has no stored login in %q; sign in using al grok", home)
-			if tc.stored {
-				want = fmt.Sprintf("grok model discovery: Grok still reported no usable login after its silent refresh of the stored login in %q (refresh rejected, login revoked, or signed out); sign in again using al grok", home)
+			want := "grok model discovery: "
+			switch tc.outcome {
+			case "absent":
+				want += fmt.Sprintf("harness is not authenticated; no Grok login file was present at %s before discovery; sign in using al grok", strconv.QuoteToASCII(credential))
+			case "removed":
+				want += fmt.Sprintf("harness is not authenticated; the Grok login file present at %s before discovery was removed during lookup; sign in again using al grok", strconv.QuoteToASCII(credential))
+			case "present":
+				want += fmt.Sprintf("harness is not authenticated although a Grok login file was present at %s before discovery; run al grok to let Grok refresh it or sign in again", strconv.QuoteToASCII(credential))
+			default:
+				want += errGrokUnauthenticated.Error()
 			}
 			if err.Error() != want {
 				t.Fatalf("error=%q want=%q", err, want)
 			}
-			assertGrokHarnessRuns(t, runs, childHome, 2)
+			assertGrokHarnessRuns(t, runs, childHome, childAuthPath, 2)
 			info, statErr := os.Lstat(credential)
-			if tc.mode == "grok-rejected-session" || !tc.stored {
+			if tc.outcome == "removed" || tc.entry == "" {
 				if !os.IsNotExist(statErr) {
 					t.Fatalf("credential should be absent after discovery: %v", statErr)
 				}
-			} else if statErr != nil || info.Mode().Perm() != tc.permissions {
-				t.Fatalf("credential metadata changed: info=%v err=%v", info, statErr)
+			} else if !strings.HasPrefix(tc.mode, "grok-login-") && tc.entry != "symlink" && tc.entry != "dangling" {
+				if statErr != nil || info.Mode().Perm() != tc.permissions {
+					t.Fatalf("credential metadata changed: info=%v err=%v", info, statErr)
+				}
+			}
+			if childAuthPath != "" {
+				info, err := os.Stat(filepath.Join(home, "auth.json"))
+				if err != nil || !info.Mode().IsRegular() {
+					t.Fatalf("unrelated default login file changed: info=%v err=%v", info, err)
+				}
 			}
 		})
 	}
@@ -546,19 +651,27 @@ func TestGrokDiscoveryUnknownLoginStateKeepsGenericError(t *testing.T) {
 				t.Fatalf("unknown login state error=%v", err)
 			}
 			childHome, _ := clients.GetEnv(req.Env, grok.EnvHome)
-			assertGrokHarnessRuns(t, runs, childHome, 2)
+			assertGrokHarnessRuns(t, runs, childHome, "", 2)
 		})
 	}
 }
 
-func TestGrokLoginErrorBoundsAndQuotesHome(t *testing.T) {
-	err := &grokLoginError{grokLoginState: grokLoginState{home: strings.Repeat("x", 510) + "\n\x1b" + strings.Repeat("y", 1024)}, cause: errGrokUnauthenticated}
-	message := err.Error()
-	if strings.ContainsAny(message, "\n\x1b") || !strings.Contains(message, `\n\x1b...`) || len(message) > 700 {
-		t.Fatalf("unbounded or unsanitized diagnostic: %q", message)
-	}
-	if !errors.Is(err, errGrokUnauthenticated) {
-		t.Fatal("authentication sentinel lost")
+func TestGrokLoginErrorBoundsAndQuotesPath(t *testing.T) {
+	for _, path := range []string{
+		strings.Repeat("x", 510) + "\n\x1b" + strings.Repeat("y", 1024),
+		strings.Repeat("\n\x00\x1b", 1024),
+		strings.Repeat("界", 1024),
+	} {
+		for _, state := range []struct{ stored, removed bool }{{}, {true, true}, {true, false}} {
+			err := &grokLoginError{grokLoginState: grokLoginState{path: path, stored: state.stored}, removed: state.removed, cause: errGrokUnauthenticated}
+			message := err.Error()
+			if !utf8.ValidString(message) || strings.ContainsAny(message, "\n\x00\x1b") || !strings.Contains(message, `..."`) || len(message) > 700 {
+				t.Fatalf("unbounded or unsanitized diagnostic: %q", message)
+			}
+			if !errors.Is(err, errGrokUnauthenticated) {
+				t.Fatal("authentication sentinel lost")
+			}
+		}
 	}
 }
 
@@ -841,7 +954,7 @@ func TestDiscoveryFailuresRemainExplicit(t *testing.T) {
 		{"copilot_cli", "copilot-error", "-32603: Failed to list models"},
 		{"copilot_cli", "copilot-empty", ""}, {"copilot_cli", "copilot-malformed", ""}, {"copilot_cli", "copilot-oversized", ""},
 		{"claude", "claude-error", ""}, {"codex", "codex-error", ""}, {"codex", "codex-loop", ""},
-		{"grok", "unauthenticated", "no stored login"}, {"grok", "unauthenticated-exit-error", "no stored login"}, {"grok", "bad-output", ""}, {"grok", "exit-error", ""},
+		{"grok", "unauthenticated", "no Grok login file was present"}, {"grok", "unauthenticated-exit-error", "no Grok login file was present"}, {"grok", "bad-output", ""}, {"grok", "exit-error", ""},
 		{"antigravity", "bad-output", "invalid model row"}, {"antigravity", "exit-error", "exit status 2"},
 	} {
 		t.Run(tc.mode, func(t *testing.T) {
@@ -998,11 +1111,13 @@ func TestDiscoveryReportsCleanupFailure(t *testing.T) {
 	for _, tc := range []struct {
 		name, agent, mode string
 		cancel            bool
+		cleanupStart      int
 	}{
-		{"codex-success", "codex", "codex", false},
-		{"grok-unauthenticated", "grok", "unauthenticated-empty", false},
-		{"antigravity-success", "antigravity", "antigravity-no-project", false},
-		{"codex-cancel", "codex", "hang", true},
+		{"codex-success", "codex", "codex", false, 1},
+		{"grok-unauthenticated", "grok", "unauthenticated-empty", false, 1},
+		{"grok-retry-unauthenticated", "grok", "unauthenticated-empty", false, 2},
+		{"antigravity-success", "antigravity", "antigravity-no-project", false, 1},
+		{"codex-cancel", "codex", "hang", true, 1},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			realStart := startOwnedProcess
@@ -1016,6 +1131,9 @@ func TestDiscoveryReportsCleanupFailure(t *testing.T) {
 				if err != nil {
 					return nil, err
 				}
+				if calls != tc.cleanupStart {
+					return wait, nil
+				}
 				if tc.cancel {
 					cancel()
 				}
@@ -1025,9 +1143,16 @@ func TestDiscoveryReportsCleanupFailure(t *testing.T) {
 			}
 			req := harnessRequest(t, tc.mode)
 			req.Context = ctx
+			if tc.cleanupStart == 2 {
+				home := grokFixtureDir(t)
+				if err := os.WriteFile(filepath.Join(home, "auth.json"), []byte("{}"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+				req.Env = append(req.Env, grok.EnvHome+"="+home)
+			}
 			models, err := DiscoverModels(tc.agent, req)
 			var cleanupErr *ownedprocess.CleanupError
-			if models != nil || !errors.As(err, &cleanupErr) {
+			if models != nil || !errors.As(err, &cleanupErr) || !strings.Contains(err.Error(), "injected") {
 				t.Fatalf("cleanup failure lost: models=%v err=%v", models, err)
 			}
 			// Discovery's own cancellation of a replied server is not reported.
@@ -1037,8 +1162,16 @@ func TestDiscoveryReportsCleanupFailure(t *testing.T) {
 			if tc.agent == "grok" && !errors.Is(err, errGrokUnauthenticated) {
 				t.Fatalf("authentication error lost: %v", err)
 			}
-			if calls != 1 {
-				t.Fatalf("harness started %d times, want 1", calls)
+			if calls != tc.cleanupStart {
+				t.Fatalf("harness started %d times, want %d", calls, tc.cleanupStart)
+			}
+			if tc.cleanupStart == 2 {
+				calls = 0
+				req.Live = true
+				option := Resolve(config.Config{}, agentGrok, KindModel, req)
+				if calls != 2 || option.Source != "unavailable" || !strings.Contains(option.DiscoveryError, "injected") || !strings.Contains(option.DiscoveryError, errGrokUnauthenticated.Error()) {
+					t.Fatalf("retry cleanup diagnostic lost: calls=%d option=%+v", calls, option)
+				}
 			}
 		})
 	}
