@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+
+	"github.com/conn-castle/agent-layer/internal/messages"
 )
 
 const (
@@ -26,20 +28,21 @@ var errProcessNotFound = errors.New("process was not found")
 // matching process ancestor; Codex hooks instead match the projected title
 // and live foreground launch using its PID and start identity.
 type launchContext struct {
-	Version       int    `json:"version"`
-	PID           int    `json:"pid"`
-	ProcessStart  string `json:"process_start"`
-	ProjectRoot   string `json:"project_root"`
-	Provider      string `json:"provider"`
-	SocketPath    string `json:"socket_path"`
-	LaunchCWD     string `json:"launch_cwd,omitempty"`
-	PaneID        string `json:"pane_id"`
-	DevExecutable string `json:"dev_executable,omitempty"`
-	DevBypass     bool   `json:"dev_bypass,omitempty"`
+	Version       int     `json:"version"`
+	PID           int     `json:"pid"`
+	ProcessStart  string  `json:"process_start"`
+	ProjectRoot   string  `json:"project_root"`
+	Provider      string  `json:"provider"`
+	SocketPath    string  `json:"socket_path"`
+	LaunchCWD     string  `json:"launch_cwd,omitempty"`
+	PaneID        string  `json:"pane_id"`
+	DevExecutable string  `json:"dev_executable,omitempty"`
+	DevBypass     bool    `json:"dev_bypass,omitempty"`
+	ProviderHome  *string `json:"provider_home,omitempty"`
 }
 
 // CaptureLaunch binds session hooks to an AL terminal launch in this project.
-// It stores identity only; recovery reapplies canonical project configuration.
+// It stores identity and the effective provider home; recovery reapplies project configuration.
 func CaptureLaunch(root, runDir string, env []string, provider string) error {
 	values := environment(env)
 	if values[EnvEnabled] != "1" {
@@ -65,6 +68,10 @@ func CaptureLaunch(root, runDir string, env []string, provider string) error {
 		Provider:     provider,
 		SocketPath:   values[EnvSocketPath],
 		PaneID:       values[EnvPaneID],
+	}
+	if key := providerHomeKey(provider); key != "" {
+		home := values[key]
+		context.ProviderHome = &home
 	}
 	if !filepath.IsAbs(context.SocketPath) {
 		cwd, err := canonicalDirectory(".")
@@ -385,6 +392,9 @@ func validateLaunchContext(context launchContext, root, provider string) error {
 	}
 	if !validSocketPath(context.SocketPath, context.LaunchCWD, root) || !safePaneID(context.PaneID) {
 		return errors.New("invalid HerdR socket or pane")
+	}
+	if context.ProviderHome != nil && ((*context.ProviderHome != "" && !filepath.IsAbs(*context.ProviderHome)) || providerHomeKey(provider) == "") {
+		return errors.New(messages.HerdRProviderHomeInvalid)
 	}
 	if context.DevBypass != (context.DevExecutable != "") {
 		return errors.New("incomplete development executable")

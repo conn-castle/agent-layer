@@ -11,6 +11,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/conn-castle/agent-layer/internal/messages"
 )
 
 // TestMuseLaunchContextChildProcess exercises the production boundary: a
@@ -371,5 +373,56 @@ func writeLaunchContextFixture(t *testing.T, path string, context launchContext)
 	}
 	if err := os.WriteFile(path, data, 0o600); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestLaunchHomeRecoveryPreservesLegacyRecords(t *testing.T) {
+	for _, provider := range []string{providerCodex, providerClaude, providerGrok} {
+		legacy := []string{"al", provider, "resume", "fixture"}
+		if got := withLaunchHome(legacy, launchContext{Provider: provider}); !slices.Equal(got, legacy) {
+			t.Fatalf("legacy recovery changed: %v", got)
+		}
+	}
+}
+
+func TestCaptureLaunchRejectsRelativeProviderHome(t *testing.T) {
+	for _, provider := range []string{providerCodex, providerClaude, providerGrok} {
+		t.Run(provider, func(t *testing.T) {
+			root := t.TempDir()
+			runDir := filepath.Join(root, ".agent-layer", "tmp", "runs", "capture")
+			if err := os.MkdirAll(runDir, 0o700); err != nil {
+				t.Fatal(err)
+			}
+			env := []string{EnvEnabled + "=1", EnvSocketPath + "=/fixture/socket", EnvPaneID + "=w1:p1", providerHomeKey(provider) + "=relative-home"}
+			if err := CaptureLaunch(root, runDir, env, provider); err == nil || !strings.Contains(err.Error(), messages.HerdRProviderHomeInvalid) {
+				t.Fatalf("capture error=%v, want %q", err, messages.HerdRProviderHomeInvalid)
+			}
+			entries, err := os.ReadDir(runDir)
+			if err != nil || len(entries) != 0 {
+				t.Fatalf("invalid capture wrote records: entries=%v err=%v", entries, err)
+			}
+		})
+	}
+}
+
+func TestReadLaunchContextRejectsRelativeProviderHome(t *testing.T) {
+	for _, provider := range []string{providerCodex, providerClaude, providerGrok} {
+		t.Run(provider, func(t *testing.T) {
+			root, err := canonicalDirectory(t.TempDir())
+			if err != nil {
+				t.Fatal(err)
+			}
+			runDir := filepath.Join(root, ".agent-layer", "tmp", "runs", "capture")
+			if err := os.MkdirAll(runDir, 0o700); err != nil {
+				t.Fatal(err)
+			}
+			home := "relative-home"
+			context := launchContext{Version: 1, PID: os.Getpid(), ProcessStart: "fixture", ProjectRoot: root, Provider: provider, SocketPath: "/fixture/socket", PaneID: "w1:p1", ProviderHome: &home}
+			path := filepath.Join(runDir, launchContextName(context.PID, context.ProcessStart))
+			writeLaunchContextFixture(t, path, context)
+			if _, err := readLaunchContext(path, root, provider); err == nil || !strings.Contains(err.Error(), messages.HerdRProviderHomeInvalid) {
+				t.Fatalf("read error=%v, want %q", err, messages.HerdRProviderHomeInvalid)
+			}
+		})
 	}
 }

@@ -19,25 +19,28 @@ import (
 // execFunc is overridable for tests; on success it never returns.
 var execFunc = clients.ExecHandoff
 
-// homeDirName is the repo-local CODEX_HOME directory under the project root.
-const homeDirName = ".codex"
+// HomeDirName is the repo-local CODEX_HOME directory under the project root.
+const HomeDirName = ".codex"
 
 // Launch starts the Codex CLI with the configured options.
 func Launch(cfg *config.ProjectConfig, runInfo *run.Info, env []string, passArgs []string) error {
 	args := append([]string{}, passArgs...)
-
-	if runInfo != nil {
-		if err := herdr.CaptureLaunch(cfg.Root, runInfo.Dir, env, "codex"); err != nil {
-			return fmt.Errorf("prepare Codex HerdR recovery: %w", err)
-		}
-	}
-	env = ConfigureEnvironment(cfg.Root, env, cfg.Config.Agents.Codex, os.Stderr)
 
 	path, err := exec.LookPath("codex")
 	if err != nil {
 		return fmt.Errorf(messages.ClientsExecLookupErrorFmt, "codex", err)
 	}
 
+	env = ConfigureEnvironment(cfg.Root, env, cfg.Config.Agents.Codex, os.Stderr)
+	if err := EnsureSelectedHome(cfg.Root, env, cfg.Config.Agents.Codex); err != nil {
+		return err
+	}
+
+	if runInfo != nil {
+		if err := herdr.CaptureLaunch(cfg.Root, runInfo.Dir, env, "codex"); err != nil {
+			return fmt.Errorf("prepare Codex HerdR recovery: %w", err)
+		}
+	}
 	argv := append([]string{"codex"}, args...)
 	if err := execFunc(path, argv, env); err != nil {
 		return fmt.Errorf(messages.ClientsExecHandoffErrorFmt, "codex", err)
@@ -49,21 +52,16 @@ func Launch(cfg *config.ProjectConfig, runInfo *run.Info, env []string, passArgs
 // interactive launcher, headless Agent Dispatch, and model discovery.
 func ConfigureEnvironment(root string, env []string, cfg config.CodexConfig, warning io.Writer) []string {
 	if !config.CodexLocalConfigDirEnabled(cfg) {
-		return env
+		return clients.ClearStaleHome(root, env, "CODEX_HOME", HomeDirName)
 	}
 
-	expected := filepath.Join(root, homeDirName)
+	expected := filepath.Join(root, HomeDirName)
 	current, ok := clients.GetEnv(env, "CODEX_HOME")
 	if !ok || current == "" {
-		return clients.SetEnv(env, "CODEX_HOME", expected)
+		return clients.SetUniqueEnv(env, "CODEX_HOME", expected)
 	}
-	selected := current
-	if !filepath.IsAbs(current) {
-		// Launch, dispatch, and discovery children run in different working
-		// directories, so a relative home is passed on as an absolute path.
-		selected = clients.ResolveRelativeHome(root, current, homeDirName)
-		env = clients.SetEnv(env, "CODEX_HOME", selected)
-	}
+	selected := clients.ResolveRelativeHome(root, current, HomeDirName)
+	env = clients.SetUniqueEnv(env, "CODEX_HOME", selected)
 	if !clients.SamePath(selected, expected) && warning != nil {
 		_, _ = fmt.Fprintf(warning, messages.ClientsCodexHomeWarningFmt, current, expected)
 	}
@@ -76,11 +74,9 @@ func ConfigureEnvironment(root string, env []string, cfg config.CodexConfig, war
 // unchanged; inherited homes elsewhere are never created. Callers pass the
 // environment ConfigureEnvironment returned.
 func EnsureSelectedHome(root string, env []string, cfg config.CodexConfig) error {
-	home := filepath.Join(root, homeDirName)
-	// Compare parents: symlink resolution cannot match aliases of a missing leaf.
+	home := filepath.Join(root, HomeDirName)
 	current, ok := clients.GetEnv(env, "CODEX_HOME")
-	current = filepath.Clean(current)
-	if !config.CodexLocalConfigDirEnabled(cfg) || !ok || filepath.Base(current) != homeDirName || !clients.SamePath(filepath.Dir(current), root) {
+	if !config.CodexLocalConfigDirEnabled(cfg) || !ok || !clients.SamePath(current, home) {
 		return nil
 	}
 	err := os.Mkdir(home, 0o700)

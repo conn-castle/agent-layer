@@ -26,6 +26,7 @@ const (
 
 const (
 	executableName = "grok"
+	homeDirName    = ".grok-config"
 	// SupportedVersion is the Grok CLI version Agent Layer tests against.
 	SupportedVersion = "1.0.5"
 	// EnvHome is the Grok home directory override.
@@ -54,7 +55,7 @@ var execFunc = clients.ExecHandoff
 
 // HomeDir is the repo-local GROK_HOME Agent Layer always sets.
 func HomeDir(root string) string {
-	return filepath.Join(root, ".grok-config")
+	return filepath.Join(root, homeDirName)
 }
 
 // EnsureHome creates or tightens the repo-local GROK_HOME to owner-only
@@ -112,13 +113,12 @@ func Launch(cfg *config.ProjectConfig, runInfo *run.Info, env []string, passArgs
 	if err := EnsureHome(cfg.Root); err != nil {
 		return err
 	}
+	env = ConfigureEnvironment(cfg.Root, env, cfg.Config.Agents.Grok, os.Stderr)
 	if runInfo != nil {
 		if err := herdr.CaptureLaunch(cfg.Root, runInfo.Dir, env, "grok"); err != nil {
 			return fmt.Errorf("prepare Grok HerdR recovery: %w", err)
 		}
 	}
-	env = ConfigureEnvironment(cfg.Root, env, cfg.Config.Agents.Grok, os.Stderr)
-
 	argv := append([]string{executableName}, args...)
 	if err := execFunc(path, argv, env); err != nil {
 		return fmt.Errorf(messages.ClientsExecHandoffErrorFmt, executableName, err)
@@ -139,22 +139,18 @@ func ConfigureEnvironment(root string, env []string, cfg config.GrokConfig, warn
 	return env
 }
 
-// ClearStaleHome removes GROK_HOME only when it points at this repo's
-// .grok-config directory.
+// ClearStaleHome removes this project's inherited GROK_HOME and makes other
+// relative overrides absolute. Bare-name spellings fall back to .grok-config
+// under the project root only when the caller-relative entry is absent.
 func ClearStaleHome(root string, env []string) []string {
-	expected := HomeDir(root)
-	current, ok := clients.GetEnv(env, EnvHome)
-	if ok && clients.SamePath(current, expected) {
-		return clients.UnsetEnv(env, EnvHome)
-	}
-	return env
+	return clients.ClearStaleHome(root, env, EnvHome, homeDirName)
 }
 
 func ensureGrokHomeWithWarning(root string, env []string, warning io.Writer) []string {
 	expected := HomeDir(root)
 	current, ok := clients.GetEnv(env, EnvHome)
-	if ok && current != "" && !clients.SamePath(current, expected) && warning != nil {
+	if ok && current != "" && !clients.SamePath(clients.ResolveRelativeHome(root, current, homeDirName), expected) && warning != nil {
 		_, _ = fmt.Fprintf(warning, messages.ClientsGrokHomeWarningFmt, current, expected)
 	}
-	return clients.SetEnv(env, EnvHome, expected)
+	return clients.SetUniqueEnv(env, EnvHome, expected)
 }

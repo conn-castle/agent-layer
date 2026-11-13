@@ -166,6 +166,7 @@ func HandleForRoot(provider, root string, in io.Reader, out, errOut io.Writer, e
 	if err != nil {
 		return fmt.Errorf("build %s HerdR resume command: %w", provider, err)
 	}
+	argv = withLaunchHome(argv, launch)
 	if provider == providerMuse && root != "" {
 		// Do not trust an inbound value: the current, validated launch record
 		// is the only authority for this inert resume-command annotation.
@@ -253,6 +254,7 @@ func handleCodexRooted(root string, spec providerSpec, in io.Reader, env map[str
 		}
 		argv, err := resumeArgv(spec, id, candidateEnv)
 		if err == nil {
+			argv = withLaunchHome(argv, launch)
 			// Recheck ownership before every write; never wait on a changed selection.
 			revalidate := func() (bool, error) {
 				matchErr := codexContextMatchesPane(launch, id, deadline)
@@ -426,6 +428,37 @@ func resumeArgv(spec providerSpec, id string, env map[string]string) ([]string, 
 	argv = []string{commandEnv, EnvDevBypass + "=1", EnvDevExecutable + "=" + devExecutable}
 	argv = append(argv, devExecutable)
 	return append(argv, args...), nil
+}
+
+// providerHomeKey is deliberately limited to path overrides, never credentials.
+func providerHomeKey(provider string) string {
+	switch provider {
+	case providerCodex:
+		return "CODEX_HOME"
+	case providerClaude:
+		return "CLAUDE_CONFIG_DIR"
+	case providerGrok:
+		return "GROK_HOME"
+	default:
+		return ""
+	}
+}
+
+// withLaunchHome binds recovery to the launch's effective home, independently
+// of the hook environment and the working directory of a restored pane.
+// Older records without a home retain their historical recovery behavior.
+func withLaunchHome(argv []string, launch launchContext) []string {
+	key := providerHomeKey(launch.Provider)
+	if launch.ProviderHome == nil || key == "" {
+		return argv
+	}
+	prefix := []string{commandEnv}
+	if *launch.ProviderHome == "" {
+		prefix = append(prefix, "-u", key)
+	} else {
+		prefix = append(prefix, key+"="+*launch.ProviderHome)
+	}
+	return append(prefix, argv...)
 }
 
 func withRecoveryGeneration(argv []string, generation string) []string {

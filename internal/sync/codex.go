@@ -58,7 +58,7 @@ func writeCodexConfigWithCLISettings(sys System, root string, project *config.Pr
 	}
 
 	codexDir := filepath.Join(root, ".codex")
-	if err := sys.MkdirAll(codexDir, 0o755); err != nil {
+	if err := sys.MkdirAll(codexDir, 0o700); err != nil {
 		return fmt.Errorf(messages.SyncCreateDirFailedFmt, codexDir, err)
 	}
 
@@ -107,7 +107,11 @@ func codexHerdRTitleDisabledWarning(sys System, root string) (*warnings.Warning,
 // writeCodexRules generates .codex/rules/default.rules.
 func writeCodexRules(sys System, root string, project *config.ProjectConfig) error {
 	content := buildCodexRules(project)
-	rulesDir := filepath.Join(root, ".codex", "rules")
+	codexDir := filepath.Join(root, ".codex")
+	if err := sys.MkdirAll(codexDir, 0o700); err != nil {
+		return fmt.Errorf(messages.SyncCreateDirFailedFmt, codexDir, err)
+	}
+	rulesDir := filepath.Join(codexDir, "rules")
 	if err := sys.MkdirAll(rulesDir, 0o755); err != nil {
 		return fmt.Errorf(messages.SyncCreateDirFailedFmt, rulesDir, err)
 	}
