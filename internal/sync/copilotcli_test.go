@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/conn-castle/agent-layer/internal/config"
+	"github.com/conn-castle/agent-layer/internal/projection"
 )
 
 func TestBuildCopilotMCPConfigStdio(t *testing.T) {
@@ -32,7 +33,7 @@ func TestBuildCopilotMCPConfigStdio(t *testing.T) {
 		Env: map[string]string{},
 	}
 
-	cfg, err := buildCopilotMCPConfig(project)
+	cfg, err := buildCopilotMCPConfig(project, projection.DispatchLauncherOptions{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -76,7 +77,7 @@ func TestBuildCopilotMCPConfigHTTP(t *testing.T) {
 		Env: map[string]string{"AL_TOKEN": "secret"},
 	}
 
-	cfg, err := buildCopilotMCPConfig(project)
+	cfg, err := buildCopilotMCPConfig(project, projection.DispatchLauncherOptions{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -116,7 +117,7 @@ func TestBuildCopilotMCPConfigExcludesOtherClients(t *testing.T) {
 		Env: map[string]string{},
 	}
 
-	cfg, err := buildCopilotMCPConfig(project)
+	cfg, err := buildCopilotMCPConfig(project, projection.DispatchLauncherOptions{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

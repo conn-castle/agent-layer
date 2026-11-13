@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/conn-castle/agent-layer/internal/config"
+	"github.com/conn-castle/agent-layer/internal/projection"
 )
 
 func TestBuildAntigravitySettingsPermissions(t *testing.T) {
@@ -141,7 +142,7 @@ func TestBuildAntigravityMCPConfig(t *testing.T) {
 		},
 	}
 
-	cfg, err := buildAntigravityMCPConfig(project)
+	cfg, err := buildAntigravityMCPConfig(project, projection.DispatchLauncherOptions{})
 	if err != nil {
 		t.Fatalf("buildAntigravityMCPConfig error: %v", err)
 	}

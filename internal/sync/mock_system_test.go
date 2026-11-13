@@ -28,6 +28,13 @@ type MockSystem struct {
 	SleepFunc           func(d time.Duration)
 }
 
+func (m *MockSystem) OmitInstalledExecutable() bool {
+	if m.Fallback != nil {
+		return m.Fallback.OmitInstalledExecutable()
+	}
+	return false
+}
+
 func (m *MockSystem) LookPath(file string) (string, error) {
 	if m.LookPathFunc != nil {
 		return m.LookPathFunc(file)
