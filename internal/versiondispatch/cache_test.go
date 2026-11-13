@@ -267,7 +267,7 @@ func TestEnsureCachedBinary_RaceCondition(t *testing.T) {
 				if calls == 1 {
 					return nil, os.ErrNotExist
 				}
-				return os.Stat(name)
+				return os.Stat(name) // #nosec G703 -- this test hook receives only release-cache paths under t.TempDir.
 			}}
 			path, err := ensureCachedBinaryWithSystem(context.Background(), sys, cacheRoot, "1.0.0", io.Discard)
 			if (err != nil) != (mode != 0o755) || (err == nil && path != fixture) || (err != nil && path != "") || calls != 2 {

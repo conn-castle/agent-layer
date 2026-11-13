@@ -69,7 +69,7 @@ func (RealSystem) Environ() []string {
 
 // ExecBinary replaces the current process with the provided binary.
 func (RealSystem) ExecBinary(path string, args []string, env []string) error {
-	return syscall.Exec(path, args, env) // #nosec G204 -- path is the checksum-verified cached release binary resolved by dispatch.
+	return syscall.Exec(path, args, env) // #nosec G204,G702 -- path is the checksum-verified cached release binary resolved by dispatch.
 }
 
 // LookPath searches PATH for an executable named file.
@@ -102,7 +102,7 @@ func (RealSystem) Chmod(name string, mode os.FileMode) error {
 
 // Rename renames (moves) oldpath to newpath.
 func (RealSystem) Rename(oldpath, newpath string) error {
-	return os.Rename(oldpath, newpath)
+	return os.Rename(oldpath, newpath) // #nosec G703 -- System pass-through; callers supply CreateTemp/cache-layout paths.
 }
 
 // CreateTemp creates a new temporary file in the directory dir.

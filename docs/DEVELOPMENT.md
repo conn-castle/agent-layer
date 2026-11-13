@@ -69,9 +69,18 @@ source selection, explicitly set `AL_DEV_SOURCE_ROOT` to that scratch root;
 Generated argv carries the matching root marker without persisting provider env.
 
 Each distinct development build used by an MCP server start adds a full-size
-binary under `<cache root>/images/`. Entries are not pruned yet (#525). With no
-`agent-layer` MCP server running, deleting `<cache root>/images/` is safe; the
-next snapshotted server start recreates its entry.
+binary under `<cache root>/images/`. Image handoffs automatically prune
+lease-aware entries with no live lease and no lease acquisition in the last
+24 hours. The grace starts at acquisition, so a long-running entry can become
+eligible as soon as its last holder exits. Servers and detached dispatch workers
+hold lifetime leases, including workers that outlive their server. Complete legacy
+images from earlier releases without lease files are retained. Incomplete entries without
+an executable can be pruned after 24 hours without directory, lock or temp-file
+changes, when their creation lock is free. Completely empty entry directories
+older than 24 hours are also removed, without creating a lock. For manual cleanup, stop
+all `agent-layer` MCP servers and dispatch workers; deleting `<cache root>/images/`
+or a specific entry is then safe. The next snapshotted server start recreates
+its entry.
 
 A release `al sync` without development selection restores the pin/override
 launcher. Reconnect to use a rebuilt executable or after changing

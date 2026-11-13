@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/conn-castle/agent-layer/internal/executableimage"
+	"github.com/conn-castle/agent-layer/internal/imagelease"
 	"github.com/conn-castle/agent-layer/internal/messages"
 	"github.com/conn-castle/agent-layer/internal/version"
 )
@@ -39,6 +40,7 @@ type execOptions struct {
 // development executable or pinned release first re-executes from an immutable
 // copy of this image. Any failure keeps running in place.
 func MaybeExecMCPServer(ctx context.Context, args []string, currentVersion string, cwd string, stderr io.Writer) error {
+	LeaseRunningImage()
 	return maybeExecWithOptions(ctx, RealSystem{StderrWriter: stderr}, args, currentVersion, cwd, execOptions{runningImage: runningImage, sameAs: executableimage.SameAs})
 }
 
@@ -87,10 +89,12 @@ func handOffToImage(ctx context.Context, sys System, opts execOptions, args []st
 		if withinDir(imagesDir, running) {
 			return nil
 		}
-		path, err := ensureImage(ctx, sys, imagesDir, source)
+		path, lease, err := ensureLeasedImage(ctx, sys, imagesDir, source)
 		if err != nil {
 			return err
 		}
+		defer func() { _ = lease.Close() }()
+		pruneImages(imagesDir, filepath.Dir(path))
 		// On platforms without procfs the source is a pathname; a replacement
 		// during the copy must not hand off to a different release.
 		if _, _, err := opts.runningImage(); err != nil {
@@ -99,14 +103,15 @@ func handOffToImage(ctx context.Context, sys System, opts execOptions, args []st
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		if development {
-			// A dev snapshot is a process-local move, not version dispatch. Keep
-			// all inherited environment entries unchanged: a shim/installed-entry
-			// marker would affect projections and nested release selections.
-			if err := sys.ExecBinary(path, append([]string{path}, args[1:]...), sys.Environ()); err != nil {
-				return err
-			}
-		} else if err := execHandoff(sys, path, args, current, cacheRoot); err != nil {
+		// A dev snapshot keeps inherited entries; release selection adds shim
+		// and installed-entry markers. Complete discovery before taking ForkLock.
+		execArgs, env := handoffInvocation(sys, path, args, current, cacheRoot, sys.Environ(), development)
+		env, restore, err := imagelease.ExecEnv(lease, env)
+		if err != nil {
+			return err
+		}
+		defer restore()
+		if err := sys.ExecBinary(path, execArgs, env); err != nil {
 			return err
 		}
 		return ErrDispatched
@@ -122,38 +127,49 @@ func handOffToImage(ctx context.Context, sys System, opts execOptions, args []st
 	return nil
 }
 
-// ensureImage returns a verified copy of source under imagesDir. An existing
-// entry is reused only after re-hashing; a mismatched one is replaced.
-func ensureImage(ctx context.Context, sys System, imagesDir string, source string) (string, error) {
+// ensureLeasedImage marks and leases the entry before verifying or writing its
+// image, all under al.lock. Even a crashed writer leaves a lease-aware entry.
+// The caller owns the returned lease until exec.
+func ensureLeasedImage(ctx context.Context, sys System, imagesDir string, source string) (string, *os.File, error) {
 	sum, err := fileSHA256(source)
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
 	dir := filepath.Join(imagesDir, sum)
 	path := filepath.Join(dir, imageName)
-	if err := os.MkdirAll(dir, 0o755); err != nil { // #nosec G301 -- user-level cache dir must be traversable to execute the 0o755 image.
-		return "", fmt.Errorf(messages.DispatchCreateCacheDirFmt, err)
-	}
-	err = withFileLock(ctx, sys, path+".lock", imageLockWaitTimeout, func() error {
-		if info, err := os.Lstat(path); err == nil && info.Mode().IsRegular() && info.Mode().Perm()&0o111 != 0 {
-			if verifyChecksum(path, sum) == nil {
-				return nil
-			}
-		} else if err != nil && !os.IsNotExist(err) {
-			return fmt.Errorf(messages.DispatchCheckCachedBinaryFmt, path, err)
-		}
-		return writeImage(sys, source, dir, path, sum)
-	})
+	lock, err := lockImage(ctx, sys, dir)
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
-	return path, nil
+	defer func() { _ = lock.release() }()
+	lease, err := leaseImage(path)
+	if err != nil {
+		return "", nil, err
+	}
+	ready := false
+	defer func() {
+		if !ready {
+			_ = lease.Close()
+		}
+	}()
+	if info, statErr := os.Lstat(path); statErr == nil && info.Mode().IsRegular() && info.Mode().Perm()&0o111 != 0 && verifyChecksum(path, sum) == nil { // #nosec G703 -- content-addressed path under the validated image cache.
+		// Verified cache hit.
+	} else {
+		if statErr != nil && !os.IsNotExist(statErr) {
+			return "", nil, fmt.Errorf(messages.DispatchCheckCachedBinaryFmt, path, statErr)
+		}
+		if err := writeImage(sys, source, dir, path, sum); err != nil {
+			return "", nil, err
+		}
+	}
+	ready = true
+	return path, lease, nil
 }
 
 // writeImage copies source into place through a synced, verified temporary file
 // and an atomic rename, so readers see either nothing or a complete image.
 func writeImage(sys System, source string, dir string, path string, sum string) error {
-	in, err := os.Open(source) // #nosec G304 -- the running executable image.
+	in, err := os.Open(source) // #nosec G304,G703 -- own executable or content-addressed path, including isolated helper-process fixtures.
 	if err != nil {
 		return fmt.Errorf(messages.DispatchOpenFileFmt, source, err)
 	}
@@ -166,7 +182,7 @@ func writeImage(sys System, source string, dir string, path string, sum string) 
 	committed := false
 	defer func() {
 		if !committed {
-			_ = os.Remove(tmpName)
+			_ = os.Remove(tmpName) // #nosec G703 -- CreateTemp-generated name within the locked image entry.
 		}
 	}()
 	if _, err := io.Copy(tmp, in); err != nil {
@@ -195,7 +211,7 @@ func writeImage(sys System, source string, dir string, path string, sum string) 
 
 // fileSHA256 returns the hex SHA-256 of path's content, the image cache key.
 func fileSHA256(path string) (string, error) {
-	file, err := os.Open(path) // #nosec G304 -- the running executable image.
+	file, err := os.Open(path) // #nosec G304,G703 -- own executable or content-addressed path, including isolated helper-process fixtures.
 	if err != nil {
 		return "", fmt.Errorf(messages.DispatchOpenFileFmt, path, err)
 	}
