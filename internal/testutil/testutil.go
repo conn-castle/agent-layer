@@ -9,6 +9,16 @@ import (
 	"testing"
 )
 
+// PhysicalPath resolves an existing fixture path for exact path assertions.
+func PhysicalPath(t *testing.T, path string) string {
+	t.Helper()
+	physical, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return physical
+}
+
 // ExecCall records one captured executable handoff.
 type ExecCall struct {
 	Called bool

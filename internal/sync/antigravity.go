@@ -207,7 +207,7 @@ func buildAntigravitySettings(project *config.ProjectConfig) map[string]any {
 
 // writeAntigravityMCPConfig generates .agy/antigravity-cli/mcp_config.json.
 func writeAntigravityMCPConfig(sys System, root string, project *config.ProjectConfig) error {
-	cfg, err := buildAntigravityMCPConfig(project)
+	cfg, err := buildAntigravityMCPConfig(project, dispatchLauncherOptions(sys))
 	if err != nil {
 		return err
 	}
@@ -322,7 +322,7 @@ func ensureAntigravityPathRealParentContained(root string, path string) error {
 	return nil
 }
 
-func buildAntigravityMCPConfig(project *config.ProjectConfig) (*antigravityMCPConfig, error) {
+func buildAntigravityMCPConfig(project *config.ProjectConfig, options projection.DispatchLauncherOptions) (*antigravityMCPConfig, error) {
 	cfg := &antigravityMCPConfig{
 		Servers: make(map[string]antigravityMCPServer),
 	}
@@ -334,6 +334,7 @@ func buildAntigravityMCPConfig(project *config.ProjectConfig) (*antigravityMCPCo
 		project.PlaceholderEnv(),
 		antigravityClientID,
 		projection.ClientPlaceholderResolver("${%s}"),
+		options,
 	)
 	if err != nil {
 		return nil, err

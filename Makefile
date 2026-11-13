@@ -338,8 +338,11 @@ setup: ## Run one-time setup for this clone
 	@./scripts/setup.sh
 
 .PHONY: test-e2e-harness
-test-e2e-harness: ## Run e2e harness self-tests (auth, helpers)
-	@./scripts/test-e2e/test-harness-auth.sh
+test-e2e-harness: ## Run e2e harness self-tests (auth, helpers, dispatch)
+	@status=0; \
+	  ./scripts/test-e2e/test-harness-auth.sh || status=1; \
+	  ./scripts/test-e2e/test-agent-dispatch-harness.sh || status=1; \
+	  exit $$status
 
 .PHONY: test-e2e-ci
 test-e2e-ci: ## Run e2e tests for CI (online downloads, upgrade scenarios required)

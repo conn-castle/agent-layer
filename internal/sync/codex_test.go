@@ -1371,3 +1371,68 @@ func TestBuildCodexConfigDisableBrowserFeatures(t *testing.T) {
 		t.Fatalf("expected plugins=false in output:\n%s", output)
 	}
 }
+
+func TestCodexSyncCreatesPrivateHomePreservesExistingMode(t *testing.T) {
+	for _, existing := range []bool{false, true} {
+		root := t.TempDir()
+		home := filepath.Join(root, ".codex")
+		var before os.FileMode
+		if existing {
+			if err := os.Mkdir(home, 0o755); err != nil { // #nosec G301 -- fixture verifies existing directory permissions are preserved.
+				t.Fatal(err)
+			}
+			info, err := os.Stat(home)
+			if err != nil {
+				t.Fatal(err)
+			}
+			before = info.Mode().Perm()
+		}
+		if err := writeCodexConfigWithCLISettings(RealSystem{}, root, &config.ProjectConfig{Root: root}, true); err != nil {
+			t.Fatal(err)
+		}
+		info, err := os.Stat(home)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if existing && info.Mode().Perm() != before {
+			t.Fatalf("existing mode changed: %o -> %o", before, info.Mode().Perm())
+		}
+		if !existing && info.Mode().Perm()&0o077 != 0 {
+			t.Fatalf("new home mode %o", info.Mode().Perm())
+		}
+	}
+}
+
+func TestCodexRulesCreatesPrivateHomePreservesExistingMode(t *testing.T) {
+	for _, existing := range []bool{false, true} {
+		root := t.TempDir()
+		home := filepath.Join(root, ".codex")
+		var before os.FileMode
+		if existing {
+			if err := os.Mkdir(home, 0o755); err != nil { // #nosec G301 -- fixture verifies existing permissions are preserved.
+				t.Fatal(err)
+			}
+			info, err := os.Stat(home)
+			if err != nil {
+				t.Fatal(err)
+			}
+			before = info.Mode().Perm()
+		}
+		if err := writeCodexRules(RealSystem{}, root, &config.ProjectConfig{Root: root}); err != nil {
+			t.Fatal(err)
+		}
+		info, err := os.Stat(home)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if existing && info.Mode().Perm() != before {
+			t.Fatalf("existing mode changed: %o -> %o", before, info.Mode().Perm())
+		}
+		if !existing && info.Mode().Perm()&0o077 != 0 {
+			t.Fatalf("new home mode=%o", info.Mode().Perm())
+		}
+		if _, err := os.Stat(filepath.Join(home, "rules", "default.rules")); err != nil {
+			t.Fatal(err)
+		}
+	}
+}

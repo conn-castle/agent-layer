@@ -24,6 +24,7 @@ import (
 	"github.com/conn-castle/agent-layer/internal/clients"
 	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/ownedprocess"
+	"github.com/conn-castle/agent-layer/internal/testutil"
 )
 
 // The test executable doubles as a harness so protocol, environment, working
@@ -1115,6 +1116,37 @@ func TestMuseDiscoveryPreservesNativeEnvironment(t *testing.T) {
 	for _, name := range []string{".muse-config", ".muse-data"} {
 		if _, err := os.Stat(filepath.Join(root, name)); !os.IsNotExist(err) {
 			t.Fatalf("created isolated root: %s", name)
+		}
+	}
+}
+
+func TestDiscoveryNormalizesHomesAndClearsDisabledCodexHome(t *testing.T) {
+	root := t.TempDir()
+	physicalRoot := testutil.PhysicalPath(t, root)
+	t.Setenv("HOME", t.TempDir())
+	t.Chdir(root)
+	alias := filepath.Join(t.TempDir(), "alias")
+	if err := os.Symlink(root, alias); err != nil {
+		t.Fatal(err)
+	}
+	for _, value := range []string{filepath.Join(root, ".codex"), ".codex", filepath.Join(alias, ".codex"), "elsewhere"} {
+		req := harnessRequest(t, "codex")
+		req.Env = []string{"CODEX_HOME=" + value}
+		req.Project = &config.ProjectConfig{Root: root}
+		cmd, err := discoveryCommand(agentCodex, req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got, present := clients.GetEnv(cmd.Env, "CODEX_HOME")
+		if value == "elsewhere" {
+			if got != filepath.Join(physicalRoot, value) {
+				t.Fatalf("discovery home=%q", got)
+			}
+		} else if present {
+			t.Fatalf("discovery retained stale home %q", got)
+		}
+		if _, err := os.Stat(filepath.Join(root, ".codex")); !os.IsNotExist(err) {
+			t.Fatalf("disabled discovery created home: %v", err)
 		}
 	}
 }

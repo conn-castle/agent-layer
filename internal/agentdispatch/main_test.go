@@ -25,6 +25,8 @@ const workerCommand = "__dispatch-worker"
 // PATH are hidden so no test reaches a real provider, and the suite fails if
 // any worker it launched is still running when it ends.
 func TestMain(m *testing.M) {
+	selfLeaseWorkerHelper()
+	detachedLeaseHelper()
 	if len(os.Args) > 1 && os.Args[1] == workerCommand {
 		os.Exit(runTestWorker(os.Args[2:]))
 	}

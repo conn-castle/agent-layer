@@ -42,7 +42,7 @@ func TestEffectiveMCPServersResolvesUserServers(t *testing.T) {
 	}
 	env := map[string]string{"TOKEN": "abc123"}
 
-	resolved, err := EffectiveMCPServers(userServerConfig(servers), env, "antigravity", nil)
+	resolved, err := EffectiveMCPServers(userServerConfig(servers), env, "antigravity", nil, DispatchLauncherOptions{})
 	if err != nil {
 		t.Fatalf("resolve mcp servers: %v", err)
 	}
@@ -80,7 +80,7 @@ func TestEffectiveMCPServersMissingEnv(t *testing.T) {
 			URL:       "https://example.com?token=${TOKEN}",
 		},
 	}
-	_, err := EffectiveMCPServers(userServerConfig(servers), map[string]string{}, "antigravity", nil)
+	_, err := EffectiveMCPServers(userServerConfig(servers), map[string]string{}, "antigravity", nil, DispatchLauncherOptions{})
 	if err == nil {
 		t.Fatalf("expected error")
 	}
@@ -98,7 +98,7 @@ func TestEffectiveMCPServersStdioArgMissingEnv(t *testing.T) {
 			Args:      []string{"${TOKEN}"},
 		},
 	}
-	_, err := EffectiveMCPServers(userServerConfig(servers), map[string]string{}, "antigravity", nil)
+	_, err := EffectiveMCPServers(userServerConfig(servers), map[string]string{}, "antigravity", nil, DispatchLauncherOptions{})
 	if err == nil {
 		t.Fatalf("expected error")
 	}
@@ -133,7 +133,7 @@ func TestEffectiveMCPServersExpandsRepoRootArg(t *testing.T) {
 	}
 	env := map[string]string{config.BuiltinRepoRootEnvVar: repoRoot}
 
-	resolved, err := EffectiveMCPServers(userServerConfig(servers), env, "antigravity", nil)
+	resolved, err := EffectiveMCPServers(userServerConfig(servers), env, "antigravity", nil, DispatchLauncherOptions{})
 	if err != nil {
 		t.Fatalf("resolve mcp servers: %v", err)
 	}
@@ -162,7 +162,7 @@ func TestEffectiveMCPServersPathExpansionFailsWithoutRepoRoot(t *testing.T) {
 	// Empty env - no AL_REPO_ROOT
 	env := map[string]string{}
 
-	_, err := EffectiveMCPServers(userServerConfig(servers), env, "antigravity", nil)
+	_, err := EffectiveMCPServers(userServerConfig(servers), env, "antigravity", nil, DispatchLauncherOptions{})
 	if err == nil {
 		t.Fatal("expected error when AL_REPO_ROOT is missing for path expansion")
 	}
@@ -179,7 +179,7 @@ func TestEffectiveMCPServersReportsFirstFailingServerInConfigOrder(t *testing.T)
 		{ID: "b-first", Enabled: &enabled, Transport: "stdio", Command: "${MISSING_B}"},
 		{ID: "a-second", Enabled: &enabled, Transport: "stdio", Command: "${MISSING_A}"},
 	}
-	_, err := EffectiveMCPServers(userServerConfig(servers), map[string]string{}, "antigravity", nil)
+	_, err := EffectiveMCPServers(userServerConfig(servers), map[string]string{}, "antigravity", nil, DispatchLauncherOptions{})
 	var resolveErr *MCPServerResolveError
 	if !errors.As(err, &resolveErr) || resolveErr.ServerID != "b-first" {
 		t.Fatalf("expected first config-order server to fail, got %v", err)
@@ -193,7 +193,7 @@ func TestEffectiveServersAreNilWithoutMatchingServers(t *testing.T) {
 		{ID: "off", Enabled: &disabled, Transport: "stdio", Command: "tool"},
 		{ID: "other", Enabled: &enabled, Clients: []string{"codex"}, Transport: "stdio", Command: "tool"},
 	})
-	resolved, err := EffectiveMCPServers(cfg, map[string]string{}, "antigravity", nil)
+	resolved, err := EffectiveMCPServers(cfg, map[string]string{}, "antigravity", nil, DispatchLauncherOptions{})
 	if err != nil || resolved != nil {
 		t.Fatalf("expected nil servers, got %#v, %v", resolved, err)
 	}

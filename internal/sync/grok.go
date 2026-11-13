@@ -27,7 +27,7 @@ const (
 
 // writeGrokConfig generates .grok/config.toml for Grok Build CLI.
 func writeGrokConfig(sys System, root string, project *config.ProjectConfig) error {
-	content, err := buildGrokConfig(project)
+	content, err := buildGrokConfig(project, dispatchLauncherOptions(sys))
 	if err != nil {
 		return err
 	}
@@ -103,7 +103,7 @@ func grokConfigIsManaged(data []byte) bool {
 		bytes.HasPrefix(data, []byte(grokLegacyGeneratedLine))
 }
 
-func buildGrokConfig(project *config.ProjectConfig) (string, error) {
+func buildGrokConfig(project *config.ProjectConfig, options projection.DispatchLauncherOptions) (string, error) {
 	var builder strings.Builder
 	builder.WriteString(grokHeader)
 
@@ -129,6 +129,7 @@ func buildGrokConfig(project *config.ProjectConfig) (string, error) {
 		project.PlaceholderEnv(),
 		projection.ClientGrok,
 		projection.ClientPlaceholderResolver("${%s}"),
+		options,
 	)
 	if err != nil {
 		return "", err
@@ -164,7 +165,7 @@ func buildGrokConfig(project *config.ProjectConfig) (string, error) {
 			clients = append(clients, projection.ClientClaude)
 		}
 		for _, client := range clients {
-			servers, err := projection.EffectiveMCPServers(project.Config, project.PlaceholderEnv(), client, projection.ClientPlaceholderResolver("${%s}"))
+			servers, err := projection.EffectiveMCPServers(project.Config, project.PlaceholderEnv(), client, projection.ClientPlaceholderResolver("${%s}"), options)
 			if err != nil {
 				return "", err
 			}

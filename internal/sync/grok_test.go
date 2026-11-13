@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/conn-castle/agent-layer/internal/config"
+	"github.com/conn-castle/agent-layer/internal/projection"
 )
 
 func TestBuildGrokConfigStdio(t *testing.T) {
@@ -32,7 +33,7 @@ func TestBuildGrokConfigStdio(t *testing.T) {
 		Env: map[string]string{},
 	}
 
-	content, err := buildGrokConfig(project)
+	content, err := buildGrokConfig(project, projection.DispatchLauncherOptions{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -72,7 +73,7 @@ func TestBuildGrokConfigHTTP(t *testing.T) {
 		Env: map[string]string{},
 	}
 
-	content, err := buildGrokConfig(project)
+	content, err := buildGrokConfig(project, projection.DispatchLauncherOptions{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -101,7 +102,7 @@ func TestBuildGrokConfigStreamableHTTPOmitsSSEType(t *testing.T) {
 		}}}},
 		Env: map[string]string{},
 	}
-	content, err := buildGrokConfig(project)
+	content, err := buildGrokConfig(project, projection.DispatchLauncherOptions{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -120,7 +121,7 @@ func TestBuildGrokConfigQuotesMCPServerIDs(t *testing.T) {
 		}}}},
 		Env: map[string]string{},
 	}
-	content, err := buildGrokConfig(project)
+	content, err := buildGrokConfig(project, projection.DispatchLauncherOptions{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -144,7 +145,7 @@ func TestBuildGrokConfigPluginSettings(t *testing.T) {
 		Env: map[string]string{},
 	}
 
-	content, err := buildGrokConfig(project)
+	content, err := buildGrokConfig(project, projection.DispatchLauncherOptions{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -174,7 +175,7 @@ func TestBuildGrokConfigExcludesOtherClients(t *testing.T) {
 		Env: map[string]string{},
 	}
 
-	content, err := buildGrokConfig(project)
+	content, err := buildGrokConfig(project, projection.DispatchLauncherOptions{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -463,7 +464,7 @@ func TestBuildGrokConfigWritesPermissionAllow(t *testing.T) {
 		Env:           map[string]string{},
 	}
 
-	content, err := buildGrokConfig(project)
+	content, err := buildGrokConfig(project, projection.DispatchLauncherOptions{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

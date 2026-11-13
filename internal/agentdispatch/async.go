@@ -16,8 +16,10 @@ import (
 	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/executableimage"
 	"github.com/conn-castle/agent-layer/internal/fsutil"
+	"github.com/conn-castle/agent-layer/internal/imagelease"
 	"github.com/conn-castle/agent-layer/internal/messages"
 	"github.com/conn-castle/agent-layer/internal/sync"
+	"github.com/conn-castle/agent-layer/internal/versiondispatch"
 )
 
 const (
@@ -336,6 +338,7 @@ func restorePreviousInvocation(root string, handle string, rejectedRunID string,
 }
 
 func launchDetachedWorker(root string, runID string, logPath string) (launchedWorker, error) {
+	versiondispatch.RetryRunningImageLease()
 	gateRead, gateWrite, err := os.Pipe()
 	if err != nil {
 		return launchedWorker{}, err
@@ -346,17 +349,20 @@ func launchDetachedWorker(root string, runID string, logPath string) (launchedWo
 		cleanup()
 		return launchedWorker{}, err
 	}
-	log, err := os.OpenFile(logPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600) // #nosec G304 -- Agent Layer-owned run directory.
+	log, err := os.OpenFile(logPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600) // #nosec G304,G703 -- Agent Layer-owned run directory, including isolated helper-process fixtures.
 	if err != nil {
 		cleanup()
 		return launchedWorker{}, err
 	}
-	cmd := exec.CommandContext(context.Background(), executable, "__dispatch-worker", "--root", root, "--run", runID) // #nosec G204 -- executable is the current Agent Layer binary; the background worker intentionally outlives its caller.
+	cmd := exec.CommandContext(context.Background(), executable, "__dispatch-worker", "--root", root, "--run", runID) // #nosec G204,G702 -- executableimage.Self verifies the executing image; the background worker intentionally outlives its caller.
 	cmd.Env = os.Environ()
 	cmd.Stdin = nil
 	cmd.Stdout = log
 	cmd.Stderr = log
 	cmd.ExtraFiles = []*os.File{gateRead}
+	if lease := imagelease.Current(); lease != nil {
+		cmd.ExtraFiles = append(cmd.ExtraFiles, lease) // fd 4; fd 3 remains the authorization gate.
+	}
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 	if err := cmd.Start(); err != nil {
 		_ = log.Close()
@@ -403,6 +409,7 @@ func RunWorker(root string, runID string, gate io.Reader) error {
 		}
 		return failWorkerBeforeExecution(root, runID, &preStartFailure{err: cause})
 	}
+	versiondispatch.RetryRunningImageLease()
 	var request workerRequest
 	requestPath := filepath.Join(dispatchRunPath(root), runID, workerRequestFile)
 	if err := readJSON(requestPath, &request); err != nil {
