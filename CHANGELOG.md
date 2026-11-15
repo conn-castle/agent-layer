@@ -18,6 +18,9 @@ All notable changes to this project will be documented in this file.
 ### Security
 - Release builds use Go 1.27.4 to address GO-2026-6859 in `net/http`. Source builders need Go 1.27.4 or newer to include this fix (#549).
 
+### Upgrade notes
+- Before upgrading, move hand-added Antigravity grants from `.agy/antigravity-cli/settings.json` `permissions.allow` into `.agent-layer/commands.allow`; sync owns and replaces the native allow list. This carries forward the v1.2.0 upgrade guidance for projects upgrading directly from older releases.
+
 ## v1.2.1 - 2026-11-10
 
 ### Fixed
