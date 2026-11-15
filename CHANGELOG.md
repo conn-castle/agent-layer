@@ -3,10 +3,13 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+## v1.3.0 - 2026-11-15
+
 ### Added
 - MCP image handoffs automatically prune lease-aware cache images with no live server or worker lease and no lease acquisition in the last 24 hours, plus old abandoned copies, retaining complete legacy images for manual cleanup (#525).
 
 ### Fixed
+- Benchmark treatment staging omits the host-only `al` entry when generating the container's MCP launcher, so host development paths no longer leak into the treatment (#516).
 - Grok model discovery retains “harness is not authenticated” while reporting login files absent before discovery, removed during lookup, or still present. Configured API keys or inline sessions may use another auth source; those cases and uncertain metadata retain the generic message. Discovery waits for `grok models` to exit and retries once to pick up any refresh completed during the first lookup (#421).
 - Development `agent-layer` MCP servers run from verified content-addressed snapshots and, after successful startup verification, keep accepting dispatch work across source rebuilds while the selected dev path remains a regular executable. If that path is missing or unusable, options still reports the change, while start and continue refuse before sync or provider work so they cannot re-project broken launchers or HerdR hooks. `dispatch_options` reports the running version and image SHA-256 plus a reconnect notice when the selected dev executable's file identity has changed. Servers that cannot snapshot retain replacement refusal. Release probes build in a separate scratch directory and restore generated launchers and HerdR hooks to the operator's normal dev build before removing the candidate (#530).
 - Codex and Claude home selection stays consistent across launch, dispatch, model discovery, VS Code, and HerdR recovery: relative overrides follow symlinks before `..`, bare home names retain the subfolder fallback, and disabled local isolation clears only this repo’s inherited home. Root aliases are recognized before the home exists, and newly created `.codex` directories are owner-only without changing existing permissions (#518).
@@ -14,6 +17,10 @@ All notable changes to this project will be documented in this file.
 
 ### Security
 - Release builds use Go 1.27.4 to address GO-2026-6859 in `net/http`. Source builders need Go 1.27.4 or newer to include this fix (#549).
+
+### Changed
+- `needs review`: Muse users should review ownership receipts for active workspaces before the first Muse-enabled sync: cleanup can remove owned grants for other workspaces sharing the native policy directory when roots or receipts are missing or mismatched. Use this release's `al doctor` to inspect receipt state; syncing the affected workspace restores its desired grants and receipt.
+- `needs review`: Manual action before upgrading: move hand-added Antigravity grants from `.agy/antigravity-cli/settings.json` `permissions.allow` into `.agent-layer/commands.allow`; sync owns and replaces the native allow list. This carries forward the v1.2.0 upgrade guidance for projects upgrading directly from older releases.
 
 ## v1.2.1 - 2026-11-10
 
