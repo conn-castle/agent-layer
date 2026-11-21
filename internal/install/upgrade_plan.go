@@ -415,6 +415,11 @@ func (inst *installer) planUnknownDeletions(existing []upgradeChangeWithTemplate
 	}
 	units := make(map[string]struct{})
 	for rel, isDir := range effects.tree {
+		// The replay keeps excluded destinations for chained renames; they
+		// are never unknown deletions because apply-time scanning prunes them.
+		if snapshotExcludesPath(rel) {
+			continue
+		}
 		if unit, ok := unknownDeletionUnit(rel, isDir, isKnown, kept); ok {
 			if _, skip := represented[unit]; !skip {
 				units[unit] = struct{}{}

@@ -555,11 +555,11 @@ def exercise(al, muse, output, version, custom_xdg, claude=None):
                                        case / "continue-stopped", timeout=90))
                 require(proof.get("termination_confirmed"), "Continuation termination unconfirmed")
         for run_id in (invocation, continuation):
-            run_dir = source / "tmp/runs" / run_id
+            run_dir = work / RUNS / run_id
             require((run_dir / "result.md").is_file(), "Dispatch answer missing")
             require(not (run_dir / "prompt.txt").exists(), "Private dispatch prompt was retained")
-        initial_record = json.loads((source / "tmp/runs" / invocation / "dispatch.json").read_text())
-        resumed_record = json.loads((source / "tmp/runs" / continuation / "dispatch.json").read_text())
+        initial_record = json.loads((work / RUNS / invocation / "dispatch.json").read_text())
+        resumed_record = json.loads((work / RUNS / continuation / "dispatch.json").read_text())
         require(initial_record["provider_session_id"] == resumed_record["provider_session_id"],
                 "Continuation changed provider session")
         journals = (case / "native-data" if custom_xdg else home / ".local/share") / "muse/sessions"

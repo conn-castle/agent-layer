@@ -10,6 +10,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/conn-castle/agent-layer/internal/projectpaths"
 	"github.com/conn-castle/agent-layer/internal/templates"
 )
 
@@ -179,6 +180,35 @@ func TestPlanUnknownDeletions_ReportsWhereMigrationsLeaveUnknownPaths(t *testing
 		".agent-layer/skills/kept-new",
 		".agent-layer/skills/new-name",
 	}, paths)
+}
+
+func TestPlanUnknownDeletions_ExcludesStorageRenameDestinations(t *testing.T) {
+	root := t.TempDir()
+	inst := &installer{root: root, sys: RealSystem{}}
+	for _, path := range []string{
+		".agent-layer/skills/storage-bound/SKILL.md",
+		".agent-layer/skills/legacy-bound/SKILL.md",
+		".agent-layer/skills/chained/SKILL.md",
+	} {
+		abs := filepath.Join(root, filepath.FromSlash(path))
+		require.NoError(t, os.MkdirAll(filepath.Dir(abs), 0o700))
+		require.NoError(t, os.WriteFile(abs, []byte("local\n"), 0o600))
+	}
+	effects, err := inst.planMigrationPathEffects([]upgradeMigrationOperation{
+		{Kind: upgradeMigrationKindRenameFile, From: ".agent-layer/skills/storage-bound", To: projectpaths.Working + "/storage-bound"},
+		{Kind: upgradeMigrationKindRenameFile, From: ".agent-layer/skills/legacy-bound", To: projectpaths.LegacyTmp + "/legacy-bound"},
+		// An excluded intermediate must not break chained rename modelling.
+		{Kind: upgradeMigrationKindRenameFile, From: ".agent-layer/skills/chained", To: projectpaths.Cache + "/mid"},
+		{Kind: upgradeMigrationKindRenameFile, From: projectpaths.Cache + "/mid", To: ".agent-layer/skills/chained-final"},
+	})
+	require.NoError(t, err)
+	changes, err := inst.planUnknownDeletions(nil, nil, effects, upgradeKeepList{})
+	require.NoError(t, err)
+	paths := make([]string, 0, len(changes))
+	for _, change := range changes {
+		paths = append(paths, change.path)
+	}
+	require.ElementsMatch(t, []string{".agent-layer/skills/chained-final"}, paths)
 }
 
 func TestBuildUpgradePlan_ListsRenamedSkillThatApplyWouldDelete(t *testing.T) {

@@ -16,7 +16,7 @@ import http.server
 
 sys.dont_write_bytecode = True
 
-from project_paths import WORKING
+from project_paths import RUNS, WORKING
 ROOT = Path(__file__).resolve().parents[1]
 spec = importlib.util.spec_from_file_location("native_fixture", ROOT / "scripts/test-muse-native.py")
 f = importlib.util.module_from_spec(spec)
@@ -106,7 +106,7 @@ def exercise(args, muse, label):
         f.require(f.MARKER + ":shared" in stdout, "MCP child call failed")
         nested = json.loads(Path(str(log) + ".nested.json").read_text())
         invocation = nested["start"]["invocation_id"]
-        record = json.loads((source / "tmp/runs" / invocation / "dispatch.json").read_text())
+        record = json.loads((work / RUNS / invocation / "dispatch.json").read_text())
         (case / "nested-record.json").write_text(json.dumps(record, indent=2))
         f.require(list((data / "muse/sessions").glob("**/" + record["provider_session_id"] + "/session.jsonl")), "Nested dispatch used the wrong native data home")
         # Call the actual generated Agent Dispatch server as well as the
@@ -147,7 +147,7 @@ def exercise(args, muse, label):
                 f.run([str(args.al), "dispatch", "cancel", builtin_id], work, env, case / "builtin-cancel")
                 proof = json.loads(f.run([str(args.al), "dispatch", "wait", builtin_id, "--condition", "termination_confirmed"], work, env, case / "builtin-stopped", timeout=90))
                 f.require(proof.get("termination_confirmed"), "Builtin fixture termination unconfirmed")
-        builtin_record = json.loads((source / "tmp/runs" / builtin_id / "dispatch.json").read_text())
+        builtin_record = json.loads((work / RUNS / builtin_id / "dispatch.json").read_text())
         f.require(list((data / "muse/sessions").glob("**/" + builtin_record["provider_session_id"] + "/session.jsonl")), "Builtin dispatch used the wrong native data home")
         f.require(builtin_record.get("parent_run_id") == "native-fixture-parent", "Builtin dispatch lost parent run context")
         state["next_call"] = ("mcp__agent_layer__dispatch_start", {"agent": "muse", "model": "fixture-model", "prompt": "Must be blocked"})

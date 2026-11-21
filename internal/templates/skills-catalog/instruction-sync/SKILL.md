@@ -34,7 +34,8 @@ Project-owned files stay in `.agent-layer/instructions/`, each declared once in
 Imports live in `.agent-layer/instructions-imported/` with shared lifecycle state
 in `instructions.lock.json`. Edit imported files there, then sync.
 
-Use `al upgrade` to convert eligible unmodified standard rules and memory files
-to Git imports. Accepted wizard changes can establish local instruction ordering
-and add missing imports. Selecting **None** preserves existing instructions.
-Use the CLI to maintain the lockfile.
+`al upgrade plan` previews conversion of eligible unmodified standard rules and
+memory files to Git imports. Apply it with `al upgrade` when a project upgrade is
+in scope. Accepted wizard changes can establish local instruction ordering and
+add missing imports. Selecting **None** preserves existing instructions. Use the
+CLI to maintain the lockfile.
