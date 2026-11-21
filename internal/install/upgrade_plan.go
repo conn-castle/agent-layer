@@ -415,8 +415,9 @@ func (inst *installer) planUnknownDeletions(existing []upgradeChangeWithTemplate
 	}
 	units := make(map[string]struct{})
 	for rel, isDir := range effects.tree {
-		// The replay keeps excluded destinations for chained renames; they
-		// are never unknown deletions because apply-time scanning prunes them.
+		// The replay keeps excluded destinations for chained renames.
+		// The apply-time scan prunes current storage. Legacy tmp has a
+		// separate grouped cleanup outside this plan.
 		if snapshotExcludesPath(rel) {
 			continue
 		}
