@@ -12,6 +12,7 @@ import (
 
 	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/messages"
+	"github.com/conn-castle/agent-layer/internal/projectpaths"
 	"github.com/conn-castle/agent-layer/internal/skilljournal"
 )
 
@@ -172,7 +173,7 @@ func (inst *installer) localCopyPath(item PristineConversion) string {
 }
 
 // removePristineCopy deletes one converted local copy. It first renames the
-// copy into .agent-layer/tmp, so an interruption never leaves a partial tree
+// copy into the working directory, so an interruption never leaves a partial tree
 // at the original path, then re-verifies the moved copy against the shipped
 // content. A copy edited during the upgrade is kept there, outside the
 // rollback's reach, and the step fails. Without an atomic rename the step
@@ -194,7 +195,7 @@ func (inst *installer) removePristineCopy(item PristineConversion) error {
 }
 
 // preserveEditedCopy moves (or, across filesystems, copies) a local copy edited
-// during the upgrade into .agent-layer/tmp, which rollback never touches, and
+// during the upgrade into the working directory, which rollback never touches, and
 // returns the error that fails the step. The full rollback still runs, so when
 // neither works it restores the shipped copy and the edit is lost; the error
 // names the path.
@@ -214,10 +215,10 @@ func (inst *installer) preserveEditedCopy(item PristineConversion) error {
 }
 
 // conversionRemovalPath returns item's location in this run's removal
-// directory under .agent-layer/tmp, on the project's filesystem.
+// directory under the working directory, on the project's filesystem.
 func (inst *installer) conversionRemovalPath(item PristineConversion) (string, error) {
 	if inst.conversionRemovalDir == "" {
-		inst.conversionRemovalDir = filepath.Join(inst.agentLayerTmpDir(), "upgrade-conversion-"+newUpgradeSnapshotID(time.Now()))
+		inst.conversionRemovalDir = filepath.Join(inst.root, projectpaths.Working, "upgrade-conversion-"+newUpgradeSnapshotID(time.Now()))
 	}
 	dest := filepath.Join(inst.conversionRemovalDir, filepath.FromSlash(item.Path))
 	if err := inst.sys.MkdirAll(filepath.Dir(dest), 0o700); err != nil {

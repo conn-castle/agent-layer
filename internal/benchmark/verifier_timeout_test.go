@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/conn-castle/agent-layer/internal/projectpaths"
 )
 
 const verifierExecTimeoutTraceback = `Traceback:
@@ -47,7 +49,7 @@ func terminalVerifierTimeoutFixture(t *testing.T) (ExecutionRequest, string) {
 		Attempt: 1, Task: "example-task", Model: model, Effort: effort, Arm: ArmBaseline,
 		TaskChecksum: checksum, EnvironmentIdentity: strings.Repeat("e", 64), executionCheckpointed: true,
 	}
-	stageRoot := filepath.Join(repoRoot, ".agent-layer", "tmp")
+	stageRoot := filepath.Join(repoRoot, projectpaths.Working)
 	if err := os.MkdirAll(stageRoot, 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -279,7 +281,7 @@ func TestRetainedTerminalVerifierTestTimeoutCanonicalizesWithoutReplay(t *testin
 	if _, err := os.Stat(stage); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("retained diagnostic stage remained after terminal timeout finalization: %v", err)
 	}
-	entries, err := os.ReadDir(filepath.Join(request.RepoRoot, ".agent-layer", "tmp"))
+	entries, err := os.ReadDir(filepath.Join(request.RepoRoot, projectpaths.Working))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -390,7 +392,7 @@ func TestRecoveryOnlyCanonicalizesTerminalTimeoutWithoutSchedulingExecution(t *t
 	if _, err := os.Stat(stage); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("recovery-only left retained staging directory: %v", err)
 	}
-	entries, err := os.ReadDir(filepath.Join(request.RepoRoot, ".agent-layer", "tmp"))
+	entries, err := os.ReadDir(filepath.Join(request.RepoRoot, projectpaths.Working))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -429,8 +431,8 @@ func TestRecoveryOnlySkipsUnclassifiedVerifierTimeout(t *testing.T) {
 	if _, err := (PierExecutor{}).replayVerifier(context.Background(), recoveryRequest, checkpoint); err == nil || !strings.Contains(err.Error(), "recovery-only mode refuses verifier replay") {
 		t.Fatalf("recovery-only replay guard = %v", err)
 	}
-	entries, err := os.ReadDir(filepath.Join(request.RepoRoot, ".agent-layer", "tmp"))
-	if err != nil {
+	entries, err := os.ReadDir(filepath.Join(request.RepoRoot, projectpaths.Working))
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		t.Fatal(err)
 	}
 	for _, entry := range entries {

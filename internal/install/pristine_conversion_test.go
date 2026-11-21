@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/conn-castle/agent-layer/internal/projectpaths"
+
 	"github.com/stretchr/testify/require"
 
 	"github.com/conn-castle/agent-layer/internal/config"
@@ -545,10 +547,10 @@ func (e editingConverter) Import(_ context.Context, items []PristineConversion, 
 	return nil
 }
 
-// preservedCopy returns the one edited copy kept under .agent-layer/tmp.
+// preservedCopy returns the one edited copy kept under the working directory.
 func preservedCopy(t *testing.T, root, rel string) string {
 	t.Helper()
-	matches, err := filepath.Glob(filepath.Join(root, ".agent-layer", "tmp", "upgrade-conversion-*", filepath.FromSlash(rel)))
+	matches, err := filepath.Glob(filepath.Join(root, projectpaths.Working, "upgrade-conversion-*", filepath.FromSlash(rel)))
 	require.NoError(t, err)
 	require.Len(t, matches, 1, "edited copy is preserved outside the rollback's reach")
 	return matches[0]
@@ -707,14 +709,14 @@ func TestUpgradeConversionMovesLocalCopiesAsideBeforeDeleting(t *testing.T) {
 			require.NoDirExists(t, filepath.Join(root, rel))
 			renamed := -1
 			for i, op := range sys.ops {
-				if strings.HasPrefix(op, "rename "+rel+" -> .agent-layer/tmp/upgrade-conversion-") {
+				if strings.HasPrefix(op, "rename "+rel+" -> "+projectpaths.Working+"/upgrade-conversion-") {
 					renamed = i
 				}
 			}
-			require.GreaterOrEqual(t, renamed, 0, "%s is moved into .agent-layer/tmp first: %v", rel, sys.ops)
+			require.GreaterOrEqual(t, renamed, 0, "%s is moved into the working directory first: %v", rel, sys.ops)
 			require.NotContains(t, sys.ops, "remove "+rel, "a kill mid-delete must not leave a partial tree at %s", rel)
 		}
-		matches, err := filepath.Glob(filepath.Join(root, ".agent-layer", "tmp", "upgrade-conversion-*"))
+		matches, err := filepath.Glob(filepath.Join(root, projectpaths.Working, "upgrade-conversion-*"))
 		require.NoError(t, err)
 		require.Empty(t, matches, "the removal directory is cleaned up")
 	}
@@ -752,7 +754,7 @@ func (failingRemovalDirSystem) MkdirAll(path string, perm os.FileMode) error {
 	return os.MkdirAll(path, perm)
 }
 
-// When an edited copy can be neither moved nor copied into .agent-layer/tmp,
+// When an edited copy can be neither moved nor copied into the working directory,
 // the full rollback still runs and restores the shipped copy; the error names
 // the path whose edit was lost.
 func TestUpgradeRollbackRestoresShippedCopyWhenEditCannotBePreserved(t *testing.T) {
@@ -797,7 +799,7 @@ func TestUpgradeLeavesLeftoverEditedAfterSnapshotInPlace(t *testing.T) {
 	data, err := os.ReadFile(filepath.Join(root, rel)) // #nosec G304 -- test-owned project file.
 	require.NoError(t, err)
 	require.Equal(t, "edited after the snapshot\n", string(data))
-	matches, err := filepath.Glob(filepath.Join(root, ".agent-layer", "tmp", "upgrade-conversion-*"))
+	matches, err := filepath.Glob(filepath.Join(root, projectpaths.Working, "upgrade-conversion-*"))
 	require.NoError(t, err)
 	require.Empty(t, matches, "nothing was moved aside")
 }

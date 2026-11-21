@@ -110,7 +110,7 @@ than a direct write to the caller's terminal. If the transport disconnects
 after the backend has started but before the client observes the response,
 provider work remains active while the caller never learns its handle.
 `dispatch_inspect` and `dispatch_output` can read that invocation by ID when
-the ID is known; evidence remains under `.agent-layer/tmp/runs/`.
+the ID is known; evidence remains in the [run directory](../site/docs/reference.mdx#ephemeral-artifacts-under-agent-layertmp).
 
 After preparation, `dispatch_start` and `dispatch_continue` check the request
 context once at the start of publication, before writing the worker request or

@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/conn-castle/agent-layer/internal/projectpaths"
+
 	"github.com/conn-castle/agent-layer/internal/skilllock"
 )
 
@@ -49,8 +51,15 @@ func TestPullConflictWorkspaceCoversBinaryAndDeleteModify(t *testing.T) {
 			t.Fatalf("unmerged entries %q do not include %s", unmerged, path)
 		}
 	}
+	legacy := filepath.Join(proj.root, ".agent-layer", "tmp", "skill-conflicts", "alpha")
+	if err := os.MkdirAll(filepath.Dir(legacy), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(workspace, legacy); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := proj.Service().Resolve(context.Background(), "alpha"); err == nil || !strings.Contains(err.Error(), "unmerged") {
-		t.Fatalf("Resolve before finishing merge = %v", err)
+		t.Fatalf("Resolve legacy workspace before finishing merge = %v", err)
 	}
 }
 
@@ -271,7 +280,7 @@ func TestStatusFailsForCorruptConflictMetadata(t *testing.T) {
 		t.Fatalf("mkdir corrupt workspace: %v", err)
 	}
 	writeProjectFile(t, filepath.Join(workspace, ".git", conflictMetaFile), "{")
-	if _, err := proj.Service().Status(); err == nil || !strings.Contains(err.Error(), filepath.Join(".agent-layer", "tmp", "skill-conflicts", "alpha")) || !strings.Contains(err.Error(), "move or remove it") {
+	if _, err := proj.Service().Status(); err == nil || !strings.Contains(err.Error(), filepath.Join(projectpaths.Worktrees, "skill-conflicts", "alpha")) || !strings.Contains(err.Error(), "move or remove it") {
 		t.Fatalf("Status corrupt workspace error = %v", err)
 	}
 }

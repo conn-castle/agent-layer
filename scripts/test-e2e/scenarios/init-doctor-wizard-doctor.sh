@@ -137,8 +137,12 @@ _init_doctor_wizard_assert_bare_init_files() {
 
   assert_al_init_structure "$repo_dir"
   assert_al_version_content "$repo_dir" "$AL_E2E_VERSION_NO_V"
-  assert_dir_exists "$repo_dir/.agent-layer/tmp/runs" \
-    "init created tmp/runs/"
+  assert_dir_exists "$repo_dir/$AL_PROJECT_WORKING" \
+    "init created the working directory"
+  assert_dir_exists "$repo_dir/$AL_PROJECT_CACHE" \
+    "init created the cache directory"
+  assert_dir_exists "$repo_dir/$AL_PROJECT_WORKTREES" \
+    "init created the worktrees directory"
   assert_file_exists "$repo_dir/.agent-layer/.gitignore" \
     "init created .agent-layer/.gitignore"
   assert_file_contains "$repo_dir/.agent-layer/.gitignore" "config.toml.bak" \

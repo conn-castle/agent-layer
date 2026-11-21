@@ -11,6 +11,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/conn-castle/agent-layer/internal/projectpaths"
 )
 
 const pierExecutionReceiptSchema = "deepswe-pier-execution-v1"
@@ -528,13 +530,14 @@ func recoverPierArtifactPromotionScratch(root string, entries []os.DirEntry) err
 }
 
 func validatePierCheckpointStage(request ExecutionRequest, stage string) error {
-	root, err := filepath.Abs(filepath.Join(request.RepoRoot, ".agent-layer", "tmp"))
+	repo, err := filepath.Abs(request.RepoRoot)
 	if err != nil {
-		return fmt.Errorf("resolve benchmark staging root: %w", err)
+		return fmt.Errorf("resolve benchmark project root: %w", err)
 	}
-	relative, err := filepath.Rel(root, stage)
-	if err != nil || relative == "." || relative == ".." || strings.HasPrefix(relative, ".."+string(os.PathSeparator)) ||
-		filepath.Dir(relative) != "." || !strings.HasPrefix(filepath.Base(relative), "benchmark-"+request.EventID+"-") {
+	parent := filepath.Dir(stage)
+	if stage != filepath.Clean(stage) ||
+		(parent != filepath.Join(repo, projectpaths.Working) && parent != filepath.Join(repo, projectpaths.LegacyTmp)) ||
+		!strings.HasPrefix(filepath.Base(stage), "benchmark-"+request.EventID+"-") {
 		return fmt.Errorf("pier staging directory %s is outside the expected benchmark event boundary", stage)
 	}
 	if info, err := os.Lstat(stage); err == nil && (!info.IsDir() || info.Mode()&os.ModeSymlink != 0) {

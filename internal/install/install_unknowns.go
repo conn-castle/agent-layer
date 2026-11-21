@@ -13,6 +13,7 @@ import (
 	"github.com/conn-castle/agent-layer/internal/launchers"
 	"github.com/conn-castle/agent-layer/internal/messages"
 	"github.com/conn-castle/agent-layer/internal/projectlock"
+	"github.com/conn-castle/agent-layer/internal/projectpaths"
 	"github.com/conn-castle/agent-layer/internal/templates"
 )
 
@@ -170,10 +171,9 @@ func (inst *installer) handleTmpUnknowns(tmpUnknowns []string) error {
 // under .agent-layer/tmp/ and everything else, preserving input order in each
 // bucket.
 func (inst *installer) partitionTmpUnknowns(unknowns []string) (tmpUnknowns, otherUnknowns []string) {
-	prefix := filepath.Join(".agent-layer", "tmp") + string(os.PathSeparator)
 	for _, path := range unknowns {
 		rel := inst.relativePath(path)
-		if strings.HasPrefix(rel, prefix) {
+		if projectpaths.Contains(projectpaths.LegacyTmp, rel) {
 			tmpUnknowns = append(tmpUnknowns, path)
 			continue
 		}
@@ -196,7 +196,7 @@ func (inst *installer) collapsedRelativePathList(tmpUnknowns, otherUnknowns []st
 	if len(tmpUnknowns) != 1 {
 		noun = "files"
 	}
-	tmpRoot := filepath.Join(".agent-layer", "tmp") + string(os.PathSeparator)
+	tmpRoot := filepath.FromSlash(projectpaths.LegacyTmp) + string(os.PathSeparator)
 	summary := fmt.Sprintf("%s (%d %s)", tmpRoot, len(tmpUnknowns), noun)
 	rel = append(rel, summary)
 	sort.Strings(rel)
@@ -249,10 +249,16 @@ func (inst *installer) walkUnknownsInRoot(root string, known map[string]struct{}
 		if clean == filepath.Clean(root) {
 			return nil
 		}
+		rel := inst.relativePath(clean)
+		if isLocalStoragePath(rel) {
+			if entry.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
+		}
 		if _, ok := known[clean]; ok {
 			return nil
 		}
-		rel := inst.relativePath(clean)
 		if upgradePathIsKept(rel, kept) {
 			if entry.IsDir() {
 				return filepath.SkipDir
@@ -339,8 +345,8 @@ func (inst *installer) buildKnownPaths() (map[string]struct{}, error) {
 	stateDir := filepath.Join(root, ".agent-layer", "state")
 	snapshotDir := filepath.Join(root, filepath.FromSlash(upgradeSnapshotDirRelPath))
 	add(snapshotDir)
-	add(filepath.Join(root, ".agent-layer", "tmp"))
-	add(filepath.Join(root, ".agent-layer", "tmp", "runs"))
+	add(filepath.Join(root, projectpaths.LegacyTmp))
+	add(filepath.Join(root, projectpaths.LegacyRuns))
 
 	// Preserve legacy wizard backups until post-upgrade migration relocates them.
 	add(filepath.Join(root, ".agent-layer", "config.toml.bak"))
@@ -456,6 +462,9 @@ func (inst *installer) addExistingKnownPaths(root string, add func(string)) erro
 	return sys.WalkDir(root, func(path string, entry fs.DirEntry, err error) error {
 		if err != nil {
 			return err
+		}
+		if isLocalStoragePath(inst.relativePath(path)) && entry.IsDir() {
+			return filepath.SkipDir
 		}
 		add(path)
 		return nil

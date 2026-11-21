@@ -7,6 +7,12 @@ config.toml.bak
 /templates/
 state/
 sync.lock
+# BEGIN GENERATED PATHS
+/working/
+/cache/
+/worktrees/
+/state/runs/
+# END GENERATED PATHS
 tmp/
 upgrade-keep-list
 

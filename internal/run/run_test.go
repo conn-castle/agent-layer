@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/conn-castle/agent-layer/internal/projectpaths"
 )
 
 func TestCreateRunDir(t *testing.T) {
@@ -24,7 +26,7 @@ func TestCreateRunDir(t *testing.T) {
 	if _, err := os.Stat(info.Dir); err != nil {
 		t.Fatalf("expected run dir to exist: %v", err)
 	}
-	expectedRoot := filepath.Join(root, ".agent-layer", "tmp", "runs")
+	expectedRoot := filepath.Join(root, projectpaths.Runs)
 	if !strings.HasPrefix(info.Dir, expectedRoot) {
 		t.Fatalf("unexpected run dir: %s", info.Dir)
 	}

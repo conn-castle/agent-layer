@@ -107,7 +107,7 @@ Notes:
 - `al init` prompts to run `al wizard` after creating the bare operational scaffold. Use `al init --no-wizard` to skip; non-interactive shells skip automatically.
 - `al init` is intended to be run once per repo. If the repo is already initialized, use `al upgrade plan` and `al upgrade` to refresh template-managed files.
 - By default `al init` first walks up for an ancestor `.agent-layer/`, then for an ancestor `.git`. To install a separate Agent Layer in a subfolder of an existing repo (for example a sub-project that needs its own `.agent-layer/`), pass `al init --here` to target the current directory.
-- `al upgrade` is the recommended path. For CI-safe non-interactive apply, use `al upgrade --yes --apply-managed-updates`. Add `--apply-memory-updates` and/or `--apply-deletions` only when you explicitly want those categories. `--apply-deletions` never removes files under `.agent-layer/tmp/`; to clean up those ephemeral agent run artifacts, use `--apply-tmp-deletions` (destructive — requires explicit double confirmation unless combined with `--yes`).
+- `al upgrade` is the recommended path. For CI-safe non-interactive apply, use `al upgrade --yes --apply-managed-updates`. Add `--apply-memory-updates` and/or `--apply-deletions` only when you explicitly want those categories. `--apply-deletions` never removes files under `.agent-layer/tmp/`; for deliberate cleanup of legacy tmp files, use `--apply-tmp-deletions` (destructive — requires explicit double confirmation unless combined with `--yes`).
 - `al upgrade` automatically creates a managed-file snapshot and rolls changes back if an upgrade step fails. Snapshots are written under `.agent-layer/state/upgrade-snapshots/`.
 - Agent Layer does not install clients. Install the target client CLI and ensure it is on your `PATH` (Antigravity `agy`, Claude Code CLI, Codex, Copilot CLI, Grok, VS Code, etc.).
 
@@ -789,18 +789,9 @@ For contributor-level implementation details, see `docs/architecture/vscode-laun
 
 ---
 
-## Temporary artifacts (agent-only)
+## Local working files
 
-Some workflows write **agent-only** artifacts such as plans, task lists, and reports. They are working state rather than product documentation, but people can inspect them when reviewing or recovering a run.
-
-Artifacts always live under `.agent-layer/tmp/` and use a unique, concurrency-safe name:
-
-- `.agent-layer/tmp/<workflow>.<run-id>.<type>.md`
-- `run-id = YYYYMMDD-HHMMSS-<short-rand>` (uses bash `$RANDOM`; bash is required)
-- Multi-file workflows reuse the same `run-id` for all files.
-- Common `type` values: `report`, `plan`, `task`, `context`.
-
-Workflows echo the artifact path in the chat output. There are no path overrides or environment variables for this. Leave artifacts in place for later inspection unless a user explicitly asks to remove them. Interrupted-run artifacts are harmless and can help with recovery.
+Agent Layer creates Gitignored directories for retained work, generated cache files, and task worktrees. Project instructions set their locations, and skills name the files they produce. See [project-local storage](site/docs/reference.mdx#ephemeral-artifacts-under-agent-layertmp) for the current paths and upgrade behavior.
 
 ---
 

@@ -15,6 +15,8 @@ import (
 	"testing"
 	"testing/fstest"
 
+	"github.com/conn-castle/agent-layer/internal/projectpaths"
+
 	"github.com/stretchr/testify/require"
 
 	"github.com/conn-castle/agent-layer/internal/config"
@@ -421,7 +423,7 @@ printf 'built\n' > "$AL_TEST_BUILD_MARKER"
 			if test.wantError != "" {
 				require.ErrorContains(t, err, test.wantError)
 				require.Nil(t, bundle, "refuse to publish mismatched or unverifiable provenance")
-				stages, readErr := os.ReadDir(filepath.Join(root, ".agent-layer", "tmp"))
+				stages, readErr := os.ReadDir(filepath.Join(root, projectpaths.Cache))
 				require.NoError(t, readErr)
 				require.Empty(t, stages, "remove rejected bundle staging")
 				return

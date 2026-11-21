@@ -20,6 +20,7 @@ import (
 
 	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/gitenv"
+	"github.com/conn-castle/agent-layer/internal/projectpaths"
 )
 
 var errProviderCapacity = errors.New("provider model is at capacity")
@@ -345,7 +346,7 @@ func (PierExecutor) Execute(ctx context.Context, request ExecutionRequest) (resu
 	if err != nil {
 		return AttemptResult{}, err
 	}
-	stageRoot := filepath.Join(request.RepoRoot, ".agent-layer", "tmp")
+	stageRoot := filepath.Join(request.RepoRoot, projectpaths.Working)
 	if err := os.MkdirAll(stageRoot, 0o700); err != nil {
 		return AttemptResult{}, fmt.Errorf("create benchmark staging root: %w", err)
 	}

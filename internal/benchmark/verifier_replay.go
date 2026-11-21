@@ -12,6 +12,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/conn-castle/agent-layer/internal/projectpaths"
 )
 
 const (
@@ -123,7 +125,10 @@ func (PierExecutor) replayVerifier(ctx context.Context, request ExecutionRequest
 	if err != nil {
 		return AttemptResult{}, err
 	}
-	stageRoot := filepath.Join(request.RepoRoot, ".agent-layer", "tmp")
+	stageRoot := filepath.Join(request.RepoRoot, projectpaths.Working)
+	if err := os.MkdirAll(stageRoot, 0o700); err != nil {
+		return AttemptResult{}, fmt.Errorf("create verifier replay staging root: %w", err)
+	}
 	replayStage, err := os.MkdirTemp(stageRoot, "benchmark-verifier-replay-"+request.EventID+"-")
 	if err != nil {
 		return AttemptResult{}, fmt.Errorf("create verifier replay staging directory: %w", err)

@@ -17,6 +17,8 @@ import (
 	"strings"
 	"sync/atomic"
 	"time"
+
+	"github.com/conn-castle/agent-layer/internal/projectpaths"
 )
 
 // Environment names supplied by HerdR or Agent Layer's development launcher.
@@ -309,7 +311,7 @@ func codexRecoveryDedupKey(launch launchContext) (string, string, error) {
 // presents hook failures generically and hook stdout must remain empty. It
 // intentionally contains no payload, title, environment, or command argv.
 func recordCodexRecoveryFailure(root string, failure error) error {
-	directory := filepath.Join(root, ".agent-layer", "tmp", "herdr-hook-errors")
+	directory := filepath.Join(root, projectpaths.Working, "herdr-hook-errors")
 	if err := os.MkdirAll(directory, 0o700); err != nil {
 		return fmt.Errorf("%w; also create recovery error receipt: %v", failure, err)
 	}

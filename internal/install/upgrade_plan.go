@@ -415,6 +415,12 @@ func (inst *installer) planUnknownDeletions(existing []upgradeChangeWithTemplate
 	}
 	units := make(map[string]struct{})
 	for rel, isDir := range effects.tree {
+		// The replay keeps excluded destinations for chained renames.
+		// The apply-time scan prunes current storage. Legacy tmp has a
+		// separate grouped cleanup outside this plan.
+		if snapshotExcludesPath(rel) {
+			continue
+		}
 		if unit, ok := unknownDeletionUnit(rel, isDir, isKnown, kept); ok {
 			if _, skip := represented[unit]; !skip {
 				units[unit] = struct{}{}
@@ -462,7 +468,7 @@ func unknownDeletionUnit(rel string, isDir bool, isKnown func(string) bool, kept
 }
 
 // planMigrationPathEffects replays path effects over the non-following scan,
-// excluding .agent-layer/tmp. Renames carry origins for chained source checks;
+// excluding project-local storage. Renames carry origins for chained source checks;
 // an occupied destination (which may fail execution) is modelled as a merge.
 func (inst *installer) planMigrationPathEffects(ops []upgradeMigrationOperation) (migrationPathEffects, error) {
 	paths := make(map[string]bool)
@@ -480,8 +486,11 @@ func (inst *installer) planMigrationPathEffects(ops []upgradeMigrationOperation)
 				return err
 			}
 			rel := filepath.ToSlash(inst.relativePath(path))
-			if rel == agentLayerTmpKeepPath {
-				return filepath.SkipDir
+			if snapshotExcludesPath(rel) {
+				if entry.IsDir() {
+					return filepath.SkipDir
+				}
+				return nil
 			}
 			paths[rel] = entry.IsDir()
 			origins[rel] = path

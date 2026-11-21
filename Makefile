@@ -6,6 +6,8 @@ SHELL := $(subst $(space),\ ,$(ROOT_DIR))/scripts/make-shell.sh
 
 .DEFAULT_GOAL := help
 
+include $(subst $(space),\ ,$(ROOT_DIR))/internal/projectpaths/layout.env
+
 TOOL_BIN ?= $(ROOT_DIR)/.tools/bin
 GOLANGCI_LINT_VERSION := v2.14.0
 # Honor native Go configuration unless a legacy Make cache override is supplied.
@@ -13,8 +15,8 @@ GO_CACHE ?= $(if $(CACHE_ROOT),$(CACHE_ROOT)/go-build,$(shell go env GOCACHE))
 GO_MOD_CACHE ?= $(if $(CACHE_ROOT),$(CACHE_ROOT)/go-mod,$(shell go env GOMODCACHE))
 GOLANGCI_LINT_CACHE ?= $(ROOT_DIR)/.cache/golangci-lint
 # Each test run keeps its complete go test events and console output in a new directory here.
-TEST_LOG_DIR ?= $(ROOT_DIR)/.agent-layer/tmp/test-logs
-RELEASE_PREFLIGHT_ARTIFACT_ROOT ?= $(ROOT_DIR)/.agent-layer/tmp/release-preflight
+TEST_LOG_DIR ?= $(ROOT_DIR)/$(AL_PROJECT_CACHE)/test-logs
+RELEASE_PREFLIGHT_ARTIFACT_ROOT ?= $(ROOT_DIR)/$(AL_PROJECT_WORKING)/release-preflight
 
 # Prune excluded directory roots before descent; -not -path still traverses them.
 GO_FILES_FIND_CMD := find . \( -path './.git' -o -path './.tools' -o -path './.cache' -o -path './.claude' -o -path './.codex' -o -path './.gemini' -o -path './.agy' -o -path './.antigravitycli' -o -path './.agents' -o -path './.agent-layer' -o -path './.muse-config' -o -path './.muse-data' -o -path './tmp' \) -prune -o -type f -name '*.go'
@@ -25,7 +27,7 @@ RELEASE_BINARIES := al-darwin-arm64 al-darwin-amd64 al-linux-arm64 al-linux-amd6
 
 .PHONY: help
 help: ## Show available targets
-	@awk 'BEGIN {FS = ":.*##"} /^[a-zA-Z0-9_.-]+:.*##/ {printf "  %-18s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
+	@awk 'BEGIN {FS = ":.*##"} /^[a-zA-Z0-9_.-]+:.*##/ {printf "  %-18s %s\n", $$1, $$2}' $(call al_shell_quote,$(ROOT_DIR)/Makefile)
 
 .PHONY: tools
 tools: $(TOOL_BIN)/goimports $(TOOL_BIN)/golangci-lint $(TOOL_BIN)/gotestsum $(TOOL_BIN)/deadcode ## Install pinned Go tools into $(TOOL_BIN)
@@ -161,12 +163,12 @@ test-deepswe-planner: ## Verify the website task-correlation evidence
 
 .PHONY: refresh-deepswe-planner-data
 refresh-deepswe-planner-data: ## Download the official DeepSWE snapshot and regenerate planner data
-	@mkdir -p .agent-layer/tmp/deepswe-planner-data
-	@curl --fail --location --retry 3 --output .agent-layer/tmp/deepswe-planner-data/trials.json https://deepswe.datacurve.ai/artifacts/v1.1/trials.json
-	@curl --fail --location --retry 3 --output .agent-layer/tmp/deepswe-planner-data/tasks.json https://deepswe.datacurve.ai/artifacts/v1.1/tasks.json
+	@mkdir -p $(AL_PROJECT_CACHE)/deepswe-planner-data
+	@curl --fail --location --retry 3 --output $(AL_PROJECT_CACHE)/deepswe-planner-data/trials.json https://deepswe.datacurve.ai/artifacts/v1.1/trials.json
+	@curl --fail --location --retry 3 --output $(AL_PROJECT_CACHE)/deepswe-planner-data/tasks.json https://deepswe.datacurve.ai/artifacts/v1.1/tasks.json
 	@node scripts/build-deepswe-planner-data.js \
-	  --trials .agent-layer/tmp/deepswe-planner-data/trials.json \
-	  --tasks .agent-layer/tmp/deepswe-planner-data/tasks.json \
+	  --trials $(AL_PROJECT_CACHE)/deepswe-planner-data/trials.json \
+	  --tasks $(AL_PROJECT_CACHE)/deepswe-planner-data/tasks.json \
 	  --output site/static/deepswe-planner/app/data.js \
 	  --retrieved-at "$$(date -u +%Y-%m-%dT%H:%M:%S.000Z)"
 
@@ -238,12 +240,19 @@ test-e2e-online: ## Run e2e tests with online upgrade binary downloads
 test-muse-fixture: ## Verify native fixture isolation and cleanup without launching Muse
 	@python3 scripts/test-muse-fixture.py
 
+MUSE_NATIVE_CACHE := $(AL_PROJECT_CACHE)/muse-native
+MUSE_NATIVE_OUTPUT := $(AL_PROJECT_WORKING)/muse-native
+
+.PHONY: native-muse-paths
+native-muse-paths:
+	@printf 'cache=%s\noutput=%s\n' "$(MUSE_NATIVE_CACHE)/bin" "$(MUSE_NATIVE_OUTPUT)"
+
 .PHONY: test-muse-native
 test-muse-native: test-muse-fixture ## Test pinned native Muse with local fixtures (Linux/macOS, no credentials)
-	@mkdir -p .agent-layer/tmp/muse-native
-	@go build -o .agent-layer/tmp/muse-native/al ./cmd/al
-	@python3 scripts/test-muse-native.py --al .agent-layer/tmp/muse-native/al
-	@python3 scripts/test-muse-native-review.py --al .agent-layer/tmp/muse-native/al
+	@mkdir -p "$(MUSE_NATIVE_CACHE)"
+	@go build -o "$(MUSE_NATIVE_CACHE)/al" ./cmd/al
+	@python3 scripts/test-muse-native.py --al "$(MUSE_NATIVE_CACHE)/al" --output "$(MUSE_NATIVE_OUTPUT)"
+	@python3 scripts/test-muse-native-review.py --al "$(MUSE_NATIVE_CACHE)/al" --output "$(MUSE_NATIVE_OUTPUT)"
 
 .PHONY: test-codex-mcp-native
 test-codex-mcp-native: al-dev-build ## Verify installed Codex MCP startup and context without inference
@@ -348,8 +357,12 @@ test-e2e-harness: ## Run e2e harness self-tests (auth, helpers, dispatch)
 test-e2e-ci: ## Run e2e tests for CI (online downloads, upgrade scenarios required)
 	@AL_E2E_ONLINE=1 AL_E2E_REQUIRE_UPGRADE=1 ./scripts/test-e2e.sh
 
+.PHONY: check-project-paths
+check-project-paths: ## Check artifacts generated from the project path definitions
+	@go run -tags tools ./internal/tools/projectlayout -check
+
 .PHONY: ci
-ci: tidy-check fmt-check lint shell-syntax-check benchmark-boundary-check dead-code coverage test-muse-fixture test-deepswe-planner test-race test-release test-e2e-harness test-e2e-ci docs-cta-check ## Run CI checks locally
+ci: check-project-paths tidy-check fmt-check lint shell-syntax-check benchmark-boundary-check dead-code coverage test-muse-fixture test-deepswe-planner test-race test-release test-e2e-harness test-e2e-ci docs-cta-check ## Run CI checks locally
 
 .PHONY: dev
 dev: ## Fast local formatting and lint loop
@@ -364,10 +377,14 @@ al_shell_quote = '$(subst ','"'"',$(1))'
 # dispatch context sync reads, but never the installed al entry a parent release
 # MCP server exported: sync would record it. AL_RUN starts each recipe line.
 AL_RUN = unset AL_INSTALLED_EXECUTABLE; $(AL_DEV_LAUNCH_ENV) $(call al_shell_quote,$(AL_DEV_BIN))
-AL_DEV_BIN_DIR := $(ROOT_DIR)/.agent-layer/tmp/dev-bin
+AL_DEV_BIN_DIR := $(ROOT_DIR)/$(AL_PROJECT_CACHE)/dev-bin
 AL_DEV_BIN := $(AL_DEV_BIN_DIR)/al
 AL_DEV_LAUNCH_ENV := PATH=$(call al_shell_quote,$(AL_DEV_BIN_DIR)):"$$PATH" AL_DEV_BYPASS_VERSION_DISPATCH=1 AL_DEV_EXECUTABLE=$(call al_shell_quote,$(AL_DEV_BIN)) AL_DEV_SOURCE_ROOT=$(call al_shell_quote,$(ROOT_DIR))
 AL_MANAGED_AGENT_ENV := AL_RUN_DIR AL_RUN_ID AL_DISPATCH_CALLER_AGENT AL_DISPATCH_ACTIVE AL_SHIM_ACTIVE AL_DEV_BYPASS_VERSION_DISPATCH AL_DEV_EXECUTABLE AL_DEV_SOURCE_ROOT AL_INSTALLED_EXECUTABLE CODEX_HOME CLAUDE_CONFIG_DIR AGY_CLI_DISABLE_AUTO_UPDATE GROK_HOME
+
+.PHONY: al-dev-path
+al-dev-path: ## Print the path of the development al executable
+	@printf '%s\n' $(call al_shell_quote,$(AL_DEV_BIN))
 
 .PHONY: al-dev-build
 al-dev-build: ## Build source al for development commands that launch child processes

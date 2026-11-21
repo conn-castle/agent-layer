@@ -286,7 +286,7 @@ Confirmation establishes that no owning launcher or worker can submit the invoca
 `dispatch_options`, `dispatch_wait`, `dispatch_inspect`, and `dispatch_output` are marked read-only. `dispatch_start`, `dispatch_continue`, and `dispatch_cancel` are marked destructive because dispatched work can change the environment. An MCP client may require approval before calling them. Cancelled is not proof of termination; inspect `termination_confirmed`.
 
 :::caution Transport acknowledgement
-An MCP start or continue call acknowledges work that runs independently. If the transport disconnects after provider work starts but before the caller receives the response, the work remains active and the caller may not know its handle. Recovery evidence remains under `.agent-layer/tmp/runs/`.
+An MCP start or continue call acknowledges work that runs independently. If the transport disconnects after provider work starts but before the caller receives the response, the work remains active and the caller may not know its handle. Recovery evidence remains in the run directory listed under [project-local storage](./reference.mdx#ephemeral-artifacts-under-agent-layertmp). Upgraded CLIs also read older records from `.agent-layer/tmp/runs/`. If you roll the CLI back to a release that predates the layout change, use the upgraded CLI to recover records created in the new directory.
 :::
 
 `dispatch_inspect` and `dispatch_output` are the supported evidence surfaces for a known invocation ID. Prefer the CLI when a human needs to retain the handle and invocation ID directly.

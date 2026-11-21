@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/conn-castle/agent-layer/internal/projectpaths"
+
 	"github.com/conn-castle/agent-layer/internal/agentdispatch"
 	"github.com/conn-castle/agent-layer/internal/config"
 )
@@ -103,7 +105,7 @@ func rewriteDispatchJSON(t *testing.T, path string, update func(map[string]any))
 }
 
 func reservationRunDir(root string, id string) string {
-	return filepath.Join(root, ".agent-layer", "tmp", "runs", id)
+	return filepath.Join(root, projectpaths.Runs, id)
 }
 
 func reservationSessionPath(root string, handle string) string {
@@ -158,7 +160,7 @@ func TestDispatchStartRejectsUnknownReservationWithoutLaunching(t *testing.T) {
 			t.Fatalf("start --reservation %q exit %d, want %d: %s", selector, code, agentdispatch.ExitReservationNotFound, stderr)
 		}
 	}
-	entries, err := os.ReadDir(filepath.Join(root, ".agent-layer", "tmp", "runs"))
+	entries, err := os.ReadDir(filepath.Join(root, projectpaths.Runs))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -182,7 +184,7 @@ func TestDispatchStartRejectsEmptyReservationWithoutLaunching(t *testing.T) {
 			t.Fatalf("start --reservation %q exit %d, want %d: %s", selector, code, agentdispatch.ExitReservationNotFound, stderr)
 		}
 	}
-	if _, err := os.Stat(filepath.Join(root, ".agent-layer", "tmp", "runs")); !errors.Is(err, os.ErrNotExist) {
+	if _, err := os.Stat(filepath.Join(root, projectpaths.Runs)); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("empty reservations created invocations: %v", err)
 	}
 }

@@ -14,6 +14,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/conn-castle/agent-layer/internal/projectpaths"
+
 	"github.com/pelletier/go-toml/v2"
 )
 
@@ -28,7 +30,7 @@ func TestCodexDispatchWaitStaysDirect(t *testing.T) {
 	}
 
 	repoRoot := liveCodexRepoRoot(t)
-	alBinary := filepath.Join(repoRoot, ".agent-layer", "tmp", "dev-bin", "al")
+	alBinary := filepath.Join(repoRoot, projectpaths.Cache, "dev-bin", "al")
 	if _, err := os.Stat(alBinary); err != nil {
 		t.Fatalf("development al binary missing at %s; run `make test-codex-dispatch-wait-live`: %v", alBinary, err)
 	}

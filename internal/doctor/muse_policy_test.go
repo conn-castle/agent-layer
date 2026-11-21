@@ -15,6 +15,7 @@ import (
 	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/messages"
 	"github.com/conn-castle/agent-layer/internal/musepolicy"
+	"github.com/conn-castle/agent-layer/internal/projectpaths"
 )
 
 func doctorPolicyTempDir(t *testing.T) string {
@@ -268,7 +269,11 @@ func TestCheckMusePolicyDisposableSegmentsWithoutOwnedParents(t *testing.T) {
 	base, parent := doctorPolicyTempDir(t), doctorPolicyTempDir(t)
 	t.Setenv("XDG_CONFIG_HOME", base)
 	dir := filepath.Join(base, "muse")
-	copies := []string{filepath.Join(parent, ".agent-layer/tmp/copy"), filepath.Join(parent, ".codex/worktrees/copy")}
+	copies := []string{
+		filepath.Join(parent, projectpaths.LegacyTmp, "copy"),
+		filepath.Join(parent, projectpaths.Working, "candidate"),
+		filepath.Join(parent, ".codex/worktrees/copy"),
+	}
 	for _, root := range copies {
 		doctorMuseReceipt(t, dir, root)
 		require.NoError(t, musepolicy.SyncCommands(dir, root, []string{"go"}))
@@ -282,7 +287,7 @@ func TestCheckMusePolicyDisposableSegmentsWithoutOwnedParents(t *testing.T) {
 	}
 	results := CheckMusePolicy(context.Background(), museDoctorConfig(t, true))
 	require.Len(t, results, 2)
-	require.Contains(t, results[1].Message, "3 nested or possible throwaway Muse policy roots")
+	require.Contains(t, results[1].Message, "4 nested or possible throwaway Muse policy roots")
 	for _, root := range append(copies, service) {
 		require.Contains(t, results[1].Message, root)
 	}

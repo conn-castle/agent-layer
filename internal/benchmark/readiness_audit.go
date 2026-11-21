@@ -14,6 +14,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/conn-castle/agent-layer/internal/projectpaths"
 )
 
 const (
@@ -401,7 +403,7 @@ func prepareTaskReadiness(repoRoot, checkout, task string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("validate task tree: %w", err)
 	}
-	stageRoot := filepath.Join(repoRoot, ".agent-layer", "tmp")
+	stageRoot := filepath.Join(repoRoot, projectpaths.Cache)
 	if err := os.MkdirAll(stageRoot, 0o700); err != nil {
 		return "", fmt.Errorf("create readiness audit staging root: %w", err)
 	}

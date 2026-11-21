@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/conn-castle/agent-layer/internal/messages"
+	"github.com/conn-castle/agent-layer/internal/projectpaths"
 )
 
 const (
@@ -194,7 +195,6 @@ func resolveLaunchContext(root, provider string) (launchContext, bool, error) {
 	if err != nil {
 		return launchContext{}, false, fmt.Errorf("resolve HerdR project root: %w", err)
 	}
-	runsDir := filepath.Join(canonicalRoot, ".agent-layer", "tmp", "runs")
 	type ancestor struct {
 		pid   int
 		start string
@@ -214,7 +214,7 @@ func resolveLaunchContext(root, provider string) (launchContext, bool, error) {
 	}
 	// Scan each existing run once, rather than once for every ancestor and
 	// record kind. Records remain in their canonical owning run directory.
-	records, err := runRecordPaths(runsDir, func(name string) bool { return names[name] })
+	records, err := runRecordPaths(canonicalRoot, func(name string) bool { return names[name] })
 	if err != nil {
 		return launchContext{}, false, fmt.Errorf("find HerdR launch records: %w", err)
 	}
@@ -245,31 +245,34 @@ func resolveLaunchContext(root, provider string) (launchContext, bool, error) {
 // run snapshot and the per-run scan.
 var readDirFunc = os.ReadDir
 
-func runRecordPaths(runsDir string, include func(string) bool) (map[string][]string, error) {
+func runRecordPaths(root string, include func(string) bool) (map[string][]string, error) {
 	paths := map[string][]string{}
-	entries, err := readDirFunc(runsDir)
-	if os.IsNotExist(err) {
-		return paths, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-	for _, entry := range entries {
-		if !entry.IsDir() {
-			continue
-		}
-		directory := filepath.Join(runsDir, entry.Name())
-		records, err := readDirFunc(directory)
+	for _, relative := range []string{projectpaths.Runs, projectpaths.LegacyRuns} {
+		runsDir := filepath.Join(root, relative)
+		entries, err := readDirFunc(runsDir)
 		if os.IsNotExist(err) {
-			// A concurrent cleanup removed this run after the outer snapshot.
 			continue
 		}
 		if err != nil {
 			return nil, err
 		}
-		for _, record := range records {
-			if include(record.Name()) {
-				paths[record.Name()] = append(paths[record.Name()], filepath.Join(directory, record.Name()))
+		for _, entry := range entries {
+			if !entry.IsDir() {
+				continue
+			}
+			directory := filepath.Join(runsDir, entry.Name())
+			records, err := readDirFunc(directory)
+			if os.IsNotExist(err) {
+				// A concurrent cleanup removed this run after the outer snapshot.
+				continue
+			}
+			if err != nil {
+				return nil, err
+			}
+			for _, record := range records {
+				if include(record.Name()) {
+					paths[record.Name()] = append(paths[record.Name()], filepath.Join(directory, record.Name()))
+				}
 			}
 		}
 	}
@@ -295,9 +298,8 @@ func readDispatchBoundary(path string, pid int, start string) error {
 }
 
 func readLaunchContext(path, root, provider string) (launchContext, error) {
-	runsDir := filepath.Join(root, ".agent-layer", "tmp", "runs")
-	relative, err := filepath.Rel(runsDir, path)
-	if err != nil || relative == "." || strings.HasPrefix(relative, ".."+string(os.PathSeparator)) || strings.Contains(relative, string(os.PathSeparator)+".."+string(os.PathSeparator)) {
+	if !projectpaths.Contains(filepath.Join(root, projectpaths.Runs), path) &&
+		!projectpaths.Contains(filepath.Join(root, projectpaths.LegacyRuns), path) {
 		return launchContext{}, fmt.Errorf("HerdR launch context is outside the project run directory: %s", path)
 	}
 	info, err := os.Lstat(path)

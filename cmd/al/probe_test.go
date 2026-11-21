@@ -10,12 +10,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/conn-castle/agent-layer/internal/projectpaths"
+
 	"github.com/conn-castle/agent-layer/internal/probe/antigravity"
 	probegrok "github.com/conn-castle/agent-layer/internal/probe/grok"
 )
 
 // TestProbeAntigravityCommandHonorsTmpRoot exercises the path-construction
-// branch (.agent-layer/tmp/) and asserts the public JSON shape of the probe
+// working directory and asserts the public JSON shape of the probe
 // result. The previous test only round-tripped two bool fields through the
 // encoder — it would have passed even if the stable JSON keys were renamed.
 func TestProbeAntigravityCommandHonorsTmpRoot(t *testing.T) {
@@ -29,8 +31,8 @@ func TestProbeAntigravityCommandHonorsTmpRoot(t *testing.T) {
 
 	originalProbe := runAntigravityProbe
 	runAntigravityProbe = func(ctx context.Context, tmpRoot string) (*antigravity.Result, error) {
-		if !strings.HasSuffix(tmpRoot, ".agent-layer/tmp") {
-			t.Fatalf("tmp root = %q, want .agent-layer/tmp", tmpRoot)
+		if !strings.HasSuffix(tmpRoot, projectpaths.Working) {
+			t.Fatalf("tmp root = %q, want %q", tmpRoot, projectpaths.Working)
 		}
 		return &antigravity.Result{
 			AgyVersion:   "1.0.0",
@@ -182,8 +184,8 @@ func TestProbeGrokCommandHonorsTmpRoot(t *testing.T) {
 
 	originalProbe := runGrokProbe
 	runGrokProbe = func(ctx context.Context, tmpRoot string, _ string) (*probegrok.Result, error) {
-		if !strings.HasSuffix(tmpRoot, ".agent-layer/tmp") {
-			t.Fatalf("tmp root = %q, want .agent-layer/tmp", tmpRoot)
+		if !strings.HasSuffix(tmpRoot, projectpaths.Working) {
+			t.Fatalf("tmp root = %q, want %q", tmpRoot, projectpaths.Working)
 		}
 		return &probegrok.Result{
 			GrokVersion:  "grok 1.0.5",

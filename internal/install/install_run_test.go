@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/conn-castle/agent-layer/internal/projectpaths"
+
 	"github.com/conn-castle/agent-layer/internal/launchers"
 	"github.com/conn-castle/agent-layer/internal/templates"
 	"github.com/conn-castle/agent-layer/internal/testutil"
@@ -29,7 +31,9 @@ func TestRunCreatesStructure(t *testing.T) {
 		filepath.Join(root, ".agent-layer", "gitignore.block"),
 		filepath.Join(root, ".agent-layer", "instructions"),
 		filepath.Join(root, ".agent-layer", "skills"),
-		filepath.Join(root, ".agent-layer", "tmp", "runs"),
+		filepath.Join(root, projectpaths.Working),
+		filepath.Join(root, projectpaths.Cache),
+		filepath.Join(root, projectpaths.Worktrees),
 	}
 	for _, path := range expectFiles {
 		if _, err := os.Stat(path); err != nil {

@@ -14,6 +14,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/conn-castle/agent-layer/internal/projectpaths"
+
 	"golang.org/x/sys/unix"
 
 	"github.com/conn-castle/agent-layer/internal/testutil"
@@ -275,7 +277,7 @@ func TestPromptFileCancellationCreatesNoInvocation(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			runsPath := filepath.Join(root, ".agent-layer", "tmp", "runs")
+			runsPath := filepath.Join(root, projectpaths.Runs)
 			runsBefore, err := os.ReadDir(runsPath)
 			if err != nil && !errors.Is(err, os.ErrNotExist) {
 				t.Fatal(err)

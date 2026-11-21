@@ -75,11 +75,11 @@ Edit `.agent-layer/skills-imported/<name>/` directly. Do not edit `.agents/skill
 recorded source version + your local skill + current upstream skill
 ```
 
-If the changes are compatible, Agent Layer keeps both. If the same content conflicts, it leaves the live skill untouched and creates a normal Git conflict workspace under `.agent-layer/tmp/skill-conflicts/<name>/`. Resolve it with Git, stage the intended tree, then apply it explicitly:
+If the changes are compatible, Agent Layer keeps both. If the same content conflicts, it leaves the live skill untouched and creates a normal Git conflict workspace in the `skill-conflicts/<name>/` subdirectory of the worktrees directory. The conflict message prints its path. Resolve it with Git, stage the intended tree, then apply it explicitly:
 
 ```bash
-git -C .agent-layer/tmp/skill-conflicts/code-review status
-git -C .agent-layer/tmp/skill-conflicts/code-review add .
+git -C "<conflict-workspace>" status
+git -C "<conflict-workspace>" add .
 al skills resolve code-review
 ```
 

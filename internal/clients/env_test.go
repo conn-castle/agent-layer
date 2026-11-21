@@ -199,7 +199,7 @@ func TestBuildEnvStripsDispatchActive(t *testing.T) {
 
 func TestBuildEnvPreservesDevelopmentVersionDispatchBypass(t *testing.T) {
 	base := []string{
-		"PATH=/repo/.agent-layer/tmp/dev-bin:/bin",
+		"PATH=/repo/local/bin:/bin",
 		versiondispatch.EnvDevelopmentBypassVersionDispatch + "=1",
 	}
 	env := BuildEnv(base, nil, nil)
@@ -207,7 +207,7 @@ func TestBuildEnvPreservesDevelopmentVersionDispatchBypass(t *testing.T) {
 	if value, ok := GetEnv(env, versiondispatch.EnvDevelopmentBypassVersionDispatch); !ok || value != "1" {
 		t.Fatalf("expected %s=1 to reach the launched agent, got %q ok=%v", versiondispatch.EnvDevelopmentBypassVersionDispatch, value, ok)
 	}
-	if value, ok := GetEnv(env, "PATH"); !ok || value != "/repo/.agent-layer/tmp/dev-bin:/bin" {
+	if value, ok := GetEnv(env, "PATH"); !ok || value != "/repo/local/bin:/bin" {
 		t.Fatalf("expected development PATH to reach the launched agent, got %q ok=%v", value, ok)
 	}
 }

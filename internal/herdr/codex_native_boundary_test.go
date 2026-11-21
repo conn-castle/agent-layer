@@ -11,6 +11,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/conn-castle/agent-layer/internal/projectpaths"
 )
 
 const boundaryThread = "01a1138f-7df0-7fa0-94ae-820334783a29"
@@ -30,7 +32,7 @@ func codexBoundaryHook(t *testing.T, root, payload string) error {
 		if strings.Count(errOut.String(), "agent-layer HerdR recovery (codex):") != 1 {
 			t.Fatalf("failure diagnostics = %q", errOut.String())
 		}
-		receipts, readErr := os.ReadDir(filepath.Join(root, ".agent-layer", "tmp", "herdr-hook-errors"))
+		receipts, readErr := os.ReadDir(filepath.Join(root, projectpaths.Working, "herdr-hook-errors"))
 		if readErr != nil || len(receipts) != 1 {
 			t.Fatalf("failure receipts = %#v / %v", receipts, readErr)
 		}
@@ -38,7 +40,7 @@ func codexBoundaryHook(t *testing.T, root, payload string) error {
 		if errOut.Len() != 0 {
 			t.Fatalf("unexpected diagnostic = %q", errOut.String())
 		}
-		if _, err := os.Stat(filepath.Join(root, ".agent-layer", "tmp", "herdr-hook-errors")); !os.IsNotExist(err) {
+		if _, err := os.Stat(filepath.Join(root, projectpaths.Working, "herdr-hook-errors")); !os.IsNotExist(err) {
 			t.Fatalf("successful/no-match hook left a receipt directory: %v", err)
 		}
 	}
@@ -143,7 +145,7 @@ func TestHandleForRootCodexMultipleRecordedPanes(t *testing.T) {
 			if len(reports) != 0 {
 				t.Fatal("durable/live recipe emitted duplicate report")
 			}
-			if _, err := os.Stat(filepath.Join(root, ".agent-layer/tmp/herdr-hook-errors")); !os.IsNotExist(err) {
+			if _, err := os.Stat(filepath.Join(root, projectpaths.Working, "herdr-hook-errors")); !os.IsNotExist(err) {
 				t.Fatalf("unrelated pane generated receipt: %v", err)
 			}
 		})
@@ -328,7 +330,7 @@ func TestHandleForRootCodexCanonicalRecordsAndNewerLiveSession(t *testing.T) {
 			t.Fatalf("repeated run scan: %#v", reads)
 		}
 	}
-	if len(reads) != 3 {
+	if len(reads) != 4 {
 		t.Fatalf("run scan = %#v", reads)
 	}
 	assertBoundaryStored(t, root, "w1:p1", want)

@@ -20,6 +20,10 @@ import tempfile
 import threading
 import time
 
+sys.dont_write_bytecode = True
+
+from project_paths import CACHE, RUNS, WORKING
+
 ROOT = Path(__file__).resolve().parents[1]
 PIN = ROOT / "scripts/test-muse-native/release.json"
 MARKER = "NATIVE_MUSE_MCP_VERIFIED"
@@ -80,10 +84,10 @@ def verify_binary(path, artifact):
     require(digest.hexdigest() == artifact["checksum"], f"Muse SHA-256 mismatch: {path}")
 
 
-def native_binary(override, output):
+def native_binary(override):
     pin = json.loads(PIN.read_text())
     key, artifact = artifact_for_host(pin)
-    binary = Path(override).resolve() if override else output / "bin" / pin["version"] / key / "muse"
+    binary = Path(override).resolve() if override else ROOT / CACHE / "muse-native" / "bin" / pin["version"] / key / "muse"
     if not binary.exists():
         require(not override, f"Native Muse binary does not exist: {binary}")
         binary.parent.mkdir(parents=True, exist_ok=True)
@@ -154,7 +158,7 @@ def fixture_guard():
             signal.signal(sig, signal.SIG_IGN)
         failures = []
         for al, work, env in _fixture_workspaces:
-            for record in (work / ".agent-layer/tmp/runs").glob("*/dispatch.json"):
+            for record in (work / RUNS).glob("*/dispatch.json"):
                 try:
                     state = json.loads(record.read_text())
                 except (ValueError, OSError):
@@ -551,11 +555,11 @@ def exercise(al, muse, output, version, custom_xdg, claude=None):
                                        case / "continue-stopped", timeout=90))
                 require(proof.get("termination_confirmed"), "Continuation termination unconfirmed")
         for run_id in (invocation, continuation):
-            run_dir = source / "tmp/runs" / run_id
+            run_dir = work / RUNS / run_id
             require((run_dir / "result.md").is_file(), "Dispatch answer missing")
             require(not (run_dir / "prompt.txt").exists(), "Private dispatch prompt was retained")
-        initial_record = json.loads((source / "tmp/runs" / invocation / "dispatch.json").read_text())
-        resumed_record = json.loads((source / "tmp/runs" / continuation / "dispatch.json").read_text())
+        initial_record = json.loads((work / RUNS / invocation / "dispatch.json").read_text())
+        resumed_record = json.loads((work / RUNS / continuation / "dispatch.json").read_text())
         require(initial_record["provider_session_id"] == resumed_record["provider_session_id"],
                 "Continuation changed provider session")
         journals = (case / "native-data" if custom_xdg else home / ".local/share") / "muse/sessions"
@@ -657,13 +661,13 @@ def main():
     parser.add_argument("--al", type=Path, required=True, help="Agent Layer binary built from this checkout")
     parser.add_argument("--muse", help="Use an already downloaded native binary (checksum still enforced)")
     parser.add_argument("--claude", help="Optionally verify native Claude catalog equivalence on the generated shared file")
-    parser.add_argument("--output", type=Path, default=ROOT / ".agent-layer/tmp/muse-native")
+    parser.add_argument("--output", type=Path, default=ROOT / WORKING / "muse-native")
     args = parser.parse_args()
     output = args.output.resolve()
     (output / "runs").mkdir(parents=True, exist_ok=True)
     al = args.al.resolve(strict=True)
     with fixture_guard():
-        binary, version = native_binary(args.muse, output)
+        binary, version = native_binary(args.muse)
         binary = fixture_binary(binary, output)
         for custom in (False, True):
             exercise(al, binary, output, version, custom, args.claude)

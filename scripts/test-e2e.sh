@@ -38,6 +38,9 @@ while IFS= read -r env_name; do
   esac
 done < <(env | awk -F= '/^AL_/ {print $1}')
 
+# shellcheck source=../internal/projectpaths/layout.env
+source "$ROOT_DIR/internal/projectpaths/layout.env"
+
 # Avoid host-specific client config variables leaking into scenarios.
 unset CLAUDE_CONFIG_DIR
 unset CODEX_HOME
