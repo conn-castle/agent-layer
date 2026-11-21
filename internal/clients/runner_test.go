@@ -10,6 +10,8 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/conn-castle/agent-layer/internal/projectpaths"
+
 	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/run"
 	"github.com/conn-castle/agent-layer/internal/testutil"
@@ -180,9 +182,12 @@ func TestRunCreateError(t *testing.T) {
 	root := t.TempDir()
 	writeMinimalRepo(t, root)
 
-	blockPath := filepath.Join(root, ".agent-layer", "tmp")
+	blockPath := filepath.Join(root, projectpaths.Runs)
+	if err := os.MkdirAll(filepath.Dir(blockPath), 0o700); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.WriteFile(blockPath, []byte("block"), 0o600); err != nil {
-		t.Fatalf("write tmp file: %v", err)
+		t.Fatalf("block run directory: %v", err)
 	}
 
 	err := RunWithStderr(context.Background(), root, "antigravity", func(cfg *config.Config) *bool {

@@ -42,7 +42,7 @@ func codexTitleMatchesHook(title, hookID string) error {
 
 // codexRunRecords snapshots canonical launch records for live-pane recovery.
 func codexRunRecords(root string) (map[string][]string, error) {
-	return runRecordPaths(filepath.Join(root, ".agent-layer", "tmp", "runs"), func(name string) bool {
+	return runRecordPaths(root, func(name string) bool {
 		return strings.HasSuffix(name, launchContextSuffix) && strings.HasPrefix(name, launchContextPrefix)
 	})
 }

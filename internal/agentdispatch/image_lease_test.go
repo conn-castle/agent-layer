@@ -169,7 +169,7 @@ func selfLeaseWorkerHelper() {
 		return
 	}
 	gate := os.NewFile(3, "gate")
-	err := RunWorker(os.Getenv("AL_TEST_SELF_LEASE_WORKER"), "lease-test", gate)
+	err := RunWorker(os.Getenv("AL_TEST_SELF_LEASE_WORKER"), "00000000-0000-4000-8000-000000000001", gate)
 	// There is deliberately no prepared request: observe the retained lease
 	// after authorization and before any provider can be admitted.
 	if err == nil {

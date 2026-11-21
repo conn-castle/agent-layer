@@ -10,6 +10,7 @@ import (
 
 	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/gitrepo"
+	"github.com/conn-castle/agent-layer/internal/projectpaths"
 	"github.com/conn-castle/agent-layer/internal/skilllock"
 	"github.com/conn-castle/agent-layer/internal/skilltree"
 )
@@ -107,7 +108,14 @@ func conflictWorkspace(root, name string) (string, error) {
 	if err := skilltree.ValidateRelativePath(name); err != nil {
 		return "", fmt.Errorf("invalid skill name %q: %w", name, err)
 	}
-	return filepath.Join(root, ".agent-layer", "tmp", "skill-conflicts", name), nil
+	dir := filepath.Join(root, projectpaths.Worktrees, "skill-conflicts", name)
+	if _, err := os.Lstat(dir); os.IsNotExist(err) {
+		legacy := filepath.Join(root, projectpaths.LegacyTmp, "skill-conflicts", name)
+		if _, err := os.Lstat(legacy); !os.IsNotExist(err) {
+			return legacy, nil
+		}
+	}
+	return dir, nil
 }
 
 func writePullConflictWorkspace(ctx context.Context, runner *gitrepo.Runner, st *state, name string, local, baseTree, upstream skilltree.Tree, lock, next skilllock.Entry) (string, error) {

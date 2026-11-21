@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/conn-castle/agent-layer/internal/projectpaths"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -16,7 +18,9 @@ func TestInstallRun_BareInitSeedsOnlyOperationalScaffolding(t *testing.T) {
 	for _, dir := range []string{
 		filepath.Join(root, ".agent-layer", "instructions"),
 		filepath.Join(root, ".agent-layer", "skills"),
-		filepath.Join(root, ".agent-layer", "tmp", "runs"),
+		filepath.Join(root, projectpaths.Working),
+		filepath.Join(root, projectpaths.Cache),
+		filepath.Join(root, projectpaths.Worktrees),
 	} {
 		info, err := os.Stat(dir)
 		require.NoError(t, err, "%s should exist after bare init", dir)

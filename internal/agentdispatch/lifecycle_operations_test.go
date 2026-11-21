@@ -73,6 +73,17 @@ func TestRetentionRemovesOnlyExpiredUnreferencedTerminalEvidence(t *testing.T) {
 	unconfirmed := makeRecord(dispatchStateCompleted, &old)
 	active := makeRecord(dispatchStateRunning, nil)
 	current := makeRecord(dispatchStateCompleted, &old)
+	legacyRuns := filepath.Join(root, ".agent-layer", "tmp", "runs")
+	if err := os.MkdirAll(legacyRuns, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	legacyDir := filepath.Join(legacyRuns, expired.Record.ID)
+	if err := os.Rename(expired.Dir, legacyDir); err != nil {
+		t.Fatal(err)
+	}
+	if record, err := loadRunRecord(root, expired.Record.ID); err != nil || record.ID != expired.Record.ID {
+		t.Fatalf("load legacy run = %s, %v", record.ID, err)
+	}
 	session := Session{Name: "tiny-round-capacitor", Agent: AgentCodex, State: "durable", ProviderSessionID: runtimeSessionID, RunID: current.Record.ID, CreatedAt: now, LastUsedAt: now}
 	if err := persistSession(root, session); err != nil {
 		t.Fatal(err)
@@ -80,7 +91,7 @@ func TestRetentionRemovesOnlyExpiredUnreferencedTerminalEvidence(t *testing.T) {
 	if err := pruneDispatchEvidence(root, now, testDispatchSessionRetention); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := os.Stat(expired.Dir); !os.IsNotExist(err) {
+	if _, err := os.Stat(legacyDir); !os.IsNotExist(err) {
 		t.Fatalf("expired terminal evidence remains: %v", err)
 	}
 	for _, dir := range []string{active.Dir, current.Dir, unconfirmed.Dir} {

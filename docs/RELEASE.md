@@ -57,7 +57,7 @@ git commit -m "release: add manifests for $VERSION"
 make release-preflight RELEASE_TAG="$VERSION"
 ```
 
-CI validates both manifests exist via `make docs-upgrade-check RELEASE_TAG=<tag>`. The release workflow will fail if either manifest is missing. Run `make release-preflight` locally before tagging: it validates the tag and upgrade docs before CI, builds unsigned artifacts for all four supported platform/architecture combinations, and scans those binaries with the existing vulnerability check. Artifacts are retained under `.agent-layer/tmp/release-preflight/`; install the scanner first with `make release-tools`. This local pass does not sign or notarize artifacts, and the native smoke test covers only the host platform while its source tarball is made from `HEAD`.
+CI validates both manifests exist via `make docs-upgrade-check RELEASE_TAG=<tag>`. The release workflow will fail if either manifest is missing. Run `make release-preflight` locally before tagging: it validates the tag and upgrade docs before CI, builds unsigned artifacts for all four supported platform/architecture combinations, and scans those binaries with the existing vulnerability check. The command prints its retained artifact directory. Install the scanner first with `make release-tools`. This local pass does not sign or notarize artifacts, and the native smoke test covers only the host platform while its source tarball is made from `HEAD`.
 
 The vulnerability database is network-backed and can change before tagging. Hosted signing, notarization, and its release scan remain the final publication gate, so they can still fail after a local preflight passes.
 
@@ -99,7 +99,7 @@ validate live provider authentication.
 
 Build and run the candidate in a unique scratch directory from the repository
 root. The command-line `AL_DEV_BIN_DIR` override keeps the candidate build out
-of the operator's `.agent-layer/tmp/dev-bin/al`. Dispatch start/continue still
+of the operator's development executable printed by `make -s al-dev-path`. Dispatch start/continue still
 regenerate the project's MCP launchers and HerdR hooks using the scratch path.
 After **all** probe workers have terminated, leave the probe environment and
 run `make al-sync` to restore those projections to the operator's normal dev
@@ -238,8 +238,7 @@ reasoning overrides are omitted so Agent Layer uses the local config.
 Record the effective targets and checkout commit alongside the CLI versions,
 fresh/continuation results, and provider session IDs. Each invocation's
 provider session ID is the `provider_session_id` field of
-`.agent-layer/tmp/runs/<invocation_id>/dispatch.json`. Store agent-only probe
-artifacts under `.agent-layer/tmp`. Never include credentials or account
+the `dispatch.json` file for the invocation in the [run directory](../site/docs/reference.mdx#ephemeral-artifacts-under-agent-layertmp). Store agent-only probe artifacts in the working directory. Never include credentials or account
 identifiers in the evidence record.
 
 A provider passes only when all of the following hold:

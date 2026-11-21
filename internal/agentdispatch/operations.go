@@ -2,8 +2,11 @@ package agentdispatch
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"time"
+
+	"github.com/conn-castle/agent-layer/internal/projectpaths"
 )
 
 func tryReconcileOrphan(root string, record RunRecord) (RunRecord, error) {
@@ -139,7 +142,16 @@ func ownershipForIdentity(pid int, startIdentity string) string {
 	return ownershipDead
 }
 
-func filepathForRun(root string, id string) string { return filepath.Join(dispatchRunPath(root), id) }
+func filepathForRun(root string, id string) string {
+	dir := filepath.Join(dispatchRunPath(root), id)
+	if _, err := os.Lstat(dir); os.IsNotExist(err) {
+		legacy := filepath.Join(root, projectpaths.LegacyRuns, id)
+		if _, err := os.Lstat(legacy); !os.IsNotExist(err) { // #nosec G703 -- root is the selected project, and the run ID is a validated UUID.
+			return legacy
+		}
+	}
+	return dir
+}
 
 const (
 	ownershipOwned   = "owned"

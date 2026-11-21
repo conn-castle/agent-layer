@@ -11,6 +11,8 @@ import time
 import unittest
 
 sys.dont_write_bytecode = True
+
+from project_paths import CACHE, RUNS
 SOURCE = Path(__file__).with_name("test-muse-native.py").resolve()
 spec = importlib.util.spec_from_file_location("fixture", SOURCE)
 f = importlib.util.module_from_spec(spec)
@@ -28,7 +30,7 @@ def wait_for(predicate):
 
 class FixtureSafetyTest(unittest.TestCase):
     def setUp(self):
-        output = SOURCE.parents[1] / ".agent-layer/tmp/muse-fixture-tests"
+        output = SOURCE.parents[1] / CACHE / "muse-fixture-tests"
         output.mkdir(parents=True, exist_ok=True)
         self.case = Path(tempfile.mkdtemp(dir=output))
 
@@ -51,7 +53,7 @@ class FixtureSafetyTest(unittest.TestCase):
             with self.subTest(parent_exit=parent_exit):
                 case = self.case / str(parent_exit)
                 case.mkdir()
-                records = case / ".agent-layer/tmp/runs/fixture-id"
+                records = case / RUNS / "fixture-id"
                 records.mkdir(parents=True)
                 (records / "dispatch.json").write_text('{"termination_confirmed": false}')
                 al = case / "al"
@@ -64,6 +66,7 @@ class FixtureSafetyTest(unittest.TestCase):
                 driver.write_text(
                     "import importlib.util, os, sys\nfrom pathlib import Path\n"
                     "sys.dont_write_bytecode=True\n"
+                    "sys.path.insert(0, " + repr(str(SOURCE.parent)) + ")\n"
                     "s=importlib.util.spec_from_file_location('f', " + repr(str(SOURCE)) + ")\n"
                     "f=importlib.util.module_from_spec(s);s.loader.exec_module(f)\n"
                     "p=Path(" + repr(str(case)) + ")\n"

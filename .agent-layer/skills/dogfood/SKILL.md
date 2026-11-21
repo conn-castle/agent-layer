@@ -14,9 +14,9 @@ state. Pursue useful real tasks, invent workflows, combine features, and follow
 surprises. Look for confusing or missing capabilities as well as errors.
 Use the current request to determine discovery, fix, and shipping scope.
 Create disposable projects outside existing Git/Agent Layer roots, normally under
-`/var/tmp/`; use nested projects only for deliberate discovery cases. Keep the
-batch binary, harnesses, and evidence outside every cleanup/deletion target in a
-unique retained directory under `.agent-layer/tmp/` or `/var/tmp/`.
+`/var/tmp/`. Use nested projects for deliberate discovery cases. Keep each batch’s
+exact binary, harnesses, and evidence together in a unique directory outside every
+cleanup target. Follow the project’s storage conventions for that directory.
 
 When selecting coverage, read open
 [GitHub issues](https://github.com/conn-castle/agent-layer/issues) and relevant

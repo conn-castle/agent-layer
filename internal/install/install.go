@@ -15,6 +15,7 @@ import (
 	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/launchers"
 	"github.com/conn-castle/agent-layer/internal/messages"
+	"github.com/conn-castle/agent-layer/internal/projectpaths"
 	"github.com/conn-castle/agent-layer/internal/skillmigration"
 	"github.com/conn-castle/agent-layer/internal/version"
 )
@@ -336,7 +337,9 @@ func (inst upgradeOrchestrator) ensureBaseDirs() error {
 	dirs := []string{
 		filepath.Join(root, ".agent-layer", instructionsDirName),
 		filepath.Join(root, ".agent-layer", "skills"),
-		filepath.Join(root, ".agent-layer", "tmp", "runs"),
+		filepath.Join(root, projectpaths.Working),
+		filepath.Join(root, projectpaths.Cache),
+		filepath.Join(root, projectpaths.Worktrees),
 	}
 	for _, dir := range dirs {
 		if err := sys.MkdirAll(dir, 0o755); err != nil {

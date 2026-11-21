@@ -31,13 +31,13 @@ This repo is built around determinism: the same inputs should produce the same c
 - Use the commands in `docs/agent-layer/COMMANDS.md` for format, lint, test, coverage reporting, and release builds.
 - Prefer `make` targets (see `docs/agent-layer/COMMANDS.md`) instead of running `goimports` / `golangci-lint` directly; tools are installed repo-locally under `.tools/bin` so you do not need to edit your shell PATH. This avoids “works on my machine” drift and keeps local output aligned with CI.
 - Use `make dev` for the fast local formatting and lint loop. Run `./scripts/setup.sh` or `make tools` first. Use `make test` for the global test gate and `make coverage` for diagnostic coverage reporting, and use `make ci` as the complete local/pre-PR verification command (hosted CI runs the same target).
-- **Template sources live in `internal/templates/`**, not in `.agent-layer/`. The `.agent-layer/` directory is the *install output* created by `al init`/`al upgrade` in target repos. When adding or editing templates (memory files, operator skills, config), always edit the source in `internal/templates/`. If you change installer templates, run `al upgrade` in a target repo to apply the updated templates. For scratch-project testing, run `make al-dev-build` in this checkout, then invoke the absolute `.agent-layer/tmp/dev-bin/al` path with `AL_DEV_EXECUTABLE` set to that path and `AL_DEV_BYPASS_VERSION_DISPATCH=1` and `AL_DEV_SOURCE_ROOT` set to the scratch project's absolute configuration root; use `upgrade` for an existing project or `init` for a fresh one.
+- **Template sources live in `internal/templates/`**, not in `.agent-layer/`. The `.agent-layer/` directory is the *install output* created by `al init`/`al upgrade` in target repos. When adding or editing templates (memory files, operator skills, config), always edit the source in `internal/templates/`. If you change installer templates, run `al upgrade` in a target repo to apply the updated templates. For scratch-project testing, run `make al-dev-build` in this checkout, then invoke the absolute path printed by `make -s al-dev-path` with `AL_DEV_EXECUTABLE` set to that path and `AL_DEV_BYPASS_VERSION_DISPATCH=1` and `AL_DEV_SOURCE_ROOT` set to the scratch project's absolute configuration root; use `upgrade` for an existing project or `init` for a fresh one.
 - If template-managed file semantics change for release upgrades, regenerate the release manifest: `./scripts/generate-template-manifest.sh --tag vX.Y.Z`.
 - If you change upgrade behavior or upgrade-facing guidance, update the canonical upgrade contract page at `site/docs/upgrades.mdx` and keep release notes/docs links aligned.
 - If you change VS Code launch behavior, update `docs/architecture/vscode-launch.md` and keep troubleshooting guidance aligned.
 
 `make al-sync`, `make al-upgrade`, `make al-wizard`, and the agent launch
-commands build `.agent-layer/tmp/dev-bin/al` to a unique sibling file, then
+commands build the development executable to a unique sibling file, then
 publish it atomically only when the bytes changed; unchanged output leaves the
 existing executable in place. Go stamps the commit and dirty-tree state into the
 binary, so committing or first dirtying the tree changes the bytes. They explicitly set `AL_DEV_EXECUTABLE`,
@@ -92,14 +92,14 @@ not replace a running server, and a new chat may reuse it. See
 configuration without provider inference. It checks runtime dispatch context,
 the depth guard, unset values, and absolute development launches with an
 incompatible `al` first on `PATH`. Evidence remains in
-`.agent-layer/tmp/codex-mcp-native`.
+the `codex-mcp-native` subdirectory of the working directory.
 
 ## Native Muse fixtures
 
 `make test-muse-native` verifies the checksum-pinned Muse binary against loopback
 model and MCP servers with synthetic credentials and isolated HOME/XDG directories.
 It requires Python 3 and `gh` (used to verify selector fallback), in addition to Go,
-Git, and curl. Evidence remains in `.agent-layer/tmp/muse-native`.
+Git, and curl. Evidence remains in the `muse-native` subdirectory of the working directory.
 
 For the environment and approval regressions alone, build `al` and run
 `scripts/test-muse-native-review.py --al <binary> --muse <pinned-native-binary>`.
@@ -207,7 +207,7 @@ source repository:
 
 ```bash
 make al-dev-build
-candidate="$PWD/.agent-layer/tmp/dev-bin/al"
+candidate="$(make -s al-dev-path)"
 scratch_repo="$(mktemp -d /var/tmp/al-dev-repo.XXXXXX)"
 git init "$scratch_repo"
 (
@@ -227,6 +227,18 @@ Notes:
 ## Hidden maintenance commands
 These are registered but hidden from `al --help`. They are maintenance aids, not
 part of the supported CLI surface, and are not documented on the website.
+
+### Project storage paths
+
+Edit `internal/projectpaths/paths.go` to change the layout. Run
+`go generate ./internal/projectpaths` to refresh Make and script defaults, the
+ignore template, the embedded benchmark adapter, the reference table, and this
+repo’s instructions. `make check-project-paths` checks those files in CI.
+
+Keep compatibility paths explicit where older installs still need them. Shared
+rules live in the separate skills repository and ship alongside its releases.
+See the [storage reference](../site/docs/reference.mdx#ephemeral-artifacts-under-agent-layertmp)
+for the current layout.
 
 ### `al organize-scratch` — sort a scratch directory for review
 Agent scratch directories accumulate hundreds of reports, logs, checkouts, and
@@ -404,7 +416,7 @@ step commits journaled imports through the lock-held `skillimport` conversion
 API (injected from `cmd/al` as `install.PristineConverter`, because `install`
 cannot import `skillimport`) and deletes each local copy only after its import
 commits, before the pin advances. Deletion renames the copy into
-`.agent-layer/tmp/upgrade-conversion-<id>/` and re-verifies it there; a copy
+the `upgrade-conversion-<id>/` subdirectory of the working directory and re-verifies it there; a copy
 edited during the upgrade stays there, out of the rollback's reach, and fails the
 step. When the conversion step itself fails, every edited copy of a pending
 import still in place is renamed (or, if that fails, copied) there before the

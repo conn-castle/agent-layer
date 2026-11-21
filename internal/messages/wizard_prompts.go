@@ -48,7 +48,7 @@ const (
 	WizardInstructionSetTitle = "Agent instructions" +
 		"\n  Always-on project instructions. Independent of the skills list below."
 	WizardInstructionSetNone           = "None — no Agent Layer instruction files"
-	WizardInstructionSetRules          = "Rules — agent artifacts go in .agent-layer/tmp; git safety; when to ask you"
+	WizardInstructionSetRules          = "Rules — working files, cache, and worktrees; git safety; when to ask you"
 	WizardInstructionSetRulesAndMemory = "Rules and memory — rules, plus docs/agent-layer/ (CONTEXT, DECISIONS, ISSUES, BACKLOG, COMMANDS)"
 	// WizardEnableCLISkillsTitle labels the catalog multiselect screen.
 	WizardEnableCLISkillsTitle = "Enable skills" +

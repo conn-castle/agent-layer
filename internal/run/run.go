@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/conn-castle/agent-layer/internal/messages"
+	"github.com/conn-castle/agent-layer/internal/projectpaths"
 )
 
 // Info describes a single Agent Layer run directory.
@@ -17,7 +18,7 @@ type Info struct {
 	Dir string
 }
 
-// Create creates a new run directory under .agent-layer/tmp/runs.
+// Create creates a new run directory under the project run directory.
 func Create(root string) (*Info, error) {
 	if root == "" {
 		return nil, fmt.Errorf(messages.RunRootPathRequired)
@@ -29,7 +30,7 @@ func Create(root string) (*Info, error) {
 		return nil, fmt.Errorf(messages.RunGenerateIDFailedFmt, err)
 	}
 	runID := fmt.Sprintf("%s-%s", stamp, suffix)
-	dir := filepath.Join(root, ".agent-layer", "tmp", "runs", runID)
+	dir := filepath.Join(root, projectpaths.Runs, runID)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil, fmt.Errorf(messages.RunCreateDirFailedFmt, dir, err)
 	}

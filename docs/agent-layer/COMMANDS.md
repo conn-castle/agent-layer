@@ -145,7 +145,7 @@ make test
 ```
 Run from: repo root
 Prerequisites: `make tools` has been run
-Notes: Prints one line per package plus failures, skips, errors, and any package-level or go command output, then the path of a new `.agent-layer/tmp/test-logs/test-<UTC time>-<random>/` directory. That directory holds `go-test.jsonl` (every `go test -json` event, including passing-test output) and `output.log` (the printed output). Logs are never pruned. Replay the full verbose output with `.tools/bin/gotestsum --format standard-verbose --raw-command -- cat <dir>/go-test.jsonl`. After a passing run, fails if any started package has no package-level `pass`, `fail`, or `skip` event (a test binary that was replaced or exited through a raw syscall).
+Notes: Prints one line per package plus failures, skips, errors, and any package-level or go command output, then the path of a new `test-logs/test-<UTC time>-<random>/` directory. That directory holds `go-test.jsonl` (every `go test -json` event, including passing-test output) and `output.log` (the printed output). Logs are never pruned. Replay the full verbose output with `.tools/bin/gotestsum --format standard-verbose --raw-command -- cat <dir>/go-test.jsonl`. After a passing run, fails if any started package has no package-level `pass`, `fail`, or `skip` event (a test binary that was replaced or exited through a raw syscall).
 
 - Run e2e harness self-tests (auth, helpers, dispatch)
 ```bash
@@ -222,7 +222,7 @@ make coverage
 ```
 Run from: repo root  
 Prerequisites: Go 1.27.0+, `make tools` has been run
-Notes: Same concise output and `.agent-layer/tmp/test-logs/coverage-*/` logs as `make test`. Coverage is diagnostic evidence, not a pass/fail target. `make ci` routes through this target so regressions remain visible without incentivizing tests that exist only to execute implementation branches.
+Notes: Same concise output and coverage logs as `make test`. Coverage is diagnostic evidence, not a pass/fail target. `make ci` routes through this target so regressions remain visible without incentivizing tests that exist only to execute implementation branches.
 
 ### Dev
 
@@ -249,7 +249,7 @@ make al-muse      # al muse
 ```
 Run from: repo root
 Prerequisites: Go 1.27.0+
-Notes: These wrappers use this repo's own `.agent-layer/` config. They atomically build `.agent-layer/tmp/dev-bin/al` and select it explicitly for this repository, including generated MCP launchers whose parent has no development environment. The replaceable dev-bin executable is on `PATH`, so child and nested `al dispatch` calls can use a rebuilt dev executable. A snapshotted MCP server and its detached workers keep using that server's original content-addressed snapshot. An unchanged rebuild keeps the existing executable, so MCP servers already running it need no reconnect. After successful startup verification, snapshotted MCP servers keep accepting provider work across rebuilds while the selected dev path remains a regular executable; reconnect to run the current build. If that path is missing or unusable, options still reports the change, but start/continue refuse before sync so they cannot rewrite restored launchers or hooks to a broken path. Restore the executable, or restore projections and reconnect, to resume provider work. Servers that could not snapshot run in place and still refuse new provider work after replacement until reconnected; wait, inspect, output and cancel remain available. Always use these wrappers instead of a globally installed `al` in this repo: this repo's `.agent-layer/config.toml` tracks the unreleased schema, so a released `al` rejects it as unrecognized keys.
+Notes: These wrappers use this repo's own `.agent-layer/` config. They atomically build the development binary printed by `make -s al-dev-path` and select it explicitly for this repository, including generated MCP launchers whose parent has no development environment. The replaceable dev-bin executable is on `PATH`, so child and nested `al dispatch` calls can use a rebuilt dev executable. A snapshotted MCP server and its detached workers keep using that server's original content-addressed snapshot. An unchanged rebuild keeps the existing executable, so MCP servers already running it need no reconnect. After successful startup verification, snapshotted MCP servers keep accepting provider work across rebuilds while the selected dev path remains a regular executable; reconnect to run the current build. If that path is missing or unusable, options still reports the change, but start/continue refuse before sync so they cannot rewrite restored launchers or hooks to a broken path. Restore the executable, or restore projections and reconnect, to resume provider work. Servers that could not snapshot run in place and still refuse new provider work after replacement until reconnected; wait, inspect, output and cancel remain available. Always use these wrappers instead of a globally installed `al` in this repo: this repo's `.agent-layer/config.toml` tracks the unreleased schema, so a released `al` rejects it as unrecognized keys.
 
 - Run the Antigravity capability probe
 ```bash
@@ -265,7 +265,7 @@ go run ./cmd/al probe grok
 ```
 Run from: repo root
 Prerequisites: Grok Build CLI (`grok`) installed on PATH
-Notes: Prints JSON describing a contained `grok` run under `.agent-layer/tmp/probe-grok-<ts>-<suffix>/`. The probe sets `GROK_HOME` to a disposable home, copies only an existing `auth.json` into it for the provider process and removes that copy immediately afterward, seeds folder trust, uses the workspace sandbox, and registers the same `__probe-mcp-fixture` server. `capabilities.mcp_tool_invoked` is true only when Grok actually called `probe_ping`. `timed_out` reports the probe's own 45-second bound separately from a failed run.
+Notes: Prints JSON describing a contained `grok` run in the reported probe workspace. The probe sets `GROK_HOME` to a disposable home, copies only an existing `auth.json` into it for the provider process and removes that copy immediately afterward, seeds folder trust, uses the workspace sandbox, and registers the same `__probe-mcp-fixture` server. `capabilities.mcp_tool_invoked` is true only when Grok actually called `probe_ping`. `timed_out` reports the probe's own 45-second bound separately from a failed run.
 
 ### CI
 
@@ -326,7 +326,7 @@ make release-preflight RELEASE_TAG=vX.Y.Z
 ```
 Run from: repo root
 Prerequisites: Go 1.27.0+, `make tools` and `make release-tools` have been run, `rg` (ripgrep) available on PATH, both manifests committed
-Notes: Validates the tag and upgrade-contract docs before running `make ci` once, then builds unsigned four-platform artifacts into a unique retained `.agent-layer/tmp/release-preflight/` directory and scans those binaries with `govulncheck`. The native smoke test covers only the host platform and the source tarball is from `HEAD`. Requires a clean working tree and network access for upgrade binary downloads and the vulnerability database. It does not sign or notarize; hosted signing, notarization, and scanning remain the final release gate and can fail after a local pass.
+Notes: Validates the tag and upgrade-contract docs before running `make ci` once, then builds unsigned four-platform artifacts into a unique retained `release-preflight/` directory and scans those binaries with `govulncheck`. The native smoke test covers only the host platform and the source tarball is from `HEAD`. Requires a clean working tree and network access for upgrade binary downloads and the vulnerability database. It does not sign or notarize; hosted signing, notarization, and scanning remain the final release gate and can fail after a local pass.
 
 - Certify the exact pushed `main` commit before creating a release tag
 ```bash
@@ -368,7 +368,7 @@ make refresh-deepswe-planner-data
 ```
 Run from: repo root
 Prerequisites: Node 22+, curl, and network access
-Notes: Downloads the official DeepSWE v1.1 trials/tasks JSON files into `.agent-layer/tmp/deepswe-planner-data/`, validates required source fields, excludes unusable trials visibly, precomputes deterministic one-run task-correlation distributions and per-task OLS calibrations, and writes the versioned browser snapshot. Review the printed source URL and SHA-256 before accepting a changed snapshot. The generated `site/static/deepswe-planner/app/data.js` intentionally exceeds the general 500 KB pre-commit limit because it is the planner's reviewable, reproducible evidence snapshot.
+Notes: Downloads the official DeepSWE v1.1 trials/tasks JSON files into the project cache, validates required source fields, excludes unusable trials visibly, precomputes deterministic one-run task-correlation distributions and per-task OLS calibrations, and writes the versioned browser snapshot. Review the printed source URL and SHA-256 before accepting a changed snapshot. The generated `site/static/deepswe-planner/app/data.js` intentionally exceeds the general 500 KB pre-commit limit because it is the planner's reviewable, reproducible evidence snapshot.
 
 - Verify the website task-correlation evidence
 ```bash

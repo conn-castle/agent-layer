@@ -1,5 +1,7 @@
 package messages
 
+import "github.com/conn-castle/agent-layer/internal/projectpaths"
+
 // CLI messages for user-facing commands and prompts.
 const (
 	// RootUse is the CLI command name.
@@ -63,8 +65,8 @@ const (
 	UpgradeFlagYes                        = "Run non-interactively when used with apply flags"
 	UpgradeFlagApplyManagedUpdates        = "Apply managed template updates without prompts"
 	UpgradeFlagApplyMemoryUpdates         = "Apply memory file updates without prompts"
-	UpgradeFlagApplyDeletions             = "Apply unknown file deletions outside .agent-layer/tmp/ (requires explicit confirmation unless combined with --yes; does NOT delete files under .agent-layer/tmp/)"
-	UpgradeFlagApplyTmpDeletions          = "Apply destructive deletion of files under .agent-layer/tmp/ (ephemeral agent run artifacts; requires explicit double confirmation unless combined with --yes)"
+	UpgradeFlagApplyDeletions             = "Apply unknown file deletions outside project-local storage and legacy .agent-layer/tmp/ (requires explicit confirmation unless combined with --yes)"
+	UpgradeFlagApplyTmpDeletions          = "Apply destructive deletion of files under legacy .agent-layer/tmp/ (may contain working files and worktrees; requires explicit double confirmation unless combined with --yes)"
 	UpgradeFlagVersion                    = "Target Agent Layer version for the upgrade (vX.Y.Z, X.Y.Z, or latest); a release CLI can target only its own version"
 	UpgradeTargetRequiresNewerCLIFmt      = "the Agent Layer CLI v%s cannot upgrade to v%s because the target release templates are not embedded in this executable; run 'al update', verify 'al --version' reports v%s or newer, then retry without --version to target that CLI's version. 'al upgrade prefetch' only caches a binary and does not update the invoking CLI"
 	UpgradeTargetOlderThanCLIFmt          = "the Agent Layer CLI v%s cannot upgrade to older v%s because only the v%s release templates are embedded in this executable; run 'al upgrade' with the v%s CLI instead, or restore an earlier upgrade snapshot with 'al upgrade rollback <snapshot-id>' (list IDs with 'al upgrade rollback --list')"
@@ -82,8 +84,8 @@ const (
 	UpgradeDeleteUnknownPromptFmt                   = "Delete %s?"
 	UpgradeDeleteUnknownTmpAllPromptFmt             = "Delete all %d file(s) under .agent-layer/tmp/?"
 	UpgradeDeleteUnknownTmpHeader                   = "Files under .agent-layer/tmp/:"
-	UpgradeDeleteUnknownTmpDestructiveConfirmPrompt = "DESTRUCTIVE: deleting .agent-layer/tmp/ permanently removes ephemeral agent run artifacts and may impact ongoing work. Are you absolutely sure?"
-	UpgradeDeleteUnknownTmpDestructiveWarningHeader = "WARNING: .agent-layer/tmp/ may contain in-progress agent artifacts (plans, reports, scratch files). Deleting them is irreversible — Agent Layer will NOT snapshot or roll them back."
+	UpgradeDeleteUnknownTmpDestructiveConfirmPrompt = "DESTRUCTIVE: deleting legacy .agent-layer/tmp/ can permanently remove retained work, run records, and Git worktrees. Are you absolutely sure?"
+	UpgradeDeleteUnknownTmpDestructiveWarningHeader = "WARNING: legacy .agent-layer/tmp/ may contain retained files, run records, and Git worktrees. Upgrade snapshots exclude these paths."
 	UpgradeSkipManagedUpdatesInfo                   = "Info: skipping managed template updates (pass --apply-managed-updates to include them)."
 	UpgradeSkipMemoryUpdatesInfo                    = "Info: skipping memory file updates (pass --apply-memory-updates to include them)."
 	UpgradeSkipDeletionsInfo                        = "Info: skipping unknown file deletions outside .agent-layer/tmp/ (pass --apply-deletions to include them)."
@@ -282,11 +284,11 @@ const (
 	ProbeLong                      = "Run a client capability probe and emit JSON. Probes confirm what a client actually does at runtime (permissions, MCP, instruction/skill visibility) so Agent Layer can detect upstream behavior drift."
 	ProbeAntigravityUse            = "agy"
 	ProbeAntigravityShort          = "Probe Antigravity capabilities"
-	ProbeAntigravityLong           = "Run `agy` against a sealed probe workspace under .agent-layer/tmp/probe-antigravity-<ts>-<suffix>/ and report observed capabilities as JSON.\n\nThe command requires `agy` on PATH and a 45s execution deadline plus bounded process cleanup (exit code 124 on timeout). On success the JSON is written to stdout; on agy exiting non-zero or returning an unreadable log the JSON is still written but the CLI exits non-zero so scripts can detect failure. Probe artifacts (workspace/, agycfg/, stdout.txt, stderr.txt) persist under .agent-layer/tmp/ and can be pruned by `al upgrade --apply-tmp-deletions`."
+	ProbeAntigravityLong           = "Run `agy` against a sealed probe workspace under " + projectpaths.Working + "/probe-antigravity-<ts>-<suffix>/ and report observed capabilities as JSON.\n\nThe command requires `agy` on PATH and a 45s execution deadline plus bounded process cleanup (exit code 124 on timeout). On success the JSON is written to stdout; on agy exiting non-zero or returning an unreadable log the JSON is still written but the CLI exits non-zero so scripts can detect failure. Probe artifacts (workspace/, agycfg/, stdout.txt, stderr.txt) persist in the probe workspace for review."
 	ProbeAntigravityNonZeroExitFmt = "antigravity probe failed (exit code %d): %s"
 	ProbeGrokUse                   = "grok"
 	ProbeGrokShort                 = "Probe Grok capabilities"
-	ProbeGrokLong                  = "Run `grok` against a sealed probe workspace under .agent-layer/tmp/probe-grok-<ts>-<suffix>/ and report observed capabilities as JSON.\n\nThe command requires `grok` on PATH and a 45s execution deadline plus bounded process cleanup (exit code 124 on timeout). On success the JSON is written to stdout; on grok exiting non-zero the JSON is still written but the CLI exits non-zero so scripts can detect failure. Probe artifacts persist under .agent-layer/tmp/ and can be pruned by `al upgrade --apply-tmp-deletions`."
+	ProbeGrokLong                  = "Run `grok` against a sealed probe workspace under " + projectpaths.Working + "/probe-grok-<ts>-<suffix>/ and report observed capabilities as JSON.\n\nThe command requires `grok` on PATH and a 45s execution deadline plus bounded process cleanup (exit code 124 on timeout). On success the JSON is written to stdout; on grok exiting non-zero the JSON is still written but the CLI exits non-zero so scripts can detect failure. Probe artifacts persist in the probe workspace for review."
 	ProbeGrokNonZeroExitFmt        = "grok probe failed (exit code %d): %s"
 
 	DispatchUse                          = "dispatch"
@@ -412,7 +414,7 @@ state, and project the results.
 Tracked imports advance to current source targets. Pinned imports stay at
 their locked commits unless the configured ref itself changed. Local edits are
 merged against the locked upstream tree and are never overwritten. A conflict
-leaves a Git workspace under .agent-layer/tmp/skill-conflicts/<name>/ for
+leaves a Git workspace under ` + projectpaths.Worktrees + `/skill-conflicts/<name>/ for
 'al skills resolve'; it fails only that skill.
 
 'al skills pull' never commits or pushes upstream.`

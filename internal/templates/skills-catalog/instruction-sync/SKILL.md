@@ -34,8 +34,7 @@ Project-owned files stay in `.agent-layer/instructions/`, each declared once in
 Imports live in `.agent-layer/instructions-imported/` with shared lifecycle state
 in `instructions.lock.json`. Edit imported files there, then sync.
 
-Legacy projects need `al upgrade` or accepted wizard changes for offline ordering.
-The wizard can adopt existing standard rules/memory through an explicit networked
-import, preserving their bytes, permissions and order atomically. None leaves
-existing content unchanged. Unsafe linked instruction sources must be made local
-before migration. Do not replace these operations with manual lock edits.
+Use `al upgrade` to convert eligible unmodified standard rules and memory files
+to Git imports. Accepted wizard changes can establish local instruction ordering
+and add missing imports. Selecting **None** preserves existing instructions.
+Use the CLI to maintain the lockfile.

@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/conn-castle/agent-layer/internal/projectpaths"
 )
 
 func TestDispatchInspectAndOutputCLIAddressInvocationID(t *testing.T) {
@@ -17,7 +19,7 @@ func TestDispatchInspectAndOutputCLIAddressInvocationID(t *testing.T) {
 		t.Fatal(err)
 	}
 	id := "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
-	dir := filepath.Join(root, ".agent-layer", "tmp", "runs", id)
+	dir := filepath.Join(root, projectpaths.Runs, id)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		t.Fatal(err)
 	}

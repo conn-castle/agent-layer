@@ -13,6 +13,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/conn-castle/agent-layer/internal/projectpaths"
+
 	"github.com/conn-castle/agent-layer/internal/launchers"
 	"github.com/conn-castle/agent-layer/internal/messages"
 )
@@ -315,9 +317,21 @@ func TestRollbackUpgradeSnapshot_RestoresAppliedSnapshot(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, "docs", "agent-layer", "BACKLOG.md"), []byte("new backlog\n"), 0o600); err != nil {
 		t.Fatalf("write current backlog: %v", err)
 	}
-	extraPath := filepath.Join(root, ".agent-layer", "tmp", "extra.txt")
+	extraPath := filepath.Join(root, ".agent-layer", "extra.txt")
 	if err := os.WriteFile(extraPath, []byte("remove me"), 0o600); err != nil {
 		t.Fatalf("write extra file: %v", err)
+	}
+	working := filepath.Join(root, projectpaths.Working)
+	if err := os.Mkdir(working, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	notes := filepath.Join(working, "notes.md")
+	if err := os.WriteFile(notes, []byte("keep me"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	legacyNotes := filepath.Join(root, projectpaths.LegacyTmp, "notes.md")
+	if err := os.WriteFile(legacyNotes, []byte("keep legacy work"), 0o600); err != nil {
+		t.Fatal(err)
 	}
 
 	permFile := uint32(0o644)
@@ -335,7 +349,15 @@ func TestRollbackUpgradeSnapshot_RestoresAppliedSnapshot(t *testing.T) {
 				ContentBase64: base64.StdEncoding.EncodeToString([]byte("1.0.0\n")),
 			},
 			{
-				Path: ".agent-layer/tmp/extra.txt",
+				Path: ".agent-layer/extra.txt",
+				Kind: upgradeSnapshotEntryKindAbsent,
+			},
+			{
+				Path: projectpaths.LegacyTmp + "/notes.md",
+				Kind: upgradeSnapshotEntryKindAbsent,
+			},
+			{
+				Path: projectpaths.Working,
 				Kind: upgradeSnapshotEntryKindAbsent,
 			},
 			{
@@ -376,6 +398,11 @@ func TestRollbackUpgradeSnapshot_RestoresAppliedSnapshot(t *testing.T) {
 	}
 	if _, err := os.Stat(extraPath); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("expected extra file removed, stat err = %v", err)
+	}
+	for _, path := range []string{notes, legacyNotes} {
+		if _, err := os.Stat(path); err != nil {
+			t.Fatalf("older snapshot removed retained work at %s: %v", path, err)
+		}
 	}
 
 	restoredSnapshot := latestSnapshot(t, root)
@@ -3196,16 +3223,17 @@ func TestUpgradeSnapshotTargetPaths_ExcludesAgentLayerTmp(t *testing.T) {
 	}
 }
 
-func TestCaptureUpgradeSnapshotDirectory_DefensivelySkipsTmpDescendants(t *testing.T) {
-	// Belt-and-braces: even if a caller passes a target whose subtree happens
-	// to contain `.agent-layer/tmp/`, the recursive walk must skip the tmp
-	// subtree rather than base64-encoding ephemeral run artifacts.
+func TestUpgradeScansSkipLocalStorage(t *testing.T) {
 	root := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(root, ".agent-layer", "tmp", "runs"), 0o700); err != nil {
-		t.Fatalf("mkdir tmp/runs: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(root, ".agent-layer", "tmp", "runs", "huge.log"), []byte("payload"), 0o600); err != nil {
-		t.Fatalf("write tmp file: %v", err)
+	protected := []string{projectpaths.Working, projectpaths.Cache, projectpaths.Worktrees, projectpaths.Runs}
+	for _, directory := range append(append([]string(nil), protected...), ".agent-layer/tmp/runs") {
+		dir := filepath.Join(root, directory)
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "payload"), []byte("payload"), 0o600); err != nil {
+			t.Fatal(err)
+		}
 	}
 	keepFile := filepath.Join(root, ".agent-layer", "templates", "keep.txt")
 	if err := os.MkdirAll(filepath.Dir(keepFile), 0o700); err != nil {
@@ -3216,13 +3244,31 @@ func TestCaptureUpgradeSnapshotDirectory_DefensivelySkipsTmpDescendants(t *testi
 	}
 
 	inst := &installer{root: root, sys: RealSystem{}}
+	unknowns, err := inst.scanCurrentUnknowns()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range unknowns {
+		if isLocalStoragePath(inst.relativePath(path)) {
+			t.Fatalf("upgrade would offer to delete local storage %q", path)
+		}
+	}
+	effects, err := inst.planMigrationPathEffects(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for path := range effects.tree {
+		if snapshotExcludesPath(path) {
+			t.Fatalf("upgrade plan scanned local storage %q", path)
+		}
+	}
 	entries := make(map[string]upgradeSnapshotEntry)
 	if err := inst.captureUpgradeSnapshotDirectory(filepath.Join(root, ".agent-layer"), entries); err != nil {
 		t.Fatalf("captureUpgradeSnapshotDirectory: %v", err)
 	}
 	for path := range entries {
-		if path == ".agent-layer/tmp" || strings.HasPrefix(path, ".agent-layer/tmp/") {
-			t.Fatalf("snapshot must not contain tmp path %q (entries: %v)", path, entries)
+		if snapshotExcludesPath(path) {
+			t.Fatalf("snapshot contains local storage %q", path)
 		}
 	}
 	if _, ok := entries[".agent-layer/templates/keep.txt"]; !ok {
@@ -3261,7 +3307,7 @@ func TestHandleUnknownsTargetPaths_ExcludesAgentLayerTmp(t *testing.T) {
 	}
 }
 
-func TestIsUnderAgentLayerTmp(t *testing.T) {
+func TestSnapshotExclusionBoundaries(t *testing.T) {
 	root := filepath.Join(string(os.PathSeparator), "repo")
 	inst := &installer{root: root}
 	tmp := filepath.Join(root, ".agent-layer", "tmp")
@@ -3273,13 +3319,17 @@ func TestIsUnderAgentLayerTmp(t *testing.T) {
 		{filepath.Join(tmp, "file.md"), true},
 		{filepath.Join(tmp, "runs", "deep", "report.md"), true},
 		{filepath.Join(root, ".agent-layer", "tmp-other"), false},
+		{filepath.Join(root, projectpaths.Working, "report.md"), true},
+		{filepath.Join(root, projectpaths.Working+"-other", "report.md"), false},
+		{filepath.Join(root, projectpaths.Runs, "run.json"), true},
+		{filepath.Join(root, projectpaths.Runs+"-other", "run.json"), false},
 		{filepath.Join(root, ".agent-layer", "templates"), false},
 		{filepath.Join(root, "tmp"), false},
 		{root, false},
 	}
 	for _, tc := range tests {
-		if got := inst.isUnderAgentLayerTmp(tc.path); got != tc.want {
-			t.Errorf("isUnderAgentLayerTmp(%q) = %v, want %v", tc.path, got, tc.want)
+		if got := inst.isSnapshotExcluded(tc.path); got != tc.want {
+			t.Errorf("isSnapshotExcluded(%q) = %v, want %v", tc.path, got, tc.want)
 		}
 	}
 }

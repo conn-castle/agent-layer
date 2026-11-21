@@ -409,9 +409,12 @@ func RunWorker(root string, runID string, gate io.Reader) error {
 		}
 		return failWorkerBeforeExecution(root, runID, &preStartFailure{err: cause})
 	}
+	if err := parseUUID(runID); err != nil {
+		return exitError(ExitUsage, "invalid dispatch worker run ID")
+	}
 	versiondispatch.RetryRunningImageLease()
 	var request workerRequest
-	requestPath := filepath.Join(dispatchRunPath(root), runID, workerRequestFile)
+	requestPath := filepath.Join(filepathForRun(root, runID), workerRequestFile)
 	if err := readJSON(requestPath, &request); err != nil {
 		return failWorkerBeforeExecution(root, runID, wrapExitError(ExitConfig, "read dispatch worker request", err))
 	}

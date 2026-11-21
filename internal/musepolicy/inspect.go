@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"github.com/conn-castle/agent-layer/internal/projectpaths"
 )
 
 type policyDocument struct {
@@ -167,7 +169,11 @@ func Inspect(ctx context.Context, directory, currentRoot string) (Inspection, er
 			continue
 		}
 		path := filepath.ToSlash(root)
-		if strings.Contains(path, "/.agent-layer/tmp/") || strings.Contains(path, "/.codex/worktrees/") {
+		if strings.Contains(path, "/"+projectpaths.LegacyTmp+"/") ||
+			strings.Contains(path, "/"+projectpaths.Working+"/") ||
+			strings.Contains(path, "/"+projectpaths.Worktrees+"/") ||
+			strings.Contains(path, "/"+projectpaths.Cache+"/") ||
+			strings.Contains(path, "/.codex/worktrees/") || strings.Contains(path, "/.claude/worktrees/") {
 			result.Nested = append(result.Nested, entry)
 			continue
 		}

@@ -21,6 +21,7 @@ import (
 
 	"github.com/conn-castle/agent-layer/internal/fsutil"
 	"github.com/conn-castle/agent-layer/internal/messages"
+	"github.com/conn-castle/agent-layer/internal/projectpaths"
 )
 
 const (
@@ -142,7 +143,7 @@ func dispatchStatePath(root string) string {
 }
 
 func dispatchRunPath(root string) string {
-	return filepath.Join(root, ".agent-layer", "tmp", "runs")
+	return filepath.Join(root, projectpaths.Runs)
 }
 
 func sessionPath(root string, name string) (string, error) {
@@ -715,28 +716,34 @@ func pruneDispatchEvidence(root string, now time.Time, retention time.Duration) 
 		}
 	}
 	cutoff := now.UTC().Add(-retention)
-	entries, err := os.ReadDir(dispatchRunPath(root))
-	if errors.Is(err, fs.ErrNotExist) {
-		return pruneLegacyFanoutState(root)
-	}
-	if err != nil {
-		return wrapExitError(ExitConfig, "list dispatch evidence for retention", err)
-	}
-	for _, entry := range entries {
-		if !entry.IsDir() || parseUUID(entry.Name()) != nil {
+	for _, runsDir := range []string{dispatchRunPath(root), filepath.Join(root, projectpaths.LegacyRuns)} {
+		entries, err := os.ReadDir(runsDir)
+		if errors.Is(err, fs.ErrNotExist) {
 			continue
 		}
-		record, loadErr := loadRunRecord(root, entry.Name())
-		if loadErr == nil && record.State == dispatchStateReserved {
-			if record, loadErr = retireExpiredReservation(root, record.ID, now.UTC()); loadErr != nil {
-				return loadErr
+		if err != nil {
+			return wrapExitError(ExitConfig, "list dispatch evidence for retention", err)
+		}
+		for _, entry := range entries {
+			if !entry.IsDir() || parseUUID(entry.Name()) != nil {
+				continue
 			}
-		}
-		if loadErr != nil || current[entry.Name()] || !record.TerminationConfirmed || !terminalDispatchState(record.State) || record.CompletedAt == nil || !record.CompletedAt.Before(cutoff) {
-			continue
-		}
-		if err := os.RemoveAll(filepath.Join(dispatchRunPath(root), entry.Name())); err != nil {
-			return wrapExitError(ExitConfig, "prune expired dispatch evidence", err)
+			dir := filepath.Join(runsDir, entry.Name())
+			if filepathForRun(root, entry.Name()) != dir {
+				continue
+			}
+			record, loadErr := loadRunRecord(root, entry.Name())
+			if loadErr == nil && record.State == dispatchStateReserved {
+				if record, loadErr = retireExpiredReservation(root, record.ID, now.UTC()); loadErr != nil {
+					return loadErr
+				}
+			}
+			if loadErr != nil || current[entry.Name()] || !record.TerminationConfirmed || !terminalDispatchState(record.State) || record.CompletedAt == nil || !record.CompletedAt.Before(cutoff) {
+				continue
+			}
+			if err := os.RemoveAll(dir); err != nil {
+				return wrapExitError(ExitConfig, "prune expired dispatch evidence", err)
+			}
 		}
 	}
 	return pruneLegacyFanoutState(root)
@@ -747,7 +754,7 @@ func pruneDispatchEvidence(root string, now time.Time, retention time.Duration) 
 // version, their synchronous coordinators are gone, and nothing can read or
 // change them again.
 func pruneLegacyFanoutState(root string) error {
-	if err := os.RemoveAll(filepath.Join(root, ".agent-layer", "tmp", "fanouts")); err != nil {
+	if err := os.RemoveAll(filepath.Join(root, projectpaths.LegacyTmp, "fanouts")); err != nil {
 		return wrapExitError(ExitConfig, "remove retired fanout state", err)
 	}
 	return nil
@@ -971,7 +978,7 @@ func loadRunRecord(root string, id string) (RunRecord, error) {
 	if err := parseUUID(id); err != nil {
 		return RunRecord{}, exitError(ExitUsage, fmt.Sprintf("dispatch run ID %q is invalid", id))
 	}
-	dir := filepath.Join(dispatchRunPath(root), id)
+	dir := filepathForRun(root, id)
 	var record RunRecord
 	if err := readJSON(filepath.Join(dir, dispatchRunFile), &record); err != nil {
 		if errors.Is(err, fs.ErrNotExist) {

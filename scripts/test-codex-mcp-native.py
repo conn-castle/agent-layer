@@ -16,6 +16,8 @@ import threading
 import time
 
 sys.dont_write_bytecode = True
+
+from project_paths import WORKING
 ROOT = Path(__file__).resolve().parents[1]
 spec = importlib.util.spec_from_file_location("fixture", ROOT / "scripts/test-muse-native.py")
 f = importlib.util.module_from_spec(spec)
@@ -87,7 +89,7 @@ def main():
     parser.add_argument("--codex", default="codex")
     args = parser.parse_args()
     al = args.al.resolve(strict=True)
-    output = ROOT / ".agent-layer/tmp/codex-mcp-native"
+    output = ROOT / WORKING / "codex-mcp-native"
     output.mkdir(parents=True, exist_ok=True)
     case = Path(tempfile.mkdtemp(dir=output))
     home, work, bin_dir = (case / name for name in ("home", "workspace", "bin"))

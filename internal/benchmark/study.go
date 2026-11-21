@@ -18,6 +18,8 @@ import (
 	"time"
 
 	"github.com/pelletier/go-toml/v2"
+
+	"github.com/conn-castle/agent-layer/internal/projectpaths"
 )
 
 // StudyOptions configures the single public DeepSWE benchmark workflow.
@@ -1741,7 +1743,7 @@ func prepareStudy(options StudyOptions) (preparedStudy, error) {
 	if strings.TrimSpace(document.Selection) == "" || len(document.Experiments) == 0 {
 		return preparedStudy{}, fmt.Errorf("benchmark study requires selection and one or more experiments")
 	}
-	stageParent := filepath.Join(options.RepoRoot, ".agent-layer", "tmp")
+	stageParent := filepath.Join(options.RepoRoot, projectpaths.Cache)
 	if err := os.MkdirAll(stageParent, 0o700); err != nil {
 		return preparedStudy{}, fmt.Errorf("create study input snapshot root: %w", err)
 	}

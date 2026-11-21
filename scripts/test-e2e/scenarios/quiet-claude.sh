@@ -12,7 +12,7 @@ run_scenario_quiet_claude() {
 
   install_mock_claude "$repo_dir"
 
-  local outfile="$repo_dir/.agent-layer/tmp/quiet-out"
+  local outfile="$repo_dir/$AL_PROJECT_CACHE/quiet-out"
   mkdir -p "$(dirname "$outfile")"
 
   local rc=0

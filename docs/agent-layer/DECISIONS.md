@@ -32,11 +32,6 @@ Record otherwise-lost rationale that materially constrains future work. Current 
     Reason: The user works in parallel with agents, making concurrent changes a normal operating condition.
     Tradeoffs: Increases risk of edit conflicts if both user and agent modify the same file simultaneously; relies on git for resolution.
 
-- Decision 2026-01-25 7e2c9f4: Agent-only workflow artifacts live in `.agent-layer/tmp`
-    Decision: Workflow artifacts are written to `.agent-layer/tmp` using a unique per-invocation filename: `.agent-layer/tmp/<workflow>.<run-id>.<type>.md` with `run-id = YYYYMMDD-HHMMSS-<short-rand>`; no path overrides.
-    Reason: Keeps artifacts invisible to humans while avoiding collisions for concurrent agents without relying on env vars or per-chat IDs.
-    Tradeoffs: Files can accumulate until manually cleaned; agents must echo paths in chat to retain context.
-
 - Decision 2026-02-10 p1c-init-upgrade-ownership: Init scaffolding only; user-owned config/env; agent-owned `.gitignore`
     Decision: `al init` is one-time scaffolding (errors if `.agent-layer/` exists); upgrades/repairs go through `al upgrade plan` + `al upgrade`. `.env` and `config.toml` are user-owned and never overwritten. `.agent-layer/.gitignore` is agent-owned, always overwritten, and excluded from upgrade diffs.
     Reason: Avoid clobbering user config; reduce upgrade-plan noise; simplify init semantics.
@@ -321,3 +316,8 @@ Record otherwise-lost rationale that materially constrains future work. Current 
     Decision: Same-root development MCP launches snapshot the selected running executable using the existing images cache (#530). After startup verification, rebuilds keep serving the startup image while the selected dev path remains a regular executable. Options reports source changes or unavailability without refusing; start/continue perform an early usability check, and all sync paths recheck under the project lock before outputs; launcher and HerdR construction reject unusable sources at projection time instead of persisting them or falling back to global al. Options uses the same usability predicate and explains provider refusal, preventing broken projections after operator restoration. Startup provenance failures and changes to the executing snapshot remain fail-closed; failed snapshots retain in-place replacement refusal.
     Reason: Development rebuilds should not interrupt connected servers, and immutable paths let macOS workers execute the server's original image after replacement. Dev handoffs preserve all environment entries instead of exporting shim/installed-entry markers, because those affect descendant projection and release selection.
     Tradeoffs: Startup hashes both the snapshot and selected dev executable to verify provenance; later calls compare file identity, and start/continue also check source usability with stat. Developers reconnect to run new code. Snapshots use the same lifetime leases and 24-hour grace since lease acquisition as pinned release images (#525); legacy entries require manual cleanup after all `agent-layer` MCP servers and dispatch workers stop.
+
+- Decision 2026-11-21 local-storage: Project instructions own storage conventions
+    Decision: Shared rules define working, cache, and worktree locations. Reusable skills specify their outputs and rely on project instructions for placement. Users decide where to move existing files and worktrees.
+    Reason: Hard-coded skill paths compete with project conventions. The legacy tmp directory mixed handoffs and recovery evidence with disposable data and Git worktrees, including worktrees registered to other repositories.
+    Tradeoffs: Existing run and conflict readers support both layouts, and the legacy directory can stay in place during adoption.

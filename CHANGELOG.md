@@ -3,6 +3,9 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+### Changed
+- Agent Layer creates `.agent-layer/working/` for retained work, `.agent-layer/cache/` for disposable outputs, and `.agent-layer/worktrees/` for isolated checkouts. Upgrade cleanup, snapshots, and rollback skip these directories. New run records use `.agent-layer/state/runs/`. Existing run records and import conflict workspaces still work from legacy `.agent-layer/tmp/`.
+
 ## v1.3.0 - 2026-11-15
 
 ### Added

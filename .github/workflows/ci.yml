@@ -25,6 +25,8 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
+      - name: Check generated project paths
+        run: make check-project-paths
       - name: Cache pinned tools
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -110,10 +112,13 @@ jobs:
           status = pty.spawn(["go", "test", "-race", "./cmd/al", "-run", "^TestUpgradePromptCancellation", "-count=1"])
           raise SystemExit(os.waitstatus_to_exitcode(status))
           PY
+      - name: Resolve native Muse paths
+        id: muse-paths
+        run: make --no-print-directory -s native-muse-paths >> "$GITHUB_OUTPUT"
       - name: Cache pinned native Muse
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: .agent-layer/tmp/muse-native/bin
+          path: ${{ steps.muse-paths.outputs.cache }}
           key: native-muse-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/test-muse-native/release.json') }}
       - name: Test real Muse with local provider and MCP fixtures
         run: make test-muse-native
@@ -124,14 +129,14 @@ jobs:
           name: native-muse-${{ runner.os }}-${{ runner.arch }}
           include-hidden-files: true
           path: |
-            .agent-layer/tmp/muse-native/runs/*/*.json
-            .agent-layer/tmp/muse-native/runs/*/*.jsonl
-            .agent-layer/tmp/muse-native/runs/*/*.log
-            .agent-layer/tmp/muse-native/runs/*/*.txt
-            .agent-layer/tmp/muse-native/*/*.json
-            .agent-layer/tmp/muse-native/*/*.jsonl
-            .agent-layer/tmp/muse-native/*/*.log
-            .agent-layer/tmp/muse-native/*/*.txt
+            ${{ steps.muse-paths.outputs.output }}/runs/*/*.json
+            ${{ steps.muse-paths.outputs.output }}/runs/*/*.jsonl
+            ${{ steps.muse-paths.outputs.output }}/runs/*/*.log
+            ${{ steps.muse-paths.outputs.output }}/runs/*/*.txt
+            ${{ steps.muse-paths.outputs.output }}/*/*.json
+            ${{ steps.muse-paths.outputs.output }}/*/*.jsonl
+            ${{ steps.muse-paths.outputs.output }}/*/*.log
+            ${{ steps.muse-paths.outputs.output }}/*/*.txt
 
   website-build:
     runs-on: ubuntu-latest

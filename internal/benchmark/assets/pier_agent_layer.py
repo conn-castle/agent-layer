@@ -42,8 +42,12 @@ REMOTE_CLAUDE_MCP_PREFLIGHT = "/tmp/agent-layer-claude-mcp-preflight.txt"
 REMOTE_ANTIGRAVITY_MCP_PREFLIGHT = "/tmp/agent-layer-antigravity-mcp-preflight.json"
 REMOTE_GROK_MCP_PREFLIGHT = "/tmp/agent-layer-grok-mcp-preflight.json"
 REMOTE_DISPATCH_OPTIONS_PREFLIGHT = "/tmp/agent-layer-dispatch-options-preflight.json"
+# BEGIN GENERATED PATHS
+REMOTE_WORKING = f"{REMOTE_WORKSPACE}/.agent-layer/working"
+REMOTE_RUN_DIRS = f"{REMOTE_WORKSPACE}/.agent-layer/state/runs {REMOTE_WORKSPACE}/.agent-layer/tmp/runs"
+# END GENERATED PATHS
 # "task" is already a derived plan artifact name in the workflow skills.
-REMOTE_SPEC_FILE = f"{REMOTE_WORKSPACE}/.agent-layer/tmp/spec.md"
+REMOTE_SPEC_FILE = f"{REMOTE_WORKING}/spec.md"
 # Untracked paths the task image already carried before the agent ran. They are
 # not part of the base commit, so sweeping them into the submitted patch makes
 # the patch create files the verifier already has, and `git apply` then fails.
@@ -376,7 +380,7 @@ class _AgentLayerTreatment:
                 str(EnvironmentPaths.agent_dir / "sessions" / ".credentials.json"),
             )
         install = (
-            f"mkdir -p {REMOTE_WORKSPACE}/docs {REMOTE_WORKSPACE}/.agent-layer/tmp "
+            f"mkdir -p {REMOTE_WORKSPACE}/docs {REMOTE_WORKING} "
             f"&& test ! -f {REMOTE_BUNDLE}/AGENTS.md || cp -a {REMOTE_BUNDLE}/AGENTS.md {REMOTE_WORKSPACE}/AGENTS.md "
             f"&& test ! -d {REMOTE_BUNDLE}/docs/agent-layer || cp -a {REMOTE_BUNDLE}/docs/agent-layer {REMOTE_WORKSPACE}/docs/agent-layer "
             f"&& (git -C {REMOTE_WORKSPACE} show-ref --verify --quiet refs/heads/main || "
@@ -677,12 +681,12 @@ for s in json.load(open(p, encoding="utf-8")).get("servers", []):
         await self.exec_as_agent(
             environment,
             command=(
-                f"if test -d {REMOTE_WORKSPACE}/.agent-layer/tmp/runs; then "
-                f"find {REMOTE_WORKSPACE}/.agent-layer/tmp/runs -mindepth 2 -maxdepth 2 "
+                f"for runs in {REMOTE_RUN_DIRS}; do test -d \"$runs\" || continue; "
+                "find \"$runs\" -mindepth 2 -maxdepth 2 "
                 "-name dispatch.json -exec sh -c '"
                 "test \"$(jq -r .state \"$1\")\" != running || "
                 "al dispatch cancel \"$(jq -r .name \"$1\")\" >/dev/null"
-                "' sh {} \\;; fi"
+                "' sh {} \\;; done"
             ),
         )
         if self._treatment_agent == "codex":
@@ -697,15 +701,15 @@ for s in json.load(open(p, encoding="utf-8")).get("servers", []):
                 command=(
                     "set -eu; "
                     f"sessions={EnvironmentPaths.agent_dir / 'sessions'}; "
-                    f"runs={REMOTE_WORKSPACE}/.agent-layer/tmp/runs; "
                     "ids=/tmp/agent-layer-codex-dispatch-session-ids; "
                     f"if test -d {REMOTE_PROJECT_CODEX_HOME}/sessions; then "
                     "mkdir -p \"$sessions\"; "
                     f"cp -a {REMOTE_PROJECT_CODEX_HOME}/sessions/. \"$sessions\"/; fi; "
-                    "if test -d \"$sessions\" && test -d \"$runs\"; then "
+                    "if test -d \"$sessions\"; then "
+                    f"for runs in {REMOTE_RUN_DIRS}; do test -d \"$runs\" || continue; "
                     "find \"$runs\" -mindepth 2 -maxdepth 2 -name dispatch.json "
                     "-exec jq -r '.provider_session_id // empty' {} + "
-                    "> \"$ids\"; "
+                    "; done > \"$ids\"; "
                     "sort -u \"$ids\" -o \"$ids\"; "
                     "while IFS= read -r id; do "
                     "test -n \"$id\" || continue; "
@@ -737,12 +741,12 @@ for s in json.load(open(p, encoding="utf-8")).get("servers", []):
                 f"cp {REMOTE_GROK_MCP_PREFLIGHT} {evidence_dir}/grok-mcp-preflight.json; "
                 f"test ! -f {REMOTE_DISPATCH_OPTIONS_PREFLIGHT} || "
                 f"cp {REMOTE_DISPATCH_OPTIONS_PREFLIGHT} {evidence_dir}/dispatch-options-preflight.json; "
-                f"if test -d {REMOTE_WORKSPACE}/.agent-layer/tmp/runs; then "
-                f"find {REMOTE_WORKSPACE}/.agent-layer/tmp/runs -mindepth 2 -maxdepth 2 "
+                f"for runs in {REMOTE_RUN_DIRS}; do test -d \"$runs\" || continue; "
+                "find \"$runs\" -mindepth 2 -maxdepth 2 "
                 "-name dispatch.json -exec sh -c '"
                 f"d=$(dirname \"$1\"); id=$(basename \"$d\"); cp \"$1\" {evidence_dir}/\"$id\".json; "
                 f"test ! -f \"$d/provider.stdout\" || cp \"$d/provider.stdout\" {evidence_dir}/\"$id\".stdout"
-                "' sh {} \\;; fi"
+                "' sh {} \\;; done"
             ),
         )
         await self.exec_as_agent(
@@ -774,7 +778,7 @@ for s in json.load(open(p, encoding="utf-8")).get("servers", []):
         await self.exec_as_agent(
             environment,
             command=(
-                f"mkdir -p {REMOTE_WORKSPACE}/.agent-layer/tmp && "
+                f"mkdir -p {REMOTE_WORKING} && "
                 f"printf '%s' '{encoded}' | base64 -d > {REMOTE_SPEC_FILE}"
             ),
         )

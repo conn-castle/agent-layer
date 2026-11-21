@@ -17,6 +17,7 @@ import (
 	"github.com/conn-castle/agent-layer/internal/fsutil"
 	"github.com/conn-castle/agent-layer/internal/launchers"
 	"github.com/conn-castle/agent-layer/internal/messages"
+	"github.com/conn-castle/agent-layer/internal/projectpaths"
 	"github.com/conn-castle/agent-layer/internal/templates"
 )
 
@@ -388,6 +389,9 @@ func (inst *installer) captureUpgradeSnapshotEntries() ([]upgradeSnapshotEntry, 
 }
 
 func (inst *installer) captureUpgradeSnapshotTarget(target string, entries map[string]upgradeSnapshotEntry) error {
+	if inst.isSnapshotExcluded(target) {
+		return nil
+	}
 	info, err := inst.sys.Lstat(target)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -424,10 +428,7 @@ func (inst *installer) captureUpgradeSnapshotDirectory(rootPath string, entries 
 		if err != nil {
 			return err
 		}
-		// Defense-in-depth: refuse to capture anything under .agent-layer/tmp/
-		// even if a caller mistakenly passes a target whose subtree contains
-		// it. Skipping the directory itself stops descent.
-		if inst.isUnderAgentLayerTmp(path) {
+		if inst.isSnapshotExcluded(path) {
 			if dirEntry.IsDir() {
 				return filepath.SkipDir
 			}
@@ -573,7 +574,7 @@ func (inst *installer) handleUnknownsTargetPaths() []string {
 	filtered := make([]string, 0, len(inst.unknowns)+1)
 	filtered = append(filtered, inst.upgradeKeepListPath())
 	for _, path := range inst.unknowns {
-		if inst.isUnderAgentLayerTmp(path) {
+		if inst.isSnapshotExcluded(path) {
 			continue
 		}
 		filtered = append(filtered, path)
@@ -588,16 +589,12 @@ func (inst *installer) upgradeSnapshotTargetPaths(catalogDirs []templateDir) []s
 	// restored files and skip migrations or misclassify templates. Only the file
 	// is captured: the state directory also holds upgrade-snapshots/.
 	paths := []string{filepath.Join(inst.root, filepath.FromSlash(baselineStateRelPath))}
-	// Every non-tmp step rollback target must be snapshotted. Otherwise an
+	// Every managed step rollback target must be snapshotted. Otherwise an
 	// automatic rollback would RemoveAll a pre-existing path with no snapshot
 	// entry to restore it.
 	for _, step := range inst.upgrades().upgradeTransactionSteps(catalogDirs) {
 		for _, path := range step.rollbackTargets() {
-			// `.agent-layer/tmp/` holds ephemeral agent run artifacts (plans,
-			// reports, scratch dumps). Snapshotting it would balloon snapshot
-			// size and is not needed for rollback because tmp deletion now
-			// requires explicit, double-confirmed user consent.
-			if !inst.isUnderAgentLayerTmp(path) {
+			if !inst.isSnapshotExcluded(path) {
 				paths = append(paths, path)
 			}
 		}
@@ -605,16 +602,27 @@ func (inst *installer) upgradeSnapshotTargetPaths(catalogDirs []templateDir) []s
 	return uniqueNormalizedPaths(paths)
 }
 
-// isUnderAgentLayerTmp reports whether path is the `.agent-layer/tmp` root or
-// a descendant. Path is cleaned internally so callers may pass any form.
 func (inst *installer) agentLayerTmpDir() string {
-	return filepath.Join(inst.root, ".agent-layer", "tmp")
+	return filepath.Join(inst.root, projectpaths.LegacyTmp)
 }
 
-func (inst *installer) isUnderAgentLayerTmp(path string) bool {
-	tmp := inst.agentLayerTmpDir()
-	clean := filepath.Clean(path)
-	return clean == tmp || strings.HasPrefix(clean, tmp+string(os.PathSeparator))
+func (inst *installer) isSnapshotExcluded(path string) bool {
+	return snapshotExcludesPath(inst.relativePath(path))
+}
+
+var localStorageDirs = [...]string{projectpaths.Working, projectpaths.Cache, projectpaths.Worktrees, projectpaths.Runs}
+
+func isLocalStoragePath(path string) bool {
+	for _, directory := range localStorageDirs {
+		if projectpaths.Contains(directory, path) {
+			return true
+		}
+	}
+	return false
+}
+
+func snapshotExcludesPath(path string) bool {
+	return isLocalStoragePath(path) || projectpaths.Contains(projectpaths.LegacyTmp, path)
 }
 
 func uniqueNormalizedPaths(paths []string) []string {

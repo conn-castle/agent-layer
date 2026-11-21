@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/conn-castle/agent-layer/internal/projectpaths"
 )
 
 func TestExplicitDevelopmentEnvironmentPreservesProvenance(t *testing.T) {
@@ -44,7 +46,7 @@ func TestExplicitDevelopmentEnvironmentPreservesProvenance(t *testing.T) {
 
 func TestDevelopmentSelectionIsScopedToExplicitRoot(t *testing.T) {
 	a, b := t.TempDir(), t.TempDir()
-	source := filepath.Join(a, ".agent-layer", "tmp", "dev-bin", "al")
+	source := filepath.Join(a, projectpaths.Cache, "dev-bin", "al")
 	t.Setenv(EnvDevelopmentExecutable, source)
 	t.Setenv(EnvDevelopmentBypassVersionDispatch, "1")
 	t.Setenv(EnvDevelopmentSourceRoot, a)

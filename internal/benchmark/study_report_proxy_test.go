@@ -414,7 +414,7 @@ func TestCastleForgeGrok46PublishedProxyReport(t *testing.T) {
 	if selection.SchemaVersion != matrixSelectionSchemaVersion {
 		t.Fatalf("selection schema = %d", selection.SchemaVersion)
 	}
-	raw, err := os.ReadFile(filepath.Join(studyDir, "study-manifest.json")) // #nosec G304 -- local optional snapshot under .agent-layer/tmp.
+	raw, err := os.ReadFile(filepath.Join(studyDir, "study-manifest.json")) // #nosec G304 -- local optional study snapshot.
 	if err != nil {
 		t.Fatal(err)
 	}

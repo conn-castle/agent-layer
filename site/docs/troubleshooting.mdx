@@ -91,7 +91,7 @@ If sync reports that an MCP server in the generated root `.mcp.json` excludes VS
 
 ### Grok setup and diagnostics
 
-Agent Layer is tested against Grok Build CLI `1.0.5` or newer. Enable Grok with `[agents.grok] enabled = true`, then run `al doctor`: a missing or older `grok` binary is reported as a warning with the tested minimum version. Run `al probe grok` for a contained end-to-end check of Grok's streaming JSON and MCP tool support. The probe prints a JSON result, has a 45-second timeout, and keeps a forensic workspace under `.agent-layer/tmp/probe-grok-TIMESTAMP-SUFFIX/`; clean retained probe artifacts with `al upgrade --apply-tmp-deletions` after reviewing them.
+Agent Layer is tested against Grok Build CLI `1.0.5` or newer. Enable Grok with `[agents.grok] enabled = true`, then run `al doctor`: a missing or older `grok` binary is reported as a warning with the tested minimum version. Run `al probe grok` for a contained end-to-end check of Grok's streaming JSON and MCP tool support. The probe prints a JSON result, has a 45-second timeout, and keeps a forensic workspace named `probe-grok-TIMESTAMP-SUFFIX/` in the project’s working directory; remove the individual workspace when you are done with it.
 
 The credential-bearing `.grok-config/` home must be a real directory rather than a symlink. Agent Layer creates it with owner-only permissions and tightens an existing home that is too open; it still refuses to write through a symlink. Agent Layer preserves existing entries in `.grok-config/trusted_folders.toml` and adds trust for the current repository so project hooks, MCP servers, and LSP configuration can load.
 
@@ -236,7 +236,7 @@ If `mcp_runtime_discovery` is still false, the generated config exists but Antig
 
 ### `al agy` fails to launch or `agy` is not found
 
-If `al agy` exits with `antigravity launcher requires \`agy\` on PATH`, install Antigravity from [antigravity.google](https://antigravity.google) and ensure the `agy` binary is on your `PATH`. Run `al probe agy` as a single-step diagnostic: it confirms `agy` is discoverable, captures the version, and reports the observed capability matrix. The probe writes a forensic workspace under `.agent-layer/tmp/probe-antigravity-TIMESTAMP-SUFFIX/` which you can attach to a bug report; `al upgrade --apply-tmp-deletions` cleans these up.
+If `al agy` exits with `antigravity launcher requires \`agy\` on PATH`, install Antigravity from [antigravity.google](https://antigravity.google) and ensure the `agy` binary is on your `PATH`. Run `al probe agy` as a single-step diagnostic: it confirms `agy` is discoverable, captures the version, and reports the observed capability matrix. The probe writes a forensic workspace named `probe-antigravity-TIMESTAMP-SUFFIX/` in the project’s working directory which you can attach to a bug report; Remove the individual workspace when you are done with it.
 
 `agy` keeps its auth, logs, and conversations in `.agy/`, which must be a real directory rather than a symlink. Agent Layer creates it with owner-only permissions and tightens an existing `.agy/` that is too open. If `al sync` or `al agy` rejects a symlinked `.agy/`, replace the link with a real directory.
 

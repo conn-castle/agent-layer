@@ -13,7 +13,7 @@ run_scenario_upgrade_empty_unknown() {
   setup_old_version_via_binary "$repo_dir" "$E2E_OLDEST_BINARY"
   assert_al_version_content "$repo_dir" "$E2E_OLDEST_VERSION"
 
-  # Create an empty file in .agent-layer/tmp - this should be captured in snapshot
+  # Create an empty file in .agent-layer/tmp - this is excluded from the snapshot
   # and should not cause validation error even though it's empty.
   mkdir -p "$repo_dir/.agent-layer/tmp"
   touch "$repo_dir/.agent-layer/tmp/empty-unknown.txt"

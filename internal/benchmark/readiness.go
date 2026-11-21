@@ -16,6 +16,8 @@ import (
 	"strings"
 
 	"github.com/pelletier/go-toml/v2"
+
+	"github.com/conn-castle/agent-layer/internal/projectpaths"
 )
 
 const (
@@ -230,7 +232,7 @@ func certifyTaskEnvironment(ctx context.Context, repoRoot, checkout, task, taskC
 	} else if !errors.Is(readErr, os.ErrNotExist) {
 		return "", fmt.Errorf("read benchmark task %s environment certification: %w", task, readErr)
 	}
-	stageRoot := filepath.Join(repoRoot, ".agent-layer", "tmp")
+	stageRoot := filepath.Join(repoRoot, projectpaths.Cache)
 	if err := os.MkdirAll(stageRoot, 0o700); err != nil {
 		return "", fmt.Errorf("create task readiness staging root: %w", err)
 	}
@@ -263,7 +265,7 @@ func ensureTaskAgentImage(ctx context.Context, repoRoot, task string, readiness 
 	if len(readiness.overlay) == 0 {
 		return readiness.agentImage, nil
 	}
-	stageRoot := filepath.Join(repoRoot, ".agent-layer", "tmp")
+	stageRoot := filepath.Join(repoRoot, projectpaths.Cache)
 	if err := os.MkdirAll(stageRoot, 0o700); err != nil {
 		return "", fmt.Errorf("create benchmark task %s agent image staging root: %w", task, err)
 	}

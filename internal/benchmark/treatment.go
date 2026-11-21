@@ -25,6 +25,7 @@ import (
 	alconfig "github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/fsutil"
 	"github.com/conn-castle/agent-layer/internal/gitenv"
+	"github.com/conn-castle/agent-layer/internal/projectpaths"
 	"github.com/conn-castle/agent-layer/internal/sync"
 	"github.com/conn-castle/agent-layer/internal/update"
 	"github.com/conn-castle/agent-layer/internal/version"
@@ -290,7 +291,7 @@ func BuildStudyTreatmentBundle(repoRoot string, experiment preparedStudyExperime
 	if experiment.Skills != "" {
 		mode = TreatmentInstructionsAndSkills
 	}
-	stageParent := filepath.Join(repoRoot, ".agent-layer", "tmp")
+	stageParent := filepath.Join(repoRoot, projectpaths.Cache)
 	if err := os.MkdirAll(stageParent, 0o700); err != nil {
 		return nil, err
 	}
@@ -874,7 +875,9 @@ func treatmentManifest(root, mode string, requiredRoles []string, dispatchConfig
 			return err
 		}
 		clean := filepath.ToSlash(relative)
-		if (strings.Contains(clean, ".env") && clean != agentLayerEnvPath) || strings.HasPrefix(clean, ".agent-layer/state/") || strings.HasPrefix(clean, ".agent-layer/tmp/") {
+		if (strings.Contains(clean, ".env") && clean != agentLayerEnvPath) || strings.HasPrefix(clean, ".agent-layer/state/") || projectpaths.Contains(projectpaths.LegacyTmp, clean) ||
+			projectpaths.Contains(projectpaths.Cache, clean) || projectpaths.Contains(projectpaths.Working, clean) ||
+			projectpaths.Contains(projectpaths.Worktrees, clean) || projectpaths.Contains(projectpaths.Runs, clean) {
 			return fmt.Errorf("forbidden treatment content %s", clean)
 		}
 		data, err := os.ReadFile(path) // #nosec G122,G304 -- path is a regular file found below the controlled treatment bundle.

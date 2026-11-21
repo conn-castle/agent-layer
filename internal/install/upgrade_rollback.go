@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/conn-castle/agent-layer/internal/messages"
+	"github.com/conn-castle/agent-layer/internal/projectpaths"
 	"github.com/conn-castle/agent-layer/internal/skillmigration"
 	"github.com/conn-castle/agent-layer/internal/version"
 )
@@ -247,7 +248,28 @@ func rollbackUpgradeSnapshotState(root string, sys System, snapshot upgradeSnaps
 		return err
 	}
 	scopedTargets := uniqueNormalizedPaths(targets)
-	scopedTargets, err := ensureVersionRollbackTarget(root, snapshot.Entries, scopedTargets)
+	protected := func(path string) bool {
+		rel, err := filepath.Rel(root, path)
+		if err != nil {
+			return false // The ordinary rollback validation will report the invalid path.
+		}
+		if snapshotExcludesPath(rel) {
+			return true
+		}
+		for _, dir := range localStorageDirs {
+			if projectpaths.Contains(rel, dir) {
+				return true
+			}
+		}
+		return false
+	}
+	kept := scopedTargets[:0]
+	for _, path := range scopedTargets {
+		if !protected(path) {
+			kept = append(kept, path)
+		}
+	}
+	scopedTargets, err := ensureVersionRollbackTarget(root, snapshot.Entries, kept)
 	if err != nil {
 		return err
 	}
@@ -265,6 +287,9 @@ func rollbackUpgradeSnapshotState(root string, sys System, snapshot upgradeSnaps
 	filteredEntries := make([]upgradeSnapshotEntry, 0, len(snapshot.Entries))
 	for _, entry := range snapshot.Entries {
 		entryRel := normalizeRelPath(filepath.Clean(filepath.FromSlash(entry.Path)))
+		if snapshotExcludesPath(entryRel) {
+			continue
+		}
 		include := false
 		for _, targetRel := range targetRelPaths {
 			if entryRel == targetRel || strings.HasPrefix(entryRel, targetRel+"/") {

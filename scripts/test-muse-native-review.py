@@ -15,6 +15,8 @@ import threading
 import http.server
 
 sys.dont_write_bytecode = True
+
+from project_paths import WORKING
 ROOT = Path(__file__).resolve().parents[1]
 spec = importlib.util.spec_from_file_location("native_fixture", ROOT / "scripts/test-muse-native.py")
 f = importlib.util.module_from_spec(spec)
@@ -323,13 +325,13 @@ def main():
     parser.add_argument("--al", type=Path, required=True)
     parser.add_argument("--muse", help="Existing checksum-verified Muse binary; otherwise use the pinned cache")
     parser.add_argument("--claude")
-    parser.add_argument("--output", type=Path, default=ROOT / ".agent-layer/tmp/muse-native")
+    parser.add_argument("--output", type=Path, default=ROOT / WORKING / "muse-native")
     args = parser.parse_args()
     args.al = args.al.resolve()
     args.output = args.output.resolve()
     args.output.mkdir(parents=True, exist_ok=True)
     with f.fixture_guard():
-        muse, _ = f.native_binary(args.muse, args.output)
+        muse, _ = f.native_binary(args.muse)
         muse = f.fixture_binary(muse, args.output)
         policy_lock(args, muse)
         for label in ("unset", "empty", "custom"):

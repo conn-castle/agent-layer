@@ -12,6 +12,7 @@ import (
 	"github.com/conn-castle/agent-layer/internal/probe"
 	probeantigravity "github.com/conn-castle/agent-layer/internal/probe/antigravity"
 	probegrok "github.com/conn-castle/agent-layer/internal/probe/grok"
+	"github.com/conn-castle/agent-layer/internal/projectpaths"
 )
 
 var runAntigravityProbe = probeantigravity.Probe
@@ -86,7 +87,7 @@ func probeCommandRunner(execute probeExecution, nonZeroFormat string) func(*cobr
 		if err != nil {
 			return err
 		}
-		result, exitCode, resultError, err := execute(cmd.Context(), root, filepath.Join(root, ".agent-layer", "tmp"))
+		result, exitCode, resultError, err := execute(cmd.Context(), root, filepath.Join(root, projectpaths.Working))
 		if err != nil {
 			return err
 		}
