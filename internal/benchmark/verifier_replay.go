@@ -334,6 +334,9 @@ func retainedProviderEvidence(stage string, request ExecutionRequest) (patch, ag
 		return "", "", nil, fmt.Errorf("retained model.patch %s is not a regular file", patch)
 	}
 	digest := filepath.Join(agentDir, submissionDigestFile)
+	if preserved := filepath.Join(stage, replayInputDir, submissionDigestFile); fileExists(preserved) {
+		digest = preserved
+	}
 	if request.requireSubmissionDigest || fileExists(digest) {
 		if err := verifySubmissionDigest(patch, digest); err != nil {
 			return "", "", nil, err

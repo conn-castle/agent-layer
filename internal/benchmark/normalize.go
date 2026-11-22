@@ -47,6 +47,7 @@ type pierTaskResult struct {
 		FinishedAt time.Time `json:"finished_at"`
 	} `json:"verifier"`
 	AgentInfo struct {
+		Version   string `json:"version"`
 		ModelInfo struct {
 			Provider string `json:"provider"`
 		} `json:"model_info"`
@@ -75,6 +76,13 @@ func normalizePier(stage string, request ExecutionRequest) (AttemptResult, error
 	if provider == "" {
 		provider = request.Model.Adapter
 	}
+	clientVersion := request.Model.ProviderClientVersion
+	if clientVersion == "" {
+		clientVersion = strings.TrimSpace(raw.AgentInfo.Version)
+		if clientVersion == "" {
+			return AttemptResult{}, fmt.Errorf("historical provider client version is absent from retained Pier evidence")
+		}
+	}
 	result := AttemptResult{
 		SchemaVersion: StorageSchemaVersion, EventID: request.EventID,
 		Attempt: request.Attempt, Task: request.Task, TaskChecksum: raw.TaskChecksum,
@@ -82,7 +90,7 @@ func normalizePier(stage string, request ExecutionRequest) (AttemptResult, error
 		StartedAt:           raw.StartedAt, FinishedAt: raw.FinishedAt, Provider: provider,
 		PublishedModel: request.Model.PublishedIdentifier,
 		RuntimeModel:   request.Model.RuntimeIdentifier, ReasoningEffort: request.Effort,
-		ProviderClientVersion: request.Model.ProviderClientVersion,
+		ProviderClientVersion: clientVersion,
 	}
 	duration := raw.FinishedAt.Sub(raw.StartedAt).Seconds()
 	hasException := len(bytes.TrimSpace(raw.ExceptionInfo)) > 0 && !bytes.Equal(bytes.TrimSpace(raw.ExceptionInfo), []byte("null"))
@@ -360,7 +368,7 @@ func verifierBuildFailed(stage string) (bool, string, error) {
 			failed = true
 		}
 		for _, log := range []string{"base-build.log", "new-build.log"} {
-			marker := []byte("build failed (see /logs/verifier/" + log + ");")
+			marker := []byte("build failed (see /logs/verifier/" + log + ")")
 			if start := bytes.Index(data, marker); start >= 0 {
 				failed = true
 				if excerpt == "" {

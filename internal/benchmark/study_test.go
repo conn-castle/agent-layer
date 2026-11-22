@@ -72,6 +72,8 @@ func TestRunStudyDryRunAndPaidWorkflow(t *testing.T) {
 	originalValidateAuthentication := validateBenchmarkAuthentication
 	originalPrepareTasks := prepareBenchmarkTaskSet
 	originalRuntime := preflightTreatmentRuntime
+	originalArchitecture := dockerHostArchitecture
+	dockerHostArchitecture = func(context.Context) (string, error) { return "amd64", nil }
 	preflightBenchmark = func(selections []parsedSelection) error {
 		if len(selections) != 1 || selections[0].model.PublishedIdentifier != publishedLuna || selections[0].effort != effortLow {
 			return fmt.Errorf("unexpected study selections: %#v", selections)
@@ -100,6 +102,7 @@ func TestRunStudyDryRunAndPaidWorkflow(t *testing.T) {
 		validateBenchmarkAuthentication = originalValidateAuthentication
 		prepareBenchmarkTaskSet = originalPrepareTasks
 		preflightTreatmentRuntime = originalRuntime
+		dockerHostArchitecture = originalArchitecture
 	})
 
 	dryExecutor := &studyWorkflowExecutor{}

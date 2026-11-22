@@ -65,6 +65,7 @@ func terminalVerifierTimeoutFixture(t *testing.T) (ExecutionRequest, string) {
 	if err := readStudyJSON(resultPath, &result); err != nil {
 		t.Fatal(err)
 	}
+	result["agent_info"].(map[string]any)["version"] = model.ProviderClientVersion
 	started := time.Now().UTC().Add(-time.Minute)
 	result["verifier_result"] = nil
 	result["exception_info"] = map[string]any{

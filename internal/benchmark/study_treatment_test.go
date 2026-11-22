@@ -726,8 +726,10 @@ func TestStudyIdentityIgnoresVolatileOverlayBuildMetadata(t *testing.T) {
 
 	originalPreflight, originalVerify := preflightBenchmark, verifyBenchmarkPier
 	originalAuth, originalRuntime := validateBenchmarkAuthentication, preflightTreatmentRuntime
+	originalArchitecture := dockerHostArchitecture
 	preflightBenchmark = func([]parsedSelection) error { return nil }
 	verifyBenchmarkPier = func(context.Context) error { return nil }
+	dockerHostArchitecture = func(context.Context) (string, error) { return "amd64", nil }
 	validateBenchmarkAuthentication = func(context.Context, string, []parsedSelection) (map[string]AuthenticationPreflight, error) {
 		return map[string]AuthenticationPreflight{}, nil
 	}
@@ -735,6 +737,7 @@ func TestStudyIdentityIgnoresVolatileOverlayBuildMetadata(t *testing.T) {
 	t.Cleanup(func() {
 		preflightBenchmark, verifyBenchmarkPier = originalPreflight, originalVerify
 		validateBenchmarkAuthentication, preflightTreatmentRuntime = originalAuth, originalRuntime
+		dockerHostArchitecture = originalArchitecture
 	})
 
 	first, err := RunStudy(context.Background(), StudyOptions{RepoRoot: root, StudyPath: filepath.Join(root, "study.toml"), DryRun: true}, nil)

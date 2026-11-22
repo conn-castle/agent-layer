@@ -13,6 +13,7 @@ import inspect
 import json
 import os
 import shlex
+import shutil
 import subprocess
 import tempfile
 import urllib.error
@@ -48,7 +49,12 @@ REMOTE_RUN_DIRS = f"{REMOTE_WORKSPACE}/.agent-layer/state/runs {REMOTE_WORKSPACE
 # END GENERATED PATHS
 # "task" is already a derived plan artifact name in the workflow skills.
 REMOTE_SPEC_FILE = f"{REMOTE_WORKING}/spec.md"
-PRIVATE_WORKSPACE_PATHS = (".agent-layer", ".codex", ".claude-config", ".grok-config", ".agy")
+PROVIDER_WORKSPACE_PATHS = {
+    "codex": (".codex",),
+    "claude": (".claude", ".claude-config"),
+    "grok": (".grok", ".grok-config"),
+    "antigravity": (".agy", ".gemini"),
+}
 PROJECTED_PATHS = (
     ".gitignore AGENTS.md CLAUDE.md .github/copilot-instructions.md "
     ".agent .agents .agent-layer .codex .copilot .gemini .mcp.json "
@@ -107,6 +113,36 @@ class WorkspaceSubmission:
             "--no-color", *sorted(heads), f"^{base}",
         ))
 
+    def merge_adds_no_changes(self, base, tip, head):
+        head_tree = self.git("rev-parse", f"{head}^{{tree}}").decode().strip()
+        # Compare both complete changes against the task base, irrespective
+        # of where their actual histories forked.
+        left = self.git("commit-tree", head_tree, "-p", base, "-m", "Compare checkout").decode().strip()
+        right = self.git("commit-tree", f"{tip}^{{tree}}", "-p", base, "-m", "Compare branch").decode().strip()
+        try:
+            merged = self.git("merge-tree", "--write-tree", "--no-messages", left, right).decode().strip()
+        except subprocess.CalledProcessError as error:
+            if error.returncode != 1:
+                raise
+            return False
+        return merged == head_tree
+
+    def integrated_branch(self, base, tip, other_heads):
+        other_heads = other_heads - {base, tip}
+        if any(self.is_ancestor(tip, head) for head in other_heads):
+            return True
+        if not other_heads:
+            return False
+        squashed = self.patch_ids(self.git("diff", "--binary", base, tip))
+        has_merge = self.git("rev-list", "--min-parents=2", "--max-count=1", f"{base}..{tip}")
+        commits = set() if has_merge else self.commit_patch_ids(base, {tip})
+        for head in sorted(other_heads):
+            patches = self.commit_patch_ids(base, {head})
+            if (squashed & patches or (commits and commits < patches)
+                    or self.merge_adds_no_changes(base, tip, head)):
+                return True
+        return False
+
     def removed_branch_tips(self, base, original_branches, checked_out):
         tips = self.branch_tips() - set(original_branches) - checked_out
         if not tips:
@@ -116,16 +152,9 @@ class WorkspaceSubmission:
         independent = set(self.git(
             "merge-base", "--independent", *sorted(tips | checked_out),
         ).decode().splitlines())
-        live_history = [self.commit_patch_ids(base, {head}) for head in sorted(checked_out - {base})]
         for tip in sorted(tips & independent):
-            if not self.is_ancestor(base, tip):
-                continue
-            if live_history:
-                squashed = self.patch_ids(self.git("diff", "--binary", base, tip))
-                commits = self.commit_patch_ids(base, {tip})
-                if any(squashed & patches or (commits and commits <= patches) for patches in live_history):
-                    continue
-            yield tip
+            if self.is_ancestor(base, tip) and not self.integrated_branch(base, tip, checked_out):
+                yield tip
 
     def worktrees(self):
         for record in self.git("worktree", "list", "--porcelain", "-z").split(b"\0\0"):
@@ -145,20 +174,37 @@ class WorkspaceSubmission:
         if "refs/heads/main" not in self.git("for-each-ref", "--format=%(refname)", "refs/heads").decode().splitlines():
             self.git("branch", "main", base)
         # The verifier already has the task image's untracked fixtures.
-        untracked = self.git("ls-files", "--others", "--exclude-standard", "-z")
+        untracked = self.git("ls-files", "--others", "-z")
         self.snapshot_path.write_text(json.dumps({
             "base": base,
             "branches": sorted(self.branch_tips()),
             "untracked": [os.fsdecode(path) for path in untracked.split(b"\0") if path],
         }))
 
-    def candidate_tree(self, base, source, reset_paths, directory=None, nested=()):
+    def check_git_support(self):
+        base = self.git("rev-parse", "HEAD").decode().strip()
+        self.patch_ids(b"")
+        self.git("merge-tree", "--write-tree", "--no-messages", base, base)
+
+    def candidate_tree(self, base, source, preexisting, directory=None, nested=()):
         with tempfile.TemporaryDirectory() as temporary:
-            env = {**os.environ, "GIT_INDEX_FILE": str(Path(temporary) / "index")}
-            self.git("read-tree", source, directory=directory, env=env)
+            index = Path(temporary) / "index"
+            env = {**os.environ, "GIT_INDEX_FILE": str(index)}
+            if directory is not None:
+                original_index = Path(os.fsdecode(self.git(
+                    "rev-parse", "--path-format=absolute", "--git-path", "index", directory=directory,
+                ).rstrip(b"\n")))
+                if original_index.is_file():
+                    shutil.copyfile(original_index, index)
+            if not index.exists():
+                self.git("read-tree", source, directory=directory, env=env)
             if directory is not None:
                 exclusions = [f":(exclude,literal){path}" for path in (*self.excluded_paths, *nested)]
                 self.git("add", "-A", "--", ".", *exclusions, directory=directory, env=env)
+            indexed = self.git("ls-files", "--cached", "-z", directory=directory, env=env)
+            reset_paths = [*self.excluded_paths, *sorted(
+                preexisting.intersection(os.fsdecode(path) for path in indexed.split(b"\0") if path)
+            )]
             if reset_paths:
                 paths = Path(temporary) / "paths"
                 paths.write_bytes(b"\0".join(os.fsencode(path) for path in reset_paths) + b"\0")
@@ -167,35 +213,60 @@ class WorkspaceSubmission:
                          directory=directory, env=env)
             return self.git("write-tree", directory=directory, env=env).decode().strip()
 
+    def record_candidates(self, base, candidates, conflicts):
+        if conflicts is None:
+            return
+        destination = Path(conflicts)
+        destination.mkdir(parents=True, exist_ok=True)
+        for tree in candidates:
+            (destination / f"{tree}.patch").write_bytes(self.git("diff", "--binary", base, tree))
+        (destination / "sources.json").write_text(json.dumps(candidates, indent=2) + "\n")
+
     def collect(self, conflicts=None):
         snapshot = json.loads(self.snapshot_path.read_text())
         base = snapshot["base"]
         baseline_tree = self.git("rev-parse", f"{base}^{{tree}}").decode().strip()
         worktrees = set(self.worktrees()) | {self.workspace}
-        excluded_paths = [*self.excluded_paths, *snapshot["untracked"]]
+        preexisting = set(snapshot["untracked"])
         candidates = {}
-        checked_out = set()
+        checkouts = []
         for directory in sorted(worktrees):
-            head = self.git("rev-parse", "HEAD", directory=directory).decode().strip()
-            if not self.is_ancestor(base, head):
+            try:
+                head = self.git("rev-parse", "--verify", "--quiet", "HEAD", directory=directory).decode().strip()
+            except subprocess.CalledProcessError as error:
+                if error.returncode != 1:
+                    raise
+                if self.git("status", "--porcelain", "-z", directory=directory):
+                    raise RuntimeError(f"benchmark checkout has changes without a Git commit: {directory}")
                 continue
-            checked_out.add(head)
             nested = [str(path.relative_to(directory)) for path in worktrees
                       if path != directory and directory in path.parents]
-            tree = self.candidate_tree(base, head, excluded_paths, directory, nested)
-            if tree != baseline_tree:
-                candidates.setdefault(tree, []).append(str(directory))
+            tree = self.candidate_tree(base, head, preexisting, directory, nested)
+            if not self.is_ancestor(base, head):
+                if self.is_ancestor(head, base):
+                    if tree == self.candidate_tree(base, head, preexisting):
+                        continue
+                    self.record_candidates(base, {tree: [str(directory)]}, conflicts)
+                    raise RuntimeError(f"benchmark checkout has edits based on an older commit: {directory}")
+                if directory != self.workspace:
+                    self.record_candidates(base, {tree: [str(directory)]}, conflicts)
+                    raise RuntimeError(f"linked benchmark checkout is outside the pinned task history: {directory}")
+            checkouts.append((directory, head, tree))
+        for directory, head, tree in checkouts:
+            if tree == baseline_tree:
+                continue
+            other_heads = {other for _, other, other_tree in checkouts if other_tree != tree}
+            if (head != base and self.integrated_branch(base, head, other_heads)
+                    and tree == self.candidate_tree(base, head, preexisting)):
+                continue
+            candidates.setdefault(tree, []).append(str(directory))
+        checked_out = {head for _, head, _ in checkouts}
         for tip in self.removed_branch_tips(base, snapshot["branches"], checked_out):
-            tree = self.candidate_tree(base, tip, excluded_paths)
+            tree = self.candidate_tree(base, tip, preexisting)
             if tree != baseline_tree:
                 candidates.setdefault(tree, []).append(tip)
         if len(candidates) > 1:
-            if conflicts is not None:
-                destination = Path(conflicts)
-                destination.mkdir(parents=True, exist_ok=True)
-                for tree in candidates:
-                    (destination / f"{tree}.patch").write_bytes(self.git("diff", "--binary", base, tree))
-                (destination / "sources.json").write_text(json.dumps(candidates, indent=2) + "\n")
+            self.record_candidates(base, candidates, conflicts)
             sources = [source for group in candidates.values() for source in group]
             raise RuntimeError(f"multiple different benchmark submissions: {', '.join(sources)}")
         tree = next(iter(candidates), baseline_tree)
@@ -240,9 +311,8 @@ def _agent_layer_mcp_launcher_jq(server: str) -> str:
 AGENT_LAYER_MCP_PREFLIGHT_JQ = {
     "codex": (
         '.enabled == true and .transport.type == "stdio" and '
-        '((.transport.env_vars // []) | '
-        'contains(["CODEX_HOME", "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", '
-        '"http_proxy", "https_proxy", "no_proxy"])) and '
+        '((["CODEX_HOME", "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", '
+        '"http_proxy", "https_proxy", "no_proxy"] - (.transport.env_vars // [])) | length == 0) and '
         f'(.transport as $s | {_agent_layer_mcp_launcher_jq("$s")})'
     ),
     "file": f'.mcpServers["agent-layer"] as $s | {_agent_layer_mcp_launcher_jq("$s")}',
@@ -541,6 +611,8 @@ class _AgentLayerTreatment:
     async def _snapshot_workspace(self, environment):
         """Preserve adapter-owned paths and the task image's untracked baseline."""
         await self._workspace_submission(environment, "snapshot()")
+        if self._preflight_only:
+            await self._workspace_submission(environment, "check_git_support()")
         if self._treatment_mode == "bare":
             return
         preserve = (
@@ -806,9 +878,11 @@ for s in json.load(open(p, encoding="utf-8")).get("servers", []):
         )
 
     async def _workspace_submission(self, environment, operation):
-        excluded = PRIVATE_WORKSPACE_PATHS if self._treatment_mode == "bare" else PROJECTED_PATHS.split()
+        excluded = PROJECTED_PATHS.split()
+        if self._treatment_mode == "bare":
+            excluded = [".agent-layer", *PROVIDER_WORKSPACE_PATHS[self._treatment_agent]]
         script = (
-            "import json, os, subprocess, tempfile\nfrom pathlib import Path\n"
+            "import json, os, shutil, subprocess, tempfile\nfrom pathlib import Path\n"
             + inspect.getsource(WorkspaceSubmission)
             + f"\nWorkspaceSubmission({REMOTE_WORKSPACE!r}, {excluded!r}).{operation}\n"
         )
@@ -915,10 +989,8 @@ for s in json.load(open(p, encoding="utf-8")).get("servers", []):
         await self._workspace_submission(environment, f"digest({digest_path!r}, {self._preflight_only!r})")
 
     async def _finish_run(self, environment):
-        try:
-            await self._collect_evidence(environment)
-        finally:
-            self._record_provider_checkpoint()
+        self._record_provider_checkpoint()
+        await self._collect_evidence(environment)
 
     async def _write_spec_file(self, environment, instruction: str) -> None:
         """Persist the verbatim task text so workflow skills can cite it exactly."""

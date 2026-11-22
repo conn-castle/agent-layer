@@ -638,10 +638,8 @@ func uniqueSecretValues(values [][]byte) [][]byte {
 	return unique
 }
 
-// preserveReplayPatch copies the submitted model.patch byte-for-byte into the
-// stage's replay input directory before any sanitization pass can rewrite it.
-// It is idempotent: the first copy is the exact provider output and is never
-// replaced. Stages without exactly one submitted patch are left untouched.
+// preserveReplayPatch saves the exact patch and digest before sanitization.
+// Stages without exactly one submitted patch are left untouched.
 func preserveReplayPatch(stage string) error {
 	target := filepath.Join(stage, replayInputDir, benchmarkModelPatchFile)
 	if _, err := os.Lstat(target); err == nil {
@@ -657,6 +655,15 @@ func preserveReplayPatch(stage string) error {
 	}
 	if len(patches) != 1 {
 		return nil
+	}
+	agentDir := filepath.Join(filepath.Dir(filepath.Dir(patches[0])), benchmarkAgentDir)
+	digest := filepath.Join(agentDir, submissionDigestFile)
+	if _, err := os.Lstat(digest); err == nil {
+		if err := copyRequiredFile(digest, filepath.Join(stage, replayInputDir, submissionDigestFile)); err != nil {
+			return fmt.Errorf("preserve submission digest: %w", err)
+		}
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("inspect submission digest: %w", err)
 	}
 	if err := copyRequiredFile(patches[0], target); err != nil {
 		return fmt.Errorf("preserve exact replay patch: %w", err)

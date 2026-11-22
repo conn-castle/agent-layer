@@ -140,6 +140,7 @@ import asyncio
 import importlib.util
 import inspect
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -179,6 +180,13 @@ from pier.verifier.verifier import Verifier
 verifier_source = inspect.getsource(Verifier.verify)
 assert "await self._environment.exec" in verifier_source
 assert "stdout_path=test_stdout_path" in verifier_source
+for key in ("OPENAI_BASE_URL", "OPENAI_API_BASE"):
+    os.environ.pop(key, None)
+codex = module.AgentLayerCodex(logs_dir=Path("/tmp/pier-adapter-contract"),
+                               model_name="openai/gpt-6-luna", treatment_mode="bare",
+                               treatment_agent="codex", treatment_model="gpt-6-luna",
+                               treatment_reasoning_effort="high")
+assert set(codex.network_allowlist().domains) == {"api.openai.com", "chatgpt.com"}
 for cls, model, domains in [
     (module.AgentLayerAntigravity, "gemini-3.5-flash-low", {"storage.googleapis.com", ".googleapis.com"}),
     (module.AgentLayerGrok, "grok-4.5", {"storage.googleapis.com", "api.x.ai", "auth.x.ai"}),
@@ -252,6 +260,7 @@ digest = next(index for index, command in enumerate(commands) if command.startsw
 assert collect < restore < digest
 
 async def fail_collection(environment):
+    assert (Path(logs) / "provider-checkpoint.json").is_file()
     raise RuntimeError("simulated submission failure")
 
 for adapter in (module.AgentLayerCodex, module.AgentLayerClaudeCode, module.AgentLayerGrok, module.AgentLayerAntigravity):
@@ -406,6 +415,13 @@ func TestMCPPreflightAcceptsGeneratedLaunchers(t *testing.T) {
 		return changed
 	}
 	bare := server{Command: "al", Args: []string{"dispatch", "mcp-server"}, EnvVars: codex.EnvVars}
+	withSimilarEnvName := codex
+	withSimilarEnvName.EnvVars = append([]string(nil), codex.EnvVars...)
+	for index, name := range withSimilarEnvName.EnvVars {
+		if name == "CODEX_HOME" {
+			withSimilarEnvName.EnvVars[index] = "BACKUP_CODEX_HOME"
+		}
+	}
 	codexShape := func(s server) any {
 		return map[string]any{"enabled": true, "transport": map[string]any{"type": "stdio", "command": s.Command, "args": s.Args, "env_vars": s.EnvVars}}
 	}
@@ -422,6 +438,7 @@ func TestMCPPreflightAcceptsGeneratedLaunchers(t *testing.T) {
 		{"name": "script", "kind": "codex", "want": false, "document": codexShape(mutant(1, "exec /tmp/other dispatch mcp-server"))},
 		{"name": "command", "kind": "codex", "want": false, "document": codexShape(server{Command: "/bin/bash", Args: codex.Args, EnvVars: codex.EnvVars})},
 		{"name": "missing forwarded environment", "kind": "codex", "want": false, "document": codexShape(server{Command: codex.Command, Args: codex.Args})},
+		{"name": "similar environment name", "kind": "codex", "want": false, "document": codexShape(withSimilarEnvName)},
 		{"name": "missing", "kind": "file", "want": false, "document": map[string]any{"mcpServers": map[string]any{}}},
 	}
 	casesPath := filepath.Join(t.TempDir(), "cases.json")

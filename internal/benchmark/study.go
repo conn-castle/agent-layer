@@ -1170,9 +1170,7 @@ func recoveryPreparationFromManifest(prepared *preparedStudy, manifest immutable
 		loaded := loadedBenchmarkPlan{Model: experiment.model, Effort: experiment.effort}
 		loaded.Plan.Tasks = tasks
 		contract := manifest.Arms[index]
-		if contract.ProviderClientVersion != "" {
-			loaded.Model.ProviderClientVersion = contract.ProviderClientVersion
-		}
+		loaded.Model.ProviderClientVersion = contract.ProviderClientVersion
 		preparation.arms = append(preparation.arms, matrixArm{
 			ID: contract.ID, Label: contract.Name, Mode: mode, Loaded: loaded, Bundle: bundle,
 			AdapterSHA256: contract.Adapter, AgentTimeoutMultiplier: skillsAgentTimeoutFactor,
