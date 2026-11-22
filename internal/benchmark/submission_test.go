@@ -23,6 +23,7 @@ import ast
 import hashlib
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -52,7 +53,7 @@ def exercise(mode):
         git("add", ".")
         git("-c", "user.email=fixture@example.invalid", "-c", "user.name=Fixture", "commit", "-qm", "Baseline")
         older = git("rev-parse", "HEAD").decode().strip()
-        base_file = "one\ntwo\nthree\nfour\nfive\nsix\n" if mode == "removed-context" else "base\n"
+        base_file = "one\ntwo\nthree\nfour\nfive\nsix\n" if mode in ("removed-context", "reverted-hunk") else "base\n"
         (root / "file.txt").write_text(base_file)
         git("add", "file.txt")
         git("-c", "user.email=fixture@example.invalid", "-c", "user.name=Fixture", "commit", "-qm", "Task base")
@@ -94,6 +95,8 @@ def exercise(mode):
             if mode in ("assume-unchanged", "skip-worktree"):
                 git("update-index", f"--{mode}", "file.txt", directory=solution)
             candidate_file = base_file.replace("five", "linked change") if mode == "removed-context" else "candidate\n"
+            if mode == "reverted-hunk":
+                candidate_file = base_file.replace("one", "candidate first hunk").replace("five", "candidate second hunk")
             (solution / "file.txt").write_text(candidate_file)
             (solution / "addition.txt").write_text("addition\n")
             if mode == "force-staged":
@@ -104,22 +107,36 @@ def exercise(mode):
                 (solution / ".claude" / "generated.json").write_text("{}\n")
                 (solution / ".gemini").mkdir()
                 (solution / ".gemini" / "settings.json").write_text("{}\n")
-            if mode.startswith("root-amended"):
-                git("add", "file.txt", "addition.txt")
-                git("commit", "--amend", "--no-edit")
-                if mode != "root-amended":
+            if mode.startswith("root-amended") or mode in ("linked-amended", "removed-amended"):
+                git("add", "file.txt", "addition.txt", directory=solution)
+                git("commit", "--amend", "--no-edit", directory=solution)
+                if mode in ("root-amended-twice", "root-amended-follow-up"):
                     (root / "addition.txt").write_text("later improvement\n")
                     git("add", "addition.txt")
                     if mode == "root-amended-twice":
                         git("commit", "--amend", "--no-edit")
                     else:
                         git("commit", "-qm", "Follow-up to amended commit")
-            if mode == "committed" or mode.startswith(("removed", "integrated")):
+            if mode in ("committed", "reverted-hunk", "cherry-reverted") or (
+                    mode.startswith(("removed", "integrated")) and mode != "removed-amended"):
                 if mode in ("removed-squashed", "removed-cherry-picked", "integrated-squashed"):
                     git("add", "file.txt", directory=solution)
                     git("commit", "-qm", "Candidate implementation", directory=solution)
                 git("add", ".", directory=solution)
                 git("commit", "-qm", "Candidate", directory=solution)
+            if mode == "integrated-duplicate":
+                duplicate = Path(path) / "duplicate"
+                git("worktree", "add", "-b", "duplicate", duplicate, base)
+                git("cherry-pick", "-x", "solution", directory=duplicate)
+                assert git("rev-parse", "solution") != git("rev-parse", "duplicate")
+                assert git("rev-parse", "solution^{tree}") == git("rev-parse", "duplicate^{tree}")
+                git("worktree", "remove", duplicate)
+            if mode == "cherry-reverted":
+                (root / "main-only.txt").write_text("unrelated change\n")
+                git("add", "main-only.txt")
+                git("commit", "-qm", "Independent main change")
+                git("cherry-pick", "-x", "solution")
+                git("revert", "--no-edit", "HEAD", "HEAD^")
             if mode == "removed-context":
                 (root / "file.txt").write_text(base_file.replace("three", "main checkout change"))
                 git("add", "file.txt")
@@ -140,7 +157,7 @@ def exercise(mode):
             if mode.startswith("removed"):
                 git("worktree", "remove", solution)
             if mode.startswith("integrated") or mode in ("removed-merged", "removed-reverted", "removed-squashed", "removed-cherry-picked"):
-                if mode in ("removed-merged", "removed-reverted", "integrated-clean", "integrated-dirty",
+                if mode in ("removed-merged", "removed-reverted", "integrated-clean", "integrated-duplicate", "integrated-dirty",
                             "integrated-reverted", "integrated-partially-reverted"):
                     git("merge", "--ff-only", "solution")
                 elif mode in ("removed-squashed", "integrated-squashed"):
@@ -153,7 +170,7 @@ def exercise(mode):
                 else:
                     (root / "follow-up.txt").write_text("independent follow-up\n")
                     git("add", "follow-up.txt")
-                    if mode in ("removed-merged", "integrated-clean"):
+                    if mode in ("removed-merged", "integrated-clean", "integrated-duplicate"):
                         (root / "file.txt").write_text("refine the integrated implementation\n")
                         git("add", "file.txt")
                     git("commit", "-qm", "Follow-up")
@@ -161,12 +178,18 @@ def exercise(mode):
                 (root / "file.txt").write_text(base_file)
                 git("add", "file.txt")
                 git("commit", "-qm", "Revert just the implementation")
+            if mode == "reverted-hunk":
+                git("merge", "--ff-only", "solution")
+                (root / "file.txt").write_text(base_file.replace("five", "candidate second hunk"))
+                git("add", "file.txt")
+                git("commit", "-qm", "Revert the first hunk")
             if mode == "integrated-dirty":
                 (solution / "independent.txt").write_text("independent uncommitted change\n")
             if mode in ("ambiguous", "removed-ambiguous", "integrated-dirty", "removed-merge-extra",
-                        "integrated-partially-reverted", "integrated-reverted", "removed-reverted"):
-                fully_reverted = mode in ("integrated-reverted", "removed-reverted")
-                if not fully_reverted and mode != "integrated-partially-reverted":
+                        "integrated-partially-reverted", "integrated-reverted", "removed-reverted",
+                        "reverted-hunk", "cherry-reverted"):
+                fully_reverted = mode in ("integrated-reverted", "removed-reverted", "cherry-reverted")
+                if not fully_reverted and mode not in ("integrated-partially-reverted", "reverted-hunk"):
                     (root / "file.txt").write_text("conflicting root change\n")
                 conflicts = Path(path) / "conflicts"
                 try:
@@ -178,6 +201,9 @@ def exercise(mode):
                     patches = [(conflicts / f"{tree}.patch").read_bytes() for tree in candidates]
                     if fully_reverted:
                         assert b"" in patches
+                    elif mode == "reverted-hunk":
+                        assert sum(b"+candidate first hunk" in patch for patch in patches) == 1
+                        assert all(b"+candidate second hunk" in patch for patch in patches)
                     else:
                         root_change = b"+independent follow-up" if mode == "integrated-partially-reverted" else b"+conflicting root change"
                         assert any(root_change in patch for patch in patches)
@@ -197,22 +223,24 @@ def exercise(mode):
         expected = [] if empty else [b"addition.txt", b"file.txt"]
         if mode == "force-staged":
             expected.append(b"forced.ignored")
-        if mode in ("removed-merged", "removed-squashed", "removed-cherry-picked", "integrated-clean", "integrated-squashed"):
+        if mode in ("removed-merged", "removed-squashed", "removed-cherry-picked",
+                    "integrated-clean", "integrated-duplicate", "integrated-squashed"):
             expected.append(b"follow-up.txt")
         if provider_paths:
             expected.extend([b".claude/tracked.json", b".gemini/settings.json"])
         assert git("diff", "--name-only", base, "HEAD").splitlines() == sorted(expected), (mode, exported)
-        if mode in ("removed-merged", "integrated-clean"):
+        if mode in ("removed-merged", "integrated-clean", "integrated-duplicate"):
             assert b"+refine the integrated implementation" in exported
         if mode in ("root-amended-twice", "root-amended-follow-up"):
             assert b"+later improvement" in exported
 
 for mode in ("empty", "older-only", "root", "root-with-older", "root-amended", "root-amended-twice",
-             "root-amended-follow-up", "unrelated-root", "new-unrelated-root", "force-staged",
+             "root-amended-follow-up", "linked-amended", "removed-amended", "unrelated-root", "new-unrelated-root", "force-staged",
              "assume-unchanged", "skip-worktree", "provider-paths", "committed", "detached", "removed",
              "ambiguous", "removed-ambiguous", "removed-merged", "removed-squashed", "removed-cherry-picked",
-             "removed-reverted", "integrated-clean", "integrated-dirty", "integrated-squashed",
-             "integrated-reverted", "integrated-partially-reverted", "removed-context", "removed-merge-extra"):
+             "removed-reverted", "integrated-clean", "integrated-duplicate", "integrated-dirty", "integrated-squashed",
+             "integrated-reverted", "integrated-partially-reverted", "reverted-hunk", "cherry-reverted",
+             "removed-context", "removed-merge-extra"):
     exercise(mode)
 `
 	command := exec.CommandContext(t.Context(), python, "-c", script, adapter) // #nosec G204 -- exercises the embedded collector in disposable Git repositories.

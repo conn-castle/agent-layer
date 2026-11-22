@@ -12,6 +12,7 @@ import importlib.metadata
 import inspect
 import json
 import os
+import re
 import shlex
 import shutil
 import subprocess
@@ -117,9 +118,9 @@ class WorkspaceSubmission:
             return False
         return merged == other
 
-    def amended_pinned_commit(self, base, head):
+    def amended_pinned_commit(self, base, head, directory=None, ref="HEAD"):
         entries = [entry.split(b"\t", 1) for entry in self.git(
-            "reflog", "show", "--format=%H%x09%gs", "HEAD",
+            "reflog", "show", "--format=%H%x09%gs", ref, directory=directory,
         ).splitlines()]
         rewritten = {base.encode()}
         for (older, _), (newer, action) in zip(reversed(entries[1:]), reversed(entries[:-1])):
@@ -130,6 +131,34 @@ class WorkspaceSubmission:
     def changed_paths(self, base, tree):
         return set(self.git("diff", "--no-renames", "--name-only", "-z", base, tree).split(b"\0")) - {b""}
 
+    def changed_lines(self, base, tree, path):
+        patch = self.git("--literal-pathspecs", "diff", "--no-ext-diff", "--no-textconv",
+                         "--no-color", "--no-renames", "--unified=0", "--inter-hunk-context=0",
+                         base, tree, "--", os.fsdecode(path))
+        spans = []
+        for start, length in re.findall(rb"^@@ -(\d+)(?:,(\d+))? \+\d+(?:,\d+)? @@", patch, re.MULTILINE):
+            start, length = int(start), int(length or b"1")
+            # Odd positions represent insertion points between base lines.
+            spans.append((2 * start, 2 * (start + length - 1)) if length else (2 * start + 1,) * 2)
+        return spans
+
+    def retains_changes(self, base, candidate, final_tree):
+        paths = self.changed_paths(base, candidate)
+        if not paths <= self.changed_paths(base, final_tree):
+            return False
+        for path in sorted(paths):
+            actual = self.changed_lines(base, final_tree, path)
+            if any(not any(lo <= start and end <= hi for lo, hi in actual)
+                   for start, end in self.changed_lines(base, candidate, path)):
+                return False
+        return True
+
+    def integrated_history(self, base, candidate, tips, head):
+        if any(self.is_ancestor(tip, head) for tip in tips):
+            return True
+        earlier = self.git("log", "--first-parent", "--format=%T", f"{base}..{head}").decode().splitlines()
+        return any(candidate == tree or self.contains_tree(base, candidate, tree) for tree in earlier)
+
     def worktrees(self):
         for record in self.git("worktree", "list", "--porcelain", "-z").split(b"\0\0"):
             if record.startswith(b"worktree "):
@@ -137,9 +166,9 @@ class WorkspaceSubmission:
                 if (directory / ".git").exists():
                     yield directory.resolve()
 
-    def branch_tips(self):
-        output = self.git("for-each-ref", "--format=%(objectname)", "refs/heads")
-        return set(output.decode().splitlines())
+    def branch_refs(self):
+        output = self.git("for-each-ref", "--format=%(objectname)%09%(refname)", "refs/heads")
+        return [os.fsdecode(line).split("\t", 1) for line in output.splitlines()]
 
     def snapshot(self):
         self.git("config", "user.email", "benchmark@local.invalid")
@@ -152,7 +181,7 @@ class WorkspaceSubmission:
         untracked = self.git("ls-files", "--others", "-z")
         self.snapshot_path.write_text(json.dumps({
             "base": base,
-            "branches": sorted(self.branch_tips()),
+            "branches": sorted({tip for tip, _ in self.branch_refs()}),
             "untracked": [os.fsdecode(path) for path in untracked.split(b"\0") if path],
         }))
 
@@ -222,22 +251,27 @@ class WorkspaceSubmission:
         (destination / "sources.json").write_text(json.dumps(candidates, indent=2) + "\n")
 
     def compare_descendants(self, base, candidates, committed_tips, checkouts, conflicts):
-        superseded = set()
+        replacements = {}
         for tree, tips in committed_tips.items():
             for head, final_tree, source in checkouts:
-                if tree == final_tree or not all(tip != head and self.is_ancestor(tip, head) for tip in tips):
+                if tree == final_tree or not self.integrated_history(base, tree, tips, head):
                     continue
-                # A descendant can refine the same lines. If it returns a changed
-                # path to the task base, the two checkouts disagree about the change.
-                if self.changed_paths(base, tree) <= self.changed_paths(base, final_tree):
-                    superseded.add(tree)
+                if self.retains_changes(base, tree, final_tree):
+                    replacements.setdefault(tree, set()).add(final_tree)
                     continue
                 competing = {**candidates}
                 if final_tree not in competing:
                     competing[final_tree] = [source]
                 self.record_candidates(base, competing, conflicts)
                 raise RuntimeError(f"multiple different benchmark submissions after a revert in {source}")
-        return superseded
+        # Keep cycles as competing candidates unless a checkout actually
+        # supersedes all of them.
+        final_trees = set(candidates) - replacements.keys()
+        while True:
+            superseded = {tree for tree, successors in replacements.items() if successors & final_trees}
+            if superseded <= final_trees:
+                return final_trees & replacements.keys()
+            final_trees.update(superseded)
 
     def collect(self, conflicts=None):
         snapshot = json.loads(self.snapshot_path.read_text())
@@ -273,9 +307,7 @@ class WorkspaceSubmission:
             if not self.is_ancestor(base, head):
                 if self.is_ancestor(head, base) and tree == committed:
                     continue
-                amended_root = (directory == self.workspace and head not in original_branches
-                                and self.amended_pinned_commit(base, head))
-                if not amended_root:
+                if head in original_branches or not self.amended_pinned_commit(base, head, directory):
                     self.record_candidates(base, {tree: [str(directory)]}, conflicts)
                     raise RuntimeError(f"benchmark checkout is outside the pinned task history: {directory}")
             checkouts.append((head, tree, str(directory)))
@@ -287,8 +319,10 @@ class WorkspaceSubmission:
                 committed_tips.setdefault(tree, set()).add(head)
             candidates.setdefault(tree, []).append(str(directory))
         checked_out = {head for head, _, _ in checkouts}
-        for tip in sorted(self.branch_tips() - original_branches - checked_out):
-            if not self.is_ancestor(base, tip):
+        for tip, ref in self.branch_refs():
+            if tip in original_branches or tip in checked_out:
+                continue
+            if not self.is_ancestor(base, tip) and not self.amended_pinned_commit(base, tip, ref=ref):
                 continue
             tree = self.candidate_tree(base, tip, preexisting, provider_tracked)
             if tree != baseline_tree:
@@ -920,7 +954,7 @@ for s in json.load(open(p, encoding="utf-8")).get("servers", []):
             excluded = [".agent-layer"]
             provider_paths = PROVIDER_WORKSPACE_PATHS[self._treatment_agent]
         script = (
-            "import json, os, shutil, subprocess, tempfile\nfrom pathlib import Path\n"
+            "import json, os, re, shutil, subprocess, tempfile\nfrom pathlib import Path\n"
             + inspect.getsource(WorkspaceSubmission)
             + f"\nWorkspaceSubmission({REMOTE_WORKSPACE!r}, {excluded!r}, {provider_paths!r}).{operation}\n"
         )

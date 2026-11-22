@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/conn-castle/agent-layer/internal/fsutil"
 	"github.com/conn-castle/agent-layer/internal/projectpaths"
 )
 
@@ -684,7 +685,7 @@ func preserveReplayPatch(stage string) error {
 		// For an older preserved patch, the source digest may already have
 		// been sanitized. Only backfill a digest that still matches.
 		if err == nil && (!havePatch || verifySubmissionDigest(target, digest) == nil) {
-			if err := copyRequiredFile(digest, preservedDigest); err != nil {
+			if err := preserveReplayInput(digest, preservedDigest); err != nil {
 				return fmt.Errorf("preserve submission digest: %w", err)
 			}
 		}
@@ -695,11 +696,22 @@ func preserveReplayPatch(stage string) error {
 				return fmt.Errorf("recover exact replay patch: %w", err)
 			}
 		}
-		if err := copyRequiredFile(patches[0], target); err != nil {
+		if err := preserveReplayInput(patches[0], target); err != nil {
 			return fmt.Errorf("preserve exact replay patch: %w", err)
 		}
 	}
 	return nil
+}
+
+func preserveReplayInput(source, destination string) error {
+	data, err := fsutil.ReadRegularFile(source)
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(destination), 0o700); err != nil {
+		return err
+	}
+	return fsutil.WriteFileAtomic(destination, data, 0o600)
 }
 
 func sanitizeArtifacts(root string, secrets [][]byte, paths []string) error {
