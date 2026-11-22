@@ -37,7 +37,8 @@ def exercise(mode):
     with tempfile.TemporaryDirectory() as path:
         root = Path(path) / "app"
         root.mkdir()
-        submit = WorkspaceSubmission(root, [".agent-layer"])
+        provider_paths = (".claude",) if mode == "provider-paths" else ()
+        submit = WorkspaceSubmission(root, [".agent-layer"], provider_paths)
         submit.snapshot_path = Path(path) / "baseline.json"
         git = submit.git
         git("init", "-q", "-b", "base")
@@ -45,6 +46,9 @@ def exercise(mode):
         (root / "file.txt").write_text("older\n")
         (root / ".agent-layer").mkdir()
         (root / ".agent-layer" / "config").write_text("original\n")
+        if provider_paths:
+            (root / ".claude").mkdir()
+            (root / ".claude" / "tracked.json").write_text("{}\n")
         git("add", ".")
         git("-c", "user.email=fixture@example.invalid", "-c", "user.name=Fixture", "commit", "-qm", "Baseline")
         older = git("rev-parse", "HEAD").decode().strip()
@@ -53,16 +57,34 @@ def exercise(mode):
         git("add", "file.txt")
         git("-c", "user.email=fixture@example.invalid", "-c", "user.name=Fixture", "commit", "-qm", "Task base")
         base = git("rev-parse", "HEAD").decode().strip()
+        if mode == "unrelated-root":
+            git("switch", "-c", "unrelated", older)
+            git("-c", "user.email=fixture@example.invalid", "-c", "user.name=Fixture",
+                "commit", "--allow-empty", "-qm", "Unrelated image branch")
+            git("switch", "base")
         (root / "fixture.txt").write_text("image fixture\n")
         (root / "image.ignored").write_text("ignored image fixture\n")
         submit.snapshot()
         assert git("log", "-1", "--format=%H", "main").decode().strip() == base
         (root / ".agent-layer" / "config").write_text("projection\n")
         (root / ".agent-layer" / "secret").write_text("excluded secret\n")
+        if mode == "new-unrelated-root":
+            git("switch", "-c", "unrelated", older)
+            git("commit", "--allow-empty", "-qm", "Unrelated agent branch")
+        if mode in ("unrelated-root", "new-unrelated-root"):
+            git("switch", "unrelated")
+            try:
+                submit.collect(Path(path) / "conflicts")
+            except RuntimeError as error:
+                assert "outside the pinned task history" in str(error), error
+                assert git("branch", "--show-current").strip() == b"unrelated"
+                return
+            raise AssertionError("unrelated image branch was submitted")
         if mode in ("older-only", "root-with-older"):
             git("worktree", "add", "--detach", Path(path) / "older", older)
         if mode not in ("empty", "older-only"):
-            if mode in ("root", "root-with-older", "root-amended", "force-staged"):
+            if mode in ("root", "root-with-older", "root-amended", "force-staged",
+                        "assume-unchanged", "skip-worktree", "provider-paths"):
                 solution = root
             elif mode == "detached":
                 solution = Path(path) / "linked"
@@ -70,12 +92,19 @@ def exercise(mode):
             else:
                 solution = root / "nested-worktree"
                 git("worktree", "add", "-b", "solution", solution)
+            if mode in ("assume-unchanged", "skip-worktree"):
+                git("update-index", f"--{mode}", "file.txt", directory=solution)
             candidate_file = base_file.replace("five", "linked change") if mode == "removed-context" else "candidate\n"
             (solution / "file.txt").write_text(candidate_file)
             (solution / "addition.txt").write_text("addition\n")
             if mode == "force-staged":
                 (solution / "forced.ignored").write_text("explicitly staged fixture\n")
                 git("add", "-f", "forced.ignored", "image.ignored", directory=solution)
+            if provider_paths:
+                (solution / ".claude" / "tracked.json").write_text('{"updated": true}\n')
+                (solution / ".claude" / "generated.json").write_text("{}\n")
+                (solution / ".gemini").mkdir()
+                (solution / ".gemini" / "settings.json").write_text("{}\n")
             if mode == "root-amended":
                 git("add", "file.txt", "addition.txt")
                 git("commit", "--amend", "--no-edit")
@@ -104,20 +133,31 @@ def exercise(mode):
                 git("cherry-pick", "-x", source_commit)
             if mode.startswith("removed"):
                 git("worktree", "remove", solution)
-            if mode.startswith("integrated") or mode in ("removed-merged", "removed-squashed", "removed-cherry-picked"):
-                if mode in ("removed-merged", "integrated-clean", "integrated-dirty"):
+            if mode.startswith("integrated") or mode in ("removed-merged", "removed-reverted", "removed-squashed", "removed-cherry-picked"):
+                if mode in ("removed-merged", "removed-reverted", "integrated-clean", "integrated-dirty",
+                            "integrated-reverted", "integrated-partially-reverted"):
                     git("merge", "--ff-only", "solution")
                 elif mode in ("removed-squashed", "integrated-squashed"):
                     git("merge", "--squash", "solution")
                     git("commit", "-qm", "Integrate solution")
                 else:
                     git("cherry-pick", "-x", f"{base}..solution")
-                (root / "file.txt").write_text("candidate with a follow-up\n")
-                git("commit", "-qam", "Follow-up")
+                if mode in ("removed-reverted", "integrated-reverted"):
+                    git("revert", "--no-edit", "solution")
+                else:
+                    (root / "follow-up.txt").write_text("independent follow-up\n")
+                    git("add", "follow-up.txt")
+                    git("commit", "-qm", "Follow-up")
+            if mode == "integrated-partially-reverted":
+                (root / "file.txt").write_text(base_file)
+                git("add", "file.txt")
+                git("commit", "-qm", "Revert just the implementation")
             if mode == "integrated-dirty":
                 (solution / "independent.txt").write_text("independent uncommitted change\n")
-            if mode in ("ambiguous", "removed-ambiguous", "integrated-dirty", "removed-merge-extra"):
-                (root / "file.txt").write_text("conflicting root change\n")
+            if mode in ("ambiguous", "removed-ambiguous", "integrated-dirty", "removed-merge-extra",
+                        "integrated-partially-reverted"):
+                if mode != "integrated-partially-reverted":
+                    (root / "file.txt").write_text("conflicting root change\n")
                 conflicts = Path(path) / "conflicts"
                 try:
                     submit.collect(conflicts)
@@ -126,7 +166,8 @@ def exercise(mode):
                     candidates = json.loads((conflicts / "sources.json").read_text())
                     assert len(candidates) == 2
                     patches = [(conflicts / f"{tree}.patch").read_bytes() for tree in candidates]
-                    assert any(b"+conflicting root change" in patch for patch in patches)
+                    root_change = b"+independent follow-up" if mode == "integrated-partially-reverted" else b"+conflicting root change"
+                    assert any(root_change in patch for patch in patches)
                     assert any(b"+candidate" in patch for patch in patches)
                     if mode == "integrated-dirty":
                         assert any(b"+independent uncommitted change" in patch for patch in patches)
@@ -143,11 +184,17 @@ def exercise(mode):
         expected = [] if empty else [b"addition.txt", b"file.txt"]
         if mode == "force-staged":
             expected.append(b"forced.ignored")
-        assert git("diff", "--name-only", base, "HEAD").splitlines() == expected, (mode, exported)
+        if mode in ("removed-merged", "removed-squashed", "removed-cherry-picked", "integrated-clean", "integrated-squashed"):
+            expected.append(b"follow-up.txt")
+        if provider_paths:
+            expected.extend([b".claude/tracked.json", b".gemini/settings.json"])
+        assert git("diff", "--name-only", base, "HEAD").splitlines() == sorted(expected), (mode, exported)
 
-for mode in ("empty", "older-only", "root", "root-with-older", "root-amended", "force-staged", "committed", "detached", "removed",
+for mode in ("empty", "older-only", "root", "root-with-older", "root-amended", "unrelated-root", "new-unrelated-root", "force-staged",
+             "assume-unchanged", "skip-worktree", "provider-paths", "committed", "detached", "removed",
              "ambiguous", "removed-ambiguous", "removed-merged", "removed-squashed", "removed-cherry-picked",
-             "integrated-clean", "integrated-dirty", "integrated-squashed", "removed-context", "removed-merge-extra"):
+             "removed-reverted", "integrated-clean", "integrated-dirty", "integrated-squashed",
+             "integrated-reverted", "integrated-partially-reverted", "removed-context", "removed-merge-extra"):
     exercise(mode)
 `
 	command := exec.CommandContext(t.Context(), python, "-c", script, adapter) // #nosec G204 -- exercises the embedded collector in disposable Git repositories.
@@ -195,4 +242,23 @@ func TestPreservedSubmissionDigestSurvivesEvidenceSanitization(t *testing.T) {
 		filepath.Join(stage, replayInputDir, benchmarkModelPatchFile),
 		filepath.Join(stage, replayInputDir, submissionDigestFile),
 	))
+}
+
+func TestPreserveReplayPatchBackfillsOnlyMatchingDigest(t *testing.T) {
+	stage := t.TempDir()
+	patch := filepath.Join("jobs", "trial", benchmarkArtifactsDir, benchmarkModelPatchFile)
+	marker := filepath.Join("jobs", "trial", benchmarkAgentDir, submissionDigestFile)
+	exact := "exact submission"
+	writeVerifierStageFile(t, stage, patch, exact)
+	require.NoError(t, preserveReplayPatch(stage))
+
+	writeVerifierStageFile(t, stage, patch, "sanitized patch")
+	writeVerifierStageFile(t, stage, marker, "sanitized digest")
+	require.NoError(t, preserveReplayPatch(stage))
+	preserved := filepath.Join(stage, replayInputDir, submissionDigestFile)
+	require.NoFileExists(t, preserved)
+
+	writeVerifierStageFile(t, stage, marker, digestBytes([]byte(exact))+"\n")
+	require.NoError(t, preserveReplayPatch(stage))
+	require.NoError(t, verifySubmissionDigest(filepath.Join(stage, replayInputDir, benchmarkModelPatchFile), preserved))
 }

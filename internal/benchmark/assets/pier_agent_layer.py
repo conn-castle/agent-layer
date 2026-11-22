@@ -84,9 +84,10 @@ ANTIGRAVITY_PROMPT_BYTE_CAP = 100 * 1024
 class WorkspaceSubmission:
     """Collect one solution from the repository, including linked Git worktrees."""
 
-    def __init__(self, workspace, excluded_paths):
+    def __init__(self, workspace, excluded_paths, untracked_provider_paths=()):
         self.workspace = Path(workspace).resolve()
         self.excluded_paths = excluded_paths
+        self.untracked_provider_paths = untracked_provider_paths
         self.snapshot_path = Path("/tmp/agent-layer-workspace.json")
 
     def git(self, *args, directory=None, env=None, input=None):
@@ -103,58 +104,25 @@ class WorkspaceSubmission:
             return False
         return True
 
-    def patch_ids(self, patch):
-        output = self.git("patch-id", "--verbatim", input=patch)
-        return {record.split()[0] for record in output.splitlines()}
-
-    def commit_patch_ids(self, base, heads):
-        return self.patch_ids(self.git(
-            "log", "--format=commit %H", "--patch", "--binary", "--no-merges",
-            "--no-color", *sorted(heads), f"^{base}",
-        ))
-
-    def merge_adds_no_changes(self, base, tip, head):
-        head_tree = self.git("rev-parse", f"{head}^{{tree}}").decode().strip()
-        # Compare both complete changes against the task base, irrespective
-        # of where their actual histories forked.
-        left = self.git("commit-tree", head_tree, "-p", base, "-m", "Compare checkout").decode().strip()
-        right = self.git("commit-tree", f"{tip}^{{tree}}", "-p", base, "-m", "Compare branch").decode().strip()
+    def contains_tree(self, base, candidate, other):
+        # A commit appearing in history does not prove its edits survived.
+        # Compare the submitted trees against the same pinned task base.
+        left = self.git("commit-tree", other, "-p", base, "-m", "Compare checkout").decode().strip()
+        right = self.git("commit-tree", candidate, "-p", base, "-m", "Compare branch").decode().strip()
         try:
             merged = self.git("merge-tree", "--write-tree", "--no-messages", left, right).decode().strip()
         except subprocess.CalledProcessError as error:
             if error.returncode != 1:
                 raise
             return False
-        return merged == head_tree
+        return merged == other
 
-    def integrated_branch(self, base, tip, other_heads):
-        other_heads = other_heads - {base, tip}
-        if any(self.is_ancestor(tip, head) for head in other_heads):
-            return True
-        if not other_heads:
-            return False
-        squashed = self.patch_ids(self.git("diff", "--binary", base, tip))
-        has_merge = self.git("rev-list", "--min-parents=2", "--max-count=1", f"{base}..{tip}")
-        commits = set() if has_merge else self.commit_patch_ids(base, {tip})
-        for head in sorted(other_heads):
-            patches = self.commit_patch_ids(base, {head})
-            if (squashed & patches or (commits and commits < patches)
-                    or self.merge_adds_no_changes(base, tip, head)):
-                return True
-        return False
-
-    def removed_branch_tips(self, base, original_branches, checked_out):
-        tips = self.branch_tips() - set(original_branches) - checked_out
-        if not tips:
-            return
-        # Drop ancestors of live checkouts and newer branches before comparing
-        # patches from squash merges and cherry-picks.
-        independent = set(self.git(
-            "merge-base", "--independent", *sorted(tips | checked_out),
-        ).decode().splitlines())
-        for tip in sorted(tips & independent):
-            if self.is_ancestor(base, tip) and not self.integrated_branch(base, tip, checked_out):
-                yield tip
+    def amended_pinned_commit(self, base, head):
+        entries = self.git("reflog", "show", "--format=%H%x09%gs", "HEAD").splitlines()
+        amend = head.encode() + b"\tcommit (amend):"
+        previous = base.encode() + b"\t"
+        return any(new.startswith(amend) and old.startswith(previous)
+                   for new, old in zip(entries, entries[1:]))
 
     def worktrees(self):
         for record in self.git("worktree", "list", "--porcelain", "-z").split(b"\0\0"):
@@ -183,10 +151,27 @@ class WorkspaceSubmission:
 
     def check_git_support(self):
         base = self.git("rev-parse", "HEAD").decode().strip()
-        self.patch_ids(b"")
         self.git("merge-tree", "--write-tree", "--no-messages", base, base)
 
-    def candidate_tree(self, base, source, preexisting, directory=None, nested=()):
+    def refresh_index(self, directory, env, nested):
+        entries = self.git("ls-files", "-v", "-z", directory=directory, env=env)
+        assumed, skipped = [], []
+        for entry in entries.split(b"\0"):
+            tag, path = entry[:1], entry[2:]
+            if tag.islower():
+                assumed.append(path)
+            # Keep omitted sparse paths out of the refresh.
+            if tag.upper() == b"S" and os.path.lexists(directory / os.fsdecode(path)):
+                skipped.append(path)
+        for option, paths in (("--no-assume-unchanged", assumed), ("--no-skip-worktree", skipped)):
+            if paths:
+                self.git("update-index", option, "-z", "--stdin", directory=directory, env=env,
+                         input=b"\0".join(paths) + b"\0")
+        exclusions = [f":(exclude,literal){path}" for path in (*self.excluded_paths, *nested)]
+        self.git("-c", "core.fsmonitor=false", "-c", "core.ignorestat=false",
+                 "add", "-A", "--", ".", *exclusions, directory=directory, env=env)
+
+    def candidate_tree(self, base, source, preexisting, provider_tracked, directory=None, nested=()):
         with tempfile.TemporaryDirectory() as temporary:
             index = Path(temporary) / "index"
             env = {**os.environ, "GIT_INDEX_FILE": str(index)}
@@ -199,12 +184,16 @@ class WorkspaceSubmission:
             if not index.exists():
                 self.git("read-tree", source, directory=directory, env=env)
             if directory is not None:
-                exclusions = [f":(exclude,literal){path}" for path in (*self.excluded_paths, *nested)]
-                self.git("add", "-A", "--", ".", *exclusions, directory=directory, env=env)
+                self.refresh_index(directory, env, nested)
             indexed = self.git("ls-files", "--cached", "-z", directory=directory, env=env)
-            reset_paths = [*self.excluded_paths, *sorted(
-                preexisting.intersection(os.fsdecode(path) for path in indexed.split(b"\0") if path)
-            )]
+            indexed = {os.fsdecode(path) for path in indexed.split(b"\0") if path}
+            reset_paths = preexisting & indexed
+            if self.untracked_provider_paths:
+                provider_paths = self.git("ls-files", "--cached", "-z", "--",
+                                          *self.untracked_provider_paths, directory=directory, env=env)
+                reset_paths.update(os.fsdecode(path) for path in provider_paths.split(b"\0")
+                                   if path and path not in provider_tracked)
+            reset_paths = [*self.excluded_paths, *sorted(reset_paths)]
             if reset_paths:
                 paths = Path(temporary) / "paths"
                 paths.write_bytes(b"\0".join(os.fsencode(path) for path in reset_paths) + b"\0")
@@ -228,8 +217,15 @@ class WorkspaceSubmission:
         baseline_tree = self.git("rev-parse", f"{base}^{{tree}}").decode().strip()
         worktrees = set(self.worktrees()) | {self.workspace}
         preexisting = set(snapshot["untracked"])
+        original_branches = set(snapshot["branches"])
+        provider_tracked = set()
+        if self.untracked_provider_paths:
+            provider_tracked = set(self.git("ls-tree", "-r", "--name-only", "-z", base, "--",
+                                            *self.untracked_provider_paths).split(b"\0"))
         candidates = {}
-        checkouts = []
+        working_changes = set()
+        checked_out = set()
+        root_head = ""
         for directory in sorted(worktrees):
             try:
                 head = self.git("rev-parse", "--verify", "--quiet", "HEAD", directory=directory).decode().strip()
@@ -239,42 +235,45 @@ class WorkspaceSubmission:
                 if self.git("status", "--porcelain", "-z", directory=directory):
                     raise RuntimeError(f"benchmark checkout has changes without a Git commit: {directory}")
                 continue
+            if directory == self.workspace:
+                root_head = head
             nested = [str(path.relative_to(directory)) for path in worktrees
                       if path != directory and directory in path.parents]
-            tree = self.candidate_tree(base, head, preexisting, directory, nested)
+            tree = self.candidate_tree(base, head, preexisting, provider_tracked, directory, nested)
+            committed = self.candidate_tree(base, head, preexisting, provider_tracked)
             if not self.is_ancestor(base, head):
-                if self.is_ancestor(head, base):
-                    if tree == self.candidate_tree(base, head, preexisting):
-                        continue
+                if self.is_ancestor(head, base) and tree == committed:
+                    continue
+                amended_root = (directory == self.workspace and head not in original_branches
+                                and self.amended_pinned_commit(base, head))
+                if not amended_root:
                     self.record_candidates(base, {tree: [str(directory)]}, conflicts)
-                    raise RuntimeError(f"benchmark checkout has edits based on an older commit: {directory}")
-                if directory != self.workspace:
-                    self.record_candidates(base, {tree: [str(directory)]}, conflicts)
-                    raise RuntimeError(f"linked benchmark checkout is outside the pinned task history: {directory}")
-            checkouts.append((directory, head, tree))
-        for directory, head, tree in checkouts:
+                    raise RuntimeError(f"benchmark checkout is outside the pinned task history: {directory}")
+            checked_out.add(head)
             if tree == baseline_tree:
                 continue
-            other_heads = {other for _, other, other_tree in checkouts if other_tree != tree}
-            if (head != base and self.integrated_branch(base, head, other_heads)
-                    and tree == self.candidate_tree(base, head, preexisting)):
-                continue
+            if tree != committed:
+                working_changes.add(tree)
             candidates.setdefault(tree, []).append(str(directory))
-        checked_out = {head for _, head, _ in checkouts}
-        for tip in self.removed_branch_tips(base, snapshot["branches"], checked_out):
-            tree = self.candidate_tree(base, tip, preexisting)
+        for tip in sorted(self.branch_tips() - original_branches - checked_out):
+            if not self.is_ancestor(base, tip):
+                continue
+            tree = self.candidate_tree(base, tip, preexisting, provider_tracked)
             if tree != baseline_tree:
                 candidates.setdefault(tree, []).append(tip)
+        for candidate in sorted(set(candidates) - working_changes):
+            if any(self.contains_tree(base, candidate, other) for other in candidates if other != candidate):
+                del candidates[candidate]
         if len(candidates) > 1:
             self.record_candidates(base, candidates, conflicts)
             sources = [source for group in candidates.values() for source in group]
             raise RuntimeError(f"multiple different benchmark submissions: {', '.join(sources)}")
         tree = next(iter(candidates), baseline_tree)
-        if tree == self.git("rev-parse", "HEAD^{tree}").decode().strip():
-            if self.git("diff", "--name-only", "HEAD") == b"":
-                return
+        if root_head and tree == self.git("rev-parse", f"{root_head}^{{tree}}").decode().strip():
+            return
         commit = self.git("commit-tree", tree, "-p", base, "-m", "Complete benchmark task").decode().strip()
-        self.git("checkout", "--detach", "--force", commit)
+        # DeepSWE exports from HEAD. Leave the worktree and branch refs intact.
+        self.git("update-ref", "--no-deref", "HEAD", commit, root_head)
 
     def digest(self, destination, require_changes):
         import hashlib
@@ -879,12 +878,14 @@ for s in json.load(open(p, encoding="utf-8")).get("servers", []):
 
     async def _workspace_submission(self, environment, operation):
         excluded = PROJECTED_PATHS.split()
+        provider_paths = ()
         if self._treatment_mode == "bare":
-            excluded = [".agent-layer", *PROVIDER_WORKSPACE_PATHS[self._treatment_agent]]
+            excluded = [".agent-layer"]
+            provider_paths = PROVIDER_WORKSPACE_PATHS[self._treatment_agent]
         script = (
             "import json, os, shutil, subprocess, tempfile\nfrom pathlib import Path\n"
             + inspect.getsource(WorkspaceSubmission)
-            + f"\nWorkspaceSubmission({REMOTE_WORKSPACE!r}, {excluded!r}).{operation}\n"
+            + f"\nWorkspaceSubmission({REMOTE_WORKSPACE!r}, {excluded!r}, {provider_paths!r}).{operation}\n"
         )
         encoded = base64.b64encode(script.encode("utf-8")).decode("ascii")
         await self.exec_as_agent(environment, command=f"printf '%s' '{encoded}' | base64 -d | python3")
@@ -989,8 +990,10 @@ for s in json.load(open(p, encoding="utf-8")).get("servers", []):
         await self._workspace_submission(environment, f"digest({digest_path!r}, {self._preflight_only!r})")
 
     async def _finish_run(self, environment):
-        self._record_provider_checkpoint()
-        await self._collect_evidence(environment)
+        try:
+            self._record_provider_checkpoint()
+        finally:
+            await self._collect_evidence(environment)
 
     async def _write_spec_file(self, environment, instruction: str) -> None:
         """Persist the verbatim task text so workflow skills can cite it exactly."""

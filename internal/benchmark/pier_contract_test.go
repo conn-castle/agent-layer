@@ -277,6 +277,22 @@ with tempfile.TemporaryDirectory() as logs:
         assert str(error) == "simulated submission failure"
     checkpoint = json.loads((Path(logs) / "provider-checkpoint.json").read_text())
     assert checkpoint["schema"] == "agent-layer-provider-checkpoint-v1" and checkpoint["completed_at"]
+
+def fail_checkpoint():
+    raise OSError("simulated checkpoint failure")
+
+async def collect_after_checkpoint_error(environment):
+    commands.append("collected")
+
+commands.clear()
+finished = types.SimpleNamespace(_record_provider_checkpoint=fail_checkpoint,
+                                 _collect_evidence=collect_after_checkpoint_error)
+try:
+    asyncio.run(module._AgentLayerTreatment._finish_run(finished, object()))
+    raise AssertionError("checkpoint failure was not propagated")
+except OSError as error:
+    assert str(error) == "simulated checkpoint failure"
+assert commands == ["collected"]
 `
 	command := exec.CommandContext(t.Context(), "uvx", "--from", "datacurve-pier=="+PierVersion, "python", "-c", script, path) // #nosec G204 -- embedded test loads the checked-in adapter against its pinned runtime.
 	if output, err := command.CombinedOutput(); err != nil {

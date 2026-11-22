@@ -642,10 +642,25 @@ func uniqueSecretValues(values [][]byte) [][]byte {
 // Stages without exactly one submitted patch are left untouched.
 func preserveReplayPatch(stage string) error {
 	target := filepath.Join(stage, replayInputDir, benchmarkModelPatchFile)
-	if _, err := os.Lstat(target); err == nil {
-		return nil
-	} else if !errors.Is(err, os.ErrNotExist) {
+	targetInfo, err := os.Lstat(target)
+	havePatch := err == nil
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("inspect preserved replay patch: %w", err)
+	}
+	if havePatch && !targetInfo.Mode().IsRegular() {
+		return fmt.Errorf("preserved replay patch is not a regular file")
+	}
+	preservedDigest := filepath.Join(stage, replayInputDir, submissionDigestFile)
+	digestInfo, err := os.Lstat(preservedDigest)
+	haveDigest := err == nil
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("inspect preserved submission digest: %w", err)
+	}
+	if haveDigest && !digestInfo.Mode().IsRegular() {
+		return fmt.Errorf("preserved submission digest is not a regular file")
+	}
+	if havePatch && haveDigest {
+		return nil
 	}
 	patches, err := stageJobFiles(stage, true, func(path string, entry fs.DirEntry) bool {
 		return entry.Type().IsRegular() && isSubmittedModelPatch(path, entry)
@@ -658,15 +673,26 @@ func preserveReplayPatch(stage string) error {
 	}
 	agentDir := filepath.Join(filepath.Dir(filepath.Dir(patches[0])), benchmarkAgentDir)
 	digest := filepath.Join(agentDir, submissionDigestFile)
-	if _, err := os.Lstat(digest); err == nil {
-		if err := copyRequiredFile(digest, filepath.Join(stage, replayInputDir, submissionDigestFile)); err != nil {
-			return fmt.Errorf("preserve submission digest: %w", err)
+	if !haveDigest {
+		info, err := os.Lstat(digest)
+		if err != nil && !errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("inspect submission digest: %w", err)
 		}
-	} else if !errors.Is(err, os.ErrNotExist) {
-		return fmt.Errorf("inspect submission digest: %w", err)
+		if err == nil && !info.Mode().IsRegular() {
+			return fmt.Errorf("submission digest is not a regular file")
+		}
+		// For an older preserved patch, the source digest may already have
+		// been sanitized. Only backfill a digest that still matches.
+		if err == nil && (!havePatch || verifySubmissionDigest(target, digest) == nil) {
+			if err := copyRequiredFile(digest, preservedDigest); err != nil {
+				return fmt.Errorf("preserve submission digest: %w", err)
+			}
+		}
 	}
-	if err := copyRequiredFile(patches[0], target); err != nil {
-		return fmt.Errorf("preserve exact replay patch: %w", err)
+	if !havePatch {
+		if err := copyRequiredFile(patches[0], target); err != nil {
+			return fmt.Errorf("preserve exact replay patch: %w", err)
+		}
 	}
 	return nil
 }
