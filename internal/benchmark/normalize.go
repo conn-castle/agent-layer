@@ -126,7 +126,7 @@ func normalizePier(stage string, request ExecutionRequest) (AttemptResult, error
 	result.DurationSeconds = &duration
 	result.InvocationCount = 1
 
-	result.PatchBytes, err = submittedPatchBytes(stage)
+	result.PatchBytes, err = submittedPatchBytes(stage, request.Arm == ArmTreatment)
 	if err != nil {
 		return AttemptResult{}, err
 	}
@@ -359,6 +359,15 @@ func verifierBuildFailed(stage string) (bool, string, error) {
 			bytes.Contains(data, []byte(`"FailedBuild"`)) {
 			failed = true
 		}
+		for _, log := range []string{"base-build.log", "new-build.log"} {
+			marker := []byte("build failed (see /logs/verifier/" + log + ");")
+			if start := bytes.Index(data, marker); start >= 0 {
+				failed = true
+				if excerpt == "" {
+					excerpt = string(bytes.SplitN(data[start:], []byte("\n"), 2)[0])
+				}
+			}
+		}
 		return nil
 	})
 	if err != nil {
@@ -481,7 +490,7 @@ func dispatchRecordMatchesSlot(record dispatchConformanceRecord, slot dispatchSl
 		record.Model == slot.target.Model && record.ReasoningEffort == slot.target.ReasoningEffort
 }
 
-func submittedPatchBytes(stage string) (int64, error) {
+func submittedPatchBytes(stage string, treatment bool) (int64, error) {
 	patches, err := stageJobFiles(stage, false, isSubmittedModelPatch)
 	if err != nil {
 		return 0, fmt.Errorf("find submitted model patch: %w", err)
@@ -492,6 +501,9 @@ func submittedPatchBytes(stage string) (int64, error) {
 	info, err := os.Stat(patches[0])
 	if err != nil {
 		return 0, fmt.Errorf("inspect submitted model patch: %w", err)
+	}
+	if !treatment {
+		return info.Size(), nil
 	}
 	data, err := os.ReadFile(patches[0]) // #nosec G304 -- path was discovered below the restricted attempt stage.
 	if err != nil {

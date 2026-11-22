@@ -13,6 +13,17 @@ A score or cost difference always has a cause. Reporting the difference is not e
 
 ## 1. Obtain a task selection
 
+For budget questions, check the [DeltaSelect tool](https://agent-layer.dev/deltaselect-tool)
+before quoting task counts or prices. Enter each budget with the requested
+model, reasoning, and repetitions. Report the displayed count and price. If
+the configuration is missing, name the model, effort, and repetitions used for
+any comparison estimate. If the tool is unavailable, ask for its output or an
+exported selection and leave the estimate pending.
+
+The selector estimates one model configuration from published runs. The runner
+measures observed costs across study arms, including skills and delegation.
+Preserve any task set the user asks to reuse.
+
 The benchmark starts with a DeltaSelect `selection.json`. Either route is valid:
 
 - Use JSON supplied by the user.

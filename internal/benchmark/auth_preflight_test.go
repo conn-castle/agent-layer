@@ -1820,10 +1820,12 @@ func stubStudyInfrastructure(t *testing.T, root string) *int {
 	originalVerifyPier := verifyBenchmarkPier
 	originalPrepareTasks := prepareBenchmarkTaskSet
 	originalArchitecture := dockerHostArchitecture
+	originalRuntime := preflightTreatmentRuntime
 	preparedCalls := 0
 	preflightBenchmark = func([]parsedSelection) error { return nil }
 	verifyBenchmarkPier = func(context.Context) error { return nil }
 	dockerHostArchitecture = func(context.Context) (string, error) { return "amd64", nil }
+	preflightTreatmentRuntime = func(context.Context, ExecutionRequest) error { return nil }
 	prepareBenchmarkTaskSet = func(_ context.Context, gotRoot string, tasks []benchmarkPlanTask) (map[string]string, map[string]string, error) {
 		preparedCalls++
 		if gotRoot != root {
@@ -1842,6 +1844,7 @@ func stubStudyInfrastructure(t *testing.T, root string) *int {
 		verifyBenchmarkPier = originalVerifyPier
 		prepareBenchmarkTaskSet = originalPrepareTasks
 		dockerHostArchitecture = originalArchitecture
+		preflightTreatmentRuntime = originalRuntime
 	})
 	return &preparedCalls
 }

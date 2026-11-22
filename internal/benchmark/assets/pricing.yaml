@@ -122,3 +122,20 @@ providers:
           cache_creation_input_tokens: 2.50
           cache_read_input_tokens: 0.20
           output_tokens: 9.00
+    # Standard request prices checked against the model's pricing section on 2026-11-22.
+    gpt-6-luna:
+      effective_from: 2026-11-21
+      source_url: https://developers.openai.com/api/docs/models/gpt-6-luna
+      reasoning_output: included_in_output
+      long_context_threshold_tokens: 272000
+      rates:
+        short_context:
+          uncached_input_tokens: 0.10
+          cache_creation_input_tokens: 0.125
+          cache_read_input_tokens: 0.01
+          output_tokens: 0.50
+        long_context:
+          uncached_input_tokens: 0.20
+          cache_creation_input_tokens: 0.25
+          cache_read_input_tokens: 0.02
+          output_tokens: 0.75

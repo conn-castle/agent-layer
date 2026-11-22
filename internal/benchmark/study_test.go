@@ -71,6 +71,7 @@ func TestRunStudyDryRunAndPaidWorkflow(t *testing.T) {
 	originalVerifyPier := verifyBenchmarkPier
 	originalValidateAuthentication := validateBenchmarkAuthentication
 	originalPrepareTasks := prepareBenchmarkTaskSet
+	originalRuntime := preflightTreatmentRuntime
 	preflightBenchmark = func(selections []parsedSelection) error {
 		if len(selections) != 1 || selections[0].model.PublishedIdentifier != publishedLuna || selections[0].effort != effortLow {
 			return fmt.Errorf("unexpected study selections: %#v", selections)
@@ -80,6 +81,12 @@ func TestRunStudyDryRunAndPaidWorkflow(t *testing.T) {
 	verifyBenchmarkPier = func(context.Context) error { return nil }
 	validateBenchmarkAuthentication = func(context.Context, string, []parsedSelection) (map[string]AuthenticationPreflight, error) {
 		return map[string]AuthenticationPreflight{}, nil
+	}
+	preflightTreatmentRuntime = func(_ context.Context, request ExecutionRequest) error {
+		if request.Arm != ArmBaseline || request.Bundle != nil || request.AdapterSHA256 == "" {
+			return fmt.Errorf("unexpected bare runtime preflight: %#v", request)
+		}
+		return nil
 	}
 	prepareBenchmarkTaskSet = func(_ context.Context, gotRoot string, tasks []benchmarkPlanTask) (map[string]string, map[string]string, error) {
 		if gotRoot != root || len(tasks) != 2 || tasks[0].ID != "first-task" || tasks[1].ID != "second-task" {
@@ -92,6 +99,7 @@ func TestRunStudyDryRunAndPaidWorkflow(t *testing.T) {
 		verifyBenchmarkPier = originalVerifyPier
 		validateBenchmarkAuthentication = originalValidateAuthentication
 		prepareBenchmarkTaskSet = originalPrepareTasks
+		preflightTreatmentRuntime = originalRuntime
 	})
 
 	dryExecutor := &studyWorkflowExecutor{}
@@ -686,22 +694,22 @@ func TestBareCustomAdapterIdentityAndHistoricalManifestBoundary(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got, err := executionAdapterSHA256(grok, nil); err != nil || got != wantAdapter {
+	if got, err := executionAdapterSHA256(nil); err != nil || got != wantAdapter {
 		t.Fatalf("bare Grok adapter hash = %q, %v", got, err)
-	}
-	luna, _, err := ParseModelSelection("luna:low")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got, err := executionAdapterSHA256(luna, nil); err != nil || got != "" {
-		t.Fatalf("native bare adapter hash = %q, %v", got, err)
 	}
 
 	prepared := preparedStudy{experiments: []preparedStudyExperiment{{model: grok, effort: effort}}}
-	matching := immutableStudyManifest{Arms: []studyArmContract{{Adapter: wantAdapter}}}
+	matching := immutableStudyManifest{Arms: []studyArmContract{{
+		Adapter: wantAdapter, ProviderClientVersion: grok.ProviderClientVersion,
+	}}}
 	if !studyManifestBundleMatches(matching, &prepared, []*TreatmentBundle{nil}) {
 		t.Fatal("matching bare custom adapter was rejected")
 	}
+	matching.Arms[0].ProviderClientVersion = "old-client"
+	if studyManifestBundleMatches(matching, &prepared, []*TreatmentBundle{nil}) {
+		t.Fatal("study accepted a different pinned provider client version")
+	}
+	matching.Arms[0].ProviderClientVersion = grok.ProviderClientVersion
 	matching.Arms[0].Adapter = ""
 	if studyManifestBundleMatches(matching, &prepared, []*TreatmentBundle{nil}) {
 		t.Fatal("adapter-less historical manifest matched a bare custom arm")

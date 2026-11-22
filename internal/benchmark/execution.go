@@ -44,7 +44,7 @@ var (
 )
 
 const (
-	benchmarkDockerCleanupTimeout  = 30 * time.Second
+	benchmarkDockerCleanupTimeout  = 3 * time.Minute
 	authenticationPreflightTimeout = 15 * time.Second
 	codexLoginStatusCheck          = "codex login status"
 	codexAuthMethodChatGPT         = "chatgpt"
@@ -108,6 +108,7 @@ type ExecutionRequest struct {
 	antigravityCredentialsPath string
 	artifactSecrets            [][]byte
 	executionCheckpointed      bool
+	requireSubmissionDigest    bool
 	recoveryOnly               bool
 	verifierReplay             bool
 	OnProgress                 func(ExecutionProgress)
@@ -401,18 +402,11 @@ func (PierExecutor) Execute(ctx context.Context, request ExecutionRequest) (resu
 		"--include-task-name", request.Task,
 	}
 	arguments = append(arguments, startupArguments...)
-	if usesAgentLayerPierAdapter(request) {
-		treatmentArguments, err := treatmentPierArguments(request)
-		if err != nil {
-			return AttemptResult{}, err
-		}
-		arguments = append(arguments, treatmentArguments...)
-	} else {
-		arguments = append(arguments, "--agent", request.Model.Adapter)
-		if request.AgentTimeoutMultiplier > 0 {
-			arguments = append(arguments, "--agent-timeout-multiplier", strconv.FormatFloat(request.AgentTimeoutMultiplier, 'f', -1, 64))
-		}
+	treatmentArguments, err := treatmentPierArguments(request)
+	if err != nil {
+		return AttemptResult{}, err
 	}
+	arguments = append(arguments, treatmentArguments...)
 	arguments = append(
 		arguments,
 		pierAgentKwarg, "version="+request.Model.ProviderClientVersion,
@@ -460,6 +454,7 @@ func (PierExecutor) Execute(ctx context.Context, request ExecutionRequest) (resu
 	var output bytes.Buffer
 	command.Stdout, command.Stderr = &output, &output
 	if !request.PreflightOnly {
+		request.requireSubmissionDigest = true
 		if err := writePierExecutionCheckpoint(request, stage); err != nil {
 			return AttemptResult{}, err
 		}
@@ -520,9 +515,12 @@ func (PierExecutor) Execute(ctx context.Context, request ExecutionRequest) (resu
 		if err := validatePierTreatmentPreflight(stage, request); err != nil {
 			return AttemptResult{}, err
 		}
+		if err := validatePierSubmission(stage); err != nil {
+			return AttemptResult{}, err
+		}
 		return AttemptResult{}, nil
 	}
-	result, durableExecution, returnErr = finalizePierExecution(request, stage, commandErr, cleanupErr)
+	result, durableExecution, returnErr = finalizePierExecution(request, stage, commandErr, cleanupErr, validatePierSubmission(stage))
 	return result, returnErr
 }
 
@@ -595,9 +593,28 @@ func markPersistedProviderCompletion(stage string, request ExecutionRequest, com
 // run and records its immutable receipt. The returned flag reports whether the
 // event reached a receipt; when it is false the caller must retain the staging
 // directory because the checkpoint still references it for verifier replay.
-func finalizePierExecution(request ExecutionRequest, stage string, commandErr, cleanupErr error) (AttemptResult, bool, error) {
+func finalizePierExecution(request ExecutionRequest, stage string, commandErr, cleanupErr, submissionErr error) (AttemptResult, bool, error) {
+	if commandErr == nil && submissionErr != nil {
+		if retained, err := retainPersistedProviderFailure(request, nil, cleanupErr, submissionErr); retained {
+			return AttemptResult{}, false, err
+		}
+		raw, err := readPierTaskResult(stage, request)
+		if err != nil {
+			return AttemptResult{}, false, errors.Join(submissionErr, cleanupErr, err)
+		}
+		exception := pierExceptionType(raw)
+		agentFailure := slices.Contains([]string{
+			"AgentSetupTimeoutError", "AgentTimeoutError", "EnvironmentStartTimeoutError", "NonZeroAgentExitCodeError",
+		}, exception)
+		if exception == "" || verifierFailureType(exception) || (verifierStarted(raw) && !agentFailure) {
+			return AttemptResult{}, false, errors.Join(submissionErr, cleanupErr)
+		}
+		// Pier can exit successfully after recording an agent-phase failure.
+		// Preserve the failed receipt so an explicitly resumed cell can run.
+		commandErr = fmt.Errorf("pier agent phase failed: %s", exception)
+	}
 	if err := promoteSanitizedPierArtifacts(request, stage); err != nil {
-		return AttemptResult{}, false, err
+		return AttemptResult{}, false, errors.Join(err, submissionErr)
 	}
 	artifactRoot, err := artifactDestination(request)
 	if err != nil {
@@ -617,9 +634,12 @@ func finalizePierExecution(request ExecutionRequest, stage string, commandErr, c
 	if commandErr != nil {
 		terminalResult, terminal, terminalErr := normalizeTerminalVerifierTestTimeout(artifactRoot, request)
 		if terminalErr != nil {
-			return AttemptResult{}, false, terminalErr
+			return AttemptResult{}, false, errors.Join(terminalErr, submissionErr)
 		}
 		if terminal && cleanupErr == nil {
+			if submissionErr != nil {
+				return AttemptResult{}, false, submissionErr
+			}
 			// Pier exits unsuccessfully for a verifier timeout, but a timeout
 			// proven to have occurred during the candidate test process is a
 			// completed benchmark outcome rather than infrastructure failure.
@@ -630,7 +650,7 @@ func finalizePierExecution(request ExecutionRequest, stage string, commandErr, c
 		}
 	}
 	if commandErr != nil {
-		if retained, retainedErr := retainPersistedProviderFailure(request, commandErr, cleanupErr); retained {
+		if retained, retainedErr := retainPersistedProviderFailure(request, commandErr, cleanupErr, submissionErr); retained {
 			return AttemptResult{}, false, retainedErr
 		}
 		capacity, err := hasProviderCapacityEvidence(artifactRoot)
@@ -652,7 +672,7 @@ func finalizePierExecution(request ExecutionRequest, stage string, commandErr, c
 		if err := recordDurableExecution(commandErr); err != nil {
 			return AttemptResult{}, durable, err
 		}
-		return AttemptResult{}, true, fmt.Errorf("pier task execution failed: %w", errors.Join(commandErr, cleanupErr))
+		return AttemptResult{}, true, fmt.Errorf("pier task execution failed: %w", errors.Join(commandErr, cleanupErr, submissionErr))
 	}
 	// The verifier outcome decides the event's fate before a cleanup failure
 	// does: a succeeded receipt would discard the staged replay patch of a
@@ -666,7 +686,7 @@ func finalizePierExecution(request ExecutionRequest, stage string, commandErr, c
 		// After a proven provider completion the event stays replayable. A
 		// failed receipt would instead be resumed by the next invocation at
 		// provider expense, which the durable checkpoint exists to prevent.
-		if retained, retainedErr := retainPersistedProviderFailure(request, verifierErr, cleanupErr); retained {
+		if retained, retainedErr := retainPersistedProviderFailure(request, verifierErr, cleanupErr, nil); retained {
 			return AttemptResult{}, false, retainedErr
 		}
 		if err := recordDurableExecution(verifierErr); err != nil {
@@ -686,20 +706,19 @@ func finalizePierExecution(request ExecutionRequest, stage string, commandErr, c
 	return result, true, nil
 }
 
-// retainPersistedProviderFailure keeps the paid provider event replayable once
-// ProviderCompletedAt proves a clean provider completion, whether Pier was
-// interrupted or its verifier finished unsuccessfully. ProviderCompletedAt is
-// written only after the adapter completion checkpoint, patch, and provider
-// cost stream have all been validated, so a later failure must not demote the
-// event into an ordinary failed receipt, which a subsequent invocation would
-// resume at provider expense, nor delete its staging tree.
-func retainPersistedProviderFailure(request ExecutionRequest, failure, cleanupErr error) (bool, error) {
+// retainPersistedProviderFailure keeps the paid event and its staging evidence
+// once provider completion has been recorded. Replay requires a valid patch.
+func retainPersistedProviderFailure(request ExecutionRequest, failure, cleanupErr, submissionErr error) (bool, error) {
 	checkpoint, found, err := matchingPierExecutionCheckpoint(request)
 	if err != nil {
 		return true, err
 	}
 	if !found || checkpoint.ProviderCompletedAt.IsZero() {
 		return false, nil
+	}
+	if submissionErr != nil {
+		return true, fmt.Errorf("verify submission for completed Pier event %s: %w; retained staging directory: %s",
+			checkpoint.EventID, errors.Join(submissionErr, failure, cleanupErr), checkpoint.StagePath)
 	}
 	return true, fmt.Errorf(
 		"provider output for Pier event %s is persisted and its verifier did not succeed; the next identical run may replay only the verifier and never makes another provider call: %w; retained staging directory: %s",
@@ -970,10 +989,12 @@ func treatmentPierArguments(request ExecutionRequest) ([]string, error) {
 	}
 	className := provider.PierAgent
 	timeout := request.AgentTimeoutMultiplier
-	if timeout == 0 {
-		if request.Bundle != nil {
-			timeout = request.Bundle.Manifest.AgentTimeoutMultiplier
-		}
+	if timeout == 0 && request.Bundle != nil {
+		timeout = request.Bundle.Manifest.AgentTimeoutMultiplier
+	}
+	if timeout == 0 && request.Arm == ArmBaseline &&
+		(request.Model.Adapter == adapterCodex || request.Model.Adapter == adapterClaudeCode) {
+		timeout = 1
 	}
 	if timeout <= 0 {
 		return nil, fmt.Errorf("benchmark execution requires a positive agent timeout multiplier")
@@ -1033,18 +1054,10 @@ func treatmentPierArguments(request ExecutionRequest) ([]string, error) {
 	return arguments, nil
 }
 
-func usesAgentLayerPierAdapter(request ExecutionRequest) bool {
-	return request.Arm == ArmTreatment || request.Model.Adapter == adapterAntigravity || request.Model.Adapter == adapterGrok
-}
-
 // stagePierAgentLayerAdapter exposes the module named by --agent-import-path.
 // Treatment runs use the content-addressed copy in their immutable bundle.
-// Bare providers that Pier does not implement natively use the matching asset
-// embedded in this executable, without turning the arm into a treatment.
+// Bare runs use the embedded adapter for the same task submission protocol.
 func stagePierAgentLayerAdapter(request ExecutionRequest, stage string) (string, error) {
-	if !usesAgentLayerPierAdapter(request) {
-		return "", nil
-	}
 	if request.Bundle != nil {
 		if request.Bundle.AdapterPath == "" {
 			return "", fmt.Errorf("benchmark treatment bundle is missing its Pier adapter")

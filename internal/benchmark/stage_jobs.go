@@ -2,10 +2,14 @@ package benchmark
 
 import (
 	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 )
+
+const submissionDigestFile = "submission.sha256"
 
 // walkStageJobFiles calls visit for each non-directory below stage/jobs in lexical
 // walk order. Visit errors stop the walk and are returned unchanged; visitors must
@@ -46,6 +50,36 @@ func parentDirIs(path, name string) bool {
 
 func isSubmittedModelPatch(path string, entry fs.DirEntry) bool {
 	return entry.Name() == benchmarkModelPatchFile && parentDirIs(path, benchmarkArtifactsDir)
+}
+
+func validatePierSubmission(stage string) error {
+	patches, err := stageJobFiles(stage, false, func(path string, entry fs.DirEntry) bool {
+		return entry.Type().IsRegular() && isSubmittedModelPatch(path, entry)
+	})
+	if err != nil {
+		return fmt.Errorf("find benchmark submission: %w", err)
+	}
+	if len(patches) != 1 {
+		return fmt.Errorf("benchmark submission has %d exported model patches, expected one", len(patches))
+	}
+	patch := patches[0]
+	agentDir := filepath.Join(filepath.Dir(filepath.Dir(patch)), benchmarkAgentDir)
+	return verifySubmissionDigest(patch, filepath.Join(agentDir, submissionDigestFile))
+}
+
+func verifySubmissionDigest(patch, digest string) error {
+	agentEvidence, err := os.ReadFile(digest) // #nosec G304 -- path is under the private trial stage.
+	if err != nil {
+		return fmt.Errorf("read benchmark submission digest: %w", err)
+	}
+	exported, err := os.ReadFile(patch) // #nosec G304 -- path is under the private trial stage.
+	if err != nil {
+		return fmt.Errorf("read benchmark submission patch: %w", err)
+	}
+	if strings.TrimSpace(string(agentEvidence)) != digestBytes(exported) {
+		return fmt.Errorf("benchmark model.patch differs from the collected Git submission")
+	}
+	return nil
 }
 
 func isDispatchRecord(path string, entry fs.DirEntry) bool {

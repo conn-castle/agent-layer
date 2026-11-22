@@ -9,10 +9,11 @@ import (
 
 // Pinned benchmark inputs and artifact schema versions.
 const (
-	DeepSWECommit       = "e016041a6ccf8da29906afc9a3f5a8df940a1f78"
-	PierVersion         = "0.3.1"
-	CodexClientVersion  = "0.146.0"
-	ClaudeClientVersion = "2.1.207"
+	DeepSWECommit              = "e016041a6ccf8da29906afc9a3f5a8df940a1f78"
+	PierVersion                = "0.3.1"
+	CodexClientVersion         = "0.146.0"
+	ExplicitCodexClientVersion = "0.171.0"
+	ClaudeClientVersion        = "2.1.207"
 	// These are the Linux client releases the benchmark adapters are written
 	// and fixture-tested against.  They are part of a new-provider identity;
 	// do not change the legacy Codex or Claude identity fields above.
@@ -177,11 +178,13 @@ func ParseModelSelection(value string) (Model, string, error) {
 			return Model{}, "", fmt.Errorf("invalid explicit model selection %q", value)
 		}
 		runtimeIdentifier := identifier
+		clientVersion := descriptor.ClientVersion
 		if adapter == adapterCodex {
 			runtimeIdentifier = "openai/" + identifier
+			clientVersion = ExplicitCodexClientVersion
 		}
 		return Model{Name: parts[0], PublishedIdentifier: parts[0], RuntimeIdentifier: runtimeIdentifier,
-			Adapter: adapter, ProviderClientVersion: descriptor.ClientVersion}, parts[1], nil
+			Adapter: adapter, ProviderClientVersion: clientVersion}, parts[1], nil
 	}
 	for _, model := range historicalModels {
 		if model.Name != strings.ToLower(parts[0]) {

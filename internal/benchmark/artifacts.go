@@ -26,20 +26,21 @@ const credentialKeyName = "key"
 const replayInputDir = "agent-layer-replay"
 
 type pierExecutionCheckpoint struct {
-	SchemaVersion        string    `json:"schema_version"`
-	EventID              string    `json:"event_id"`
-	Attempt              int       `json:"attempt"`
-	Task                 string    `json:"task"`
-	TaskChecksum         string    `json:"task_checksum"`
-	EnvironmentIdentity  string    `json:"task_environment_identity,omitempty"`
-	Arm                  string    `json:"arm"`
-	RuntimeModel         string    `json:"runtime_model"`
-	ReasoningEffort      string    `json:"reasoning_effort"`
-	TreatmentHash        string    `json:"treatment_manifest_hash,omitempty"`
-	StagePath            string    `json:"stage_path"`
-	StartedAt            time.Time `json:"started_at"`
-	ProviderCompletedAt  time.Time `json:"provider_completed_at,omitempty"`
-	ArtifactsSanitizedAt time.Time `json:"artifacts_sanitized_at,omitempty"`
+	SchemaVersion           string    `json:"schema_version"`
+	EventID                 string    `json:"event_id"`
+	Attempt                 int       `json:"attempt"`
+	Task                    string    `json:"task"`
+	TaskChecksum            string    `json:"task_checksum"`
+	EnvironmentIdentity     string    `json:"task_environment_identity,omitempty"`
+	Arm                     string    `json:"arm"`
+	RuntimeModel            string    `json:"runtime_model"`
+	ReasoningEffort         string    `json:"reasoning_effort"`
+	TreatmentHash           string    `json:"treatment_manifest_hash,omitempty"`
+	StagePath               string    `json:"stage_path"`
+	StartedAt               time.Time `json:"started_at"`
+	ProviderCompletedAt     time.Time `json:"provider_completed_at,omitempty"`
+	ArtifactsSanitizedAt    time.Time `json:"artifacts_sanitized_at,omitempty"`
+	RequireSubmissionDigest bool      `json:"require_submission_digest,omitempty"`
 }
 
 type pierExecutionReceipt struct {
@@ -239,6 +240,7 @@ func writePierExecutionCheckpoint(request ExecutionRequest, stage string) error 
 		EnvironmentIdentity: request.EnvironmentIdentity, Arm: request.Arm,
 		RuntimeModel: request.Model.RuntimeIdentifier, ReasoningEffort: request.Effort,
 		TreatmentHash: executionTreatmentHash(request), StagePath: absStage, StartedAt: time.Now().UTC(),
+		RequireSubmissionDigest: request.requireSubmissionDigest,
 	}
 	if err := writeJSON(filepath.Join(destination, "execution-checkpoint.json"), checkpoint); err != nil {
 		return fmt.Errorf("record started Pier execution: %w", err)

@@ -34,6 +34,7 @@ type providerCheckpoint struct {
 
 func (PierExecutor) replayVerifier(ctx context.Context, request ExecutionRequest, checkpoint pierExecutionCheckpoint) (AttemptResult, error) {
 	request.executionCheckpointed = true
+	request.requireSubmissionDigest = checkpoint.RequireSubmissionDigest
 	if _, err := os.Stat(checkpoint.StagePath); err != nil {
 		return AttemptResult{}, fmt.Errorf("retained Pier staging directory %s is unavailable; refusing a paid retry: %w", checkpoint.StagePath, err)
 	}
@@ -331,6 +332,12 @@ func retainedProviderEvidence(stage string, request ExecutionRequest) (patch, ag
 	}
 	if !info.Mode().IsRegular() {
 		return "", "", nil, fmt.Errorf("retained model.patch %s is not a regular file", patch)
+	}
+	digest := filepath.Join(agentDir, submissionDigestFile)
+	if request.requireSubmissionDigest || fileExists(digest) {
+		if err := verifySubmissionDigest(patch, digest); err != nil {
+			return "", "", nil, err
+		}
 	}
 	if raw, err := readPierTaskResult(stage, request); err == nil {
 		original = &raw

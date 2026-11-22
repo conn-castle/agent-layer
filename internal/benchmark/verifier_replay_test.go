@@ -160,6 +160,14 @@ func TestSanitizationPreservesExactReplayPatchAndExcludesItFromEvidence(t *testi
 	if data, err := os.ReadFile(preserved); err != nil || !bytes.Equal(data, exact) { // #nosec G304 -- test-owned stage.
 		t.Fatalf("exact replay patch was altered or missing after repeated sanitization: %v", err)
 	}
+	request.requireSubmissionDigest = true
+	if _, _, _, err := retainedProviderEvidence(stage, request); err == nil || !strings.Contains(err.Error(), "read benchmark submission digest") {
+		t.Fatalf("without the required submission digest, replay returned %v", err)
+	}
+	digest := filepath.Join(stage, "jobs", "one", "agent", submissionDigestFile)
+	if err := os.WriteFile(digest, []byte(digestBytes(exact)+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	if patch, _, _, err := retainedProviderEvidence(stage, request); err != nil || patch != preserved {
 		t.Fatalf("replay input = %q, want exact copy %q: %v", patch, preserved, err)
 	}

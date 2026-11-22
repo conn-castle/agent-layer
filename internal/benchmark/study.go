@@ -155,23 +155,27 @@ type immutableStudyManifest struct {
 }
 
 type studyArmContract struct {
-	Name            string `json:"name"`
-	ID              string `json:"id"`
-	Target          string `json:"target"`
-	Bundle          string `json:"bundle_manifest_hash,omitempty"`
-	Adapter         string `json:"adapter_sha256,omitempty"`
-	Runtime         string `json:"runtime_sha256,omitempty"`
-	RuntimeSource   string `json:"runtime_source_kind,omitempty"`
-	RuntimeVersion  string `json:"runtime_version,omitempty"`
-	TemplatesCommit string `json:"templates_commit,omitempty"`
-	TemplatesDirty  bool   `json:"templates_dirty,omitempty"`
+	Name                  string `json:"name"`
+	ID                    string `json:"id"`
+	Target                string `json:"target"`
+	ProviderClientVersion string `json:"provider_client_version,omitempty"`
+	Bundle                string `json:"bundle_manifest_hash,omitempty"`
+	Adapter               string `json:"adapter_sha256,omitempty"`
+	Runtime               string `json:"runtime_sha256,omitempty"`
+	RuntimeSource         string `json:"runtime_source_kind,omitempty"`
+	RuntimeVersion        string `json:"runtime_version,omitempty"`
+	TemplatesCommit       string `json:"templates_commit,omitempty"`
+	TemplatesDirty        bool   `json:"templates_dirty,omitempty"`
 }
 
 func writeStudyManifest(study *preparedStudy, preparation matrixPreparation) error {
 	manifest := immutableStudyManifest{SchemaVersion: immutableStudyManifestSchema, StudyID: study.studyID, SelectionID: study.selectionID, Checksums: copyStringMap(preparation.checksums), Environments: copyStringMap(preparation.environments), Resources: studyResourceContract()}
 	for _, arm := range preparation.arms {
 		manifest.Membership = append(manifest.Membership, arm.Label)
-		contract := studyArmContract{Name: arm.Label, ID: arm.ID, Target: arm.Loaded.Model.RuntimeIdentifier + ":" + arm.Loaded.Effort, Adapter: arm.AdapterSHA256}
+		contract := studyArmContract{
+			Name: arm.Label, ID: arm.ID, Target: arm.Loaded.Model.RuntimeIdentifier + ":" + arm.Loaded.Effort,
+			Adapter: arm.AdapterSHA256, ProviderClientVersion: arm.Loaded.Model.ProviderClientVersion,
+		}
 		if arm.Bundle != nil {
 			contract.Bundle, contract.Runtime, contract.RuntimeSource, contract.RuntimeVersion = arm.Bundle.ManifestHash, arm.Bundle.LinuxBinarySHA256, arm.Bundle.RuntimeSourceKind, arm.Bundle.RuntimeVersion
 			contract.TemplatesCommit, contract.TemplatesDirty = arm.Bundle.TemplatesCommit, arm.Bundle.TemplatesDirty
@@ -662,9 +666,6 @@ func scheduleStudyRuntimePreflights(repoRoot string, tasks []benchmarkPlanTask, 
 	for armIndex := range arms {
 		arm := &arms[armIndex]
 		request := ExecutionRequest{RepoRoot: repoRoot, EvidenceDir: arm.StateDir, Attempt: 1, Model: arm.Loaded.Model, Effort: arm.Loaded.Effort, Arm: arm.Mode, Bundle: arm.Bundle, AgentTimeoutMultiplier: arm.AgentTimeoutMultiplier, AdapterSHA256: arm.AdapterSHA256}
-		if !usesAgentLayerPierAdapter(request) {
-			continue
-		}
 		seen := map[string]bool{}
 		for taskIndex, task := range tasks {
 			environment := environments[task.ID]
@@ -1138,7 +1139,7 @@ func recoveryPreparationFromCandidate(prepared *preparedStudy, stateDir string, 
 		historicalID, err := studyArmIdentity(
 			prepared.selectionID, prepared.experiments[index].identity,
 			manifest.Checksums, manifest.Environments,
-			historicalTreatmentBundle(manifest.Arms[index]), manifest.Arms[index].Adapter,
+			historicalTreatmentBundle(manifest.Arms[index]), manifest.Arms[index].Adapter, manifest.Arms[index].ProviderClientVersion,
 		)
 		if err != nil {
 			return matrixPreparation{}, immutableStudyManifest{}, false, err
@@ -1169,6 +1170,9 @@ func recoveryPreparationFromManifest(prepared *preparedStudy, manifest immutable
 		loaded := loadedBenchmarkPlan{Model: experiment.model, Effort: experiment.effort}
 		loaded.Plan.Tasks = tasks
 		contract := manifest.Arms[index]
+		if contract.ProviderClientVersion != "" {
+			loaded.Model.ProviderClientVersion = contract.ProviderClientVersion
+		}
 		preparation.arms = append(preparation.arms, matrixArm{
 			ID: contract.ID, Label: contract.Name, Mode: mode, Loaded: loaded, Bundle: bundle,
 			AdapterSHA256: contract.Adapter, AgentTimeoutMultiplier: skillsAgentTimeoutFactor,
@@ -1298,9 +1302,9 @@ func studyManifestBundleMatches(manifest immutableStudyManifest, prepared *prepa
 		return false
 	}
 	for index, arm := range manifest.Arms {
-		bundle := bundles[index]                                                                // #nosec G602 -- all three parallel slices have equal lengths by the guard above.
-		adapterSHA256, err := executionAdapterSHA256(prepared.experiments[index].model, bundle) // #nosec G602 -- equal lengths are validated above.
-		if err != nil || arm.Adapter != adapterSHA256 {
+		bundle := bundles[index] // #nosec G602 -- all three parallel slices have equal lengths by the guard above.
+		adapterSHA256, err := executionAdapterSHA256(bundle)
+		if err != nil || arm.Adapter != adapterSHA256 || arm.ProviderClientVersion != prepared.experiments[index].model.ProviderClientVersion {
 			return false
 		}
 		if bundle == nil {
@@ -1407,11 +1411,12 @@ func sameAuthenticationPreflight(left, right AuthenticationPreflight) bool {
 func bindStudyPreparation(repoRoot string, prepared *preparedStudy, tasks []benchmarkPlanTask, checksums, environments map[string]string, bundles []*TreatmentBundle, authentication map[string]AuthenticationPreflight, concurrency int) (matrixPreparation, error) {
 	preparation := matrixPreparation{selection: prepared.selection, selectionID: prepared.selectionID, tasks: tasks, checksums: checksums, environments: environments, authentication: authentication, taskConcurrency: concurrency}
 	for index, experiment := range prepared.experiments {
-		adapterSHA256, err := executionAdapterSHA256(experiment.model, bundles[index])
+		adapterSHA256, err := executionAdapterSHA256(bundles[index])
 		if err != nil {
 			return matrixPreparation{}, err
 		}
-		identity, err := studyArmIdentity(prepared.selectionID, experiment.identity, checksums, environments, bundles[index], adapterSHA256)
+		identity, err := studyArmIdentity(prepared.selectionID, experiment.identity, checksums, environments,
+			bundles[index], adapterSHA256, experiment.model.ProviderClientVersion)
 		if err != nil {
 			return matrixPreparation{}, err
 		}
@@ -1439,27 +1444,25 @@ func bindStudyPreparation(repoRoot string, prepared *preparedStudy, tasks []benc
 	return preparation, nil
 }
 
-func executionAdapterSHA256(model Model, bundle *TreatmentBundle) (string, error) {
+func executionAdapterSHA256(bundle *TreatmentBundle) (string, error) {
 	if bundle != nil {
 		if bundle.AdapterSHA256 == "" {
 			return "", fmt.Errorf("benchmark treatment bundle is missing its Pier adapter hash")
 		}
 		return bundle.AdapterSHA256, nil
 	}
-	if model.Adapter == adapterGrok || model.Adapter == adapterAntigravity {
-		return embeddedPierAdapterSHA256()
-	}
-	return "", nil
+	return embeddedPierAdapterSHA256()
 }
 
-func studyArmIdentity(selectionID, experimentIdentity string, checksums, environments map[string]string, bundle *TreatmentBundle, adapterSHA256 string) (string, error) {
+func studyArmIdentity(selectionID, experimentIdentity string, checksums, environments map[string]string, bundle *TreatmentBundle, adapterSHA256, clientVersion string) (string, error) {
 	identityInput := struct {
 		Schema, Selection, Experiment          string
 		TaskChecksums, Environments            map[string]string
 		Resource                               map[string]any
 		ManifestHash, AdapterHash, RuntimeHash string
+		ProviderClientVersion                  string `json:"provider_client_version,omitempty"`
 	}{Schema: "deepswe-study-arm-v2", Selection: selectionID, Experiment: experimentIdentity, AdapterHash: adapterSHA256,
-		TaskChecksums: checksums, Environments: environments, Resource: studyResourceContract()}
+		TaskChecksums: checksums, Environments: environments, Resource: studyResourceContract(), ProviderClientVersion: clientVersion}
 	if bundle != nil {
 		identityInput.ManifestHash, identityInput.RuntimeHash = bundle.ManifestHash, bundle.LinuxBinarySHA256
 	}
