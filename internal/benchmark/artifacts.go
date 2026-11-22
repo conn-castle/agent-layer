@@ -690,6 +690,11 @@ func preserveReplayPatch(stage string) error {
 		}
 	}
 	if !havePatch {
+		if haveDigest {
+			if err := verifySubmissionDigest(patches[0], preservedDigest); err != nil {
+				return fmt.Errorf("recover exact replay patch: %w", err)
+			}
+		}
 		if err := copyRequiredFile(patches[0], target); err != nil {
 			return fmt.Errorf("preserve exact replay patch: %w", err)
 		}

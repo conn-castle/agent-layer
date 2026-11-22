@@ -118,11 +118,17 @@ class WorkspaceSubmission:
         return merged == other
 
     def amended_pinned_commit(self, base, head):
-        entries = self.git("reflog", "show", "--format=%H%x09%gs", "HEAD").splitlines()
-        amend = head.encode() + b"\tcommit (amend):"
-        previous = base.encode() + b"\t"
-        return any(new.startswith(amend) and old.startswith(previous)
-                   for new, old in zip(entries, entries[1:]))
+        entries = [entry.split(b"\t", 1) for entry in self.git(
+            "reflog", "show", "--format=%H%x09%gs", "HEAD",
+        ).splitlines()]
+        rewritten = {base.encode()}
+        for (older, _), (newer, action) in zip(reversed(entries[1:]), reversed(entries[:-1])):
+            if older in rewritten and action.startswith(b"commit (amend):"):
+                rewritten.add(newer)
+        return any(self.is_ancestor(commit.decode(), head) for commit in rewritten - {base.encode()})
+
+    def changed_paths(self, base, tree):
+        return set(self.git("diff", "--no-renames", "--name-only", "-z", base, tree).split(b"\0")) - {b""}
 
     def worktrees(self):
         for record in self.git("worktree", "list", "--porcelain", "-z").split(b"\0\0"):
@@ -138,6 +144,7 @@ class WorkspaceSubmission:
     def snapshot(self):
         self.git("config", "user.email", "benchmark@local.invalid")
         self.git("config", "user.name", "Agent Layer Benchmark")
+        self.git("config", "core.logAllRefUpdates", "true")
         base = self.git("rev-parse", "HEAD").decode().strip()
         if "refs/heads/main" not in self.git("for-each-ref", "--format=%(refname)", "refs/heads").decode().splitlines():
             self.git("branch", "main", base)
@@ -152,6 +159,9 @@ class WorkspaceSubmission:
     def check_git_support(self):
         base = self.git("rev-parse", "HEAD").decode().strip()
         self.git("merge-tree", "--write-tree", "--no-messages", base, base)
+        self.git("reflog", "show", "--format=%H%x09%gs", "HEAD")
+        for option in ("--no-assume-unchanged", "--no-skip-worktree"):
+            self.git("update-index", option, "-z", "--stdin", input=b"")
 
     def refresh_index(self, directory, env, nested):
         entries = self.git("ls-files", "-v", "-z", directory=directory, env=env)
@@ -211,6 +221,24 @@ class WorkspaceSubmission:
             (destination / f"{tree}.patch").write_bytes(self.git("diff", "--binary", base, tree))
         (destination / "sources.json").write_text(json.dumps(candidates, indent=2) + "\n")
 
+    def compare_descendants(self, base, candidates, committed_tips, checkouts, conflicts):
+        superseded = set()
+        for tree, tips in committed_tips.items():
+            for head, final_tree, source in checkouts:
+                if tree == final_tree or not all(tip != head and self.is_ancestor(tip, head) for tip in tips):
+                    continue
+                # A descendant can refine the same lines. If it returns a changed
+                # path to the task base, the two checkouts disagree about the change.
+                if self.changed_paths(base, tree) <= self.changed_paths(base, final_tree):
+                    superseded.add(tree)
+                    continue
+                competing = {**candidates}
+                if final_tree not in competing:
+                    competing[final_tree] = [source]
+                self.record_candidates(base, competing, conflicts)
+                raise RuntimeError(f"multiple different benchmark submissions after a revert in {source}")
+        return superseded
+
     def collect(self, conflicts=None):
         snapshot = json.loads(self.snapshot_path.read_text())
         base = snapshot["base"]
@@ -224,7 +252,8 @@ class WorkspaceSubmission:
                                             *self.untracked_provider_paths).split(b"\0"))
         candidates = {}
         working_changes = set()
-        checked_out = set()
+        committed_tips = {}
+        checkouts = []
         root_head = ""
         for directory in sorted(worktrees):
             try:
@@ -249,18 +278,26 @@ class WorkspaceSubmission:
                 if not amended_root:
                     self.record_candidates(base, {tree: [str(directory)]}, conflicts)
                     raise RuntimeError(f"benchmark checkout is outside the pinned task history: {directory}")
-            checked_out.add(head)
+            checkouts.append((head, tree, str(directory)))
             if tree == baseline_tree:
                 continue
             if tree != committed:
                 working_changes.add(tree)
+            else:
+                committed_tips.setdefault(tree, set()).add(head)
             candidates.setdefault(tree, []).append(str(directory))
+        checked_out = {head for head, _, _ in checkouts}
         for tip in sorted(self.branch_tips() - original_branches - checked_out):
             if not self.is_ancestor(base, tip):
                 continue
             tree = self.candidate_tree(base, tip, preexisting, provider_tracked)
             if tree != baseline_tree:
                 candidates.setdefault(tree, []).append(tip)
+                committed_tips.setdefault(tree, set()).add(tip)
+        clean_tips = {tree: tips for tree, tips in committed_tips.items() if tree not in working_changes}
+        superseded = self.compare_descendants(base, candidates, clean_tips, checkouts, conflicts)
+        for tree in superseded:
+            del candidates[tree]
         for candidate in sorted(set(candidates) - working_changes):
             if any(self.contains_tree(base, candidate, other) for other in candidates if other != candidate):
                 del candidates[candidate]

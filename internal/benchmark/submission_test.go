@@ -83,8 +83,7 @@ def exercise(mode):
         if mode in ("older-only", "root-with-older"):
             git("worktree", "add", "--detach", Path(path) / "older", older)
         if mode not in ("empty", "older-only"):
-            if mode in ("root", "root-with-older", "root-amended", "force-staged",
-                        "assume-unchanged", "skip-worktree", "provider-paths"):
+            if mode.startswith("root") or mode in ("force-staged", "assume-unchanged", "skip-worktree", "provider-paths"):
                 solution = root
             elif mode == "detached":
                 solution = Path(path) / "linked"
@@ -105,9 +104,16 @@ def exercise(mode):
                 (solution / ".claude" / "generated.json").write_text("{}\n")
                 (solution / ".gemini").mkdir()
                 (solution / ".gemini" / "settings.json").write_text("{}\n")
-            if mode == "root-amended":
+            if mode.startswith("root-amended"):
                 git("add", "file.txt", "addition.txt")
                 git("commit", "--amend", "--no-edit")
+                if mode != "root-amended":
+                    (root / "addition.txt").write_text("later improvement\n")
+                    git("add", "addition.txt")
+                    if mode == "root-amended-twice":
+                        git("commit", "--amend", "--no-edit")
+                    else:
+                        git("commit", "-qm", "Follow-up to amended commit")
             if mode == "committed" or mode.startswith(("removed", "integrated")):
                 if mode in ("removed-squashed", "removed-cherry-picked", "integrated-squashed"):
                     git("add", "file.txt", directory=solution)
@@ -147,6 +153,9 @@ def exercise(mode):
                 else:
                     (root / "follow-up.txt").write_text("independent follow-up\n")
                     git("add", "follow-up.txt")
+                    if mode in ("removed-merged", "integrated-clean"):
+                        (root / "file.txt").write_text("refine the integrated implementation\n")
+                        git("add", "file.txt")
                     git("commit", "-qm", "Follow-up")
             if mode == "integrated-partially-reverted":
                 (root / "file.txt").write_text(base_file)
@@ -155,8 +164,9 @@ def exercise(mode):
             if mode == "integrated-dirty":
                 (solution / "independent.txt").write_text("independent uncommitted change\n")
             if mode in ("ambiguous", "removed-ambiguous", "integrated-dirty", "removed-merge-extra",
-                        "integrated-partially-reverted"):
-                if mode != "integrated-partially-reverted":
+                        "integrated-partially-reverted", "integrated-reverted", "removed-reverted"):
+                fully_reverted = mode in ("integrated-reverted", "removed-reverted")
+                if not fully_reverted and mode != "integrated-partially-reverted":
                     (root / "file.txt").write_text("conflicting root change\n")
                 conflicts = Path(path) / "conflicts"
                 try:
@@ -166,8 +176,11 @@ def exercise(mode):
                     candidates = json.loads((conflicts / "sources.json").read_text())
                     assert len(candidates) == 2
                     patches = [(conflicts / f"{tree}.patch").read_bytes() for tree in candidates]
-                    root_change = b"+independent follow-up" if mode == "integrated-partially-reverted" else b"+conflicting root change"
-                    assert any(root_change in patch for patch in patches)
+                    if fully_reverted:
+                        assert b"" in patches
+                    else:
+                        root_change = b"+independent follow-up" if mode == "integrated-partially-reverted" else b"+conflicting root change"
+                        assert any(root_change in patch for patch in patches)
                     assert any(b"+candidate" in patch for patch in patches)
                     if mode == "integrated-dirty":
                         assert any(b"+independent uncommitted change" in patch for patch in patches)
@@ -189,8 +202,13 @@ def exercise(mode):
         if provider_paths:
             expected.extend([b".claude/tracked.json", b".gemini/settings.json"])
         assert git("diff", "--name-only", base, "HEAD").splitlines() == sorted(expected), (mode, exported)
+        if mode in ("removed-merged", "integrated-clean"):
+            assert b"+refine the integrated implementation" in exported
+        if mode in ("root-amended-twice", "root-amended-follow-up"):
+            assert b"+later improvement" in exported
 
-for mode in ("empty", "older-only", "root", "root-with-older", "root-amended", "unrelated-root", "new-unrelated-root", "force-staged",
+for mode in ("empty", "older-only", "root", "root-with-older", "root-amended", "root-amended-twice",
+             "root-amended-follow-up", "unrelated-root", "new-unrelated-root", "force-staged",
              "assume-unchanged", "skip-worktree", "provider-paths", "committed", "detached", "removed",
              "ambiguous", "removed-ambiguous", "removed-merged", "removed-squashed", "removed-cherry-picked",
              "removed-reverted", "integrated-clean", "integrated-dirty", "integrated-squashed",
@@ -261,4 +279,20 @@ func TestPreserveReplayPatchBackfillsOnlyMatchingDigest(t *testing.T) {
 	writeVerifierStageFile(t, stage, marker, digestBytes([]byte(exact))+"\n")
 	require.NoError(t, preserveReplayPatch(stage))
 	require.NoError(t, verifySubmissionDigest(filepath.Join(stage, replayInputDir, benchmarkModelPatchFile), preserved))
+}
+
+func TestPreserveReplayPatchRejectsMismatchedPatchAfterPartialWrite(t *testing.T) {
+	stage := t.TempDir()
+	patch := filepath.Join("jobs", "trial", benchmarkArtifactsDir, benchmarkModelPatchFile)
+	marker := filepath.Join(replayInputDir, submissionDigestFile)
+	exact := "exact patch"
+	writeVerifierStageFile(t, stage, marker, digestBytes([]byte(exact))+"\n")
+	writeVerifierStageFile(t, stage, patch, "rewritten evidence")
+	preserved := filepath.Join(stage, replayInputDir, benchmarkModelPatchFile)
+	require.ErrorContains(t, preserveReplayPatch(stage), "recover exact replay patch")
+	require.NoFileExists(t, preserved)
+
+	writeVerifierStageFile(t, stage, patch, exact)
+	require.NoError(t, preserveReplayPatch(stage))
+	require.NoError(t, verifySubmissionDigest(preserved, filepath.Join(stage, marker)))
 }
