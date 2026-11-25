@@ -118,7 +118,7 @@ When an interactive upgrade finds unknown paths under `.agent-layer/` or `docs/a
 
 Upgrade cleanup, snapshots, and rollback skip the [project-local storage](./reference.mdx#ephemeral-artifacts-under-agent-layertmp) directories.
 
-If you run upgrade cleanup with a CLI older than v1.4.0, it can treat files in `.agent-layer/working/`, `.agent-layer/cache/`, and `.agent-layer/worktrees/` as ordinary unknown files and offer to delete them. Before using an older CLI for cleanup, add those directory paths to `.agent-layer/upgrade-keep-list`.
+Upgrade cleanup in releases before v1.4.0 can treat `.agent-layer/working/`, `.agent-layer/cache/`, and `.agent-layer/worktrees/` as unknown directories. Interactive approval or `--yes --apply-deletions` can remove them and their contents. With releases v0.17.3 through v1.3.x, add those directory paths to `.agent-layer/upgrade-keep-list` before running cleanup. With earlier releases, skip unknown-file deletion.
 
 Legacy `.agent-layer/tmp/` remains in place. You can review its contents and move individual files or worktrees yourself:
 
