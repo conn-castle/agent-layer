@@ -57,7 +57,7 @@ You can also compare a second model configuration against the same tasks and wei
 
 ## Run the study
 
-DeltaSelect connects directly to Agent Layer's [benchmark runner](/docs/reference#benchmark-runner):
+Install the [benchmark companion](/docs/reference#benchmark-runner) that matches your Agent Layer version. Then use it to run the study.
 
 1. Build and export `selection.json` from the interactive tool.
 2. Run `al benchmark init selection.json --directory benchmark-study` to create a self-contained study.
@@ -65,7 +65,7 @@ DeltaSelect connects directly to Agent Layer's [benchmark runner](/docs/referenc
 4. Run `al benchmark run benchmark-study/study.toml` to authorize paid calls, execute missing cells, and preserve immutable evidence.
 5. Compare score, cost, workflow conformance, and statistical evidence in the generated report.
 
-Use the same declared task set to test an instruction change, a new Agent Skill, an Agent Dispatch workflow, or another coding-agent improvement.
+The runner collects submissions from the task checkout and its linked Git worktrees. If two checkouts propose conflicting changes, it keeps both candidates for inspection and stops that cell before scoring. For existing studies, add `--recover-only` to work with historical evidence without starting new paid runs.
 
 ## Scope and interpretation
 

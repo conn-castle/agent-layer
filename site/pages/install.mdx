@@ -61,6 +61,7 @@ al <client> # e.g., al claude
 `al init` seeds:
 
 - `.agent-layer/` for configuration
+- [Gitignored project storage](/docs/reference#ephemeral-artifacts-under-agent-layertmp) for working files, cache, and linked worktrees
 - a managed `.gitignore` block
 
 By default, `al init` prompts to run the setup wizard. The wizard can seed instruction files and `docs/agent-layer/` project memory, and can install catalog skills. Skip it with `--no-wizard` if you prefer to configure manually.
