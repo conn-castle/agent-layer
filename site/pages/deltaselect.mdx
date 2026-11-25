@@ -22,7 +22,7 @@ DeltaSelect is for developers who need to measure whether an instruction, Agent 
 </div>
 
 :::note[Research paper]
-The [DeltaSelect arXiv paper](https://arxiv.org/abs/2609.19607) describes the method, validation, and limitations. Use Agent Layer v0.18.4 or later to run selections exported by this tool.
+The [DeltaSelect arXiv paper](https://arxiv.org/abs/2609.19607) describes the method, validation, and limitations.
 
 **Citation:**
 
@@ -57,15 +57,17 @@ You can also compare a second model configuration against the same tasks and wei
 
 ## Run the study
 
-DeltaSelect connects directly to Agent Layer's [benchmark runner](/docs/reference#benchmark-runner):
+Use the same declared task set to test an instruction change, a new Agent Skill, or an Agent Dispatch workflow. The workflow below describes worktree submissions and recovery in Agent Layer v1.4.0 and later.
+
+The selection export format requires Agent Layer v0.18.4 or later. Versions v0.18.4 through v1.0.0 run these exports with the bundled `al benchmark` command. For v1.1.0 and later, install the [benchmark companion](/docs/reference#benchmark-runner) that matches your CLI.
 
 1. Build and export `selection.json` from the interactive tool.
 2. Run `al benchmark init selection.json --directory benchmark-study` to create a self-contained study.
 3. Run `al benchmark run benchmark-study/study.toml --dry-run` to validate inputs, task environments, and provider authentication without inference calls.
-4. Run `al benchmark run benchmark-study/study.toml` to authorize paid calls, execute missing cells, and preserve immutable evidence.
+4. Run `al benchmark run benchmark-study/study.toml` to authorize paid calls, execute missing cells, and preserve immutable evidence. If you resume a study from before v1.4.0, the updated runner can treat completed cells as missing and start new paid calls.
 5. Compare score, cost, workflow conformance, and statistical evidence in the generated report.
 
-Use the same declared task set to test an instruction change, a new Agent Skill, an Agent Dispatch workflow, or another coding-agent improvement.
+The runner collects submissions from the task checkout and its linked Git worktrees. If two checkouts propose conflicting changes, it keeps both candidates for inspection and stops that cell before scoring. The existing `--recover-only` flag can finalize evidence-backed terminal test timeouts or regenerate a compatible completed study report without paid calls. Eligible verifier replay requires the original study inputs and runtime, including the matching CLI and companion versions if the study used a companion. A normal run can start paid calls for cells without matching retained evidence. See the [benchmark recovery guide](https://github.com/conn-castle/agent-layer/blob/main/docs/BENCHMARK.md#advanced-controls).
 
 ## Scope and interpretation
 

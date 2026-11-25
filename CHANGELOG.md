@@ -3,8 +3,18 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+## v1.4.0 - 2026-11-25
+
 ### Changed
-- Agent Layer creates `.agent-layer/working/` for retained work, `.agent-layer/cache/` for disposable outputs, and `.agent-layer/worktrees/` for isolated checkouts. Upgrade cleanup, snapshots, and rollback skip these directories. New run records use `.agent-layer/state/runs/`. Existing run records and import conflict workspaces still work from legacy `.agent-layer/tmp/`.
+- `al init` and `al upgrade` create Gitignored directories for plans and reports (`.agent-layer/working/`), disposable outputs (`.agent-layer/cache/`), and isolated checkouts (`.agent-layer/worktrees/`). New launch and Agent Dispatch records go in `.agent-layer/state/runs/`. Upgrade cleanup, snapshots, and rollback skip these paths. Existing run records and import conflict workspaces remain usable in legacy `.agent-layer/tmp/`. Legacy tmp cleanup remains opt-in (#553).
+- Benchmark runs collect changes from the task checkout and linked Git worktrees. They validate the submitted patch before scoring and stop on conflicting submissions while preserving candidates for inspection. Paid events survive failed artifact collection, and recoverable setup failures can be retried. The submission adapter changed and arm identities now include the pinned provider client version. A normal run of a pre-v1.4.0 study can run cells again and incur charges. For compatible historical reports and evidence-backed terminal test timeouts, the existing `--recover-only` flag remains available without paid calls (#560).
+
+### Fixed
+- The Agent Dispatch MCP server in Codex receives the coordinator's `CODEX_HOME` and HTTP proxy environment. Reconnect existing MCP sessions after upgrading to load the new configuration (#560).
+- Benchmark runs use consistent Git setup across arms, handle Codex subscription routing, account for GPT-6 Luna pricing, and distinguish Kysely verifier build failures (#560).
+
+### Upgrade notes
+- `needs review`: For projects upgrading from before v1.3.0, review the v1.3.0 guidance on Muse approval ownership receipts. For projects upgrading from before v1.2.0, move any manually added Antigravity grants from native `permissions.allow` into `.agent-layer/commands.allow` before upgrading. See the migration table in the upgrade guide for both steps.
 
 ## v1.3.0 - 2026-11-15
 

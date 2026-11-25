@@ -987,9 +987,13 @@ for the complete lifecycle, MCP interface, timeout behavior, and configuration.
 
 ### Benchmark runner
 
-Benchmark execution requires the optional `al-benchmark` companion on `PATH`; `al benchmark` forwards its arguments to it. With Go 1.27+, install the matching published release, for example `go install github.com/conn-castle/agent-layer/cmd/al-benchmark@v1.2.1` after that version is published, and add Go's bin directory to `PATH`. The core CLI updater does not update the companion; handoff rejects a companion whose version differs from the active core CLI, including a repository-selected release. Existing studies, receipts, reports, and recovery evidence need no migration. Installing the companion pulls no Docker images; actual selected-task readiness and execution still depend on the upstream ECR registry. Core releases do not require ECR access.
+Benchmark execution requires the optional `al-benchmark` companion on `PATH`; `al benchmark` forwards its arguments to it. Use Go 1.27.4 or later for the release toolchain's security fixes. Run `go install github.com/conn-castle/agent-layer/cmd/al-benchmark@vX.Y.Z` with the release tag shown by `al --version` in your project, and add Go's bin directory to `PATH`. The core CLI updater does not update the companion; handoff rejects a companion whose version differs from the active core CLI, including a repository-selected release. Existing studies, receipts, reports, and recovery evidence need no migration. Installing the companion pulls no Docker images; actual selected-task readiness and execution still depend on the upstream ECR registry. Core releases do not require ECR access.
 
-DeltaSelect exports a content-addressed `selection.json`. Use the CLI scaffolder to create a self-contained study with a benchmark-safe provider config and snapshots of the current instructions and projected skills. Then validate the complete study before authorizing provider calls:
+DeltaSelect exports a content-addressed `selection.json`. Use the CLI scaffolder to create a self-contained study with a benchmark-safe provider config and snapshots of the current instructions and projected skills. Then validate the complete study before authorizing provider calls.
+
+:::caution[Resuming a study across versions]
+Agent Layer v1.4.0 updated the submission adapter and added the provider client version to benchmark arm identities. Running a study from an earlier release can start paid calls for cells you already completed, including bare arms. For a compatible historical report or an evidence-backed terminal test timeout, use the existing `--recover-only` flag to work without paid calls. Eligible verifier replay requires the original study inputs and runtime, including the matching companion version if the study used one.
+:::
 
 ```bash
 al benchmark init selection.json --directory benchmark-study
@@ -1004,7 +1008,7 @@ Initialization fetches and validates all seven exact development skill trees fro
 
 The study manifest is the reproducibility boundary. Its `selection` points to the exported DeltaSelect JSON, and each `[[experiments]]` entry declares a name, model, reasoning level, and any treatment inputs such as config, instructions, or skills. Every referenced path must be relative to and remain inside the directory containing `study.toml`.
 
-`--dry-run` validates the selection and study, computes cached and missing cells, and performs dependency, environment, and provider-authentication preflight without inference calls. A normal run authorizes paid provider calls for all missing cells. Completed cells are immutable and reusable, so an interrupted study resumes instead of rerunning finished work.
+`--dry-run` validates the selection and study, computes cached and missing cells, and performs dependency, environment, and provider-authentication preflight without inference calls. A normal run authorizes paid provider calls for all missing cells. Completed cells are immutable and reusable when the arm identity matches. Recovery-only mode writes a report when every cell is complete. If it finds neither an evidence-backed terminal test timeout nor a compatible completed study, it stops with a recovery error. See the [benchmark recovery guide](https://github.com/conn-castle/agent-layer/blob/main/docs/BENCHMARK.md#advanced-controls).
 
 The runner writes content-addressed evidence plus `report.json` and `report.html` under `.agent-layer/state/benchmarks/deepswe/studies/`. Reports compare score, observed cost, workflow conformance, and statistical evidence for the fixed selected task set; they do not claim that the subset represents every task in DeepSWE.
 
