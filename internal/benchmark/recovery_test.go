@@ -319,7 +319,7 @@ func TestPostProviderFailureRetainsCheckpointAndStageForVerifierReplay(t *testin
 		t.Fatal(err)
 	}
 
-	retained, err := retainPersistedProviderFailure(request, errors.New("signal: interrupt"), nil)
+	retained, err := retainPersistedProviderFailure(request, errors.New("signal: interrupt"), nil, nil)
 	if !retained || err == nil || !strings.Contains(err.Error(), "is persisted and its verifier did not succeed") ||
 		!strings.Contains(err.Error(), stage) {
 		t.Fatalf("post-provider failure classification = retained=%t err=%v", retained, err)
@@ -396,7 +396,7 @@ func TestVerifierFailureAfterProviderCompletionIsRetainedAndNeverRetriedAtProvid
 
 	// Pier exited cleanly but its verifier timed out. The paid event must stay
 	// replayable rather than becoming a failed receipt.
-	_, durable, err := finalizePierExecution(request, stage, nil, nil)
+	_, durable, err := finalizePierExecution(request, stage, nil, nil, nil)
 	if durable || err == nil || !strings.Contains(err.Error(), "never makes another provider call") || !strings.Contains(err.Error(), stage) {
 		t.Fatalf("verifier failure finalization = durable=%t err=%v", durable, err)
 	}
@@ -483,7 +483,7 @@ func TestProviderCheckpointAloneRetainsAnEventInterruptedBeforePatchExport(t *te
 		t.Fatalf("authoritative proof ignored the provider checkpoint: %#v found=%t err=%v", checkpoint, found, err)
 	}
 
-	_, durable, err := finalizePierExecution(request, stage, errors.New("signal: interrupt"), nil)
+	_, durable, err := finalizePierExecution(request, stage, errors.New("signal: interrupt"), nil, nil)
 	if durable || err == nil || !strings.Contains(err.Error(), "is persisted and its verifier did not succeed") {
 		t.Fatalf("interrupted post-provider event was not retained: durable=%t err=%v", durable, err)
 	}
@@ -524,7 +524,7 @@ func TestAgentPhaseFailureStillRecordsAResumableFailedReceipt(t *testing.T) {
 	if err := provePersistedProviderCompletion(stage, request, time.Now().UTC()); err != nil {
 		t.Fatal(err)
 	}
-	_, durable, err := finalizePierExecution(request, stage, nil, nil)
+	_, durable, err := finalizePierExecution(request, stage, nil, nil, nil)
 	if !durable || err == nil || !strings.Contains(err.Error(), "pier verifier did not complete successfully") {
 		t.Fatalf("agent-phase failure finalization = durable=%t err=%v", durable, err)
 	}
@@ -541,6 +541,21 @@ func TestAgentPhaseFailureStillRecordsAResumableFailedReceipt(t *testing.T) {
 	}
 }
 
+func TestAgentSetupFailureWithoutSubmissionIsResumable(t *testing.T) {
+	request, stage := retainedVerifierFailureFixture(t, "AgentSetupTimeoutError")
+	if err := os.Remove(filepath.Join(stage, "jobs", "one", "artifacts", benchmarkModelPatchFile)); err != nil {
+		t.Fatal(err)
+	}
+	submissionErr := validatePierSubmission(stage)
+	_, durable, err := finalizePierExecution(request, stage, nil, nil, submissionErr)
+	if !durable || !errors.Is(err, submissionErr) || !strings.Contains(err.Error(), "AgentSetupTimeoutError") {
+		t.Fatalf("agent setup failure = durable=%t err=%v", durable, err)
+	}
+	if _, found, err := matchingPierExecutionCheckpoint(request); err != nil || found {
+		t.Fatalf("agent setup failure left a replay checkpoint: found=%t err=%v", found, err)
+	}
+}
+
 func TestVerifierFailureWithCleanupFailureStaysReplayable(t *testing.T) {
 	request, stage := retainedVerifierFailureFixture(t, "VerifierTimeoutError")
 	exact, err := os.ReadFile(filepath.Join(stage, "jobs", "one", "artifacts", "model.patch")) // #nosec G304 -- test-owned stage.
@@ -553,7 +568,7 @@ func TestVerifierFailureWithCleanupFailureStaysReplayable(t *testing.T) {
 
 	// A cleanup failure must not turn a failed verifier into a succeeded
 	// receipt, which would discard the replay patch and block the cell.
-	_, durable, err := finalizePierExecution(request, stage, nil, errors.New("docker daemon unavailable"))
+	_, durable, err := finalizePierExecution(request, stage, nil, errors.New("docker daemon unavailable"), nil)
 	if durable || err == nil || !strings.Contains(err.Error(), "never makes another provider call") || !strings.Contains(err.Error(), "docker daemon unavailable") {
 		t.Fatalf("verifier and cleanup failure finalization = durable=%t err=%v", durable, err)
 	}
@@ -577,7 +592,7 @@ func TestAgentPhaseFailureWithCleanupFailureRecordsAResumableFailedReceipt(t *te
 	if err := provePersistedProviderCompletion(stage, request, time.Now().UTC()); err != nil {
 		t.Fatal(err)
 	}
-	_, durable, err := finalizePierExecution(request, stage, nil, errors.New("docker daemon unavailable"))
+	_, durable, err := finalizePierExecution(request, stage, nil, errors.New("docker daemon unavailable"), nil)
 	if !durable || err == nil || !strings.Contains(err.Error(), "pier verifier did not complete successfully") || !strings.Contains(err.Error(), "docker daemon unavailable") {
 		t.Fatalf("agent-phase and cleanup failure finalization = durable=%t err=%v", durable, err)
 	}
@@ -614,7 +629,7 @@ func TestSuccessfulVerifierWithCleanupFailureRecordsASucceededReceipt(t *testing
 
 	// The result is already paid and verified, so the receipt keeps it and a
 	// later invocation retries only the cleanup.
-	_, durable, err := finalizePierExecution(request, stage, nil, errors.New("docker daemon unavailable"))
+	_, durable, err := finalizePierExecution(request, stage, nil, errors.New("docker daemon unavailable"), nil)
 	if !durable || err == nil || !strings.Contains(err.Error(), "clean Pier task environment") {
 		t.Fatalf("cleanup failure finalization = durable=%t err=%v", durable, err)
 	}
@@ -641,7 +656,7 @@ func TestProviderPhaseFailureKeepsOrdinaryReceiptPath(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	retained, err := retainPersistedProviderFailure(request, errors.New("provider failed"), nil)
+	retained, err := retainPersistedProviderFailure(request, errors.New("provider failed"), nil, nil)
 	if retained || err != nil {
 		t.Fatalf("provider-phase failure classification = retained=%t err=%v", retained, err)
 	}

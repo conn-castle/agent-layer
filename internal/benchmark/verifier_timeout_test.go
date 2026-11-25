@@ -65,6 +65,7 @@ func terminalVerifierTimeoutFixture(t *testing.T) (ExecutionRequest, string) {
 	if err := readStudyJSON(resultPath, &result); err != nil {
 		t.Fatal(err)
 	}
+	result["agent_info"].(map[string]any)["version"] = model.ProviderClientVersion
 	started := time.Now().UTC().Add(-time.Minute)
 	result["verifier_result"] = nil
 	result["exception_info"] = map[string]any{
@@ -247,7 +248,7 @@ func TestInternalVerifierTimeoutAcceptsStructuredLineLargerThanScannerLimit(t *t
 
 func TestFinalizeTerminalVerifierTestTimeoutIgnoresExpectedPierExitFailure(t *testing.T) {
 	request, stage := terminalVerifierTimeoutFixture(t)
-	result, durable, err := finalizePierExecution(request, stage, errors.New("pier exited with failed trial"), nil)
+	result, durable, err := finalizePierExecution(request, stage, errors.New("pier exited with failed trial"), nil, nil)
 	if err != nil || !durable || result.VerifierOutcome != verifierOutcomeTestTimeout {
 		t.Fatalf("finalize terminal timeout = %#v durable=%t err=%v", result, durable, err)
 	}
@@ -264,6 +265,20 @@ func TestFinalizeTerminalVerifierTestTimeoutIgnoresExpectedPierExitFailure(t *te
 	}
 	if _, found, err := matchingPierExecutionCheckpoint(request); err != nil || found {
 		t.Fatalf("terminal timeout checkpoint remained: found=%t err=%v", found, err)
+	}
+}
+
+func TestFinalizeRetainsUnverifiedSubmission(t *testing.T) {
+	for _, commandErr := range []error{nil, errors.New("pier exited with failed trial")} {
+		request, stage := terminalVerifierTimeoutFixture(t)
+		submissionErr := errors.New("exported patch digest mismatch")
+		_, durable, err := finalizePierExecution(request, stage, commandErr, nil, submissionErr)
+		if durable || !errors.Is(err, submissionErr) {
+			t.Fatalf("finalize mismatched patch = durable=%t err=%v", durable, err)
+		}
+		if _, found, err := matchingPierExecutionCheckpoint(request); err != nil || !found {
+			t.Fatalf("submission checkpoint = found=%t err=%v", found, err)
+		}
 	}
 }
 
@@ -443,6 +458,16 @@ func TestRecoveryOnlySkipsUnclassifiedVerifierTimeout(t *testing.T) {
 }
 
 func TestRecoveryOnlyBindsRetainedStudyBeforeCurrentAdapterIdentity(t *testing.T) {
+	t.Run("adapterless baseline", func(t *testing.T) {
+		testRecoveryOnlyBindsRetainedStudyAdapter(t, "")
+	})
+	t.Run("older adapter", func(t *testing.T) {
+		testRecoveryOnlyBindsRetainedStudyAdapter(t, strings.Repeat("f", 64))
+	})
+}
+
+func testRecoveryOnlyBindsRetainedStudyAdapter(t *testing.T, oldAdapter string) {
+	t.Helper()
 	request, _ := terminalVerifierTimeoutFixture(t)
 	tasks := []benchmarkPlanTask{{ID: request.Task, RepetitionsPerArm: 1}}
 	selection := matrixSelectionFixture()
@@ -450,11 +475,10 @@ func TestRecoveryOnlyBindsRetainedStudyBeforeCurrentAdapterIdentity(t *testing.T
 	selectionID := strings.Repeat("s", 64)
 	studyID := strings.Repeat("h", 64)
 	label := ArmBaseline
-	oldAdapter := strings.Repeat("f", 64)
 	checksums := map[string]string{request.Task: request.TaskChecksum}
 	environments := map[string]string{request.Task: request.EnvironmentIdentity}
 	experimentIdentity := strings.Repeat("i", 64)
-	armID, err := studyArmIdentity(selectionID, experimentIdentity, checksums, environments, nil, oldAdapter)
+	armID, err := studyArmIdentity(selectionID, experimentIdentity, checksums, environments, nil, oldAdapter, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -476,6 +500,9 @@ func TestRecoveryOnlyBindsRetainedStudyBeforeCurrentAdapterIdentity(t *testing.T
 		experiments: []preparedStudyExperiment{{
 			studyExperiment: studyExperiment{Name: label}, model: request.Model, effort: request.Effort, identity: experimentIdentity,
 		}},
+	}
+	if studyManifestBundleMatches(manifest, &prepared, []*TreatmentBundle{nil}) {
+		t.Fatal("paid run accepted a historical submission adapter")
 	}
 	historical := recoveryPreparationFromManifest(&prepared, manifest, stateDir, tasks, 1)
 	if err := ensureStudyArmManifest(selectionID, tasks, manifest.Checksums, &historical.arms[0]); err != nil {
@@ -550,7 +577,7 @@ func TestRecoveryOnlyReconstructsTreatmentWorkflowForDispatchConformance(t *test
 	historicalBundle := historicalTreatmentBundle(studyArmContract{
 		Bundle: bundleHash, Adapter: oldAdapter, Runtime: runtimeHash,
 	})
-	armID, err := studyArmIdentity(selectionID, experimentIdentity, checksums, environments, historicalBundle, oldAdapter)
+	armID, err := studyArmIdentity(selectionID, experimentIdentity, checksums, environments, historicalBundle, oldAdapter, "")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/conn-castle/agent-layer/internal/fsutil"
 	"github.com/conn-castle/agent-layer/internal/projectpaths"
 )
 
@@ -26,20 +27,21 @@ const credentialKeyName = "key"
 const replayInputDir = "agent-layer-replay"
 
 type pierExecutionCheckpoint struct {
-	SchemaVersion        string    `json:"schema_version"`
-	EventID              string    `json:"event_id"`
-	Attempt              int       `json:"attempt"`
-	Task                 string    `json:"task"`
-	TaskChecksum         string    `json:"task_checksum"`
-	EnvironmentIdentity  string    `json:"task_environment_identity,omitempty"`
-	Arm                  string    `json:"arm"`
-	RuntimeModel         string    `json:"runtime_model"`
-	ReasoningEffort      string    `json:"reasoning_effort"`
-	TreatmentHash        string    `json:"treatment_manifest_hash,omitempty"`
-	StagePath            string    `json:"stage_path"`
-	StartedAt            time.Time `json:"started_at"`
-	ProviderCompletedAt  time.Time `json:"provider_completed_at,omitempty"`
-	ArtifactsSanitizedAt time.Time `json:"artifacts_sanitized_at,omitempty"`
+	SchemaVersion           string    `json:"schema_version"`
+	EventID                 string    `json:"event_id"`
+	Attempt                 int       `json:"attempt"`
+	Task                    string    `json:"task"`
+	TaskChecksum            string    `json:"task_checksum"`
+	EnvironmentIdentity     string    `json:"task_environment_identity,omitempty"`
+	Arm                     string    `json:"arm"`
+	RuntimeModel            string    `json:"runtime_model"`
+	ReasoningEffort         string    `json:"reasoning_effort"`
+	TreatmentHash           string    `json:"treatment_manifest_hash,omitempty"`
+	StagePath               string    `json:"stage_path"`
+	StartedAt               time.Time `json:"started_at"`
+	ProviderCompletedAt     time.Time `json:"provider_completed_at,omitempty"`
+	ArtifactsSanitizedAt    time.Time `json:"artifacts_sanitized_at,omitempty"`
+	RequireSubmissionDigest bool      `json:"require_submission_digest,omitempty"`
 }
 
 type pierExecutionReceipt struct {
@@ -239,6 +241,7 @@ func writePierExecutionCheckpoint(request ExecutionRequest, stage string) error 
 		EnvironmentIdentity: request.EnvironmentIdentity, Arm: request.Arm,
 		RuntimeModel: request.Model.RuntimeIdentifier, ReasoningEffort: request.Effort,
 		TreatmentHash: executionTreatmentHash(request), StagePath: absStage, StartedAt: time.Now().UTC(),
+		RequireSubmissionDigest: request.requireSubmissionDigest,
 	}
 	if err := writeJSON(filepath.Join(destination, "execution-checkpoint.json"), checkpoint); err != nil {
 		return fmt.Errorf("record started Pier execution: %w", err)
@@ -636,16 +639,29 @@ func uniqueSecretValues(values [][]byte) [][]byte {
 	return unique
 }
 
-// preserveReplayPatch copies the submitted model.patch byte-for-byte into the
-// stage's replay input directory before any sanitization pass can rewrite it.
-// It is idempotent: the first copy is the exact provider output and is never
-// replaced. Stages without exactly one submitted patch are left untouched.
+// preserveReplayPatch saves the exact patch and digest before sanitization.
+// Stages without exactly one submitted patch are left untouched.
 func preserveReplayPatch(stage string) error {
 	target := filepath.Join(stage, replayInputDir, benchmarkModelPatchFile)
-	if _, err := os.Lstat(target); err == nil {
-		return nil
-	} else if !errors.Is(err, os.ErrNotExist) {
+	targetInfo, err := os.Lstat(target)
+	havePatch := err == nil
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("inspect preserved replay patch: %w", err)
+	}
+	if havePatch && !targetInfo.Mode().IsRegular() {
+		return fmt.Errorf("preserved replay patch is not a regular file")
+	}
+	preservedDigest := filepath.Join(stage, replayInputDir, submissionDigestFile)
+	digestInfo, err := os.Lstat(preservedDigest)
+	haveDigest := err == nil
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("inspect preserved submission digest: %w", err)
+	}
+	if haveDigest && !digestInfo.Mode().IsRegular() {
+		return fmt.Errorf("preserved submission digest is not a regular file")
+	}
+	if havePatch && haveDigest {
+		return nil
 	}
 	patches, err := stageJobFiles(stage, true, func(path string, entry fs.DirEntry) bool {
 		return entry.Type().IsRegular() && isSubmittedModelPatch(path, entry)
@@ -656,10 +672,46 @@ func preserveReplayPatch(stage string) error {
 	if len(patches) != 1 {
 		return nil
 	}
-	if err := copyRequiredFile(patches[0], target); err != nil {
-		return fmt.Errorf("preserve exact replay patch: %w", err)
+	agentDir := filepath.Join(filepath.Dir(filepath.Dir(patches[0])), benchmarkAgentDir)
+	digest := filepath.Join(agentDir, submissionDigestFile)
+	if !haveDigest {
+		info, err := os.Lstat(digest)
+		if err != nil && !errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("inspect submission digest: %w", err)
+		}
+		if err == nil && !info.Mode().IsRegular() {
+			return fmt.Errorf("submission digest is not a regular file")
+		}
+		// For an older preserved patch, the source digest may already have
+		// been sanitized. Only backfill a digest that still matches.
+		if err == nil && (!havePatch || verifySubmissionDigest(target, digest) == nil) {
+			if err := preserveReplayInput(digest, preservedDigest); err != nil {
+				return fmt.Errorf("preserve submission digest: %w", err)
+			}
+		}
+	}
+	if !havePatch {
+		if haveDigest {
+			if err := verifySubmissionDigest(patches[0], preservedDigest); err != nil {
+				return fmt.Errorf("recover exact replay patch: %w", err)
+			}
+		}
+		if err := preserveReplayInput(patches[0], target); err != nil {
+			return fmt.Errorf("preserve exact replay patch: %w", err)
+		}
 	}
 	return nil
+}
+
+func preserveReplayInput(source, destination string) error {
+	data, err := fsutil.ReadRegularFile(source)
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(destination), 0o700); err != nil {
+		return err
+	}
+	return fsutil.WriteFileAtomic(destination, data, 0o600)
 }
 
 func sanitizeArtifacts(root string, secrets [][]byte, paths []string) error {

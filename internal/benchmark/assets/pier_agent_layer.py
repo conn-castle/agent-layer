@@ -12,7 +12,9 @@ import importlib.metadata
 import inspect
 import json
 import os
+import re
 import shlex
+import shutil
 import subprocess
 import tempfile
 import urllib.error
@@ -48,10 +50,12 @@ REMOTE_RUN_DIRS = f"{REMOTE_WORKSPACE}/.agent-layer/state/runs {REMOTE_WORKSPACE
 # END GENERATED PATHS
 # "task" is already a derived plan artifact name in the workflow skills.
 REMOTE_SPEC_FILE = f"{REMOTE_WORKING}/spec.md"
-# Untracked paths the task image already carried before the agent ran. They are
-# not part of the base commit, so sweeping them into the submitted patch makes
-# the patch create files the verifier already has, and `git apply` then fails.
-PREEXISTING_UNTRACKED = "/tmp/agent-layer-preexisting-untracked"
+PROVIDER_WORKSPACE_PATHS = {
+    "codex": (".codex",),
+    "claude": (".claude", ".claude-config"),
+    "grok": (".grok", ".grok-config"),
+    "antigravity": (".agy", ".gemini"),
+}
 PROJECTED_PATHS = (
     ".gitignore AGENTS.md CLAUDE.md .github/copilot-instructions.md "
     ".agent .agents .agent-layer .codex .copilot .gemini .mcp.json "
@@ -76,6 +80,280 @@ GROK_LINUX_AMD64_URL = "https://storage.googleapis.com/grok-build-public-artifac
 GROK_LINUX_AMD64_SHA256 = "9ba87444e1819e8f6104adbbf4676a870c204380aa5c3e1c38a926c4ea677238"
 STREAM_BYTE_CAP = 16 * 1024 * 1024
 ANTIGRAVITY_PROMPT_BYTE_CAP = 100 * 1024
+
+
+class WorkspaceSubmission:
+    """Collect one solution from the repository, including linked Git worktrees."""
+
+    def __init__(self, workspace, excluded_paths, untracked_provider_paths=()):
+        self.workspace = Path(workspace).resolve()
+        self.excluded_paths = excluded_paths
+        self.untracked_provider_paths = untracked_provider_paths
+        self.snapshot_path = Path("/tmp/agent-layer-workspace.json")
+
+    def git(self, *args, directory=None, env=None, input=None):
+        return subprocess.check_output(
+            ["git", "-C", directory or self.workspace, *args], env=env, input=input
+        )
+
+    def is_ancestor(self, base, head):
+        try:
+            self.git("merge-base", "--is-ancestor", base, head)
+        except subprocess.CalledProcessError as error:
+            if error.returncode != 1:
+                raise
+            return False
+        return True
+
+    def contains_tree(self, base, candidate, other):
+        # A commit appearing in history does not prove its edits survived.
+        # Compare the submitted trees against the same pinned task base.
+        left = self.git("commit-tree", other, "-p", base, "-m", "Compare checkout").decode().strip()
+        right = self.git("commit-tree", candidate, "-p", base, "-m", "Compare branch").decode().strip()
+        try:
+            merged = self.git("merge-tree", "--write-tree", "--no-messages", left, right).decode().strip()
+        except subprocess.CalledProcessError as error:
+            if error.returncode != 1:
+                raise
+            return False
+        return merged == other
+
+    def amended_pinned_commit(self, base, head, directory=None, ref="HEAD"):
+        entries = [entry.split(b"\t", 1) for entry in self.git(
+            "reflog", "show", "--format=%H%x09%gs", ref, directory=directory,
+        ).splitlines()]
+        rewritten = {base.encode()}
+        for (older, _), (newer, action) in zip(reversed(entries[1:]), reversed(entries[:-1])):
+            if older in rewritten and action.startswith(b"commit (amend):"):
+                rewritten.add(newer)
+        return any(self.is_ancestor(commit.decode(), head) for commit in rewritten - {base.encode()})
+
+    def changed_paths(self, base, tree):
+        return set(self.git("diff", "--no-renames", "--name-only", "-z", base, tree).split(b"\0")) - {b""}
+
+    def changed_lines(self, base, tree, path):
+        patch = self.git("--literal-pathspecs", "diff", "--no-ext-diff", "--no-textconv",
+                         "--no-color", "--no-renames", "--unified=0", "--inter-hunk-context=0",
+                         base, tree, "--", os.fsdecode(path))
+        spans = []
+        for start, length in re.findall(rb"^@@ -(\d+)(?:,(\d+))? \+\d+(?:,\d+)? @@", patch, re.MULTILINE):
+            start, length = int(start), int(length or b"1")
+            # Odd positions represent insertion points between base lines.
+            spans.append((2 * start, 2 * (start + length - 1)) if length else (2 * start + 1,) * 2)
+        return spans
+
+    def retains_changes(self, base, candidate, final_tree):
+        paths = self.changed_paths(base, candidate)
+        if not paths <= self.changed_paths(base, final_tree):
+            return False
+        for path in sorted(paths):
+            actual = self.changed_lines(base, final_tree, path)
+            if any(not any(lo <= start and end <= hi for lo, hi in actual)
+                   for start, end in self.changed_lines(base, candidate, path)):
+                return False
+        return True
+
+    def integrated_history(self, base, candidate, tips, head):
+        if any(self.is_ancestor(tip, head) for tip in tips):
+            return True
+        earlier = self.git("log", "--first-parent", "--format=%T", f"{base}..{head}").decode().splitlines()
+        return any(candidate == tree or self.contains_tree(base, candidate, tree) for tree in earlier)
+
+    def worktrees(self):
+        for record in self.git("worktree", "list", "--porcelain", "-z").split(b"\0\0"):
+            if record.startswith(b"worktree "):
+                directory = Path(os.fsdecode(record.split(b"\0", 1)[0][9:]))
+                if (directory / ".git").exists():
+                    yield directory.resolve()
+
+    def branch_refs(self):
+        output = self.git("for-each-ref", "--format=%(objectname)%09%(refname)", "refs/heads")
+        return [os.fsdecode(line).split("\t", 1) for line in output.splitlines()]
+
+    def snapshot(self):
+        self.git("config", "user.email", "benchmark@local.invalid")
+        self.git("config", "user.name", "Agent Layer Benchmark")
+        self.git("config", "core.logAllRefUpdates", "true")
+        base = self.git("rev-parse", "HEAD").decode().strip()
+        if "refs/heads/main" not in self.git("for-each-ref", "--format=%(refname)", "refs/heads").decode().splitlines():
+            self.git("branch", "main", base)
+        # The verifier already has the task image's untracked fixtures.
+        untracked = self.git("ls-files", "--others", "-z")
+        self.snapshot_path.write_text(json.dumps({
+            "base": base,
+            "branches": sorted({tip for tip, _ in self.branch_refs()}),
+            "untracked": [os.fsdecode(path) for path in untracked.split(b"\0") if path],
+        }))
+
+    def check_git_support(self):
+        base = self.git("rev-parse", "HEAD").decode().strip()
+        self.git("merge-tree", "--write-tree", "--no-messages", base, base)
+        self.git("reflog", "show", "--format=%H%x09%gs", "HEAD")
+        for option in ("--no-assume-unchanged", "--no-skip-worktree"):
+            self.git("update-index", option, "-z", "--stdin", input=b"")
+
+    def refresh_index(self, directory, env, nested):
+        entries = self.git("ls-files", "-v", "-z", directory=directory, env=env)
+        assumed, skipped = [], []
+        for entry in entries.split(b"\0"):
+            tag, path = entry[:1], entry[2:]
+            if tag.islower():
+                assumed.append(path)
+            # Keep omitted sparse paths out of the refresh.
+            if tag.upper() == b"S" and os.path.lexists(directory / os.fsdecode(path)):
+                skipped.append(path)
+        for option, paths in (("--no-assume-unchanged", assumed), ("--no-skip-worktree", skipped)):
+            if paths:
+                self.git("update-index", option, "-z", "--stdin", directory=directory, env=env,
+                         input=b"\0".join(paths) + b"\0")
+        exclusions = [f":(exclude,literal){path}" for path in (*self.excluded_paths, *nested)]
+        self.git("-c", "core.fsmonitor=false", "-c", "core.ignorestat=false",
+                 "add", "-A", "--", ".", *exclusions, directory=directory, env=env)
+
+    def candidate_tree(self, base, source, preexisting, provider_tracked, directory=None, nested=()):
+        with tempfile.TemporaryDirectory() as temporary:
+            index = Path(temporary) / "index"
+            env = {**os.environ, "GIT_INDEX_FILE": str(index)}
+            if directory is not None:
+                original_index = Path(os.fsdecode(self.git(
+                    "rev-parse", "--path-format=absolute", "--git-path", "index", directory=directory,
+                ).rstrip(b"\n")))
+                if original_index.is_file():
+                    shutil.copyfile(original_index, index)
+            if not index.exists():
+                self.git("read-tree", source, directory=directory, env=env)
+            if directory is not None:
+                self.refresh_index(directory, env, nested)
+            indexed = self.git("ls-files", "--cached", "-z", directory=directory, env=env)
+            indexed = {os.fsdecode(path) for path in indexed.split(b"\0") if path}
+            reset_paths = preexisting & indexed
+            if self.untracked_provider_paths:
+                provider_paths = self.git("ls-files", "--cached", "-z", "--",
+                                          *self.untracked_provider_paths, directory=directory, env=env)
+                reset_paths.update(os.fsdecode(path) for path in provider_paths.split(b"\0")
+                                   if path and path not in provider_tracked)
+            reset_paths = [*self.excluded_paths, *sorted(reset_paths)]
+            if reset_paths:
+                paths = Path(temporary) / "paths"
+                paths.write_bytes(b"\0".join(os.fsencode(path) for path in reset_paths) + b"\0")
+                self.git("--literal-pathspecs", "reset", "-q", base,
+                         f"--pathspec-from-file={paths}", "--pathspec-file-nul",
+                         directory=directory, env=env)
+            return self.git("write-tree", directory=directory, env=env).decode().strip()
+
+    def record_candidates(self, base, candidates, conflicts):
+        if conflicts is None:
+            return
+        destination = Path(conflicts)
+        destination.mkdir(parents=True, exist_ok=True)
+        for tree in candidates:
+            (destination / f"{tree}.patch").write_bytes(self.git("diff", "--binary", base, tree))
+        (destination / "sources.json").write_text(json.dumps(candidates, indent=2) + "\n")
+
+    def compare_descendants(self, base, candidates, committed_tips, checkouts, conflicts):
+        replacements = {}
+        for tree, tips in committed_tips.items():
+            for head, final_tree, source in checkouts:
+                if tree == final_tree or not self.integrated_history(base, tree, tips, head):
+                    continue
+                if self.retains_changes(base, tree, final_tree):
+                    replacements.setdefault(tree, set()).add(final_tree)
+                    continue
+                competing = {**candidates}
+                if final_tree not in competing:
+                    competing[final_tree] = [source]
+                self.record_candidates(base, competing, conflicts)
+                raise RuntimeError(f"multiple different benchmark submissions after a revert in {source}")
+        # Keep cycles as competing candidates unless a checkout actually
+        # supersedes all of them.
+        final_trees = set(candidates) - replacements.keys()
+        while True:
+            superseded = {tree for tree, successors in replacements.items() if successors & final_trees}
+            if superseded <= final_trees:
+                return final_trees & replacements.keys()
+            final_trees.update(superseded)
+
+    def collect(self, conflicts=None):
+        snapshot = json.loads(self.snapshot_path.read_text())
+        base = snapshot["base"]
+        baseline_tree = self.git("rev-parse", f"{base}^{{tree}}").decode().strip()
+        worktrees = set(self.worktrees()) | {self.workspace}
+        preexisting = set(snapshot["untracked"])
+        original_branches = set(snapshot["branches"])
+        provider_tracked = set()
+        if self.untracked_provider_paths:
+            provider_tracked = set(self.git("ls-tree", "-r", "--name-only", "-z", base, "--",
+                                            *self.untracked_provider_paths).split(b"\0"))
+        candidates = {}
+        working_changes = set()
+        committed_tips = {}
+        checkouts = []
+        root_head = ""
+        for directory in sorted(worktrees):
+            try:
+                head = self.git("rev-parse", "--verify", "--quiet", "HEAD", directory=directory).decode().strip()
+            except subprocess.CalledProcessError as error:
+                if error.returncode != 1:
+                    raise
+                if self.git("status", "--porcelain", "-z", directory=directory):
+                    raise RuntimeError(f"benchmark checkout has changes without a Git commit: {directory}")
+                continue
+            if directory == self.workspace:
+                root_head = head
+            nested = [str(path.relative_to(directory)) for path in worktrees
+                      if path != directory and directory in path.parents]
+            tree = self.candidate_tree(base, head, preexisting, provider_tracked, directory, nested)
+            committed = self.candidate_tree(base, head, preexisting, provider_tracked)
+            if not self.is_ancestor(base, head):
+                if self.is_ancestor(head, base) and tree == committed:
+                    continue
+                if head in original_branches or not self.amended_pinned_commit(base, head, directory):
+                    self.record_candidates(base, {tree: [str(directory)]}, conflicts)
+                    raise RuntimeError(f"benchmark checkout is outside the pinned task history: {directory}")
+            checkouts.append((head, tree, str(directory)))
+            if tree == baseline_tree:
+                continue
+            if tree != committed:
+                working_changes.add(tree)
+            else:
+                committed_tips.setdefault(tree, set()).add(head)
+            candidates.setdefault(tree, []).append(str(directory))
+        checked_out = {head for head, _, _ in checkouts}
+        for tip, ref in self.branch_refs():
+            if tip in original_branches or tip in checked_out:
+                continue
+            if not self.is_ancestor(base, tip) and not self.amended_pinned_commit(base, tip, ref=ref):
+                continue
+            tree = self.candidate_tree(base, tip, preexisting, provider_tracked)
+            if tree != baseline_tree:
+                candidates.setdefault(tree, []).append(tip)
+                committed_tips.setdefault(tree, set()).add(tip)
+        clean_tips = {tree: tips for tree, tips in committed_tips.items() if tree not in working_changes}
+        superseded = self.compare_descendants(base, candidates, clean_tips, checkouts, conflicts)
+        for tree in superseded:
+            del candidates[tree]
+        for candidate in sorted(set(candidates) - working_changes):
+            if any(self.contains_tree(base, candidate, other) for other in candidates if other != candidate):
+                del candidates[candidate]
+        if len(candidates) > 1:
+            self.record_candidates(base, candidates, conflicts)
+            sources = [source for group in candidates.values() for source in group]
+            raise RuntimeError(f"multiple different benchmark submissions: {', '.join(sources)}")
+        tree = next(iter(candidates), baseline_tree)
+        if root_head and tree == self.git("rev-parse", f"{root_head}^{{tree}}").decode().strip():
+            return
+        commit = self.git("commit-tree", tree, "-p", base, "-m", "Complete benchmark task").decode().strip()
+        # DeepSWE exports from HEAD. Leave the worktree and branch refs intact.
+        self.git("update-ref", "--no-deref", "HEAD", commit, root_head)
+
+    def digest(self, destination, require_changes):
+        import hashlib
+
+        base = json.loads(self.snapshot_path.read_text())["base"]
+        patch = self.git("diff", "--binary", base, "HEAD")
+        if require_changes and not patch:
+            raise RuntimeError("benchmark preflight did not collect the linked worktree patch")
+        Path(destination).write_text(hashlib.sha256(patch).hexdigest() + "\n")
 
 
 def _agent_layer_mcp_launcher_jq(server: str) -> str:
@@ -103,6 +381,8 @@ def _agent_layer_mcp_launcher_jq(server: str) -> str:
 AGENT_LAYER_MCP_PREFLIGHT_JQ = {
     "codex": (
         '.enabled == true and .transport.type == "stdio" and '
+        '((["CODEX_HOME", "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", '
+        '"http_proxy", "https_proxy", "no_proxy"] - (.transport.env_vars // [])) | length == 0) and '
         f'(.transport as $s | {_agent_layer_mcp_launcher_jq("$s")})'
     ),
     "file": f'.mcpServers["agent-layer"] as $s | {_agent_layer_mcp_launcher_jq("$s")}',
@@ -382,9 +662,7 @@ class _AgentLayerTreatment:
         install = (
             f"mkdir -p {REMOTE_WORKSPACE}/docs {REMOTE_WORKING} "
             f"&& test ! -f {REMOTE_BUNDLE}/AGENTS.md || cp -a {REMOTE_BUNDLE}/AGENTS.md {REMOTE_WORKSPACE}/AGENTS.md "
-            f"&& test ! -d {REMOTE_BUNDLE}/docs/agent-layer || cp -a {REMOTE_BUNDLE}/docs/agent-layer {REMOTE_WORKSPACE}/docs/agent-layer "
-            f"&& (git -C {REMOTE_WORKSPACE} show-ref --verify --quiet refs/heads/main || "
-            f"git -C {REMOTE_WORKSPACE} branch main HEAD)"
+            f"&& test ! -d {REMOTE_BUNDLE}/docs/agent-layer || cp -a {REMOTE_BUNDLE}/docs/agent-layer {REMOTE_WORKSPACE}/docs/agent-layer"
         )
         # Every study mode carries its normal secret-free projection.  Config
         # (including MCP and permissions), instructions, and skills must not
@@ -402,12 +680,14 @@ class _AgentLayerTreatment:
 
     async def _snapshot_workspace(self, environment):
         """Preserve adapter-owned paths and the task image's untracked baseline."""
+        await self._workspace_submission(environment, "snapshot()")
+        if self._preflight_only:
+            await self._workspace_submission(environment, "check_git_support()")
+        if self._treatment_mode == "bare":
+            return
         preserve = (
-            "rm -rf /tmp/agent-layer-original && mkdir -p /tmp/agent-layer-original && "
+            "set -e; mkdir -p /tmp/agent-layer-original && "
             f"cd {REMOTE_WORKSPACE} && "
-            f"git ls-files --others -z > {PREEXISTING_UNTRACKED} && "
-            "git config user.email benchmark@local.invalid && "
-            "git config user.name 'Agent Layer Benchmark' && "
             f"for path in {PROJECTED_PATHS}; do "
             "key=$(printf '%s' \"$path\" | tr / _); "
             "if test -e \"$path\" || test -L \"$path\"; then "
@@ -415,8 +695,6 @@ class _AgentLayerTreatment:
             "else : > \"/tmp/agent-layer-original/$key.absent\"; fi; done"
         )
         await self.exec_as_agent(environment, command=preserve)
-        if self._treatment_mode == "bare":
-            return
         await self._stage_treatment(environment)
         # Agent Layer resolves configuration placeholders from its normal .env
         # boundary. Upload only the declared names from Pier's child environment
@@ -494,14 +772,8 @@ class _AgentLayerTreatment:
             # the built-in Agent Dispatch MCP server or its permission
             # allowlist, and the treatment arm silently loses dispatch.
             if self._treatment_agent == "codex":
-                # Pier fixes the coordinator's CODEX_HOME at /tmp/codex-home,
-                # while Agent Layer's local Codex configuration path is
-                # /app/.codex. Codex deliberately sanitizes stdio MCP server
-                # environments, so CODEX_HOME is not guaranteed to reach the
-                # Agent Dispatch server. Make both paths name the same physical
-                # home before sync so coordinator, MCP server, and dispatched
-                # Codex processes share configuration, authentication, and
-                # request-level session evidence regardless of inheritance.
+                # Pier uses /tmp/codex-home while Agent Layer stages /app/.codex.
+                # Point both paths to the same config, auth and session store.
                 await self.exec_as_agent(
                     environment,
                     command=(
@@ -675,6 +947,20 @@ for s in json.load(open(p, encoding="utf-8")).get("servers", []):
             env=self.build_process_env(self._credential_env),
         )
 
+    async def _workspace_submission(self, environment, operation):
+        excluded = PROJECTED_PATHS.split()
+        provider_paths = ()
+        if self._treatment_mode == "bare":
+            excluded = [".agent-layer"]
+            provider_paths = PROVIDER_WORKSPACE_PATHS[self._treatment_agent]
+        script = (
+            "import json, os, re, shutil, subprocess, tempfile\nfrom pathlib import Path\n"
+            + inspect.getsource(WorkspaceSubmission)
+            + f"\nWorkspaceSubmission({REMOTE_WORKSPACE!r}, {excluded!r}, {provider_paths!r}).{operation}\n"
+        )
+        encoded = base64.b64encode(script.encode("utf-8")).decode("ascii")
+        await self.exec_as_agent(environment, command=f"printf '%s' '{encoded}' | base64 -d | python3")
+
     async def _collect_evidence(self, environment):
         evidence_dir = EnvironmentPaths.agent_dir / "agent-layer-dispatch"
         dispatch_sessions_dir = EnvironmentPaths.agent_dir / "sessions" / "agent-layer-dispatch"
@@ -689,7 +975,7 @@ for s in json.load(open(p, encoding="utf-8")).get("servers", []):
                 "' sh {} \\;; done"
             ),
         )
-        if self._treatment_agent == "codex":
+        if self._treatment_agent == "codex" and self._treatment_mode != "bare":
             # Pier has copied the shared session tree and removed its /tmp home
             # symlink. The physical repository-local home remains, allowing us
             # to cancel any stragglers before refreshing the captured evidence.
@@ -749,28 +1035,36 @@ for s in json.load(open(p, encoding="utf-8")).get("servers", []):
                 "' sh {} \\;; done"
             ),
         )
-        await self.exec_as_agent(
-            environment,
-            command=(
-                f"cd {REMOTE_WORKSPACE} && "
-                f"for path in {PROJECTED_PATHS}; do "
-                "key=$(printf '%s' \"$path\" | tr / _); rm -rf \"$path\"; "
-                "if test ! -f \"/tmp/agent-layer-original/$key.absent\"; then "
-                "mkdir -p \"$(dirname \"$path\")\" && "
-                "cp -a \"/tmp/agent-layer-original/$key/value\" \"$path\"; fi; done"
-            ),
-        )
-        await self.exec_as_agent(
-            environment,
-            command=(
-                f"cd {REMOTE_WORKSPACE} && git add -A && "
-                f"if test -s {PREEXISTING_UNTRACKED}; then "
-                f"git reset -q --pathspec-from-file={PREEXISTING_UNTRACKED} "
-                "--pathspec-file-nul --; fi && "
-                "if ! git diff --cached --quiet; then "
-                "git commit -m 'Complete benchmark task'; fi"
-            ),
-        )
+        if self._preflight_only:
+            await self.exec_as_agent(
+                environment,
+                command=(
+                    f"git -C {REMOTE_WORKSPACE} worktree add --detach /tmp/agent-layer-preflight-worktree HEAD && "
+                    "printf 'linked worktree submission\\n' > /tmp/agent-layer-preflight-worktree/agent-layer-preflight.txt"
+                ),
+            )
+        conflicts = str(EnvironmentPaths.agent_dir / "submission-conflicts")
+        await self._workspace_submission(environment, f"collect({conflicts!r})")
+        if self._treatment_mode != "bare":
+            await self.exec_as_agent(
+                environment,
+                command=(
+                    f"set -e; cd {REMOTE_WORKSPACE} && "
+                    f"for path in {PROJECTED_PATHS}; do "
+                    "key=$(printf '%s' \"$path\" | tr / _); rm -rf \"$path\"; "
+                    "if test ! -f \"/tmp/agent-layer-original/$key.absent\"; then "
+                    "mkdir -p \"$(dirname \"$path\")\" && "
+                    "cp -a \"/tmp/agent-layer-original/$key/value\" \"$path\"; fi; done"
+                ),
+            )
+        digest_path = str(EnvironmentPaths.agent_dir / "submission.sha256")
+        await self._workspace_submission(environment, f"digest({digest_path!r}, {self._preflight_only!r})")
+
+    async def _finish_run(self, environment):
+        try:
+            self._record_provider_checkpoint()
+        finally:
+            await self._collect_evidence(environment)
 
     async def _write_spec_file(self, environment, instruction: str) -> None:
         """Persist the verbatim task text so workflow skills can cite it exactly."""
@@ -1114,8 +1408,7 @@ with open(path, "w", encoding="utf-8") as stream:
                 await self.exec_as_agent(environment, command=f"rm -f {remote_credential}")
             except Exception:
                 pass
-            await self._collect_evidence(environment)
-            self._record_provider_checkpoint()
+            await self._finish_run(environment)
 
 
 class AgentLayerGrok(_AgentLayerStreamAgent):
@@ -1186,12 +1479,15 @@ class AgentLayerGrok(_AgentLayerStreamAgent):
                 await self.exec_as_agent(environment, command=f"rm -f {REMOTE_WORKSPACE}/.grok-config/auth.json")
             except Exception:
                 pass
-            await self._collect_evidence(environment)
-            self._record_provider_checkpoint()
+            await self._finish_run(environment)
 
 
 class AgentLayerCodex(_AgentLayerTreatment, Codex):
     """Pier Codex adapter with one immutable Agent Layer treatment."""
+
+    def network_allowlist(self) -> NetworkAllowlist:
+        inherited = super().network_allowlist()
+        return NetworkAllowlist(domains=[*inherited.domains, "chatgpt.com"])
 
     def _get_session_dir(self) -> Path | None:
         """Return Pier's coordinator session directory, excluding dispatch evidence."""
@@ -1224,8 +1520,7 @@ class AgentLayerCodex(_AgentLayerTreatment, Codex):
             self._provider_completed = True
             return result
         finally:
-            await self._collect_evidence(environment)
-            self._record_provider_checkpoint()
+            await self._finish_run(environment)
 
     def populate_context_post_run(self, context) -> None:
         super().populate_context_post_run(context)
@@ -1245,8 +1540,7 @@ class AgentLayerClaudeCode(_AgentLayerTreatment, ClaudeCode):
             self._provider_completed = True
             return result
         finally:
-            await self._collect_evidence(environment)
-            self._record_provider_checkpoint()
+            await self._finish_run(environment)
 
     def populate_context_post_run(self, context) -> None:
         super().populate_context_post_run(context)

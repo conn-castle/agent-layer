@@ -17,11 +17,55 @@ import (
 
 	"github.com/conn-castle/agent-layer/internal/projectpaths"
 
+	"github.com/pelletier/go-toml/v2"
 	"github.com/stretchr/testify/require"
 
 	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/sync"
 )
+
+func TestConfigureStudyCodexHomePreservesTreatmentSettings(t *testing.T) {
+	const configText = `[agents.codex]
+enabled = true
+
+[agents.codex.agent_specific.features]
+shell_tool = true
+
+[[instructions.local]]
+name = "rules"
+order = 10
+`
+	for _, value := range []string{"", "local_config_dir = false\n", "local_config_dir = true\n"} {
+		input := strings.Replace(configText, "enabled = true\n", "enabled = true\n"+value, 1)
+		output, err := configureStudyCodexHome(input)
+		require.NoError(t, err)
+		if value == "local_config_dir = true\n" {
+			require.Equal(t, input, output)
+		}
+		var decoded struct {
+			Agents struct {
+				Codex struct {
+					LocalConfigDir bool `toml:"local_config_dir"`
+					AgentSpecific  struct {
+						Features map[string]bool
+					} `toml:"agent_specific"`
+				}
+			}
+			Instructions struct {
+				Local []map[string]any
+			}
+		}
+		require.NoError(t, toml.Unmarshal([]byte(output), &decoded))
+		require.True(t, decoded.Agents.Codex.LocalConfigDir)
+		require.True(t, decoded.Agents.Codex.AgentSpecific.Features["shell_tool"])
+		require.Len(t, decoded.Instructions.Local, 1)
+		require.Equal(t, "rules", decoded.Instructions.Local[0]["name"])
+	}
+	for _, input := range []string{"[agents]\n", "[agents.codex]\nenabled = false\n"} {
+		_, err := configureStudyCodexHome(input)
+		require.ErrorContains(t, err, "agents.codex.enabled = true")
+	}
+}
 
 func TestStudyMCPContractRejectsLiteralCookieAndCredentialValues(t *testing.T) {
 	for _, server := range []struct {
@@ -682,8 +726,10 @@ func TestStudyIdentityIgnoresVolatileOverlayBuildMetadata(t *testing.T) {
 
 	originalPreflight, originalVerify := preflightBenchmark, verifyBenchmarkPier
 	originalAuth, originalRuntime := validateBenchmarkAuthentication, preflightTreatmentRuntime
+	originalArchitecture := dockerHostArchitecture
 	preflightBenchmark = func([]parsedSelection) error { return nil }
 	verifyBenchmarkPier = func(context.Context) error { return nil }
+	dockerHostArchitecture = func(context.Context) (string, error) { return "amd64", nil }
 	validateBenchmarkAuthentication = func(context.Context, string, []parsedSelection) (map[string]AuthenticationPreflight, error) {
 		return map[string]AuthenticationPreflight{}, nil
 	}
@@ -691,6 +737,7 @@ func TestStudyIdentityIgnoresVolatileOverlayBuildMetadata(t *testing.T) {
 	t.Cleanup(func() {
 		preflightBenchmark, verifyBenchmarkPier = originalPreflight, originalVerify
 		validateBenchmarkAuthentication, preflightTreatmentRuntime = originalAuth, originalRuntime
+		dockerHostArchitecture = originalArchitecture
 	})
 
 	first, err := RunStudy(context.Background(), StudyOptions{RepoRoot: root, StudyPath: filepath.Join(root, "study.toml"), DryRun: true}, nil)

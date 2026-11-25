@@ -555,7 +555,11 @@ func writeCodexStdioServer(builder *strings.Builder, server projection.ResolvedM
 	}
 
 	if server.ID == projection.BuiltInDispatchServerID {
-		fmt.Fprintf(builder, "env_vars = %s\n", tomlStringArray(projection.BuiltInDispatchEnvVars()))
+		// Dispatched clients need the coordinator's Codex home and proxy.
+		dispatchEnv := append(projection.BuiltInDispatchEnvVars(),
+			"CODEX_HOME", "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY",
+			"http_proxy", "https_proxy", "no_proxy")
+		fmt.Fprintf(builder, "env_vars = %s\n", tomlStringArray(dispatchEnv))
 	}
 
 	// Codex is the only supported client with a documented per-server execution

@@ -155,6 +155,7 @@ func TestCodexReceivesTheBuiltInDispatchServerWithItsHardTimeout(t *testing.T) {
 			Command        string   `toml:"command"`
 			Args           []string `toml:"args"`
 			ToolTimeoutSec int      `toml:"tool_timeout_sec"`
+			EnvVars        []string `toml:"env_vars"`
 		} `toml:"mcp_servers"`
 	}
 	if err := toml.Unmarshal([]byte(managed.Content), &decoded); err != nil {
@@ -165,6 +166,9 @@ func TestCodexReceivesTheBuiltInDispatchServerWithItsHardTimeout(t *testing.T) {
 		t.Fatalf("codex config is missing %q: %#v", projection.BuiltInDispatchServerID, decoded.MCPServers)
 	}
 	wantBuiltInDispatchInvocation(t, server.Command, server.Args, project.Root)
+	require.Subset(t, server.EnvVars, []string{
+		"CODEX_HOME", "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "http_proxy", "https_proxy", "no_proxy",
+	})
 	if server.ToolTimeoutSec != minutes*60 {
 		t.Fatalf("codex tool_timeout_sec = %d, want %d", server.ToolTimeoutSec, minutes*60)
 	}

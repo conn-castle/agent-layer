@@ -139,6 +139,8 @@ func TestPinnedStreamAdaptersImplementPierInstallAndEgressContracts(t *testing.T
 import asyncio
 import importlib.util
 import inspect
+import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -151,6 +153,7 @@ single_verify = getattr(retrying_verify, "__wrapped__", None)
 assert single_verify is not None
 spec = importlib.util.spec_from_file_location("pier_agent_layer", sys.argv[1])
 module = importlib.util.module_from_spec(spec)
+sys.modules[spec.name] = module
 spec.loader.exec_module(module)
 assert Trial._verify_with_retry is single_verify
 with tempfile.TemporaryDirectory() as directory:
@@ -177,6 +180,13 @@ from pier.verifier.verifier import Verifier
 verifier_source = inspect.getsource(Verifier.verify)
 assert "await self._environment.exec" in verifier_source
 assert "stdout_path=test_stdout_path" in verifier_source
+for key in ("OPENAI_BASE_URL", "OPENAI_API_BASE"):
+    os.environ.pop(key, None)
+codex = module.AgentLayerCodex(logs_dir=Path("/tmp/pier-adapter-contract"),
+                               model_name="openai/gpt-6-luna", treatment_mode="bare",
+                               treatment_agent="codex", treatment_model="gpt-6-luna",
+                               treatment_reasoning_effort="high")
+assert set(codex.network_allowlist().domains) == {"api.openai.com", "chatgpt.com"}
 for cls, model, domains in [
     (module.AgentLayerAntigravity, "gemini-3.5-flash-low", {"storage.googleapis.com", ".googleapis.com"}),
     (module.AgentLayerGrok, "grok-4.5", {"storage.googleapis.com", "api.x.ai", "auth.x.ai"}),
@@ -232,13 +242,57 @@ async def capture_command(environment, command, **kwargs):
 agent.exec_as_agent = capture_command
 asyncio.run(agent._snapshot_workspace(object()))
 assert len(commands) == 1
-assert "git ls-files --others -z" in commands[0]
-assert "git config user.email" in commands[0]
-assert "agent-layer-original" in commands[0]
+assert commands[0].endswith("| base64 -d | python3")
 commands.clear()
 asyncio.run(agent._collect_evidence(object()))
-assert any("for path in" in command and "agent-layer-original" in command for command in commands)
-assert any("git reset -q --pathspec-from-file" in command and "git commit -m" in command for command in commands)
+assert not any("agent-layer-original" in command for command in commands)
+
+async def capture_submission(environment, operation):
+    commands.append(operation)
+
+commands.clear()
+agent._treatment_mode = "instructions-only"
+agent._workspace_submission = capture_submission
+asyncio.run(agent._collect_evidence(object()))
+collect = next(index for index, command in enumerate(commands) if command.startswith("collect("))
+restore = next(index for index, command in enumerate(commands) if "agent-layer-original" in command)
+digest = next(index for index, command in enumerate(commands) if command.startswith("digest("))
+assert collect < restore < digest
+
+async def fail_collection(environment):
+    assert (Path(logs) / "provider-checkpoint.json").is_file()
+    raise RuntimeError("simulated submission failure")
+
+for adapter in (module.AgentLayerCodex, module.AgentLayerClaudeCode, module.AgentLayerGrok, module.AgentLayerAntigravity):
+    assert "await self._finish_run(environment)" in inspect.getsource(adapter.run)
+
+with tempfile.TemporaryDirectory() as logs:
+    finished = types.SimpleNamespace(logs_dir=Path(logs), _preflight_only=False,
+                                     _provider_completed=True, _collect_evidence=fail_collection)
+    finished._record_provider_checkpoint = lambda: module._AgentLayerTreatment._record_provider_checkpoint(finished)
+    try:
+        asyncio.run(module._AgentLayerTreatment._finish_run(finished, object()))
+        raise AssertionError("submission failure was not propagated")
+    except RuntimeError as error:
+        assert str(error) == "simulated submission failure"
+    checkpoint = json.loads((Path(logs) / "provider-checkpoint.json").read_text())
+    assert checkpoint["schema"] == "agent-layer-provider-checkpoint-v1" and checkpoint["completed_at"]
+
+def fail_checkpoint():
+    raise OSError("simulated checkpoint failure")
+
+async def collect_after_checkpoint_error(environment):
+    commands.append("collected")
+
+commands.clear()
+finished = types.SimpleNamespace(_record_provider_checkpoint=fail_checkpoint,
+                                 _collect_evidence=collect_after_checkpoint_error)
+try:
+    asyncio.run(module._AgentLayerTreatment._finish_run(finished, object()))
+    raise AssertionError("checkpoint failure was not propagated")
+except OSError as error:
+    assert str(error) == "simulated checkpoint failure"
+assert commands == ["collected"]
 `
 	command := exec.CommandContext(t.Context(), "uvx", "--from", "datacurve-pier=="+PierVersion, "python", "-c", script, path) // #nosec G204 -- embedded test loads the checked-in adapter against its pinned runtime.
 	if output, err := command.CombinedOutput(); err != nil {
@@ -331,6 +385,7 @@ func TestMCPPreflightAcceptsGeneratedLaunchers(t *testing.T) {
 	type server struct {
 		Command string   `json:"command" toml:"command"`
 		Args    []string `json:"args" toml:"args"`
+		EnvVars []string `json:"env_vars,omitempty" toml:"env_vars"`
 	}
 	readJSON := func(path string) server {
 		t.Helper()
@@ -371,13 +426,20 @@ func TestMCPPreflightAcceptsGeneratedLaunchers(t *testing.T) {
 	}
 	// Each mutant breaks one property the predicate requires.
 	mutant := func(index int, value string) server {
-		changed := server{Command: claude.Command, Args: append([]string(nil), claude.Args...)}
+		changed := server{Command: codex.Command, Args: append([]string(nil), codex.Args...), EnvVars: codex.EnvVars}
 		changed.Args[index] = value
 		return changed
 	}
-	bare := server{Command: "al", Args: []string{"dispatch", "mcp-server"}}
+	bare := server{Command: "al", Args: []string{"dispatch", "mcp-server"}, EnvVars: codex.EnvVars}
+	withSimilarEnvName := codex
+	withSimilarEnvName.EnvVars = append([]string(nil), codex.EnvVars...)
+	for index, name := range withSimilarEnvName.EnvVars {
+		if name == "CODEX_HOME" {
+			withSimilarEnvName.EnvVars[index] = "BACKUP_CODEX_HOME"
+		}
+	}
 	codexShape := func(s server) any {
-		return map[string]any{"enabled": true, "transport": map[string]any{"type": "stdio", "command": s.Command, "args": s.Args}}
+		return map[string]any{"enabled": true, "transport": map[string]any{"type": "stdio", "command": s.Command, "args": s.Args, "env_vars": s.EnvVars}}
 	}
 	cases := []map[string]any{
 		{"name": "claude", "kind": "file", "want": true, "document": map[string]any{"mcpServers": map[string]any{"agent-layer": claude}}},
@@ -390,7 +452,9 @@ func TestMCPPreflightAcceptsGeneratedLaunchers(t *testing.T) {
 		{"name": "development executable", "kind": "codex", "want": false, "document": codexShape(mutant(4, "/host/al"))},
 		{"name": "argv0", "kind": "codex", "want": false, "document": codexShape(mutant(2, "other"))},
 		{"name": "script", "kind": "codex", "want": false, "document": codexShape(mutant(1, "exec /tmp/other dispatch mcp-server"))},
-		{"name": "command", "kind": "codex", "want": false, "document": codexShape(server{Command: "/bin/bash", Args: claude.Args})},
+		{"name": "command", "kind": "codex", "want": false, "document": codexShape(server{Command: "/bin/bash", Args: codex.Args, EnvVars: codex.EnvVars})},
+		{"name": "missing forwarded environment", "kind": "codex", "want": false, "document": codexShape(server{Command: codex.Command, Args: codex.Args})},
+		{"name": "similar environment name", "kind": "codex", "want": false, "document": codexShape(withSimilarEnvName)},
 		{"name": "missing", "kind": "file", "want": false, "document": map[string]any{"mcpServers": map[string]any{}}},
 	}
 	casesPath := filepath.Join(t.TempDir(), "cases.json")

@@ -22,6 +22,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/pelletier/go-toml/v2"
+
 	alconfig "github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/fsutil"
 	"github.com/conn-castle/agent-layer/internal/gitenv"
@@ -379,6 +381,12 @@ func BuildStudyTreatmentBundle(repoRoot string, experiment preparedStudyExperime
 	if err != nil {
 		return nil, err
 	}
+	if mode == TreatmentInstructionsAndSkills && experiment.model.Adapter == adapterCodex {
+		orderedConfig, err = configureStudyCodexHome(orderedConfig)
+		if err != nil {
+			return nil, err
+		}
+	}
 	if err := os.WriteFile(stagedConfig, []byte(orderedConfig), 0o600); err != nil { // #nosec G703 -- stagedConfig is inside the controlled private staging root.
 		return nil, err
 	}
@@ -482,6 +490,29 @@ func BuildStudyTreatmentBundle(repoRoot string, experiment preparedStudyExperime
 	}
 	cleanup = false
 	return &TreatmentBundle{Root: root, Manifest: manifest, ManifestHash: manifestHash, LinuxArchitecture: targetArch, LinuxBinary: binary, LinuxBinarySHA256: binaryHash, AdapterPath: adapterPath, AdapterSHA256: adapterSHA256, TemplatesCommit: sourceState.commit, TemplatesDirty: sourceState.dirty || binaryDirty, CredentialNames: credentialNames, RuntimeSourceKind: sourceKind, RuntimeVersion: runtimeVersion}, nil
+}
+
+func configureStudyCodexHome(content string) (string, error) {
+	var config map[string]any
+	if err := toml.Unmarshal([]byte(content), &config); err != nil {
+		return "", fmt.Errorf("read benchmark Codex configuration: %w", err)
+	}
+	agents, _ := config["agents"].(map[string]any)
+	codex, _ := agents["codex"].(map[string]any)
+	if codex == nil || codex["enabled"] != true {
+		return "", fmt.Errorf("benchmark Codex skills treatment requires agents.codex.enabled = true")
+	}
+	if codex["local_config_dir"] == true {
+		return content, nil
+	}
+	// Coordinator and dispatched clients must share the staged home so every
+	// session is authenticated and collected for cost accounting.
+	codex["local_config_dir"] = true
+	data, err := toml.Marshal(config)
+	if err != nil {
+		return "", fmt.Errorf("write benchmark Codex configuration: %w", err)
+	}
+	return string(data), nil
 }
 
 func validateTreatmentInstructionDependencies(root string) error {

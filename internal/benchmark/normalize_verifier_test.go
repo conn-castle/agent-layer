@@ -78,6 +78,19 @@ func TestVerifierBuildFailureIsDetectedOnlyFromVerifierLogs(t *testing.T) {
 		}
 	})
 
+	t.Run("Kysely reports a failed verifier build", func(t *testing.T) {
+		for _, phase := range []string{"base", "new"} {
+			stage := t.TempDir()
+			log := phase + "-build.log"
+			writeVerifierStageFile(t, stage, filepath.Join("jobs", "one", "verifier", "test-stdout.txt"),
+				fmt.Sprintf("[verifier] %s build failed (see /logs/verifier/%s)\n", phase, log))
+			failed, excerpt, err := verifierBuildFailed(stage)
+			if err != nil || !failed || !strings.Contains(excerpt, log) {
+				t.Fatalf("%s build failed=%t excerpt=%q err=%v", phase, failed, excerpt, err)
+			}
+		}
+	})
+
 	t.Run("excerpt is bounded", func(t *testing.T) {
 		stage := t.TempDir()
 		writeVerifierStageFile(t, stage, filepath.Join("jobs", "one", "verifier", "run.log"), `{"FailedBuild":"package"}`)

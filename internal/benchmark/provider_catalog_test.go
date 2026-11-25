@@ -4,13 +4,14 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
-	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestProviderCatalogParsesProviderSpecificSelections(t *testing.T) {
@@ -52,6 +53,29 @@ func TestExplicitModelSelectionDoesNotRequireCatalogUpdates(t *testing.T) {
 		if dispatchAgent(model) != provider || dispatchModel(model) != "future-model" || effort != "future-effort" {
 			t.Fatalf("incorrect explicit selection: %+v %q", model, effort)
 		}
+	}
+}
+
+func TestGPT6LunaUsesPinnedCodexAndStandardRequestPricing(t *testing.T) {
+	model, _, err := ParseModelSelection("codex/gpt-6-luna:high")
+	require.NoError(t, err)
+	require.Equal(t, "0.171.0", model.ProviderClientVersion)
+	pricing, err := loadBenchmarkPricing()
+	require.NoError(t, err)
+	for _, test := range []struct {
+		input int
+		cost  float64
+	}{
+		{272000, 0.0237},
+		{272001, 0.0449002},
+	} {
+		cacheWrites := 20000
+		_, cost, err := priceCodexRequest("fixture", dispatchModel(model), codexTokenUsage{
+			InputTokens: test.input, CachedInputTokens: 100000, CacheWriteInputTokens: &cacheWrites, OutputTokens: 10000,
+		}, pricing)
+		require.NoError(t, err)
+		require.NotNil(t, cost)
+		require.InDelta(t, test.cost, *cost, 1e-10)
 	}
 }
 
@@ -288,7 +312,7 @@ func TestAntigravityPierArgumentsUseOAuthProfilePath(t *testing.T) {
 
 func TestBareCustomProviderStagesEmbeddedPierAdapter(t *testing.T) {
 	stage := t.TempDir()
-	for _, adapter := range []string{adapterGrok, adapterAntigravity} {
+	for _, adapter := range []string{adapterCodex, adapterClaudeCode, adapterGrok, adapterAntigravity} {
 		path, err := stagePierAgentLayerAdapter(ExecutionRequest{
 			Arm: ArmBaseline, Model: Model{Adapter: adapter},
 		}, stage)
@@ -312,21 +336,11 @@ func TestBareCustomProviderStagesEmbeddedPierAdapter(t *testing.T) {
 	}
 }
 
-func TestPierAdapterStagingPreservesNativeAndTreatmentBoundaries(t *testing.T) {
+func TestPierAdapterStagingPreservesTreatmentAdapter(t *testing.T) {
 	stage := t.TempDir()
-	path, err := stagePierAgentLayerAdapter(ExecutionRequest{
-		Arm: ArmBaseline, Model: Model{Adapter: adapterCodex},
-	}, stage)
-	if err != nil || path != "" {
-		t.Fatalf("native bare adapter path = %q, %v", path, err)
-	}
-	if _, err := os.Stat(filepath.Join(stage, "pier_agent_layer.py")); !errors.Is(err, os.ErrNotExist) {
-		t.Fatalf("native bare execution staged a custom adapter: %v", err)
-	}
-
 	bundleRoot := t.TempDir()
 	bundlePath := filepath.Join(bundleRoot, "adapter", "pier_agent_layer.py")
-	path, err = stagePierAgentLayerAdapter(ExecutionRequest{
+	path, err := stagePierAgentLayerAdapter(ExecutionRequest{
 		Arm: ArmTreatment, Model: Model{Adapter: adapterCodex},
 		Bundle: &TreatmentBundle{AdapterPath: bundlePath},
 	}, stage)
