@@ -22,7 +22,7 @@ DeltaSelect is for developers who need to measure whether an instruction, Agent 
 </div>
 
 :::note[Research paper]
-The [DeltaSelect arXiv paper](https://arxiv.org/abs/2609.19607) describes the method, validation, and limitations. Use Agent Layer v0.18.4 or later to run selections exported by this tool.
+The [DeltaSelect arXiv paper](https://arxiv.org/abs/2609.19607) describes the method, validation, and limitations. The study steps below use Agent Layer v1.4.0.
 
 **Citation:**
 
@@ -57,7 +57,7 @@ You can also compare a second model configuration against the same tasks and wei
 
 ## Run the study
 
-Install the [benchmark companion](/docs/reference#benchmark-runner) that matches your Agent Layer version. Then use it to run the study.
+On Agent Layer v1.1.0 and later, install the [benchmark companion](/docs/reference#benchmark-runner) that matches your CLI. Releases v0.18.4 through v1.0.0 include the benchmark runner in `al`. Use the current release for the workflow and recovery options below.
 
 1. Build and export `selection.json` from the interactive tool.
 2. Run `al benchmark init selection.json --directory benchmark-study` to create a self-contained study.
@@ -65,7 +65,7 @@ Install the [benchmark companion](/docs/reference#benchmark-runner) that matches
 4. Run `al benchmark run benchmark-study/study.toml` to authorize paid calls, execute missing cells, and preserve immutable evidence.
 5. Compare score, cost, workflow conformance, and statistical evidence in the generated report.
 
-The runner collects submissions from the task checkout and its linked Git worktrees. If two checkouts propose conflicting changes, it keeps both candidates for inspection and stops that cell before scoring. For existing studies, add `--recover-only` to work with historical evidence without starting new paid runs.
+The runner collects submissions from the task checkout and its linked Git worktrees. If two checkouts propose conflicting changes, it keeps both candidates for inspection and stops that cell before scoring. Use `--recover-only` to finalize recorded terminal test timeouts or regenerate a completed study report without paid calls. For a verifier failure eligible for replay, rerun the study with its original runtime. A normal run may start paid calls for other missing cells.
 
 ## Scope and interpretation
 

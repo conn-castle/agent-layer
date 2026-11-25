@@ -1004,7 +1004,7 @@ Initialization fetches and validates all seven exact development skill trees fro
 
 The study manifest is the reproducibility boundary. Its `selection` points to the exported DeltaSelect JSON, and each `[[experiments]]` entry declares a name, model, reasoning level, and any treatment inputs such as config, instructions, or skills. Every referenced path must be relative to and remain inside the directory containing `study.toml`.
 
-`--dry-run` validates the selection and study, computes cached and missing cells, and performs dependency, environment, and provider-authentication preflight without inference calls. A normal run authorizes paid provider calls for all missing cells. Completed cells are immutable and reusable, so an interrupted study resumes instead of rerunning finished work.
+`--dry-run` validates the selection and study, computes cached and missing cells, and performs dependency, environment, and provider-authentication preflight without inference calls. A normal run authorizes paid provider calls for all missing cells. Completed cells are immutable and reusable when the study identity matches, so an interrupted study resumes from retained results. Use `--recover-only` to finalize recorded terminal test timeouts or regenerate a compatible completed study report without paid calls. A normal run with the original runtime can replay eligible verifier failures.
 
 The runner writes content-addressed evidence plus `report.json` and `report.html` under `.agent-layer/state/benchmarks/deepswe/studies/`. Reports compare score, observed cost, workflow conformance, and statistical evidence for the fixed selected task set; they do not claim that the subset represents every task in DeepSWE.
 
