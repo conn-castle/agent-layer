@@ -94,11 +94,22 @@ func reconcileOrphanLocked(current *RunRecord, now time.Time) {
 	// provider launch intent never contacted a provider, so a conversation
 	// without a provider session ID remains continuable (and any provisional
 	// caller-assigned session ID is cleared on reconciliation).
-	if current.PreviousRunID != "" && current.Mode == dispatchModeFresh && current.PID == 0 && !current.ProviderLaunchIntent && usesLaunchIntentProtocol(*current) {
+	if freshContinuationBeforeProviderLaunch(*current) {
 		current.RecoveryState = recoveryRetrySafe
 	}
 	current.TerminalExitCode = ExitTargetFailure
 	applyTerminationEvidence(current, nil, true, now)
+}
+
+func freshContinuationBeforeProviderLaunch(record RunRecord) bool {
+	return record.PreviousRunID != "" && record.Mode == dispatchModeFresh && usesLaunchIntentProtocol(record) &&
+		!record.ProviderLaunchIntent && record.PID == 0 && record.ProcessGroupID == 0 && record.ProcessStartIdentity == ""
+}
+
+func cancelledUnstartedFreshContinuation(record RunRecord) bool {
+	return record.State == dispatchStateCancelled && record.RecoveryState == recoveryRetrySafe &&
+		record.TerminationConfirmed && freshContinuationBeforeProviderLaunch(record) &&
+		(record.ReservationExpiresAt == nil || record.LaunchDigest != "")
 }
 
 func tryReleaseIfConfirmed(root string, record RunRecord) error {
@@ -187,6 +198,11 @@ func Cancel(request CancelRequest) error {
 		return err
 	}
 	if alreadyConfirmedCancelled {
+		if cancelledUnstartedFreshContinuation(record) {
+			if err := releaseIfConfirmed(request.Root, record); err != nil {
+				return err
+			}
+		}
 		result := publicResult(record)
 		result.Error = ""
 		return writeJSONResult(writerOrDiscard(request.Stdout), result)
@@ -309,7 +325,7 @@ func beginCancellation(root string, id string) (RunRecord, *ownedProviderProcess
 		}
 		now := time.Now().UTC()
 		recovery := recoveryAcceptanceUnknown
-		if current.State == dispatchStateReserved {
+		if current.State == dispatchStateReserved || freshContinuationBeforeProviderLaunch(current) {
 			recovery = recoveryRetrySafe
 		}
 		current.State = dispatchStateCancelled

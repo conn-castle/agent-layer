@@ -1104,9 +1104,19 @@ func TestCancelledWorkerCannotClobberNewerContinuationReservation(t *testing.T) 
 	}
 }
 
-func TestFreshModeWorkerCrashBeforeProviderIntentStaysContinuable(t *testing.T) {
-	for _, agent := range []string{AgentCodex, AgentClaude} {
-		t.Run(agent, func(t *testing.T) {
+func TestFreshContinuationInterruptedBeforeProviderIntentStaysContinuable(t *testing.T) {
+	for _, tc := range []struct {
+		name, agent, terminalState string
+		skipCancellationCleanup    bool
+	}{
+		{"orphan without provisional ID", AgentCodex, dispatchStateFailed, false},
+		{"orphan with provisional ID", AgentClaude, dispatchStateFailed, false},
+		{"cancel without provisional ID", AgentCodex, dispatchStateCancelled, false},
+		{"cancel with provisional ID", AgentClaude, dispatchStateCancelled, false},
+		{"cancel interrupted before mapping cleanup", AgentClaude, dispatchStateCancelled, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			agent := tc.agent
 			root := writeDispatchRepo(t, dispatchRepoConfig{})
 			firstRun, err := newDispatchRun(root, agent, supportedProviderVersions[agent], dispatchModeFresh)
 			if err != nil {
@@ -1147,9 +1157,7 @@ func TestFreshModeWorkerCrashBeforeProviderIntentStaysContinuable(t *testing.T) 
 				t.Fatal(err)
 			}
 
-			// Simulate a worker that had already published SupervisorPID (and for
-			// Claude, a provisional caller-assigned ProviderSessionID) and died
-			// before writing ProviderLaunchIntent.
+			// Claude assigns a provisional ID before publishing launch intent.
 			if agent == AgentClaude {
 				if _, err := persistOwnedSession(root, session.Name, reserved.InvocationID, func(s *Session) {
 					s.ProviderSessionID = "provisional-claude-id"
@@ -1158,27 +1166,47 @@ func TestFreshModeWorkerCrashBeforeProviderIntentStaysContinuable(t *testing.T) 
 					t.Fatal(err)
 				}
 			}
-			if _, err := updateRunEvidence(filepathForRun(root, reserved.InvocationID), func(r *RunRecord) error {
-				r.SupervisorPID = 99999999
-				r.SupervisorStartIdentity = "gone"
-				r.LauncherPID = 99999998
-				r.LauncherStartIdentity = "gone"
-				return nil
-			}); err != nil {
-				t.Fatal(err)
+			switch {
+			case tc.terminalState == dispatchStateFailed:
+				if _, err := updateRunEvidence(filepathForRun(root, reserved.InvocationID), func(r *RunRecord) error {
+					r.SupervisorPID = 99999999
+					r.SupervisorStartIdentity = "gone"
+					r.LauncherPID = 99999998
+					r.LauncherStartIdentity = "gone"
+					return nil
+				}); err != nil {
+					t.Fatal(err)
+				}
+			case tc.skipCancellationCleanup:
+				if _, _, _, err := beginCancellation(root, reserved.InvocationID); err != nil {
+					t.Fatal(err)
+				}
+				if _, err := persistConfirmedTermination(filepathForRun(root, reserved.InvocationID)); err != nil {
+					t.Fatal(err)
+				}
+			default:
+				if err := Cancel(CancelRequest{Root: root, InvocationID: reserved.InvocationID}); err != nil {
+					t.Fatal(err)
+				}
+				mapping, err := loadSession(root, session.Name)
+				if err != nil || mapping.ProviderSessionID != "" || mapping.State != sessionStatePending || mapping.ActiveRunID != "" {
+					t.Fatalf("cancel left provisional identity or ownership: %#v, %v", mapping, err)
+				}
 			}
 
-			// Even without calling wait first, reserve --continue reconciles the
-			// dead worker, clears any provisional ID, and reserves a fresh turn.
 			next := reserveContinuationInTest(t, root, session.Name)
 			if next.InvocationID == reserved.InvocationID {
-				t.Fatalf("reserve after dead fresh worker reused %s", reserved.InvocationID)
+				t.Fatalf("reserve after interrupted launch reused %s", reserved.InvocationID)
+			}
+			nextRun, err := loadRunRecord(root, next.InvocationID)
+			if err != nil || nextRun.Mode != dispatchModeFresh {
+				t.Fatalf("next reservation must start fresh: %#v, %v", nextRun, err)
 			}
 			reconciled, err := loadRunRecord(root, reserved.InvocationID)
 			if err != nil {
 				t.Fatal(err)
 			}
-			if reconciled.State != dispatchStateFailed || reconciled.RecoveryState != recoveryRetrySafe || !reconciled.TerminationConfirmed {
+			if reconciled.State != tc.terminalState || reconciled.RecoveryState != recoveryRetrySafe || !reconciled.TerminationConfirmed {
 				t.Fatalf("reconciled fresh worker record = %#v", reconciled)
 			}
 			reloadedSession, err := loadSession(root, session.Name)
@@ -1265,6 +1293,92 @@ func TestContinuationReservationMissingRunRecordSelfHeals(t *testing.T) {
 	}
 	if _, err := os.Stat(runDir); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("settling an absent run recreated %s: %v", runDir, err)
+	}
+}
+
+func TestContinuationSlotRejectsForeignOrWrongKindInvocation(t *testing.T) {
+	for _, kind := range []string{"foreign reservation", "start reservation", "ordinary continuation"} {
+		t.Run(kind, func(t *testing.T) {
+			root := writeDispatchRepo(t, dispatchRepoConfig{})
+			session, initial := completedConversationForTest(t, root, AgentCodex, "original", true)
+			wrongID := initial.Record.ID
+			switch kind {
+			case "foreign reservation":
+				other, _ := completedConversationForTest(t, root, AgentCodex, "other", false)
+				wrongID = reserveContinuationInTest(t, root, other.Name).InvocationID
+			case "ordinary continuation":
+				run, err := newDispatchRun(root, AgentCodex, supportedProviderVersions[AgentCodex], dispatchModeResume)
+				if err != nil {
+					t.Fatal(err)
+				}
+				run.Record.Name = session.Name
+				run.Record.PreviousRunID = initial.Record.ID
+				if err := writeRunRecord(run.Dir, &run.Record); err != nil {
+					t.Fatal(err)
+				}
+				wrongID = run.Record.ID
+			}
+			session.ContinuationReservationID = wrongID
+			if err := persistSession(root, session); err != nil {
+				t.Fatal(err)
+			}
+			requireDispatchExitCode(t, Reserve(ReserveOptions{Root: root, ContinueHandle: &session.Name}), ExitConfig)
+			requireDispatchExitCode(t, Continue(ContinueOptions{
+				Root: root, Handle: session.Name, Prompt: "second turn", Env: []string{},
+			}), ExitConfig)
+			mapping, err := loadSession(root, session.Name)
+			if err != nil || mapping.ContinuationReservationID != wrongID {
+				t.Fatalf("corrupt slot was not preserved: %#v, %v", mapping, err)
+			}
+		})
+	}
+}
+
+func TestContinuationSettlementChecksExpiryAfterRunLock(t *testing.T) {
+	root := writeDispatchRepo(t, dispatchRepoConfig{})
+	session, _ := completedConversationForTest(t, root, AgentCodex, "expiry-lock", false)
+	reserved := reserveContinuationInTest(t, root, session.Name)
+	dir := filepathForRun(root, reserved.InvocationID)
+	sampled := make(chan time.Time)
+	settled := make(chan error, 1)
+	if err := withRunLock(dir, func() error {
+		go func() {
+			defer close(sampled)
+			settled <- withSessionLock(root, session.Name, func() error {
+				mapping, err := loadSession(root, session.Name)
+				if err != nil {
+					return err
+				}
+				now := time.Now().UTC()
+				sampled <- now
+				_, pending, err := settlePendingContinuationReservationLocked(root, &mapping, now)
+				if pending {
+					return errors.New("settlement kept the expired reservation pending")
+				}
+				return err
+			})
+		}()
+		beforeRunLock, ok := <-sampled
+		if !ok {
+			return <-settled
+		}
+		// Put the expiry just after the session-lock timestamp. By the time
+		// this write completes and the run lock is released, the ID has expired.
+		deadline := beforeRunLock.Add(time.Nanosecond)
+		_, err := applyRunEvidenceLocked(dir, func(r *RunRecord) error {
+			r.ReservationExpiresAt = &deadline
+			return nil
+		})
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-settled; err != nil {
+		t.Fatal(err)
+	}
+	rec, err := loadRunRecord(root, reserved.InvocationID)
+	if err != nil || rec.TerminalReason != terminalReasonReservationExpired {
+		t.Fatalf("waiting for the run lock did not retire the reservation: %#v, %v", rec, err)
 	}
 }
 

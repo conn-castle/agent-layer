@@ -88,13 +88,14 @@ func reserveContinuation(opts ReserveOptions) error {
 			reserved = pending
 			return nil
 		}
-		current, err := reconcileCurrentSessionRunLocked(opts.Root, &session, now)
+		current, err := reconcileCurrentSessionRunLocked(opts.Root, &session, time.Now().UTC())
 		if err != nil {
 			return err
 		}
 		if _, err := checkContinuationEligible(opts.Root, session, current); err != nil {
 			return err
 		}
+		now = time.Now().UTC()
 		run, err := newReservedContinuationRun(opts.Root, session, current.ID, continuationMode(session), now.Add(expiry))
 		if err != nil {
 			return err
@@ -323,13 +324,17 @@ func resolveContinuationReservation(root string, selector string, handle string)
 	if err != nil {
 		return RunRecord{}, err
 	}
-	if record.ReservationExpiresAt == nil || record.PreviousRunID == "" {
+	if !isContinuationReservation(record) {
 		return RunRecord{}, notFound
 	}
 	if trimmedHandle := strings.TrimSpace(handle); trimmedHandle != "" && record.Name != trimmedHandle {
 		return RunRecord{}, notFound
 	}
 	return record, nil
+}
+
+func isContinuationReservation(record RunRecord) bool {
+	return record.ReservationExpiresAt != nil && record.PreviousRunID != ""
 }
 
 // reportClaimedReservation explains why a start reservation is no longer startable.
@@ -419,7 +424,13 @@ func loadContinuationReservation(root string, session Session) (RunRecord, error
 	if errors.Is(err, errDispatchRunNotFound) {
 		return RunRecord{}, nil
 	}
-	return record, err
+	if err != nil {
+		return RunRecord{}, err
+	}
+	if record.Name != session.Name || !isContinuationReservation(record) {
+		return RunRecord{}, exitError(ExitConfig, fmt.Sprintf("dispatch conversation %q references invocation %s, which is not its continuation reservation", session.Name, id))
+	}
+	return record, nil
 }
 
 func clearContinuationReservationLocked(root string, session *Session, lastUsedAt time.Time) error {
@@ -464,7 +475,7 @@ func settlePendingContinuationReservationLocked(root string, session *Session, n
 		if record.State == dispatchStateReserved || !record.TerminationConfirmed {
 			var applyErr error
 			record, applyErr = applyRunEvidenceLocked(dir, func(current *RunRecord) error {
-				reconcileOrphanLocked(current, now)
+				reconcileOrphanLocked(current, time.Now().UTC())
 				return nil
 			})
 			if applyErr != nil {
@@ -528,7 +539,8 @@ func reconcileCurrentSessionRunLocked(root string, session *Session, now time.Ti
 	}
 	if current.TerminationConfirmed {
 		changed := false
-		if current.State == dispatchStateFailed && current.Mode == dispatchModeFresh && current.RecoveryState == recoveryRetrySafe {
+		if (current.State == dispatchStateFailed && current.Mode == dispatchModeFresh && current.RecoveryState == recoveryRetrySafe) ||
+			cancelledUnstartedFreshContinuation(current) {
 			changed = clearProvisionalSessionID(session, current.ID)
 		}
 		if session.ActiveRunID == current.ID {

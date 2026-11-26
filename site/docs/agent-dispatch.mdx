@@ -232,7 +232,7 @@ An invocation has exactly one public state:
 running -> completed | failed | cancelled
 ```
 
-An invocation created by `al dispatch reserve` starts in `reserved`, then moves to `running` when `start --reservation` launches it, or to `cancelled` when it is cancelled or expires first. A reservation that never started cannot be continued.
+A start reservation moves from `reserved` to `running` when `start --reservation <handle>` launches it. A continuation reservation moves from `reserved` to `running` when `continue --reservation <invocation-id>` launches it. Cancelling or expiring either reservation before launch moves that invocation to `cancelled`. If it was a continuation reservation, the caller can still continue the conversation or reserve another invocation.
 
 Terminal states are immutable. Continuing a terminal conversation creates a new invocation in `running`; it does not rewrite the previous invocation.
 

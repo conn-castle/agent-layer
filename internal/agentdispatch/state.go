@@ -678,7 +678,7 @@ func releaseConversationLocked(root string, record RunRecord) error {
 		}
 		return wrapExitError(ExitConfig, "read dispatch mapping for claim release", err)
 	}
-	changed := false
+	changed := cancelledUnstartedFreshContinuation(record) && clearProvisionalSessionID(&session, record.ID)
 	if session.ActiveRunID == record.ID {
 		session.ActiveRunID = ""
 		session.ActiveClaimKnown = true

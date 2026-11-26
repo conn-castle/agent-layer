@@ -231,10 +231,15 @@ The current invocation has exactly one public state:
 running -> completed | failed | cancelled
 ```
 
-An invocation created by `reserve` starts in `reserved` and moves to
-`running` when `start --reservation` launches it, or to `cancelled` when it is
-cancelled or expires first. A reservation retired that way never ran, so
-`continue` rejects it.
+- `reserve` creates a start reservation in `reserved`.
+  `start --reservation <handle>` launches it and moves it to `running`.
+  If it is cancelled or expires first, it moves to `cancelled` and the
+  conversation never starts.
+- `reserve --continue <handle>` creates the next invocation in `reserved`.
+  `continue --reservation <invocation-id>` launches it and moves it to
+  `running`. If it is cancelled or expires first, that invocation moves to
+  `cancelled` and the caller can still continue the conversation or reserve
+  another invocation.
 
 Terminal states are immutable. Continuing a terminal conversation creates a
 new current invocation in `running`; it does not change the previous
