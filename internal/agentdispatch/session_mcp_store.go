@@ -502,6 +502,18 @@ func museSessionMCPConfigArg(runDir string, staged stagedSessionMCP, serverName 
 	return fmt.Sprintf("mcpServers.%s=%s", serverName, string(encoded)), nil
 }
 
+// withRunLockIfDirExists serializes private session MCP runtime cleanup with
+// run-record termination confirmation (which holds withRunLock while checking
+// session-mcp-procs.json), preventing concurrent os.RemoveAll vs flock races
+// (ENOTEMPTY on macOS APFS) when Cancel and the worker finalize concurrently.
+func withRunLockIfDirExists(runDir string, fn func() error) error {
+	info, err := os.Stat(runDir)
+	if err != nil || !info.IsDir() {
+		return fn()
+	}
+	return withRunLock(runDir, fn)
+}
+
 // removeSessionMCPArtifacts removes private staged session MCP specs and
 // launch configs containing caller environment variables once the invocation is
 // no longer launching, while preserving process tracking files until
@@ -514,20 +526,22 @@ func removeSessionMCPArtifacts(runDir string) error {
 	if err != nil {
 		return err
 	}
-	if _, statErr := os.Stat(rtDir); errors.Is(statErr, fs.ErrNotExist) {
-		return nil
-	}
-	var errs []error
-	for _, name := range []string{sessionMCPSpecFile, sessionMCPClaudeFile} {
-		path := filepath.Join(rtDir, name)
-		if rmErr := os.Remove(path); rmErr != nil && !errors.Is(rmErr, os.ErrNotExist) {
-			errs = append(errs, wrapExitError(ExitConfig, fmt.Sprintf("remove staged session MCP file %s", path), rmErr))
+	return withRunLockIfDirExists(runDir, func() error {
+		if _, statErr := os.Stat(rtDir); errors.Is(statErr, fs.ErrNotExist) {
+			return nil
 		}
-	}
-	if rmErr := os.RemoveAll(filepath.Join(rtDir, sessionMCPHandshakeDir)); rmErr != nil && !errors.Is(rmErr, os.ErrNotExist) {
-		errs = append(errs, wrapExitError(ExitConfig, "remove session MCP handshake directory", rmErr))
-	}
-	return errors.Join(errs...)
+		var errs []error
+		for _, name := range []string{sessionMCPSpecFile, sessionMCPClaudeFile} {
+			path := filepath.Join(rtDir, name)
+			if rmErr := os.Remove(path); rmErr != nil && !errors.Is(rmErr, os.ErrNotExist) {
+				errs = append(errs, wrapExitError(ExitConfig, fmt.Sprintf("remove staged session MCP file %s", path), rmErr))
+			}
+		}
+		if rmErr := os.RemoveAll(filepath.Join(rtDir, sessionMCPHandshakeDir)); rmErr != nil && !errors.Is(rmErr, os.ErrNotExist) {
+			errs = append(errs, wrapExitError(ExitConfig, "remove session MCP handshake directory", rmErr))
+		}
+		return errors.Join(errs...)
+	})
 }
 
 // removeSessionMCPRuntimeDir removes the entire private per-run session MCP
@@ -541,8 +555,10 @@ func removeSessionMCPRuntimeDir(runDir string) error {
 	if err != nil {
 		return err
 	}
-	if err := os.RemoveAll(rtDir); err != nil && !errors.Is(err, os.ErrNotExist) {
-		return wrapExitError(ExitConfig, "remove session MCP runtime directory", err)
-	}
-	return nil
+	return withRunLockIfDirExists(runDir, func() error {
+		if err := os.RemoveAll(rtDir); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return wrapExitError(ExitConfig, "remove session MCP runtime directory", err)
+		}
+		return nil
+	})
 }
