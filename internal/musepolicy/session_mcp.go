@@ -27,30 +27,57 @@ type SessionMCPGrant struct {
 	ServerIDs []string `json:"server_ids"`
 }
 
-func canonicalGrantRoot(root string) (string, error) {
-	absRoot, err := filepath.Abs(root)
+func resolvePathThroughExistingAncestors(path string) (string, error) {
+	abs, err := filepath.Abs(path)
 	if err != nil {
 		return "", err
 	}
-	if resolved, evalErr := filepath.EvalSymlinks(absRoot); evalErr == nil && resolved != "" {
-		absRoot = resolved
+	cur := filepath.Clean(abs)
+	var missing []string
+	for {
+		resolved, evalErr := filepath.EvalSymlinks(cur)
+		if evalErr == nil {
+			for i := len(missing) - 1; i >= 0; i-- {
+				resolved = filepath.Join(resolved, missing[i])
+			}
+			return filepath.Clean(resolved), nil
+		}
+		if !errors.Is(evalErr, fs.ErrNotExist) {
+			return "", evalErr
+		}
+		parent := filepath.Dir(cur)
+		if parent == cur {
+			return "", evalErr
+		}
+		missing = append(missing, filepath.Base(cur))
+		cur = parent
 	}
-	return filepath.Clean(absRoot), nil
+}
+
+func canonicalGrantRoot(root string) (string, error) {
+	return resolvePathThroughExistingAncestors(root)
 }
 
 func grantPathWithinRoot(candidate string, canonicalRoot string) bool {
-	absCand, err := filepath.Abs(candidate)
-	if err != nil {
-		return false
+	if strings.TrimSpace(candidate) == "" || strings.TrimSpace(canonicalRoot) == "" {
+		return true
 	}
-	if resolved, evalErr := filepath.EvalSymlinks(absCand); evalErr == nil && resolved != "" {
-		absCand = resolved
-	}
-	rel, err := filepath.Rel(canonicalRoot, absCand)
+	resolvedCand, err := resolvePathThroughExistingAncestors(candidate)
 	if err != nil {
-		return false
+		return true
+	}
+	rel, err := filepath.Rel(canonicalRoot, resolvedCand)
+	if err != nil {
+		return true
 	}
 	return rel == "." || (rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) && !filepath.IsAbs(rel))
+}
+
+func canonicalTempDir() string {
+	if resolved, err := filepath.EvalSymlinks("/tmp"); err == nil && resolved != "" {
+		return filepath.Clean(resolved)
+	}
+	return "/tmp"
 }
 
 func ensureOwnedPrivateDir(dir string) error {
@@ -94,7 +121,7 @@ func sessionMCPGrantDirPath(root string) (string, error) {
 		}
 	}
 	if base == "" {
-		base = filepath.Join(os.TempDir(), fmt.Sprintf("agent-layer-muse-mcp-%d", os.Getuid()))
+		base = filepath.Join(canonicalTempDir(), fmt.Sprintf("agent-layer-muse-mcp-%d", os.Getuid()))
 	}
 	if grantPathWithinRoot(base, canonical) {
 		return "", errors.New("muse session MCP grant store resolves inside repository workspace")
@@ -118,6 +145,10 @@ func sessionMCPGrantPath(root string, sessionID string) (string, error) {
 // WriteSessionMCPGrant atomically persists the session-scoped MCP server IDs
 // authorized for one exact Muse provider session UUID outside the workspace.
 func WriteSessionMCPGrant(root string, sessionID string, serverIDs []string) error {
+	canonical, err := canonicalGrantRoot(root)
+	if err != nil {
+		return fmt.Errorf("write Muse session MCP grant: %w", err)
+	}
 	path, err := sessionMCPGrantPath(root, sessionID)
 	if err != nil {
 		return fmt.Errorf("write Muse session MCP grant: %w", err)
@@ -131,6 +162,9 @@ func WriteSessionMCPGrant(root string, sessionID string, serverIDs []string) err
 	}
 	if err := ensureOwnedPrivateDir(dir); err != nil {
 		return fmt.Errorf("create Muse session MCP grant directory: %w", err)
+	}
+	if grantPathWithinRoot(dir, canonical) {
+		return errors.New("write Muse session MCP grant: grant directory resolved inside repository workspace")
 	}
 	sorted := slices.Clone(serverIDs)
 	slices.Sort(sorted)

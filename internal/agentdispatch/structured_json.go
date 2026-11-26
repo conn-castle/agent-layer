@@ -292,7 +292,7 @@ func (p *selectiveJSONReader) readValue(result map[string]any, path []string, de
 	case '"':
 		keep := retainedStructuredPath(path)
 		keepClaude := p.retainsClaudeScalar(path)
-		keepMCPServer := p.retainsClaudeMCPServerScalar(path)
+		keepMCPServer := p.retainsClaudeMCPServerScalar(path, depth)
 		limit := 0
 		truncatable := false
 		if keep {
@@ -314,7 +314,7 @@ func (p *selectiveJSONReader) readValue(result map[string]any, path []string, de
 			setStructuredPath(result, path, value)
 		}
 		p.setClaudeScalar(path, value, complete)
-		p.setClaudeMCPServerScalar(path, value, complete)
+		p.setClaudeMCPServerScalar(path, depth, value, complete)
 		return nil
 	case 't':
 		if err := p.readLiteral("rue"); err != nil {
@@ -366,13 +366,13 @@ func (p *selectiveJSONReader) retainsClaudeScalar(path []string) bool {
 		(path[2] == jsonTypeKey || path[2] == "id" || path[2] == jsonNameKey)
 }
 
-func (p *selectiveJSONReader) retainsClaudeMCPServerScalar(path []string) bool {
-	return p.mcpServer != nil && len(path) == 2 && path[0] == "mcp_servers" &&
+func (p *selectiveJSONReader) retainsClaudeMCPServerScalar(path []string, depth int) bool {
+	return p.mcpServer != nil && depth == 4 && len(path) == 2 && path[0] == "mcp_servers" &&
 		(path[1] == jsonNameKey || path[1] == jsonStatusKey)
 }
 
-func (p *selectiveJSONReader) setClaudeMCPServerScalar(path []string, value string, valid bool) {
-	if !valid || !p.retainsClaudeMCPServerScalar(path) {
+func (p *selectiveJSONReader) setClaudeMCPServerScalar(path []string, depth int, value string, valid bool) {
+	if !valid || !p.retainsClaudeMCPServerScalar(path, depth) {
 		return
 	}
 	if path[1] == jsonNameKey {

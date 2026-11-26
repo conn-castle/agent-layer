@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
@@ -11,6 +12,7 @@ import (
 	"reflect"
 	"slices"
 	"strings"
+	"sync"
 	"syscall"
 	"testing"
 	"time"
@@ -74,6 +76,7 @@ func TestBuildOptionsReportsSessionMCPServerSupport(t *testing.T) {
 		if !ok {
 			t.Fatalf("unexpected agent %q in options", option.Agent)
 		}
+		delete(wantSupport, option.Agent)
 		if option.SessionMCPServers.Supported != want {
 			t.Errorf("agent %s session_mcp_servers.supported = %t, want %t", option.Agent, option.SessionMCPServers.Supported, want)
 		}
@@ -83,6 +86,9 @@ func TestBuildOptionsReportsSessionMCPServerSupport(t *testing.T) {
 		if want && option.SessionMCPServers.Reason != "" {
 			t.Errorf("supported agent %s had unexpected session_mcp_servers.reason %q", option.Agent, option.SessionMCPServers.Reason)
 		}
+	}
+	if len(wantSupport) != 0 {
+		t.Fatalf("BuildOptions omitted expected agents: %v", wantSupport)
 	}
 }
 
@@ -424,6 +430,9 @@ func TestClaudeSessionMCPNoSilentDegradation(t *testing.T) {
 			break
 		}
 	}
+	if slices.ContainsFunc(events, func(e providerEvent) bool { return e.Kind == eventComplete }) {
+		t.Fatalf("failed server unexpectedly completed: %#v", events)
+	}
 	if !strings.Contains(failReason, "wf-b") || !strings.Contains(failReason, "failed") {
 		t.Fatalf("failed server reason = %q, want mention of wf-b and failed", failReason)
 	}
@@ -438,8 +447,21 @@ func TestClaudeSessionMCPNoSilentDegradation(t *testing.T) {
 			break
 		}
 	}
+	if slices.ContainsFunc(events, func(e providerEvent) bool { return e.Kind == eventComplete }) {
+		t.Fatalf("missing server unexpectedly completed: %#v", events)
+	}
 	if !strings.Contains(failReason, "wf-b") || !strings.Contains(failReason, "not initialized") {
 		t.Fatalf("missing server reason = %q, want mention of wf-b and not initialized", failReason)
+	}
+
+	// Nested array under status must not spoof a scalar connected status.
+	nestedStatusInit := `{"type":"system","subtype":"init","session_id":"` + runtimeSessionID + `","mcp_servers":[{"name":"wf-a","status":["connected"]}]}`
+	events = runStream(nestedStatusInit+"\n"+okResult+"\n", []string{"wf-a"})
+	if slices.ContainsFunc(events, func(e providerEvent) bool { return e.Kind == eventComplete }) {
+		t.Fatalf("nested array status unexpectedly completed: %#v", events)
+	}
+	if !slices.ContainsFunc(events, func(e providerEvent) bool { return e.Kind == eventFailure && strings.Contains(e.Reason, "wf-a") }) {
+		t.Fatalf("nested array status did not fail wf-a: %#v", events)
 	}
 
 	// Result without any init event -> fails instead of silently succeeding.
@@ -612,6 +634,12 @@ func TestStartReservationAndContinuePersistSessionMCPServers(t *testing.T) {
 	otherSession, err := loadSession(root, otherResult.Handle)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if otherSession.SessionMCPID != "" || otherSession.SessionMCPDigest != "" {
+		t.Fatalf("unrelated parallel session inherited SessionMCP metadata: id=%q digest=%q", otherSession.SessionMCPID, otherSession.SessionMCPDigest)
+	}
+	if err := hydrateSessionMCPServers(root, &otherSession); err != nil {
+		t.Fatalf("hydrate unrelated session: %v", err)
 	}
 	if len(otherSession.SessionMCPServers) != 0 {
 		t.Fatalf("unrelated parallel session inherited SessionMCPServers: %#v", otherSession.SessionMCPServers)
@@ -804,21 +832,36 @@ func TestTerminationConfirmedWaitsForTrackedSessionMCPProcesses(t *testing.T) {
 	}
 
 	// Reap sleeper in the background so zombie exits once Cancel kills it.
-	reaped := make(chan error, 1)
-	go func() { reaped <- sleeper.Wait() }()
+	reaped := make(chan struct{})
+	go func() {
+		_ = sleeper.Wait()
+		close(reaped)
+	}()
+	t.Cleanup(func() {
+		select {
+		case <-reaped:
+		default:
+			_ = syscall.Kill(-sleeper.Process.Pid, syscall.SIGKILL)
+			<-reaped
+		}
+	})
 
 	// Cancel must terminate the surviving session MCP process group and confirm termination.
 	var cancelOut bytes.Buffer
 	if err := Cancel(CancelRequest{Root: root, Handle: session.Name, Stdout: &cancelOut}); err != nil {
 		t.Fatalf("Cancel: %v", err)
 	}
-	<-reaped
 	var cancelled Result
 	if err := json.Unmarshal(cancelOut.Bytes(), &cancelled); err != nil {
 		t.Fatal(err)
 	}
 	if !cancelled.TerminationConfirmed {
 		t.Fatalf("Cancel did not confirm termination after killing session MCP process: %#v", cancelled)
+	}
+	select {
+	case <-reaped:
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for cancelled session MCP process to be reaped")
 	}
 	if !providerProcessGroupDead(sleeper.Process.Pid) {
 		t.Fatal("session MCP process group still alive after termination_confirmed")
@@ -827,6 +870,16 @@ func TestTerminationConfirmedWaitsForTrackedSessionMCPProcesses(t *testing.T) {
 
 func TestMuseExecuteDispatchWritesAndCleansSessionMCPGrant(t *testing.T) {
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
+	cfgPath := filepath.Join(root, ".agent-layer", "config.toml")
+	rawCfg, err := os.ReadFile(cfgPath) // #nosec G304 -- test repository config.toml.
+	if err != nil {
+		t.Fatal(err)
+	}
+	updatedCfg := strings.Replace(string(rawCfg), "[agents.muse]\nenabled = false", "[agents.muse]\nenabled = true", 1)
+	updatedCfg = strings.Replace(updatedCfg, `mode = "all"`, `mode = "none"`, 1)
+	if err := os.WriteFile(cfgPath, []byte(updatedCfg), 0o600); err != nil { // #nosec G703 -- test repository config.toml.
+		t.Fatal(err)
+	}
 	project := loadApprovalsTestProject(t, root)
 	project.Config.Approvals.Mode = config.ApprovalModeYOLO
 	target, _ := lookupTarget(AgentMuse)
@@ -843,18 +896,47 @@ func TestMuseExecuteDispatchWritesAndCleansSessionMCPGrant(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Pre-start failure (nonexistent command) must downgrade session AND remove Muse grant + staged spec.
+	// Pre-start failure (nonexistent command) must write the private Muse grant before launch,
+	// then downgrade the session AND remove the Muse grant + private runtime dir.
+	evalMuseMCP := func(sessionID string) (string, error) {
+		var out bytes.Buffer
+		in := fmt.Sprintf(`{"hook_event_name":"PermissionRequest","cwd":%q,"session_id":%q,"tool_name":"mcp__wf_muse__ping"}`, root, sessionID)
+		err := musepolicy.HandleMCP(root, strings.NewReader(in), &out)
+		return out.String(), err
+	}
+	var observedSessionID string
+	var grantDecisionAtLaunch string
 	err = executeDispatch(dispatchExecution{
 		Root: root, WorkDir: root, Project: project, Target: target,
 		Version: supportedProviderVersions[AgentMuse], Prompt: []byte("hi"),
 		Mode: dispatchModeFresh, Run: run, Session: session,
 		Stdout: io.Discard, Stderr: io.Discard, Env: []string{}, Depth: 1,
-		NewCommand: func(_ string, _ ...string) *exec.Cmd {
+		NewCommand: func(_ string, args ...string) *exec.Cmd {
+			for i := 0; i+1 < len(args); i++ {
+				if args[i] == "--session-id" {
+					observedSessionID = args[i+1]
+					break
+				}
+			}
+			if observedSessionID != "" {
+				if out, hErr := evalMuseMCP(observedSessionID); hErr == nil {
+					grantDecisionAtLaunch = out
+				}
+			}
 			return exec.Command("/nonexistent-muse-binary-for-test")
 		},
 	})
 	if err == nil {
 		t.Fatal("expected pre-start failure, got nil")
+	}
+	if observedSessionID == "" {
+		t.Fatal("Muse command did not pass provisional --session-id")
+	}
+	if !strings.Contains(grantDecisionAtLaunch, `"allow"`) {
+		t.Fatalf("expected private Muse session MCP grant for %s to allow mcp__wf_muse__ping at launch, got %q", observedSessionID, grantDecisionAtLaunch)
+	}
+	if afterOut, hErr := evalMuseMCP(observedSessionID); hErr != nil || strings.Contains(afterOut, `"allow"`) {
+		t.Fatalf("expected Muse session MCP grant for %s to be removed after pre-start failure, got out=%q err=%v", observedSessionID, afterOut, hErr)
 	}
 	// Verify session was downgraded back to pending with empty ProviderSessionID.
 	reloaded, loadErr := loadSession(root, session.Name)
@@ -883,6 +965,102 @@ func TestMuseExecuteDispatchWritesAndCleansSessionMCPGrant(t *testing.T) {
 	t.Cleanup(func() { _ = musepolicy.RemoveSessionMCPGrant(root, orphanID) })
 	if err := pruneDispatchEvidence(root, time.Now(), 24*time.Hour); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestSessionMCPReviewHardeningRegressions(t *testing.T) {
+	// 1. TOML basic string escaping must never emit Go-only \xNN escapes.
+	got := encodeTOMLBasicString("/tmp/a\"b\\c\x01\n日本語")
+	if strings.Contains(got, `\x`) {
+		t.Fatalf("encodeTOMLBasicString emitted invalid TOML escape: %s", got)
+	}
+	if got != `"/tmp/a\"b\\c\u0001\n日本語"` {
+		t.Fatalf("encodeTOMLBasicString = %s", got)
+	}
+
+	// 2. Wrapper must reject path-traversal --server before creating or writing handshake files.
+	traversalRunDir := t.TempDir()
+	if err := RunSessionMCPServerWithOptions(traversalRunDir, "../../escape", "/nonexistent", "deadbeef", true); err == nil || !strings.Contains(err.Error(), "must contain only ASCII") {
+		t.Fatalf("expected invalid server name error for traversal, got %v", err)
+	}
+	if rtDir, err := sessionMCPRuntimeDirPath(traversalRunDir); err == nil {
+		if _, statErr := os.Stat(rtDir); !errors.Is(statErr, os.ErrNotExist) {
+			t.Fatalf("runtime dir should not be created for invalid server name: %v", statErr)
+		}
+	}
+
+	// 3. Claude permissions.ask blocks session MCP in non-YOLO modes, allowed in YOLO.
+	root := writeDispatchRepo(t, dispatchRepoConfig{})
+	project := loadApprovalsTestProject(t, root)
+	project.Config.Approvals.Mode = config.ApprovalModeAll
+	project.Config.Agents.Claude.AgentSpecific = config.ProviderPassthrough{
+		"permissions": map[string]any{"ask": []any{"mcp__wf__*"}},
+	}
+	claudeTarget, _ := lookupTarget(AgentClaude)
+	if err := validateSessionMCPServersForProject(project, claudeTarget, []SessionMCPServer{{Name: "wf", Command: "/bin/wf"}}); err == nil || !strings.Contains(err.Error(), "permissions.ask") {
+		t.Fatalf("expected Claude permissions.ask error in non-YOLO mode, got %v", err)
+	}
+	project.Config.Approvals.Mode = config.ApprovalModeYOLO
+	if err := validateSessionMCPServersForProject(project, claudeTarget, []SessionMCPServer{{Name: "wf", Command: "/bin/wf"}}); err != nil {
+		t.Fatalf("unexpected Claude permissions.ask error in YOLO mode: %v", err)
+	}
+
+	// 4. Invalid UTF-8 and unpaired UTF-16 surrogates rejected in --mcp-config.
+	if _, err := parseSessionMCPConfigJSON([]byte("{\"mcpServers\":{\"wf\":{\"command\":\"/bin/\xff\"}}}")); err == nil || !strings.Contains(err.Error(), "UTF-8") {
+		t.Fatalf("expected invalid UTF-8 rejection, got %v", err)
+	}
+	if _, err := parseSessionMCPConfigJSON([]byte(`{"mcpServers":{"wf":{"command":"/bin/wf","args":["\uD800"]}}}`)); err == nil || !strings.Contains(err.Error(), "surrogate") {
+		t.Fatalf("expected unpaired surrogate rejection, got %v", err)
+	}
+	// Valid surrogate pair must still be accepted.
+	if _, err := parseSessionMCPConfigJSON([]byte(`{"mcpServers":{"wf":{"command":"/bin/wf","args":["\uD83C\uDFF0"]}}}`)); err != nil {
+		t.Fatalf("valid surrogate pair rejected: %v", err)
+	}
+
+	// 5. Symlinked existing ancestor pointing inside workspace is caught for non-existent child.
+	ws := t.TempDir()
+	outside := t.TempDir()
+	linkIntoWS := filepath.Join(outside, "link-to-ws")
+	if err := os.Symlink(ws, linkIntoWS); err != nil {
+		t.Fatal(err)
+	}
+	if !pathWithinDir(filepath.Join(linkIntoWS, "nonexistent", "child"), ws) {
+		t.Fatal("pathWithinDir failed to catch non-existent path under symlink pointing into workspace")
+	}
+
+	// 6. Grok DisableMemory restores --no-memory on ACP launch args.
+	disableMem := true
+	project.Config.Agents.Grok.DisableMemory = &disableMem
+	grokTarget, _ := lookupTarget(AgentGrok)
+	run, err := newDispatchRun(root, AgentGrok, supportedProviderVersions[AgentGrok], dispatchModeFresh)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cmd, err := buildProviderCommandForSession(grokTarget, project, root, []string{}, []byte("hi"), "", "", false, dispatchModeFresh, "", nil, run, io.Discard)
+	if err != nil {
+		t.Fatalf("buildProviderCommandForSession grok: %v", err)
+	}
+	if !slices.Contains(cmd.Args, "--no-memory") {
+		t.Fatalf("grok ACP command missing --no-memory when disable_memory=true: %v", cmd.Args)
+	}
+
+	// 7. Server-to-client JSON-RPC request carrying method must not spoof handshake response.
+	var mu sync.Mutex
+	pending := map[string]string{"1": acpMethodInitialize}
+	var hsStatus sessionMCPHandshakeStatus
+	observeMCPHandshakeResponse(
+		[]byte(`{"jsonrpc":"2.0","id":1,"method":"sampling/createMessage","params":{}}`),
+		&mu, pending, &hsStatus, func() {},
+	)
+	if hsStatus.Initialized || hsStatus.Failed || pending["1"] != acpMethodInitialize {
+		t.Fatalf("server-to-client request mutated pending handshake: status=%#v pending=%v", hsStatus, pending)
+	}
+
+	// 8. Antigravity hyphen/underscore prefix collision rejected at preflight.
+	agyTarget, _ := lookupTarget(AgentAntigravity)
+	project.Config.MCP.Servers = []config.MCPServer{{ID: "foo-bar", Enabled: boolPtr(true), Transport: config.TransportStdio, Command: "/bin/true"}}
+	if err := validateSessionMCPServersForProject(project, agyTarget, []SessionMCPServer{{Name: "foo", Command: "/bin/wf"}}); err == nil || !strings.Contains(err.Error(), "ambiguous Antigravity") {
+		t.Fatalf("expected Antigravity hyphen/underscore prefix rejection, got %v", err)
 	}
 }
 

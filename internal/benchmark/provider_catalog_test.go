@@ -611,18 +611,26 @@ func TestStreamUsageParsingRejectsMalformedProviderEvidence(t *testing.T) {
 		t.Fatalf("multi-turn ACP cost = %#v, want 3 invocations (1 coord + 2 child turns)", multiCost)
 	}
 
-	// Grok ACP fallback pricing must NOT double-count cachedReadTokens.
+	// Grok ACP fallback pricing must NOT double-count cachedReadTokens or cacheCreationTokens.
 	pricing, err := loadBenchmarkPricing()
 	if err != nil {
 		t.Fatal(err)
 	}
-	acpCost, err := priceStreamRequest("grok-acp", adapterGrok, modelGrok45, gUsage[0], pricing)
+	acpTotal, acpOut, acpCached, acpCreation := 120, 30, 80, 20
+	acpWithCreation := streamTokenUsage{
+		InputTokens:            &acpTotal,
+		OutputTokens:           &acpOut,
+		CacheReadInputTokens:   &acpCached,
+		CacheCreationTokens:    &acpCreation,
+		InputIncludesCacheRead: true,
+	}
+	acpCost, err := priceStreamRequest("grok-acp", adapterGrok, modelGrok45, acpWithCreation, pricing)
 	if err != nil {
 		t.Fatalf("priceStreamRequest grok ACP: %v", err)
 	}
-	// Compare against equivalent legacy Grok CLI usage where uncached input = 120 - 80 = 40.
-	uncached := 40
-	legacyUsage := gUsage[0]
+	// Compare against equivalent legacy Grok CLI usage where uncached input = 120 - 80 - 20 = 20.
+	uncached := 20
+	legacyUsage := acpWithCreation
 	legacyUsage.InputTokens = &uncached
 	legacyUsage.InputIncludesCacheRead = false
 	legacyCost, err := priceStreamRequest("grok-cli", adapterGrok, modelGrok45, legacyUsage, pricing)
@@ -630,7 +638,36 @@ func TestStreamUsageParsingRejectsMalformedProviderEvidence(t *testing.T) {
 		t.Fatalf("priceStreamRequest grok legacy: %v", err)
 	}
 	if acpCost != legacyCost {
-		t.Fatalf("grok ACP fallback cost %#v != legacy equivalent %#v (double-counted cache reads)", acpCost, legacyCost)
+		t.Fatalf("grok ACP fallback cost %#v != legacy equivalent %#v (double-counted cache tokens)", acpCost, legacyCost)
+	}
+	// Reject ACP usage where cacheRead + cacheCreation > inputTokens.
+	tooMuchCreation := 50
+	badACP := acpWithCreation
+	badACP.CacheCreationTokens = &tooMuchCreation
+	if _, err := priceStreamRequest("grok-acp-bad", adapterGrok, modelGrok45, badACP, pricing); err == nil {
+		t.Fatal("expected error when cacheRead + cacheCreation exceeds ACP total inputTokens")
+	}
+
+	// Reject mismatched ACP run ID (untracked .stdout with same sessionId).
+	strayOut := filepath.Join(acpStage, "jobs", "task", "agent-layer-dispatch", "stray.stdout")
+	if err := os.WriteFile(strayOut, []byte(childTurn1), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := streamProviderAttemptCost(acpStage, adapterAntigravity, modelGeminiFlashLow); err == nil || !strings.Contains(err.Error(), "no matching dispatch run record") {
+		t.Fatalf("expected unmatched ACP dispatch stream error, got %v", err)
+	}
+	_ = os.Remove(strayOut)
+
+	// Reject differing duplicate ACP streams for the same runID.
+	dupRun1 := filepath.Join(acpStage, "jobs", "task-dup", "agent-layer-dispatch", "run1.stdout")
+	if err := os.MkdirAll(filepath.Dir(dupRun1), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(dupRun1, []byte(childTurn2), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := streamProviderAttemptCost(acpStage, adapterAntigravity, modelGeminiFlashLow); err == nil || !strings.Contains(err.Error(), "duplicated with different usage") {
+		t.Fatalf("expected differing duplicate ACP run error, got %v", err)
 	}
 }
 

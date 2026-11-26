@@ -166,15 +166,16 @@ func TestDispatchSessionMCPWrapperEndToEndWithBuiltBinary(t *testing.T) {
 	mcpOKScript := "#!/bin/sh\nwhile IFS= read -r line; do\n" +
 		"  id=\"$(printf '%s\\n' \"$line\" | sed -n 's/.*\"id\":\\([0-9][0-9]*\\).*/\\1/p')\"\n" +
 		"  case \"$line\" in\n" +
-		"    *'\"method\":\"initialize\"'*) printf '{\"jsonrpc\":\"2.0\",\"id\":%s,\"result\":{\"protocolVersion\":\"2024-11-05\"}}\\n' \"$id\" ;;\n" +
+		"    *'\"method\":\"initialize\"'*) printf '{\"jsonrpc\":\"2.0\",\"id\":%s,\"result\":{\"protocolVersion\":\"2024-11-05\",\"capabilities\":{},\"serverInfo\":{\"name\":\"mcp-ok\",\"version\":\"1.0\"}}}\\n' \"$id\" ;;\n" +
 		"    *'\"method\":\"tools/list\"'*) printf '{\"jsonrpc\":\"2.0\",\"id\":%s,\"result\":{\"tools\":[]}}\\n' \"$id\" ;;\n" +
 		"  esac\n" +
 		"done\n"
 	if err := os.WriteFile(mcpOK, []byte(mcpOKScript), 0o700); err != nil { // #nosec G306 -- synthetic executable test fixture.
 		t.Fatal(err)
 	}
+	noisyPIDFile := filepath.Join(tmp, "noisy.pid")
 	mcpNoisy := filepath.Join(customBin, "mcp-noisy")
-	mcpNoisyScript := "#!/bin/sh\ni=0\nwhile [ $i -lt 5000 ]; do\n  printf '{\"jsonrpc\":\"2.0\",\"method\":\"noise\",\"params\":{\"pad\":\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"}}\\n'\n  i=$((i + 1))\ndone\n"
+	mcpNoisyScript := "#!/bin/sh\nprintf '%s\\n' \"$$\" > " + noisyPIDFile + "\ni=0\nwhile [ $i -lt 5000 ]; do\n  printf '{\"jsonrpc\":\"2.0\",\"method\":\"noise\",\"params\":{\"pad\":\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"}}\\n'\n  i=$((i + 1))\ndone\n"
 	if err := os.WriteFile(mcpNoisy, []byte(mcpNoisyScript), 0o700); err != nil { // #nosec G306 -- synthetic executable test fixture.
 		t.Fatal(err)
 	}
@@ -197,6 +198,19 @@ func TestDispatchSessionMCPWrapperEndToEndWithBuiltBinary(t *testing.T) {
 	hsSum := sha256.Sum256(hsBytes)
 	hsDigest := hex.EncodeToString(hsSum[:])
 
+	// Compute the canonical private runtime directory under /tmp (independent of TMPDIR).
+	canonicalTmp, err := filepath.EvalSymlinks("/tmp")
+	if err != nil || canonicalTmp == "" {
+		canonicalTmp = "/tmp"
+	}
+	canonicalHSRunDir, err := filepath.EvalSymlinks(hsRunDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runKeySum := sha256.Sum256([]byte(filepath.Clean(canonicalHSRunDir)))
+	hsRTDir := filepath.Join(canonicalTmp, "agent-layer-dispatch-"+strconv.Itoa(os.Getuid()), "runs", hex.EncodeToString(runKeySum[:16]))
+	t.Cleanup(func() { _ = os.RemoveAll(hsRTDir) })
+
 	hsTmp := filepath.Join(tmp, "hs-tmp")
 	if err := os.MkdirAll(hsTmp, 0o700); err != nil {
 		t.Fatal(err)
@@ -210,11 +224,10 @@ func TestDispatchSessionMCPWrapperEndToEndWithBuiltBinary(t *testing.T) {
 	if _, statErr := os.Stat(filepath.Join(hsRunDir, "session-mcp-handshake", "ok-srv.json")); !errors.Is(statErr, os.ErrNotExist) {
 		t.Fatalf("handshake status must not be written inside workspace runDir: %v", statErr)
 	}
-	okMatches, err := filepath.Glob(filepath.Join(hsTmp, "agent-layer-dispatch-*", "runs", "*", "session-mcp-handshake", "ok-srv.json"))
-	if err != nil || len(okMatches) != 1 {
-		t.Fatalf("locate ok-srv handshake status in private runtime dir: matches=%v err=%v", okMatches, err)
+	if entries, _ := os.ReadDir(hsTmp); len(entries) != 0 {
+		t.Fatalf("TMPDIR override unexpectedly redirected runtime state into %s: %v", hsTmp, entries)
 	}
-	okStatusBytes, err := os.ReadFile(okMatches[0]) // #nosec G304 -- test handshake status file in private TMPDIR.
+	okStatusBytes, err := os.ReadFile(filepath.Join(hsRTDir, "session-mcp-handshake", "ok-srv.json")) // #nosec G304 -- test handshake status file in canonical private runtime dir.
 	if err != nil {
 		t.Fatalf("read ok-srv handshake status: %v", err)
 	}
@@ -226,11 +239,7 @@ func TestDispatchSessionMCPWrapperEndToEndWithBuiltBinary(t *testing.T) {
 	badCmd.Env = append(os.Environ(), "TMPDIR="+hsTmp)
 	badCmd.Stdin = strings.NewReader("{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{}}\n")
 	_ = badCmd.Run()
-	badMatches, err := filepath.Glob(filepath.Join(hsTmp, "agent-layer-dispatch-*", "runs", "*", "session-mcp-handshake", "bad-srv.json"))
-	if err != nil || len(badMatches) != 1 {
-		t.Fatalf("locate bad-srv handshake status in private runtime dir: matches=%v err=%v", badMatches, err)
-	}
-	badStatusBytes, err := os.ReadFile(badMatches[0]) // #nosec G304 -- test handshake status file in private TMPDIR.
+	badStatusBytes, err := os.ReadFile(filepath.Join(hsRTDir, "session-mcp-handshake", "bad-srv.json")) // #nosec G304 -- test handshake status file in canonical private runtime dir.
 	if err != nil {
 		t.Fatalf("read bad-srv handshake status: %v", err)
 	}
@@ -238,7 +247,8 @@ func TestDispatchSessionMCPWrapperEndToEndWithBuiltBinary(t *testing.T) {
 		t.Fatalf("bad-srv handshake status did not record failed=true: %s", badStatusBytes)
 	}
 
-	// Verify closing wrapper stdout while child keeps writing never deadlocks Wait.
+	// Verify closing wrapper stdout while child keeps writing never deadlocks Wait
+	// and cleanly terminates/reaps the child process (SIGPIPE ignored).
 	noisyCmd := exec.Command(alBin, "__dispatch-session-mcp", "--run-dir", hsRunDir, "--server", "noisy-srv", "--spec", hsSpecPath, "--digest", hsDigest, "--verify-handshake")
 	noisyCmd.Env = append(os.Environ(), "TMPDIR="+hsTmp)
 	noisyOut, err := noisyCmd.StdoutPipe()
@@ -256,6 +266,13 @@ func TestDispatchSessionMCPWrapperEndToEndWithBuiltBinary(t *testing.T) {
 	case <-time.After(10 * time.Second):
 		_ = noisyCmd.Process.Kill()
 		t.Fatal("handshake wrapper deadlocked in Wait after stdout closed (EPIPE)")
+	}
+	if rawPID, readErr := os.ReadFile(noisyPIDFile); readErr == nil { // #nosec G304 -- test PID file.
+		if childPID, convErr := strconv.Atoi(strings.TrimSpace(string(rawPID))); convErr == nil && childPID > 0 {
+			if err := syscall.Kill(childPID, 0); !errors.Is(err, syscall.ESRCH) {
+				t.Fatalf("noisy child process %d still alive after wrapper exit on EPIPE: %v", childPID, err)
+			}
+		}
 	}
 }
 

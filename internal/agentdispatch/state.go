@@ -564,6 +564,7 @@ func persistSession(root string, session Session) error {
 		return err
 	}
 	return withSessionLock(root, session.Name, func() error {
+		allocatedNewID := false
 		if len(session.SessionMCPServers) > 0 {
 			if session.SessionMCPID == "" {
 				var existing Session
@@ -575,6 +576,7 @@ func persistSession(root string, session Session) error {
 						return wrapExitError(ExitTargetFailure, "allocate session MCP identifier", idErr)
 					}
 					session.SessionMCPID = id
+					allocatedNewID = true
 				}
 			}
 			digest, saveErr := persistPrivateSessionMCPServers(root, session.SessionMCPID, session.SessionMCPServers)
@@ -583,7 +585,13 @@ func persistSession(root string, session Session) error {
 			}
 			session.SessionMCPDigest = digest
 		}
-		return writeJSONAtomic(path, session)
+		if err := writeJSONAtomic(path, session); err != nil {
+			if allocatedNewID {
+				_ = removePrivateSessionMCPServers(root, session.SessionMCPID)
+			}
+			return err
+		}
+		return nil
 	})
 }
 
@@ -960,11 +968,13 @@ func pruneExpiredSession(root string, name string, cutoff time.Time) error {
 		if err != nil {
 			return err
 		}
+		if session.SessionMCPID != "" {
+			if err := removePrivateSessionMCPServers(root, session.SessionMCPID); err != nil {
+				return err
+			}
+		}
 		if err := os.Remove(path); err != nil && !errors.Is(err, fs.ErrNotExist) {
 			return wrapExitError(ExitConfig, "prune expired dispatch mapping", err)
-		}
-		if session.SessionMCPID != "" {
-			_ = removePrivateSessionMCPServers(root, session.SessionMCPID)
 		}
 		if session.Agent == AgentMuse && session.ProviderSessionID != "" {
 			if err := musepolicy.RemoveSessionMCPGrant(root, session.ProviderSessionID); err != nil {

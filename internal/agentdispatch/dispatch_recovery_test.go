@@ -224,7 +224,7 @@ cat "$2"
 	first.Record.CompletedAt = &completed
 	first.Record.TerminalExitCode = ExitTargetFailure
 	applyLaunchFence(&first.Record)
-	applyTerminationEvidence(&first.Record, nil, true, completed)
+	applyTerminationEvidenceInDir(first.Dir, &first.Record, nil, true, completed)
 	if !first.Record.TerminationConfirmed {
 		t.Fatal("timeout termination not confirmed")
 	}

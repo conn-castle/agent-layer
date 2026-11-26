@@ -211,10 +211,15 @@ func Cancel(request CancelRequest) error {
 		return err
 	}
 	if alreadyConfirmedCancelled {
-		if cancelledUnstartedFreshContinuation(record) {
-			if err := releaseIfConfirmed(request.Root, record); err != nil {
-				return err
-			}
+		runDir := filepathForRun(request.Root, record.ID)
+		if removeErr := removeSessionMCPArtifacts(runDir); removeErr != nil {
+			return removeErr
+		}
+		if removeErr := removeSessionMCPRuntimeDir(runDir); removeErr != nil {
+			return removeErr
+		}
+		if err := releaseIfConfirmed(request.Root, record); err != nil {
+			return err
 		}
 		result := publicResult(record)
 		result.Error = ""

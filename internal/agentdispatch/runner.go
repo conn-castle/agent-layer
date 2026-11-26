@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -16,8 +17,9 @@ import (
 )
 
 type captureWriter struct {
-	file *os.File
-	mu   sync.Mutex
+	file   *os.File
+	mu     sync.Mutex
+	closed bool
 }
 
 func newCaptureWriter(path string) (*captureWriter, error) {
@@ -31,6 +33,9 @@ func newCaptureWriter(path string) (*captureWriter, error) {
 func (w *captureWriter) Write(data []byte) (int, error) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
+	if w.closed || w.file == nil {
+		return 0, fs.ErrClosed
+	}
 	n, err := w.file.Write(data)
 	if err != nil {
 		return n, err
@@ -42,9 +47,15 @@ func (w *captureWriter) Write(data []byte) (int, error) {
 }
 
 func (w *captureWriter) Close() error {
-	if w == nil || w.file == nil {
+	if w == nil {
 		return nil
 	}
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.closed || w.file == nil {
+		return nil
+	}
+	w.closed = true
 	return w.file.Close()
 }
 

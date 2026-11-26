@@ -35,11 +35,44 @@ type acpPermissionRequest struct {
 }
 
 type acpPermissionTool struct {
-	Name     string         `json:"name"`
-	Kind     string         `json:"kind"`
-	Title    string         `json:"title"`
-	Args     map[string]any `json:"args"`
-	RawInput map[string]any `json:"rawInput"`
+	ToolCallID string         `json:"toolCallId"`
+	Name       string         `json:"name"`
+	Kind       string         `json:"kind"`
+	Title      string         `json:"title"`
+	Args       map[string]any `json:"args"`
+	RawInput   map[string]any `json:"rawInput"`
+}
+
+func mergeACPPermissionTool(base, override acpPermissionTool) acpPermissionTool {
+	merged := base
+	if override.ToolCallID != "" {
+		merged.ToolCallID = override.ToolCallID
+	}
+	if override.Name != "" {
+		merged.Name = override.Name
+	}
+	if override.Kind != "" {
+		merged.Kind = override.Kind
+	}
+	if override.Title != "" {
+		merged.Title = override.Title
+	}
+	if len(override.Args) > 0 {
+		merged.Args = override.Args
+	}
+	if len(override.RawInput) > 0 {
+		merged.RawInput = override.RawInput
+	}
+	return merged
+}
+
+func acpToolLabel(tool acpPermissionTool) string {
+	for _, candidate := range []string{tool.Name, tool.Title, tool.Kind} {
+		if trimmed := strings.TrimSpace(candidate); trimmed != "" {
+			return trimmed
+		}
+	}
+	return "tool"
 }
 
 type acpPermissionOpt struct {
@@ -68,22 +101,21 @@ func (c *acpClient) handleAgentRequest(msg acpJSONRPCMessage) error {
 			jsonOutcomeKey: map[string]any{jsonOutcomeKey: dispatchStateCancelled},
 		})
 	}
-	allow := acpShouldApproveTool(c.provider, c.cfg, req.ToolCall)
+	tool := req.ToolCall
+	if tool.ToolCallID != "" && c.toolCalls != nil {
+		if cached, ok := c.toolCalls[tool.ToolCallID]; ok {
+			tool = mergeACPPermissionTool(cached, tool)
+		}
+	}
+	allow := acpShouldApproveTool(c.provider, c.cfg, tool)
 	if !allow {
-		label := strings.TrimSpace(req.ToolCall.Name)
-		if label == "" {
-			label = strings.TrimSpace(req.ToolCall.Title)
-		}
-		if label == "" {
-			label = strings.TrimSpace(req.ToolCall.Kind)
-		}
-		if label == "" {
-			label = "tool"
-		}
-		c.deniedTools = append(c.deniedTools, label)
+		c.deniedTools = append(c.deniedTools, acpToolLabel(tool))
 	}
 	optionID := selectACPPermissionOption(req.Options, allow)
 	if optionID == "" {
+		if allow {
+			c.deniedTools = append(c.deniedTools, acpToolLabel(tool)+" (provider offered no once-only approval option)")
+		}
 		return c.sendResponse(msg.ID, map[string]any{
 			jsonOutcomeKey: map[string]any{jsonOutcomeKey: dispatchStateCancelled},
 		})
@@ -122,9 +154,9 @@ func acpShouldApproveTool(provider string, cfg acpLaunchConfig, tool acpPermissi
 	// command or edit policy by spoofing an MCP-shaped title or payload.
 	kind := strings.ToLower(strings.TrimSpace(tool.Kind))
 	switch kind {
-	case "read", "search", "think":
+	case "read", "search", "think", "switch_mode":
 		return true
-	case "edit", "delete", "move":
+	case "edit", "delete", "move", "fetch":
 		return cfg.AllowCommands
 	case "execute":
 		if !cfg.AllowCommands {

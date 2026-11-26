@@ -237,16 +237,17 @@ func TestEscapedSolidusCountsAsOneRetainedByte(t *testing.T) {
 }
 
 func TestACPAppendRetainedTextBoundsAndPreservesUTF8(t *testing.T) {
+	const limit = 10
 	var builder strings.Builder
-	prefix := strings.Repeat("x", maxRetainedAnswerBytes-2)
-	if truncated := appendRetainedText(&builder, prefix); truncated {
+	prefix := strings.Repeat("x", limit-2)
+	if truncated := appendRetainedTextLimit(&builder, prefix, limit); truncated {
 		t.Fatal("prefix unexpectedly marked truncated")
 	}
 	// Multi-byte UTF-8 rune ("🏰" is 4 bytes) does not fit in the remaining 2 bytes.
-	if truncated := appendRetainedText(&builder, "🏰tail"); !truncated {
+	if truncated := appendRetainedTextLimit(&builder, "🏰tail", limit); !truncated {
 		t.Fatal("oversized chunk not marked truncated")
 	}
-	if builder.Len() != maxRetainedAnswerBytes-2 {
-		t.Fatalf("retained bytes = %d, want %d (must not split multi-byte rune)", builder.Len(), maxRetainedAnswerBytes-2)
+	if builder.Len() != limit-2 {
+		t.Fatalf("retained bytes = %d, want %d (must not split multi-byte rune)", builder.Len(), limit-2)
 	}
 }

@@ -711,8 +711,8 @@ func streamProviderAttemptCost(stage, provider, model string) (treatmentCost, er
 	}
 	result := treatmentCost{providerReported: provider == adapterGrok}
 	seen := map[string]string{}
-	seenDispatchRuns := map[string]bool{}
-	seenDispatchStreams := map[string]int{}
+	seenDispatchRuns := map[string]string{}
+	seenDispatchRunIDs := map[string]map[string]bool{}
 	coordinatorSessions := 0
 	for _, path := range paths {
 		isDispatchStdout := parentDirIs(path, dispatchEvidenceDir) && filepath.Ext(path) == stdoutArtifactExtension
@@ -739,16 +739,29 @@ func streamProviderAttemptCost(stage, provider, model string) (treatmentCost, er
 				if runID == "" {
 					return treatmentCost{}, fmt.Errorf("%s ACP dispatch stream %s is missing a run ID", provider, filepath.Base(path))
 				}
-				if seenDispatchRuns[runID] {
-					continue
+				expectedSessionID, knownRun := runToSession[runID]
+				if !knownRun {
+					return treatmentCost{}, fmt.Errorf("%s ACP dispatch stream %s has no matching dispatch run record", provider, filepath.Base(path))
+				}
+				if expectedSessionID != id {
+					return treatmentCost{}, fmt.Errorf("%s ACP dispatch stream %s belongs to session %q, but run record expects %q", provider, filepath.Base(path), id, expectedSessionID)
+				}
+				if previous, found := seenDispatchRuns[runID]; found {
+					if previous == string(encoded) {
+						continue
+					}
+					return treatmentCost{}, fmt.Errorf("%s ACP dispatch run %q is duplicated with different usage", provider, runID)
 				}
 				for _, rec := range records {
 					if rec.state != dispatchRunStateCompleted {
 						return treatmentCost{}, fmt.Errorf("%s dispatch session %q has record in state %q, not completed", provider, id, rec.state)
 					}
 				}
-				seenDispatchRuns[runID] = true
-				seenDispatchStreams[id]++
+				seenDispatchRuns[runID] = string(encoded)
+				if seenDispatchRunIDs[id] == nil {
+					seenDispatchRunIDs[id] = map[string]bool{}
+				}
+				seenDispatchRunIDs[id][runID] = true
 				child = true
 			} else {
 				if previous, found := seen[id]; found {
@@ -767,6 +780,11 @@ func streamProviderAttemptCost(stage, provider, model string) (treatmentCost, er
 				child = true
 			}
 		} else {
+			if isACP && isDispatchStdout {
+				if expectedSessionID, knownRun := runToSession[runID]; knownRun && expectedSessionID != id {
+					return treatmentCost{}, fmt.Errorf("%s ACP dispatch stream %s belongs to session %q, but run record expects %q", provider, filepath.Base(path), id, expectedSessionID)
+				}
+			}
 			if previous, found := seen[id]; found {
 				// Pier can preserve a coordinator stream in its native location and
 				// copy the same artifact as <run-id>.stdout. Identical bytes are one
@@ -809,9 +827,14 @@ func streamProviderAttemptCost(stage, provider, model string) (treatmentCost, er
 		}
 	}
 	for id, records := range dispatch {
-		if count := seenDispatchStreams[id]; count > 0 {
-			if count != len(records) {
-				return treatmentCost{}, fmt.Errorf("%s dispatch session %q has %d completed records for %d captured ACP streams", provider, id, len(records), count)
+		if seenRuns := seenDispatchRunIDs[id]; len(seenRuns) > 0 {
+			for runID, sessionID := range runToSession {
+				if sessionID == id && !seenRuns[runID] {
+					return treatmentCost{}, fmt.Errorf("%s dispatch session %q is missing captured ACP stream for run %q", provider, id, runID)
+				}
+			}
+			if len(seenRuns) != len(records) {
+				return treatmentCost{}, fmt.Errorf("%s dispatch session %q has %d completed records for %d captured ACP streams", provider, id, len(records), len(seenRuns))
 			}
 			continue
 		}
@@ -1040,16 +1063,16 @@ func priceStreamRequest(label, provider, model string, usage streamTokenUsage, p
 	}
 	ordinaryInput := *usage.InputTokens
 	if provider == adapterAntigravity || usage.InputIncludesCacheRead {
-		if cacheRead > ordinaryInput {
+		if cacheRead+creation > ordinaryInput {
 			return costRange{}, fmt.Errorf("%s usage %s has more cached than total input tokens", provider, label)
 		}
-		ordinaryInput -= cacheRead
+		ordinaryInput -= cacheRead + creation
 	}
 	// Legacy Grok CLI reports ordinary input and cache reads separately, while
-	// Antigravity and Grok ACP report input totals that include cache reads.
-	// Cache creation is charged at the ordinary-input rate; it is not subtracted
-	// from input and it is never double counted. Their documented reasoning
-	// usage is a subset of output, so it is validated but not priced separately.
+	// Antigravity and Grok ACP report input totals that include cache reads and
+	// cache creation tokens. Both are subtracted so cache creation is priced
+	// once at its configured rate and never double counted. Their documented
+	// reasoning usage is a subset of output, so it is validated but not priced separately.
 	return priceUsageBands(provider, label, entry, ordinaryInput, cacheRead, creation, *usage.OutputTokens, contextKnown, pricing.UnitTokens)
 }
 

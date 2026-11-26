@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"maps"
 	"os"
@@ -53,6 +54,8 @@ type sessionMCPHandshakeStatus struct {
 	Nonce                string `json:"nonce,omitempty"`
 	PID                  int    `json:"pid,omitempty"`
 	ProcessStartIdentity string `json:"process_start_identity,omitempty"`
+	ChildPID             int    `json:"child_pid,omitempty"`
+	ChildStartIdentity   string `json:"child_start_identity,omitempty"`
 	Initialized          bool   `json:"initialized"`
 	ToolsListed          bool   `json:"tools_listed"`
 	Failed               bool   `json:"failed,omitempty"`
@@ -72,6 +75,9 @@ func RunSessionMCPServer(runDir string, serverName string, specPath string, dige
 func RunSessionMCPServerWithOptions(runDir string, serverName string, specPath string, digest string, verifyHandshake bool) error {
 	if strings.TrimSpace(runDir) == "" || strings.TrimSpace(serverName) == "" || strings.TrimSpace(specPath) == "" || strings.TrimSpace(digest) == "" {
 		return exitError(ExitUsage, "session MCP wrapper requires --run-dir, --server, --spec, and --digest")
+	}
+	if err := validateSessionMCPServerName(serverName); err != nil {
+		return err
 	}
 	rtDir, err := ensureSessionMCPRuntimeDir(runDir)
 	if err != nil {
@@ -216,6 +222,18 @@ func checkSessionMCPHandshakesReady(runDir string, servers []string, expectedNon
 		default:
 			return false, nil, fmt.Errorf("cannot verify live ownership of session MCP server %q before inference", name)
 		}
+		if status.ChildPID > 0 {
+			if status.ChildStartIdentity == "" {
+				return false, nil, fmt.Errorf("session MCP server %q handshake status missing child process identity", name)
+			}
+			switch ownershipForIdentity(status.ChildPID, status.ChildStartIdentity) {
+			case ownershipOwned:
+			case ownershipDead:
+				return false, nil, fmt.Errorf("session MCP server %q child process exited before inference started", name)
+			default:
+				return false, nil, fmt.Errorf("cannot verify live ownership of session MCP server %q child process before inference", name)
+			}
+		}
 		if !sessionMCPProcessRegistered(registered.Processes, name, status.PID, status.ProcessStartIdentity) {
 			pending = append(pending, name)
 			continue
@@ -246,12 +264,23 @@ func validateMCPHandshakeResult(method string, raw json.RawMessage) error {
 		var initRes struct {
 			ProtocolVersion string          `json:"protocolVersion"`
 			Capabilities    json.RawMessage `json:"capabilities"`
+			ServerInfo      json.RawMessage `json:"serverInfo"`
 		}
 		if err := json.Unmarshal(trimmed, &initRes); err != nil {
 			return fmt.Errorf("%s returned malformed result object", method)
 		}
-		if strings.TrimSpace(initRes.ProtocolVersion) == "" && len(bytes.TrimSpace(initRes.Capabilities)) == 0 {
-			return fmt.Errorf("%s result missing protocolVersion and capabilities", method)
+		if strings.TrimSpace(initRes.ProtocolVersion) == "" {
+			return fmt.Errorf("%s result missing protocolVersion", method)
+		}
+		var capabilities map[string]any
+		if len(bytes.TrimSpace(initRes.Capabilities)) == 0 || bytes.Equal(bytes.TrimSpace(initRes.Capabilities), []byte("null")) || json.Unmarshal(initRes.Capabilities, &capabilities) != nil || capabilities == nil {
+			return fmt.Errorf("%s result missing capabilities object", method)
+		}
+		var serverInfo struct {
+			Name string `json:"name"`
+		}
+		if len(bytes.TrimSpace(initRes.ServerInfo)) == 0 || bytes.Equal(bytes.TrimSpace(initRes.ServerInfo), []byte("null")) || json.Unmarshal(initRes.ServerInfo, &serverInfo) != nil || strings.TrimSpace(serverInfo.Name) == "" {
+			return fmt.Errorf("%s result missing serverInfo.name", method)
 		}
 		return nil
 	case mcpMethodToolsList:
@@ -269,15 +298,56 @@ func validateMCPHandshakeResult(method string, raw json.RawMessage) error {
 		if json.Unmarshal(toolsTrimmed, &tools) != nil {
 			return fmt.Errorf("%s result missing tools array", method)
 		}
+		for i, rawTool := range tools {
+			toolTrimmed := bytes.TrimSpace(rawTool)
+			if len(toolTrimmed) == 0 || bytes.Equal(toolTrimmed, []byte("null")) {
+				return fmt.Errorf("%s result tools[%d] must be a tool object", method, i)
+			}
+			var toolObj struct {
+				Name string `json:"name"`
+			}
+			if json.Unmarshal(toolTrimmed, &toolObj) != nil || strings.TrimSpace(toolObj.Name) == "" {
+				return fmt.Errorf("%s result tools[%d] missing valid tool name", method, i)
+			}
+		}
 		return nil
 	}
 	return nil
+}
+
+func readBoundedLine(reader *bufio.Reader, maxBytes int) ([]byte, error) {
+	var buf bytes.Buffer
+	for {
+		chunk, isPrefix, err := reader.ReadLine()
+		if len(chunk) > 0 {
+			if buf.Len()+len(chunk) > maxBytes {
+				return nil, fmt.Errorf("MCP stdio JSON-RPC line exceeded %d byte limit", maxBytes)
+			}
+			buf.Write(chunk)
+		}
+		if isPrefix {
+			if err != nil {
+				return buf.Bytes(), err
+			}
+			continue
+		}
+		if err == nil {
+			buf.WriteByte('\n')
+			return buf.Bytes(), nil
+		}
+		return buf.Bytes(), err
+	}
 }
 
 // runSessionMCPServerWithHandshake spawns the target stdio MCP server as a
 // child in this wrapper's already-isolated process group and transparently
 // relays stdin/stdout while recording validated initialize and tools/list completion.
 func runSessionMCPServerWithHandshake(rtDir, serverName, nonce, resolvedBinary string, args []string, workDir string, env []string) error {
+	// Ignore SIGPIPE so writing to a closed stdout pipe returns EPIPE instead
+	// of killing the wrapper before it signals and reaps the child server.
+	signal.Ignore(syscall.SIGPIPE)
+	defer signal.Reset(syscall.SIGPIPE)
+
 	pid := os.Getpid()
 	status := sessionMCPHandshakeStatus{
 		Server:               serverName,
@@ -310,6 +380,9 @@ func runSessionMCPServerWithHandshake(rtDir, serverName, nonce, resolvedBinary s
 	if err := cmd.Start(); err != nil {
 		return failStartup(err, fmt.Sprintf("start session MCP server %q (%q)", serverName, resolvedBinary), "failed to start server process")
 	}
+	status.ChildPID = cmd.Process.Pid
+	status.ChildStartIdentity = processStartIdentity(cmd.Process.Pid)
+	_ = writeSessionMCPHandshakeStatus(rtDir, status)
 
 	// Forward termination signals to the child so it is always reaped cleanly.
 	sigCh := make(chan os.Signal, 2)
@@ -340,7 +413,7 @@ func runSessionMCPServerWithHandshake(rtDir, serverName, nonce, resolvedBinary s
 		defer func() { _ = childStdin.Close() }()
 		reader := bufio.NewReaderSize(os.Stdin, 64*1024)
 		for {
-			line, readErr := reader.ReadBytes('\n')
+			line, readErr := readBoundedLine(reader, acpMaxFrameBytes)
 			if len(line) > 0 {
 				var req struct {
 					ID     json.RawMessage `json:"id"`
@@ -358,34 +431,59 @@ func runSessionMCPServerWithHandshake(rtDir, serverName, nonce, resolvedBinary s
 				}
 			}
 			if readErr != nil {
+				if !errors.Is(readErr, io.EOF) {
+					mu.Lock()
+					if !status.Failed {
+						status.Failed = true
+						status.Error = readErr.Error()
+						publish()
+					}
+					mu.Unlock()
+					if cmd.Process != nil {
+						_ = cmd.Process.Signal(syscall.SIGTERM)
+					}
+				}
 				return
 			}
 		}
 	}()
 
 	// Relay childStdout -> os.Stdout, recording validated initialize & tools/list
-	// outcomes AFTER forwarding the line. On os.Stdout write failure (EPIPE),
-	// signal the child and keep draining childStdout to EOF before cmd.Wait per
-	// exec.Cmd.StdoutPipe contract so Wait can never deadlock.
+	// outcomes AFTER forwarding the line. On os.Stdout write failure (EPIPE) or
+	// oversized frame, signal the child and drain childStdout to EOF before
+	// cmd.Wait per exec.Cmd.StdoutPipe contract so Wait can never deadlock.
 	stdoutDone := make(chan struct{})
 	go func() {
 		defer close(stdoutDone)
 		reader := bufio.NewReaderSize(childStdout, 64*1024)
-		stdoutBroken := false
 		for {
-			line, readErr := reader.ReadBytes('\n')
-			if len(line) > 0 && !stdoutBroken {
+			line, readErr := readBoundedLine(reader, acpMaxFrameBytes)
+			if len(line) > 0 {
 				if _, writeErr := os.Stdout.Write(line); writeErr != nil {
-					stdoutBroken = true
 					_ = childStdin.Close()
 					if cmd.Process != nil {
 						_ = cmd.Process.Signal(syscall.SIGTERM)
 					}
-				} else {
-					observeMCPHandshakeResponse(line, &mu, pending, &status, publish)
+					_, _ = io.Copy(io.Discard, reader)
+					return
 				}
+				observeMCPHandshakeResponse(line, &mu, pending, &status, publish)
 			}
 			if readErr != nil {
+				if !errors.Is(readErr, io.EOF) {
+					mu.Lock()
+					if !status.Failed {
+						status.Failed = true
+						status.Error = readErr.Error()
+						publish()
+					}
+					mu.Unlock()
+					_ = childStdin.Close()
+					if cmd.Process != nil {
+						_ = cmd.Process.Signal(syscall.SIGTERM)
+					}
+					_, _ = io.Copy(io.Discard, reader)
+				}
 				return
 			}
 		}
@@ -411,10 +509,11 @@ func runSessionMCPServerWithHandshake(rtDir, serverName, nonce, resolvedBinary s
 func observeMCPHandshakeResponse(line []byte, mu *sync.Mutex, pending map[string]string, status *sessionMCPHandshakeStatus, publish func()) {
 	var resp struct {
 		ID     json.RawMessage `json:"id"`
+		Method string          `json:"method"`
 		Result json.RawMessage `json:"result"`
 		Error  *acpRPCError    `json:"error"`
 	}
-	if json.Unmarshal(bytes.TrimSpace(line), &resp) != nil || len(resp.ID) == 0 {
+	if json.Unmarshal(bytes.TrimSpace(line), &resp) != nil || len(resp.ID) == 0 || resp.Method != "" {
 		return
 	}
 	key := string(bytes.TrimSpace(resp.ID))

@@ -102,6 +102,7 @@ type acpClient struct {
 	answerTruncated  bool
 	sawToolSinceText bool
 	deniedTools      []string
+	toolCalls        map[string]acpPermissionTool
 	grokMCPReady     map[string]acpGrokMCPStatus
 	grokMCPDone      bool
 	grokMCPDoneAt    time.Time
@@ -162,6 +163,7 @@ func runACPDispatch(
 		runID:        run.Record.ID,
 		runDir:       run.Dir,
 		consume:      consume,
+		toolCalls:    make(map[string]acpPermissionTool),
 		grokMCPReady: make(map[string]acpGrokMCPStatus),
 	}
 
@@ -187,7 +189,10 @@ func runACPDispatch(
 	if err := json.Unmarshal(initResp, &initParsed); err != nil {
 		return fmt.Errorf("%s ACP initialize response malformed: %w", command.Provider, err)
 	}
-	if initParsed.ProtocolVersion != nil && *initParsed.ProtocolVersion != acpProtocolVersion {
+	if initParsed.ProtocolVersion == nil {
+		return fmt.Errorf("%s ACP initialize response omitted protocolVersion (want %d)", command.Provider, acpProtocolVersion)
+	}
+	if *initParsed.ProtocolVersion != acpProtocolVersion {
 		return fmt.Errorf("%s ACP initialize negotiated unsupported protocolVersion %d (want %d)", command.Provider, *initParsed.ProtocolVersion, acpProtocolVersion)
 	}
 
@@ -228,21 +233,24 @@ func runACPDispatch(
 	if err := client.finishPrompt(promptResp); err != nil {
 		return err
 	}
-	// Close stdin to signal clean ACP shutdown and wait briefly for stdout EOF
-	// so the reader goroutine finishes draining the stream cleanly.
+	// Close stdin to signal clean ACP shutdown and drain frames until EOF so
+	// trailing read/decode errors are surfaced and readerDone finishes cleanly.
 	_ = stdin.Close()
 	drainTimer := time.NewTimer(providerShutdownGrace)
 	defer drainTimer.Stop()
 	for {
 		select {
-		case <-readerDone:
-			return nil
-		case _, ok := <-frames:
+		case frame, ok := <-frames:
 			if !ok {
+				<-readerDone
 				return nil
 			}
+			if frame.err != nil {
+				<-readerDone
+				return frame.err
+			}
 		case <-drainTimer.C:
-			return nil
+			return fmt.Errorf("%s ACP stdout did not close within %s after prompt completion", command.Provider, providerShutdownGrace)
 		}
 	}
 }
@@ -431,14 +439,23 @@ func (c *acpClient) callPrompt(sessionID string, prompt string) (json.RawMessage
 }
 
 func (c *acpClient) dispatchFrame(msg acpJSONRPCMessage, pendingID int64) (bool, json.RawMessage, error) {
-	// Incoming agent-to-client request (has both method and id).
-	if msg.Method != "" && len(msg.ID) > 0 && string(bytes.TrimSpace(msg.ID)) != "null" {
+	if msg.JSONRPC != jsonRPCVersion {
+		return false, nil, fmt.Errorf("unexpected ACP JSON-RPC version %q (want %q)", msg.JSONRPC, jsonRPCVersion)
+	}
+	trimmedID := bytes.TrimSpace(msg.ID)
+	hasID := len(trimmedID) > 0
+	isNullID := bytes.Equal(trimmedID, []byte("null"))
+	if msg.Method != "" && hasID && isNullID {
+		return false, nil, fmt.Errorf("malformed ACP JSON-RPC frame: method %q must not have null id", msg.Method)
+	}
+	// Incoming agent-to-client request (has both method and non-null id).
+	if msg.Method != "" && hasID {
 		if err := c.handleAgentRequest(msg); err != nil {
 			return false, nil, err
 		}
 		return false, nil, nil
 	}
-	// Incoming notification (has method, no id).
+	// Incoming notification (has method, omitted id).
 	if msg.Method != "" {
 		if err := c.handleNotification(msg); err != nil {
 			return false, nil, err
@@ -614,6 +631,17 @@ func (c *acpClient) verifySessionMCPReady(sessionID string) error {
 		}
 		grokReady := c.provider != AgentGrok || c.grokSessionMCPAllReady()
 		if grokReady && handshakesReady {
+			if err := c.drainQueuedFrames(); err != nil {
+				return err
+			}
+			if c.provider == AgentGrok {
+				if err := c.checkGrokMCPStatusError(); err != nil {
+					return err
+				}
+				if !c.grokSessionMCPAllReady() {
+					continue
+				}
+			}
 			return nil
 		}
 		if time.Now().After(deadline) {
@@ -665,6 +693,25 @@ func (c *acpClient) checkGrokMCPStatusError() error {
 	return nil
 }
 
+func (c *acpClient) drainQueuedFrames() error {
+	for {
+		select {
+		case frame, ok := <-c.frames:
+			if !ok {
+				return fmt.Errorf("%s ACP stdout closed while initializing session MCP servers", c.provider)
+			}
+			if frame.err != nil {
+				return frame.err
+			}
+			if _, _, err := c.dispatchFrame(frame.msg, 0); err != nil {
+				return err
+			}
+		default:
+			return nil
+		}
+	}
+}
+
 func (c *acpClient) handleNotification(msg acpJSONRPCMessage) error {
 	switch msg.Method {
 	case acpGrokMCPInitMethod:
@@ -680,7 +727,10 @@ func (c *acpClient) handleNotification(msg acpJSONRPCMessage) error {
 		if err := json.Unmarshal(msg.Params, &status); err == nil && status.Name != "" {
 			c.grokMCPReady[status.Name] = acpGrokMCPStatus{Status: status.Status, Reason: status.Reason}
 		}
-		return c.emit(providerEvent{Kind: eventProgress, Activity: "mcp_server_status"})
+		if err := c.emit(providerEvent{Kind: eventProgress, Activity: "mcp_server_status"}); err != nil {
+			return err
+		}
+		return c.checkGrokMCPStatusError()
 	case acpMethodSessionUpdate:
 		return c.handleSessionUpdate(msg.Params)
 	default:
@@ -692,11 +742,14 @@ func (c *acpClient) handleSessionUpdate(raw json.RawMessage) error {
 	var envelope struct {
 		SessionID string `json:"sessionId"`
 		Update    struct {
-			SessionUpdate string `json:"sessionUpdate"`
-			Content       struct {
-				Type string `json:"type"`
-				Text string `json:"text"`
-			} `json:"content"`
+			SessionUpdate string          `json:"sessionUpdate"`
+			ToolCallID    string          `json:"toolCallId"`
+			Name          string          `json:"name"`
+			Kind          string          `json:"kind"`
+			Title         string          `json:"title"`
+			Args          map[string]any  `json:"args"`
+			RawInput      map[string]any  `json:"rawInput"`
+			Content       json.RawMessage `json:"content"`
 		} `json:"update"`
 	}
 	if err := json.Unmarshal(raw, &envelope); err != nil {
@@ -707,15 +760,24 @@ func (c *acpClient) handleSessionUpdate(raw json.RawMessage) error {
 	}
 	switch envelope.Update.SessionUpdate {
 	case "agent_message_chunk":
-		if c.promptActive && envelope.Update.Content.Type == jsonTextKey && envelope.Update.Content.Text != "" {
-			if c.sawToolSinceText && c.answer.Len() > 0 {
-				if appendRetainedText(&c.answer, "\n\n") {
+		var content struct {
+			Type string `json:"type"`
+			Text string `json:"text"`
+		}
+		if len(envelope.Update.Content) > 0 && json.Unmarshal(envelope.Update.Content, &content) != nil {
+			return c.emit(providerEvent{Kind: eventProgress, Activity: invalidStructuredEvent, Reason: "malformed agent_message_chunk content"})
+		}
+		if c.promptActive && content.Type == jsonTextKey && content.Text != "" {
+			if !c.answerTruncated {
+				if c.sawToolSinceText && c.answer.Len() > 0 {
+					if appendRetainedText(&c.answer, "\n\n") {
+						c.answerTruncated = true
+					}
+					c.sawToolSinceText = false
+				}
+				if !c.answerTruncated && appendRetainedText(&c.answer, content.Text) {
 					c.answerTruncated = true
 				}
-				c.sawToolSinceText = false
-			}
-			if appendRetainedText(&c.answer, envelope.Update.Content.Text) {
-				c.answerTruncated = true
 			}
 			return c.emit(providerEvent{Kind: eventProgress, Activity: textDeltaActivity})
 		}
@@ -723,6 +785,22 @@ func (c *acpClient) handleSessionUpdate(raw json.RawMessage) error {
 	case "agent_thought_chunk":
 		return c.emit(providerEvent{Kind: eventProgress, Activity: thoughtActivity})
 	case "tool_call", "tool_call_update":
+		if envelope.Update.ToolCallID != "" {
+			if c.toolCalls == nil {
+				c.toolCalls = make(map[string]acpPermissionTool)
+			}
+			c.toolCalls[envelope.Update.ToolCallID] = mergeACPPermissionTool(
+				c.toolCalls[envelope.Update.ToolCallID],
+				acpPermissionTool{
+					ToolCallID: envelope.Update.ToolCallID,
+					Name:       envelope.Update.Name,
+					Kind:       envelope.Update.Kind,
+					Title:      envelope.Update.Title,
+					Args:       envelope.Update.Args,
+					RawInput:   envelope.Update.RawInput,
+				},
+			)
+		}
 		if c.promptActive && c.answer.Len() > 0 {
 			c.sawToolSinceText = true
 		}
@@ -735,10 +813,14 @@ func (c *acpClient) handleSessionUpdate(raw json.RawMessage) error {
 }
 
 func appendRetainedText(builder *strings.Builder, chunk string) bool {
+	return appendRetainedTextLimit(builder, chunk, maxRetainedAnswerBytes)
+}
+
+func appendRetainedTextLimit(builder *strings.Builder, chunk string, limit int) bool {
 	if builder == nil || chunk == "" {
 		return false
 	}
-	remaining := maxRetainedAnswerBytes - builder.Len()
+	remaining := limit - builder.Len()
 	if remaining <= 0 {
 		return true
 	}

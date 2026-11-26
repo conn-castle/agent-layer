@@ -97,8 +97,7 @@ done`
 			if err := RunWorker(root, session.RunID, gate); err != nil {
 				t.Fatal(err)
 			}
-			assertFileContains(t, filepath.Join(root, "provider-args"), `"method":"session/resume"`)
-			assertFileContains(t, filepath.Join(root, "provider-args"), `"sessionId":"`+id+`"`)
+			assertFileHasACPSessionResume(t, filepath.Join(root, "provider-args"), id)
 			out.Reset()
 			if err := Wait(WaitRequest{Root: root, ID: session.Name, Stdout: &out}); err != nil {
 				t.Fatal(err)

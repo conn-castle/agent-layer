@@ -462,7 +462,7 @@ func RunWorker(root string, runID string, gate io.Reader) error {
 		return failWorkerBeforeExecution(root, runID, err)
 	}
 	if err := hydrateSessionMCPServers(root, &session); err != nil {
-		return failWorkerBeforeExecution(root, runID, err)
+		return failWorkerBeforeExecution(root, runID, &preStartFailure{err: err})
 	}
 	project, err := loadWorkerProject(root)
 	if err != nil {

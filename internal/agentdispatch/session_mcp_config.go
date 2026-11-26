@@ -10,8 +10,10 @@ import (
 	"regexp"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"unicode"
+	"unicode/utf8"
 
 	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/fsutil"
@@ -49,6 +51,23 @@ func resolveSessionMCPServers(configPaths []string, direct []SessionMCPServer) (
 	}
 	seen := make(map[string]struct{})
 	var merged []SessionMCPServer
+	cumulativeBytes := 2 // JSON array brackets "[]"
+	appendBounded := func(server SessionMCPServer) error {
+		encoded, err := json.Marshal(server)
+		if err != nil {
+			return wrapExitError(ExitUsage, "encode session MCP server", err)
+		}
+		entrySize := len(encoded)
+		if len(merged) > 0 {
+			entrySize++ // comma separator
+		}
+		if cumulativeBytes+entrySize > maxSessionMCPMergedBytes {
+			return exitError(ExitUsage, fmt.Sprintf("merged session MCP configuration exceeds maximum size of %d bytes", maxSessionMCPMergedBytes))
+		}
+		cumulativeBytes += entrySize
+		merged = append(merged, server)
+		return nil
+	}
 	for _, rawPath := range configPaths {
 		if strings.TrimSpace(rawPath) == "" {
 			return nil, exitError(ExitUsage, "--mcp-config path must not be empty")
@@ -62,7 +81,9 @@ func resolveSessionMCPServers(configPaths []string, direct []SessionMCPServer) (
 				return nil, exitError(ExitUsage, fmt.Sprintf("duplicate session MCP server %q across --mcp-config files", server.Name))
 			}
 			seen[server.Name] = struct{}{}
-			merged = append(merged, server)
+			if err := appendBounded(server); err != nil {
+				return nil, err
+			}
 		}
 	}
 	for _, server := range direct {
@@ -73,7 +94,9 @@ func resolveSessionMCPServers(configPaths []string, direct []SessionMCPServer) (
 			return nil, exitError(ExitUsage, fmt.Sprintf("duplicate session MCP server %q", server.Name))
 		}
 		seen[server.Name] = struct{}{}
-		merged = append(merged, server)
+		if err := appendBounded(server); err != nil {
+			return nil, err
+		}
 	}
 	normalized := normalizeSessionMCPServers(merged)
 	if encoded, err := json.Marshal(normalized); err != nil {
@@ -105,6 +128,12 @@ func loadSessionMCPConfigFile(path string) ([]SessionMCPServer, error) {
 }
 
 func parseSessionMCPConfigJSON(data []byte) ([]SessionMCPServer, error) {
+	if !utf8.Valid(data) {
+		return nil, errors.New("--mcp-config must be valid UTF-8")
+	}
+	if hasUnpairedJSONSurrogate(data) {
+		return nil, errors.New("--mcp-config must not contain unpaired UTF-16 surrogate escapes")
+	}
 	if err := validateStrictJSONObject(data); err != nil {
 		return nil, err
 	}
@@ -243,9 +272,61 @@ func validateSessionMCPServerName(name string) error {
 	return nil
 }
 
+func hasUnpairedJSONSurrogate(data []byte) bool {
+	inString := false
+	for i := 0; i < len(data); i++ {
+		b := data[i]
+		if !inString {
+			if b == '"' {
+				inString = true
+			}
+			continue
+		}
+		if b == '"' {
+			inString = false
+			continue
+		}
+		if b != '\\' {
+			continue
+		}
+		i++
+		if i >= len(data) {
+			return false
+		}
+		if data[i] != 'u' {
+			continue
+		}
+		if i+4 >= len(data) {
+			return false
+		}
+		code, err := strconv.ParseUint(string(data[i+1:i+5]), 16, 16)
+		if err != nil {
+			continue
+		}
+		i += 4
+		switch {
+		case code >= 0xD800 && code <= 0xDBFF:
+			if i+6 >= len(data) || data[i+1] != '\\' || data[i+2] != 'u' {
+				return true
+			}
+			low, lowErr := strconv.ParseUint(string(data[i+3:i+7]), 16, 16)
+			if lowErr != nil || low < 0xDC00 || low > 0xDFFF {
+				return true
+			}
+			i += 6
+		case code >= 0xDC00 && code <= 0xDFFF:
+			return true
+		}
+	}
+	return false
+}
+
 func validateSessionMCPServer(server SessionMCPServer) error {
 	if err := validateSessionMCPServerName(server.Name); err != nil {
 		return err
+	}
+	if !utf8.ValidString(server.Command) {
+		return exitError(ExitUsage, fmt.Sprintf("session MCP server %q command must be valid UTF-8", server.Name))
 	}
 	if strings.TrimSpace(server.Command) == "" {
 		return exitError(ExitUsage, fmt.Sprintf("session MCP server %q requires a non-empty command", server.Name))
@@ -254,6 +335,9 @@ func validateSessionMCPServer(server SessionMCPServer) error {
 		return exitError(ExitUsage, fmt.Sprintf("session MCP server %q command must not contain control or NUL characters", server.Name))
 	}
 	for i, arg := range server.Args {
+		if !utf8.ValidString(arg) {
+			return exitError(ExitUsage, fmt.Sprintf("session MCP server %q arg[%d] must be valid UTF-8", server.Name, i))
+		}
 		if strings.ContainsRune(arg, 0) {
 			return exitError(ExitUsage, fmt.Sprintf("session MCP server %q arg[%d] must not contain NUL bytes", server.Name, i))
 		}
@@ -261,6 +345,9 @@ func validateSessionMCPServer(server SessionMCPServer) error {
 	for key, value := range server.Env {
 		if !sessionMCPEnvKeyPattern.MatchString(key) {
 			return exitError(ExitUsage, fmt.Sprintf("session MCP server %q has invalid environment variable name %q", server.Name, key))
+		}
+		if !utf8.ValidString(value) {
+			return exitError(ExitUsage, fmt.Sprintf("session MCP server %q env[%q] must be valid UTF-8", server.Name, key))
 		}
 		if strings.ContainsRune(value, 0) {
 			return exitError(ExitUsage, fmt.Sprintf("session MCP server %q env[%q] must not contain NUL bytes", server.Name, key))
@@ -379,8 +466,13 @@ func validateSessionMCPServersForProject(project *config.ProjectConfig, target t
 			if existing, exists := claudeProjectRules[rule]; exists {
 				return exitError(ExitUsage, fmt.Sprintf("session MCP server %q collides with Claude tool namespace of project MCP server %q (%s)", server.Name, existing, rule))
 			}
-			if denyRule, blocked := claudeDenyBlocksSessionMCP(project.Config.Agents.Claude.AgentSpecific, server.Name); blocked {
+			if denyRule, blocked := claudePermissionListBlocksSessionMCP(project.Config.Agents.Claude.AgentSpecific, "deny", server.Name); blocked {
 				return exitError(ExitConfig, fmt.Sprintf("cannot attach session MCP server %q on claude: agents.claude.agent_specific.permissions.deny contains %q which blocks its tools", server.Name, denyRule))
+			}
+			if project.Config.Approvals.Mode != config.ApprovalModeYOLO {
+				if askRule, blocked := claudePermissionListBlocksSessionMCP(project.Config.Agents.Claude.AgentSpecific, "ask", server.Name); blocked {
+					return exitError(ExitConfig, fmt.Sprintf("cannot attach session MCP server %q on claude: agents.claude.agent_specific.permissions.ask contains %q which blocks non-interactive tool approval", server.Name, askRule))
+				}
 			}
 		case AgentMuse:
 			norm := strings.ReplaceAll(server.Name, "-", "_")
@@ -389,9 +481,9 @@ func validateSessionMCPServersForProject(project *config.ProjectConfig, target t
 			}
 		case AgentGrok:
 			// Grok prefixes MCP tools as "<server>__<tool>". Reject a session
-			// server whose prefix overlaps a project server containing "__".
+			// server whose rendered prefix overlaps a project server prefix.
 			for existing := range projectIDs {
-				if strings.HasPrefix(existing, server.Name+"__") || strings.HasPrefix(server.Name, existing+"__") {
+				if strings.HasPrefix(existing+"__", server.Name+"__") || strings.HasPrefix(server.Name+"__", existing+"__") {
 					return exitError(ExitUsage, fmt.Sprintf("session MCP server %q has an ambiguous Grok MCP tool prefix with project MCP server %q; rename the session server", server.Name, existing))
 				}
 			}
@@ -399,7 +491,14 @@ func validateSessionMCPServersForProject(project *config.ProjectConfig, target t
 			// Antigravity eager MCP tools use a single-underscore separator
 			// ("mcp_<server>_<tool>"), so a server name that is an underscore
 			// prefix of another server name creates an ambiguous approval namespace.
+			agyExisting := make(map[string]struct{}, len(projectIDs)+1)
 			for existing := range projectIDs {
+				agyExisting[existing] = struct{}{}
+			}
+			for _, id := range projection.EffectiveServerIDs(project.Config, projection.ClientAntigravity) {
+				agyExisting[id] = struct{}{}
+			}
+			for existing := range agyExisting {
 				if antigravityNamespaceAmbiguous(server.Name, existing) {
 					return exitError(ExitUsage, fmt.Sprintf("session MCP server %q has an ambiguous Antigravity MCP tool prefix with project MCP server %q; rename the session server", server.Name, existing))
 				}
@@ -418,33 +517,36 @@ func validateSessionMCPServersForProject(project *config.ProjectConfig, target t
 }
 
 func antigravityNamespaceAmbiguous(a string, b string) bool {
-	return strings.HasPrefix(a, b+"_") || strings.HasPrefix(b, a+"_")
+	na := strings.ReplaceAll(a, "-", "_")
+	nb := strings.ReplaceAll(b, "-", "_")
+	return strings.HasPrefix(a, b+"_") || strings.HasPrefix(b, a+"_") ||
+		strings.HasPrefix(na, nb+"_") || strings.HasPrefix(nb, na+"_")
 }
 
-func claudeDenyBlocksSessionMCP(passthrough config.ProviderPassthrough, serverName string) (string, bool) {
+func claudePermissionListBlocksSessionMCP(passthrough config.ProviderPassthrough, listKey string, serverName string) (string, bool) {
 	permissions, ok := passthrough[claudePermissionsPassthroughKey].(map[string]any)
 	if !ok {
 		return "", false
 	}
-	rawDeny, ok := permissions["deny"]
+	rawList, ok := permissions[listKey]
 	if !ok {
 		return "", false
 	}
-	var denyRules []string
-	switch list := rawDeny.(type) {
+	var rules []string
+	switch list := rawList.(type) {
 	case []string:
-		denyRules = list
+		rules = list
 	case []any:
 		for _, item := range list {
 			if value, ok := item.(string); ok {
-				denyRules = append(denyRules, value)
+				rules = append(rules, value)
 			}
 		}
 	}
 	rule := projection.ClaudeMCPRule(serverName) // mcp__<normalized>__*
 	prefix := strings.TrimSuffix(rule, "*")      // mcp__<normalized>__
 	serverExact := strings.TrimSuffix(prefix, "__")
-	for _, entry := range denyRules {
+	for _, entry := range rules {
 		trimmed := strings.TrimSpace(entry)
 		if trimmed == "mcp__*" || trimmed == "mcp__**__" || trimmed == rule || trimmed == serverExact || strings.HasPrefix(trimmed, prefix) {
 			return trimmed, true

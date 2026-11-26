@@ -26,7 +26,7 @@ import (
 func finishRejectedResume(run *dispatchRun, claimErr error, publish func(string, *RunRecord) error) error {
 	now := time.Now().UTC()
 	setDispatchFailure(&run.Record, claimErr, recoveryRetrySafe, now)
-	applyTerminationEvidence(&run.Record, nil, true, now)
+	applyTerminationEvidenceInDir(run.Dir, &run.Record, nil, true, now)
 	if err := publish(run.Dir, &run.Record); err != nil {
 		return wrapExitError(ExitConfig, "resume claim rejected; publish rejected resume terminal evidence", errors.Join(claimErr, err))
 	}
@@ -250,11 +250,11 @@ func completeDispatchSuccess(request dispatchExecution, result executionResult, 
 	request.Run.Record = updated
 	if updated.TerminationConfirmed {
 		if rmErr := removeSessionMCPRuntimeDir(request.Run.Dir); rmErr != nil {
-			_, _ = fmt.Fprintf(request.Stderr, "warning: dispatch run %s completed but session MCP runtime cleanup failed: %v\n", request.Run.Record.ID, rmErr)
+			_, _ = fmt.Fprintf(writerOrDiscard(request.Stderr), "warning: dispatch run %s completed but session MCP runtime cleanup failed: %v\n", request.Run.Record.ID, rmErr)
 		}
 	}
 	if err := releaseIfConfirmed(request.Root, updated); err != nil {
-		_, _ = fmt.Fprintf(request.Stderr, "warning: dispatch run %s completed but active claim cleanup failed: %v\n", request.Run.Record.ID, err)
+		_, _ = fmt.Fprintf(writerOrDiscard(request.Stderr), "warning: dispatch run %s completed but active claim cleanup failed: %v\n", request.Run.Record.ID, err)
 	}
 	return replayAnswer(request.Run.Record.AnswerPath, request.Stdout)
 }
@@ -298,7 +298,7 @@ func recordDispatchFailure(request dispatchExecution, cause error) error {
 	}
 	if request.Run.Record.TerminationConfirmed {
 		if rmErr := removeSessionMCPRuntimeDir(request.Run.Dir); rmErr != nil {
-			_, _ = fmt.Fprintf(request.Stderr, "warning: dispatch run %s failed and session MCP runtime cleanup failed: %v\n", request.Run.Record.ID, rmErr)
+			_, _ = fmt.Fprintf(writerOrDiscard(request.Stderr), "warning: dispatch run %s failed and session MCP runtime cleanup failed: %v\n", request.Run.Record.ID, rmErr)
 		}
 	}
 	if err := releaseIfConfirmed(request.Root, request.Run.Record); err != nil {
@@ -328,7 +328,7 @@ func persistUnprovenFailure(request dispatchExecution, cause error) error {
 	primary := primaryUnprovenError(cause)
 	_, err := updateRunEvidence(request.Run.Dir, func(current *RunRecord) error {
 		if current.State == dispatchStateCancelled {
-			applyTerminationEvidence(current, cause, false, now)
+			applyTerminationEvidenceInDir(request.Run.Dir, current, cause, false, now)
 			if current.TerminalReason == "" {
 				current.TerminalReason = cause.Error()
 			}
@@ -341,7 +341,7 @@ func persistUnprovenFailure(request dispatchExecution, cause error) error {
 			current.TerminalReason = cause.Error()
 			current.TerminalExitCode = terminalExitCode(primary)
 		}
-		applyTerminationEvidence(current, cause, false, now)
+		applyTerminationEvidenceInDir(request.Run.Dir, current, cause, false, now)
 		return nil
 	})
 	return err

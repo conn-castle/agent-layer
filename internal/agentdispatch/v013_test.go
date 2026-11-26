@@ -2,6 +2,7 @@ package agentdispatch
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -338,8 +339,7 @@ func TestAntigravityStructuredResumeReturnsPlainAnswerAndRetainsDurableMapping(t
 	}
 	assertFileContains(t, logPath, "ARG_0=acp")
 	assertFileContains(t, logPath, "ARG_1=--stdio")
-	assertFileContains(t, logPath, `"method":"session/resume"`)
-	assertFileContains(t, logPath, `"sessionId":"22222222-2222-4222-8222-222222222222"`)
+	assertFileHasACPSessionResume(t, logPath, "22222222-2222-4222-8222-222222222222")
 
 	retained, err := loadSession(root, name)
 	if err != nil {
@@ -348,6 +348,30 @@ func TestAntigravityStructuredResumeReturnsPlainAnswerAndRetainsDurableMapping(t
 	if retained.ProviderSessionID != "22222222-2222-4222-8222-222222222222" || retained.State != "durable" {
 		t.Fatalf("retained session = %#v", retained)
 	}
+}
+
+func assertFileHasACPSessionResume(t *testing.T, path string, wantSessionID string) {
+	t.Helper()
+	data, err := os.ReadFile(path) // #nosec G304 -- test-owned provider log path.
+	if err != nil {
+		t.Fatalf("read %s: %v", path, err)
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		trimmed := strings.TrimPrefix(strings.TrimSpace(line), "ACP=")
+		if !strings.HasPrefix(trimmed, "{") {
+			continue
+		}
+		var req struct {
+			Method string `json:"method"`
+			Params struct {
+				SessionID string `json:"sessionId"`
+			} `json:"params"`
+		}
+		if json.Unmarshal([]byte(trimmed), &req) == nil && req.Method == acpMethodSessionResume && req.Params.SessionID == wantSessionID {
+			return
+		}
+	}
+	t.Fatalf("%s missing JSON-RPC session/resume request with params.sessionId=%q:\n%s", path, wantSessionID, string(data))
 }
 
 func TestSupportedVersionFixturesReduceOnlyRequiredEvents(t *testing.T) {

@@ -131,10 +131,6 @@ func applyTerminationConfirmationInDir(dir string, record *RunRecord, now time.T
 	return true
 }
 
-func applyTerminationEvidence(record *RunRecord, attemptErr error, confirm bool, now time.Time) {
-	applyTerminationEvidenceInDir("", record, attemptErr, confirm, now)
-}
-
 func applyTerminationEvidenceInDir(dir string, record *RunRecord, attemptErr error, confirm bool, now time.Time) {
 	if attemptErr != nil {
 		record.TerminationAttemptError = attemptErr.Error()

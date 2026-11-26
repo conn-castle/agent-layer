@@ -518,10 +518,16 @@ func TestSessionMCPHandshakeRelayRecordsSuccessAndFailure(t *testing.T) {
 		raw     string
 		wantErr bool
 	}{
-		{acpMethodInitialize, `{"protocolVersion":"2024-11-05"}`, false},
+		{acpMethodInitialize, `{"protocolVersion":"2024-11-05","capabilities":{},"serverInfo":{"name":"srv","version":"1.0"}}`, false},
+		{acpMethodInitialize, `{"protocolVersion":"2024-11-05"}`, true},
+		{acpMethodInitialize, `{"protocolVersion":"2024-11-05","capabilities":null,"serverInfo":{"name":"srv"}}`, true},
+		{acpMethodInitialize, `{"protocolVersion":"2024-11-05","capabilities":{},"serverInfo":{}}`, true},
 		{acpMethodInitialize, `{}`, true},
 		{acpMethodInitialize, `null`, true},
 		{"tools/list", `{"tools":[]}`, false},
+		{"tools/list", `{"tools":[{"name":"ping"}]}`, false},
+		{"tools/list", `{"tools":[null]}`, true},
+		{"tools/list", `{"tools":[{}]}`, true},
 		{"tools/list", `{}`, true},
 		{"tools/list", `{"tools":null}`, true},
 		{"tools/list", `{"tools":"not-an-array"}`, true},
@@ -531,4 +537,246 @@ func TestSessionMCPHandshakeRelayRecordsSuccessAndFailure(t *testing.T) {
 			t.Errorf("validateMCPHandshakeResult(%s, %s) err=%v, wantErr=%t", tc.method, tc.raw, err, tc.wantErr)
 		}
 	}
+}
+
+func TestACPPermissionHardeningAndToolCallMetadataMerge(t *testing.T) {
+	// fetch follows AllowCommands; switch_mode is always benign.
+	for _, tc := range []struct {
+		mode      string
+		kind      string
+		wantAllow bool
+	}{
+		{config.ApprovalModeNone, "fetch", false},
+		{config.ApprovalModeMCP, "fetch", false},
+		{config.ApprovalModeCommands, "fetch", true},
+		{config.ApprovalModeAll, "fetch", true},
+		{config.ApprovalModeYOLO, "fetch", true},
+		{config.ApprovalModeNone, "switch_mode", true},
+		{config.ApprovalModeAll, "switch_mode", true},
+	} {
+		allowCmd := tc.mode == config.ApprovalModeCommands || tc.mode == config.ApprovalModeAll || tc.mode == config.ApprovalModeYOLO
+		got := acpShouldApproveTool(AgentGrok, acpLaunchConfig{
+			ApprovalsMode: tc.mode,
+			AllowCommands: allowCmd,
+		}, acpPermissionTool{Kind: tc.kind})
+		if got != tc.wantAllow {
+			t.Errorf("mode=%s kind=%s allow=%t, want %t", tc.mode, tc.kind, got, tc.wantAllow)
+		}
+	}
+
+	root := t.TempDir()
+	run := &dispatchRun{Dir: t.TempDir(), Record: RunRecord{ID: "run-acp-hardening"}}
+
+	// 1. tool_call with array content must decode cleanly and seed toolCallId metadata
+	// for a subsequent session/request_permission that omits name/kind.
+	t.Run("tool_call_array_content_and_metadata_merge", func(t *testing.T) {
+		subRun := &dispatchRun{Dir: t.TempDir(), Record: RunRecord{ID: "run-acp-merge"}}
+		writeTestHandshakeReady(t, subRun.Dir, "wf", "merge-nonce")
+		clientInR, clientInW := io.Pipe()
+		clientOutR, clientOutW := io.Pipe()
+		var permReply string
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			defer func() { _ = clientOutW.Close() }()
+			dec := json.NewDecoder(clientInR)
+			enc := json.NewEncoder(clientOutW)
+			for {
+				var msg acpJSONRPCMessage
+				if err := dec.Decode(&msg); err != nil {
+					return
+				}
+				switch msg.Method {
+				case acpMethodInitialize:
+					_ = enc.Encode(map[string]any{"jsonrpc": "2.0", "id": msg.ID, "result": map[string]any{"protocolVersion": 1}})
+				case acpMethodSessionNew:
+					_ = enc.Encode(map[string]any{"jsonrpc": "2.0", "id": msg.ID, "result": map[string]any{"sessionId": "s-merge"}})
+				case acpMethodSessionPrompt:
+					// Emit tool_call with array content (per ACP spec) and metadata.
+					_ = enc.Encode(map[string]any{
+						"jsonrpc": "2.0",
+						"method":  acpMethodSessionUpdate,
+						"params": map[string]any{
+							"sessionId": "s-merge",
+							"update": map[string]any{
+								"sessionUpdate": "tool_call",
+								"toolCallId":    "tc-1",
+								"name":          "mcp_wf_ping",
+								"kind":          "other",
+								"content":       []map[string]any{{"type": "content", "content": map[string]any{"type": "text", "text": "calling"}}},
+							},
+						},
+					})
+					// Request permission referencing only toolCallId.
+					_ = enc.Encode(map[string]any{
+						"jsonrpc": "2.0",
+						"id":      55,
+						"method":  acpMethodRequestPerm,
+						"params": map[string]any{
+							"sessionId": "s-merge",
+							"toolCall":  map[string]any{"toolCallId": "tc-1"},
+							"options":   []map[string]any{{"optionId": "once", "kind": "allow_once"}},
+						},
+					})
+					var reply map[string]any
+					_ = dec.Decode(&reply)
+					raw, _ := json.Marshal(reply)
+					permReply = string(raw)
+					_ = enc.Encode(map[string]any{
+						"jsonrpc": "2.0",
+						"method":  acpMethodSessionUpdate,
+						"params": map[string]any{
+							"sessionId": "s-merge",
+							"update": map[string]any{
+								"sessionUpdate": "agent_message_chunk",
+								"content":       map[string]any{"type": "text", "text": "merged ok"},
+							},
+						},
+					})
+					_ = enc.Encode(map[string]any{"jsonrpc": "2.0", "id": msg.ID, "result": map[string]any{"stopReason": "end_turn"}})
+					return
+				}
+			}
+		}()
+		var raw bytes.Buffer
+		err := runACPDispatch(clientInW, clientOutR, &raw, providerCommand{
+			Provider: AgentAntigravity,
+			RunMode:  dispatchModeFresh,
+			UseACP:   true,
+			ACP: &acpLaunchConfig{
+				WorkDir:           root,
+				ApprovalsMode:     config.ApprovalModeNone,
+				SessionMCPServers: []string{"wf"},
+				HandshakeNonce:    "merge-nonce",
+			},
+		}, []byte("ping"), root, subRun, func(providerEvent) error { return nil })
+		<-done
+		if err != nil {
+			t.Fatalf("runACPDispatch failed: %v", err)
+		}
+		if !strings.Contains(permReply, `"optionId":"once"`) {
+			t.Fatalf("expected merged session MCP tool approval, got %q", permReply)
+		}
+	})
+
+	// 2. When policy allows a tool but provider offers only allow_always (no allow_once),
+	// client must cancel AND fail finishPrompt with an actionable denial error.
+	t.Run("missing_allow_once_fails_dispatch", func(t *testing.T) {
+		subRun := &dispatchRun{Dir: t.TempDir(), Record: RunRecord{ID: "run-acp-no-once"}}
+		writeTestHandshakeReady(t, subRun.Dir, "wf", "no-once-nonce")
+		clientInR, clientInW := io.Pipe()
+		clientOutR, clientOutW := io.Pipe()
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			defer func() { _ = clientOutW.Close() }()
+			dec := json.NewDecoder(clientInR)
+			enc := json.NewEncoder(clientOutW)
+			for {
+				var msg acpJSONRPCMessage
+				if err := dec.Decode(&msg); err != nil {
+					return
+				}
+				switch msg.Method {
+				case acpMethodInitialize:
+					_ = enc.Encode(map[string]any{"jsonrpc": "2.0", "id": msg.ID, "result": map[string]any{"protocolVersion": 1}})
+				case acpMethodSessionNew:
+					_ = enc.Encode(map[string]any{"jsonrpc": "2.0", "id": msg.ID, "result": map[string]any{"sessionId": "s-no-once"}})
+				case acpMethodSessionPrompt:
+					_ = enc.Encode(map[string]any{
+						"jsonrpc": "2.0",
+						"id":      56,
+						"method":  acpMethodRequestPerm,
+						"params": map[string]any{
+							"sessionId": "s-no-once",
+							"toolCall":  map[string]any{"kind": "other", "name": "mcp_wf_ping"},
+							"options":   []map[string]any{{"optionId": "always", "kind": "allow_always"}},
+						},
+					})
+					var reply map[string]any
+					_ = dec.Decode(&reply)
+					_ = enc.Encode(map[string]any{
+						"jsonrpc": "2.0",
+						"method":  acpMethodSessionUpdate,
+						"params": map[string]any{
+							"sessionId": "s-no-once",
+							"update": map[string]any{
+								"sessionUpdate": "agent_message_chunk",
+								"content":       map[string]any{"type": "text", "text": "completed anyway"},
+							},
+						},
+					})
+					_ = enc.Encode(map[string]any{"jsonrpc": "2.0", "id": msg.ID, "result": map[string]any{"stopReason": "end_turn"}})
+					return
+				}
+			}
+		}()
+		var raw bytes.Buffer
+		err := runACPDispatch(clientInW, clientOutR, &raw, providerCommand{
+			Provider: AgentAntigravity,
+			RunMode:  dispatchModeFresh,
+			UseACP:   true,
+			ACP: &acpLaunchConfig{
+				WorkDir:           root,
+				ApprovalsMode:     config.ApprovalModeNone,
+				SessionMCPServers: []string{"wf"},
+				HandshakeNonce:    "no-once-nonce",
+			},
+		}, []byte("ping"), root, subRun, func(providerEvent) error { return nil })
+		<-done
+		if err == nil || !strings.Contains(err.Error(), "no once-only approval option") {
+			t.Fatalf("expected missing allow_once denial error, got %v", err)
+		}
+	})
+
+	// 3. Trailing malformed JSON after prompt completion must fail capture instead of returning nil.
+	t.Run("trailing_malformed_frame_fails_drain", func(t *testing.T) {
+		clientInR, clientInW := io.Pipe()
+		clientOutR, clientOutW := io.Pipe()
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			defer func() { _ = clientOutW.Close() }()
+			dec := json.NewDecoder(clientInR)
+			enc := json.NewEncoder(clientOutW)
+			for {
+				var msg acpJSONRPCMessage
+				if err := dec.Decode(&msg); err != nil {
+					return
+				}
+				switch msg.Method {
+				case acpMethodInitialize:
+					_ = enc.Encode(map[string]any{"jsonrpc": "2.0", "id": msg.ID, "result": map[string]any{"protocolVersion": 1}})
+				case acpMethodSessionNew:
+					_ = enc.Encode(map[string]any{"jsonrpc": "2.0", "id": msg.ID, "result": map[string]any{"sessionId": "s-corrupt"}})
+				case acpMethodSessionPrompt:
+					_ = enc.Encode(map[string]any{
+						"jsonrpc": "2.0",
+						"method":  acpMethodSessionUpdate,
+						"params": map[string]any{
+							"sessionId": "s-corrupt",
+							"update": map[string]any{
+								"sessionUpdate": "agent_message_chunk",
+								"content":       map[string]any{"type": "text", "text": "done"},
+							},
+						},
+					})
+					_ = enc.Encode(map[string]any{"jsonrpc": "2.0", "id": msg.ID, "result": map[string]any{"stopReason": "end_turn"}})
+					_, _ = clientOutW.Write([]byte("not-valid-json\n"))
+					return
+				}
+			}
+		}()
+		var raw bytes.Buffer
+		err := runACPDispatch(clientInW, clientOutR, &raw, providerCommand{
+			Provider: AgentAntigravity,
+			RunMode:  dispatchModeFresh,
+			UseACP:   true,
+			ACP:      &acpLaunchConfig{WorkDir: root, ApprovalsMode: config.ApprovalModeNone},
+		}, []byte("hi"), root, run, func(providerEvent) error { return nil })
+		<-done
+		if err == nil || !strings.Contains(err.Error(), "decode ACP JSON-RPC frame") {
+			t.Fatalf("expected trailing malformed JSON-RPC error, got %v", err)
+		}
+	})
 }

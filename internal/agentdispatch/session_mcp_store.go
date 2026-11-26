@@ -86,29 +86,57 @@ func ensureOwnedPrivateDir(dir string) error {
 	return nil
 }
 
+func resolvePathThroughExistingAncestors(path string) (string, error) {
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return "", err
+	}
+	cur := filepath.Clean(abs)
+	var missing []string
+	for {
+		resolved, evalErr := filepath.EvalSymlinks(cur)
+		if evalErr == nil {
+			for i := len(missing) - 1; i >= 0; i-- {
+				resolved = filepath.Join(resolved, missing[i])
+			}
+			return filepath.Clean(resolved), nil
+		}
+		if !errors.Is(evalErr, fs.ErrNotExist) {
+			return "", evalErr
+		}
+		parent := filepath.Dir(cur)
+		if parent == cur {
+			return "", evalErr
+		}
+		missing = append(missing, filepath.Base(cur))
+		cur = parent
+	}
+}
+
 func pathWithinDir(candidate string, root string) bool {
 	if strings.TrimSpace(candidate) == "" || strings.TrimSpace(root) == "" {
-		return false
+		return true
 	}
-	absCand, err := filepath.Abs(candidate)
+	resolvedCand, err := resolvePathThroughExistingAncestors(candidate)
 	if err != nil {
-		return false
+		return true
 	}
-	absRoot, err := filepath.Abs(root)
+	resolvedRoot, err := resolvePathThroughExistingAncestors(root)
 	if err != nil {
-		return false
+		return true
 	}
-	if resolved, err := filepath.EvalSymlinks(absCand); err == nil {
-		absCand = resolved
-	}
-	if resolved, err := filepath.EvalSymlinks(absRoot); err == nil {
-		absRoot = resolved
-	}
-	rel, err := filepath.Rel(absRoot, absCand)
+	rel, err := filepath.Rel(resolvedRoot, resolvedCand)
 	if err != nil {
-		return false
+		return true
 	}
 	return rel == "." || (rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) && !filepath.IsAbs(rel))
+}
+
+func canonicalTempDir() string {
+	if resolved, err := filepath.EvalSymlinks("/tmp"); err == nil && resolved != "" {
+		return filepath.Clean(resolved)
+	}
+	return "/tmp"
 }
 
 // sessionMCPDurableStoreDir returns an out-of-workspace, owner-verified
@@ -123,7 +151,7 @@ func sessionMCPDurableStoreDir(root string) (string, error) {
 		}
 	}
 	if base == "" {
-		base = filepath.Join(os.TempDir(), fmt.Sprintf("agent-layer-session-mcp-%d", os.Getuid()))
+		base = filepath.Join(canonicalTempDir(), fmt.Sprintf("agent-layer-session-mcp-%d", os.Getuid()))
 	}
 	if pathWithinDir(base, root) {
 		return "", exitError(ExitConfig, "private session MCP store resolves inside repository workspace")
@@ -131,27 +159,32 @@ func sessionMCPDurableStoreDir(root string) (string, error) {
 	if err := ensureOwnedPrivateDir(base); err != nil {
 		return "", wrapExitError(ExitConfig, "prepare private session MCP store", err)
 	}
+	if pathWithinDir(base, root) {
+		return "", exitError(ExitConfig, "private session MCP store resolved inside repository workspace")
+	}
 	return base, nil
 }
 
 // sessionMCPRuntimeRoot returns the per-user private runtime root under
-// os.TempDir(). Per-invocation wrapper runtime state lives under os.TempDir()
-// rather than the workspace or ~/.cache so read-only provider sandboxes (such
-// as Grok's GROK_SANDBOX=read-only, which allows /tmp writes while blocking
-// repo and ~/.cache writes) can still execute the wrapper and record PID/PGID
-// ownership and MCP handshake proofs securely outside the workspace.
+// canonical /tmp, independent of caller or provider TMPDIR overrides.
+// Per-invocation wrapper runtime state lives under /tmp rather than the
+// workspace or ~/.cache so read-only provider sandboxes (such as Grok's
+// GROK_SANDBOX=read-only, which allows /tmp writes while blocking repo and
+// ~/.cache writes) can still execute the wrapper and record PID/PGID
+// ownership and MCP handshake proofs consistently across Start, wrapper,
+// Wait, Inspect, and Cancel processes.
 func sessionMCPRuntimeRoot() string {
-	return filepath.Join(os.TempDir(), fmt.Sprintf("agent-layer-dispatch-%d", os.Getuid()))
+	return filepath.Join(canonicalTempDir(), fmt.Sprintf("agent-layer-dispatch-%d", os.Getuid()))
 }
 
 // sessionMCPRuntimeDirPath computes the private per-run directory path without
 // creating any directories.
 func sessionMCPRuntimeDirPath(runDir string) (string, error) {
-	absRunDir, err := filepath.Abs(runDir)
+	canonicalRunDir, err := resolvePathThroughExistingAncestors(runDir)
 	if err != nil {
 		return "", wrapExitError(ExitConfig, "resolve dispatch run directory", err)
 	}
-	return filepath.Join(sessionMCPRuntimeRoot(), "runs", privateStoreKey(filepath.Clean(absRunDir))), nil
+	return filepath.Join(sessionMCPRuntimeRoot(), "runs", privateStoreKey(canonicalRunDir)), nil
 }
 
 // ensureSessionMCPRuntimeDir creates and owner-verifies the private per-run
@@ -161,12 +194,18 @@ func ensureSessionMCPRuntimeDir(runDir string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	if pathWithinDir(rtDir, runDir) {
+		return "", exitError(ExitConfig, "private session MCP runtime dir resolves inside dispatch run directory")
+	}
 	rtRoot := sessionMCPRuntimeRoot()
 	runsDir := filepath.Join(rtRoot, "runs")
 	for _, dir := range []string{rtRoot, runsDir, rtDir} {
 		if err := ensureOwnedPrivateDir(dir); err != nil {
 			return "", wrapExitError(ExitConfig, "prepare private session MCP runtime dir", err)
 		}
+	}
+	if pathWithinDir(rtDir, runDir) {
+		return "", exitError(ExitConfig, "private session MCP runtime dir resolved inside dispatch run directory")
 	}
 	return rtDir, nil
 }
@@ -322,6 +361,9 @@ func stageSessionMCPSpec(runDir string, workDir string, baseEnv []string, server
 	if err != nil {
 		return stagedSessionMCP{}, err
 	}
+	if pathWithinDir(rtDir, absWorkDir) {
+		return stagedSessionMCP{}, exitError(ExitConfig, "private session MCP runtime dir resolves inside working directory")
+	}
 	nonce, err := newSessionMCPNonce()
 	if err != nil {
 		return stagedSessionMCP{}, wrapExitError(ExitTargetFailure, "generate session MCP handshake nonce", err)
@@ -394,16 +436,48 @@ func sessionMCPWrapperArgsWithSpec(runDir string, serverName string, specPath st
 	return args
 }
 
+func encodeTOMLBasicString(s string) string {
+	var b strings.Builder
+	b.Grow(len(s) + 2)
+	b.WriteByte('"')
+	for _, r := range s {
+		switch r {
+		case '\\':
+			b.WriteString(`\\`)
+		case '"':
+			b.WriteString(`\"`)
+		case '\b':
+			b.WriteString(`\b`)
+		case '\f':
+			b.WriteString(`\f`)
+		case '\n':
+			b.WriteString(`\n`)
+		case '\r':
+			b.WriteString(`\r`)
+		case '\t':
+			b.WriteString(`\t`)
+		default:
+			if r < 0x20 || r == 0x7f {
+				_, _ = fmt.Fprintf(&b, `\u%04X`, r)
+			} else {
+				b.WriteRune(r)
+			}
+		}
+	}
+	b.WriteByte('"')
+	return b.String()
+}
+
 func codexSessionMCPConfigArg(runDir string, staged stagedSessionMCP, serverName string) string {
 	args := sessionMCPWrapperArgsWithSpec(runDir, serverName, staged.SpecPath, staged.Digest, false)
 	quotedArgs := make([]string, len(args))
 	for i, arg := range args {
-		quotedArgs[i] = fmt.Sprintf("%q", arg)
+		quotedArgs[i] = encodeTOMLBasicString(arg)
 	}
 	return fmt.Sprintf(
-		"mcp_servers.%s={command=%q,args=[%s],required=true,default_tools_approval_mode=\"approve\"}",
+		"mcp_servers.%s={command=%s,args=[%s],required=true,default_tools_approval_mode=\"approve\"}",
 		serverName,
-		staged.Executable,
+		encodeTOMLBasicString(staged.Executable),
 		strings.Join(quotedArgs, ","),
 	)
 }

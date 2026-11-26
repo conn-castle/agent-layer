@@ -666,7 +666,7 @@ func claimContinuationReservation(root string, name string, id string, launch fu
 				failed, persistErr := applyRunEvidenceLocked(dir, func(r *RunRecord) error {
 					now := time.Now().UTC()
 					setDispatchFailure(r, claimErr, recoveryRetrySafe, now)
-					applyTerminationEvidence(r, nil, true, now)
+					applyTerminationEvidenceInDir("", r, nil, true, now)
 					return nil
 				})
 				if persistErr != nil {
@@ -696,7 +696,7 @@ func expireReservation(record *RunRecord, now time.Time) {
 	record.CompletedAt = &now
 	record.TerminalReason = terminalReasonReservationExpired
 	record.TerminalExitCode = ExitTargetFailure
-	applyTerminationEvidence(record, nil, true, now)
+	applyTerminationEvidenceInDir("", record, nil, true, now)
 }
 
 func retireExpiredReservation(root string, id string, now time.Time) (RunRecord, error) {

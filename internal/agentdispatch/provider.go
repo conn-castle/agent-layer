@@ -465,6 +465,9 @@ func buildAntigravityCommand(command providerCommand, target targetMeta, project
 
 func buildGrokCommand(command providerCommand, target targetMeta, project *config.ProjectConfig, workDir string, model, effort string, targetPinned bool, sessionID string, sessionMCP []SessionMCPServer, run *dispatchRun, diagnostics io.Writer) (providerCommand, error) {
 	args := []string{"--no-auto-update"}
+	if config.GrokDisableMemory(project.Config.Agents.Grok) {
+		args = append(args, "--no-memory")
+	}
 	if project.Config.Approvals.Mode != config.ApprovalModeYOLO {
 		// Pin default permission mode so user or project bypassPermissions /
 		// broad allow settings cannot bypass ACP session/request_permission.
