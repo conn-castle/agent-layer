@@ -173,7 +173,7 @@ al dispatch inspect <handle-or-invocation-id>
 
 al dispatch output <handle-or-invocation-id> --artifact final_answer
 
-al dispatch continue <handle> \
+al dispatch continue [--reservation <invocation-id>] [<handle>] \
   (--prompt <text> | --prompt-file <path>)
 
 al dispatch cancel <handle-or-invocation-id>
@@ -197,18 +197,30 @@ al dispatch wait abc123
 # If the state is still running, wait again with the same handle.
 ```
 
-### Reserve a name before starting
+### Reserve before starting or continuing
 
-Programmatic callers can reserve a conversation name before launching an agent. Start it once, then use `wait` and `continue` for later steps. Stop retrying that name before the configured retention period ends. These commands are CLI only; agents using MCP use `dispatch_start`.
+Programmatic callers can reserve a conversation name before starting an agent, or reserve the next invocation of an existing conversation before continuing it. Launch each reservation once, and stop retrying before the configured retention period ends. These commands are CLI only; agents using MCP use `dispatch_start` and `dispatch_continue`. `al dispatch options` advertises support under `"reservations": {"start": true, "continue": true}`.
 
 ```bash
 al dispatch reserve
 # {"handle":"small-blue-relay","invocation_id":"...","state":"reserved","termination_confirmed":false,"reservation_expires_at":"..."}
 
 al dispatch start --reservation <handle> --agent codex --prompt "Summarize docs/AGENT-DISPATCH.md"
+
+al dispatch wait <handle> --condition termination_confirmed
+# Proceed when the result has "state":"completed" and "condition_met":true.
+
+al dispatch reserve --continue <handle>
+# {"handle":"small-blue-relay","invocation_id":"22222222-...","state":"reserved","termination_confirmed":false,"reservation_expires_at":"..."}
+
+al dispatch continue --reservation <invocation-id> --prompt "Follow up on the summary"
 ```
 
-`reserve` creates the invocation with an Agent Layer generated three-word handle and ID and launches nothing. Pass the returned handle to `start --reservation`. The first start claims and launches it. Every later start of that retained reservation errors with guidance to inspect the invocation and continue only when available; it never launches again, even after the conversation is continued. A crash after claiming can leave a failed invocation without launching. `inspect`, `wait`, `output`, and `cancel` accept the reserved handle or ID. A bounded `wait` that ends before the reservation starts returns `reserved` instead of `running`. Cancelling an unstarted reservation retires it without launching, and `continue` rejects it. Unstarted reservations expire after `dispatch.reservation_expiry_days` (default 7). `start --reservation` exits 80 for an unknown reservation, 81 for an expired one, 82 when it already started, and 83 for a cancelled one. After retention removes a reservation, its name can be reused, so callers must stop retrying it. See [Reservations](https://github.com/conn-castle/agent-layer/blob/main/docs/AGENT-DISPATCH.md#reservations) for the full contract.
+`reserve` creates a start reservation with an Agent Layer generated three-word handle and ID and launches nothing. Pass the returned handle to `start --reservation`. `reserve --continue <handle>` checks continuation eligibility and creates a continuation reservation for an existing conversation, returning any existing unexpired pending continuation reservation idempotently. Pass its `invocation_id` to `continue --reservation` (optionally alongside `<handle>`). While a continuation reservation is pending, handle-based `wait`, `inspect`, and `output` keep reporting the latest launched invocation, and competing `continue` calls are refused.
+
+A claimed reservation launches at most once. A crash after claiming resolves to a failed invocation once termination is provable. Another continuation requires a usable provider session ID or proof that the invocation failed before contacting the provider. Crashes between provider launch intent and process identity publication leave termination uncertain and the launch fenced, as in ordinary dispatch.
+
+`inspect`, `wait`, `output`, and `cancel` accept the reserved invocation ID (and for start reservations, its handle). A bounded `wait` that ends before launch returns `reserved`. Cancelling an unstarted reservation or letting it expire after `dispatch.reservation_expiry_days` (default 7) retires it without launching and lets the caller reserve the continuation again. At reservation lookup, exit 80 means unknown, 81 means expired, 82 means already claimed, and 83 means cancelled before launch. `start --reservation` reads the prompt before reservation lookup. `continue --reservation` can report exit 82 for a retained claim even if the original prompt file is gone. See the [full reservation contract](https://github.com/conn-castle/agent-layer/blob/main/docs/AGENT-DISPATCH.md#reservations).
 
 `wait` is bounded rather than “wait until finished.” The CLI returns in at most eight minutes, and the MCP tool returns after `dispatch.mcp_wait_timeout_minutes` (30 by default). If the state is `running`, call `wait` again. Waiting on an already-terminal invocation returns immediately.
 
@@ -220,7 +232,7 @@ An invocation has exactly one public state:
 running -> completed | failed | cancelled
 ```
 
-An invocation created by `al dispatch reserve` starts in `reserved`, then moves to `running` when `start --reservation` launches it, or to `cancelled` when it is cancelled or expires first. A reservation that never started cannot be continued.
+A start reservation moves from `reserved` to `running` when `start --reservation <handle>` launches it. A continuation reservation moves from `reserved` to `running` when `continue --reservation <invocation-id>` launches it. Cancelling or expiring either reservation before launch moves that invocation to `cancelled`. If it was a continuation reservation, the caller can still continue the conversation or reserve another invocation.
 
 Terminal states are immutable. Continuing a terminal conversation creates a new invocation in `running`; it does not rewrite the previous invocation.
 

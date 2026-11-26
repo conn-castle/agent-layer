@@ -159,6 +159,19 @@ func TestCancelledUnconfirmedDoesNotReleaseClaim(t *testing.T) {
 	if retained.ActiveRunID != run.Record.ID {
 		t.Fatalf("unconfirmed cancel released the claim: %#v", retained)
 	}
+	handle := session.Name
+	requireDispatchExitCode(t, Reserve(ReserveOptions{Root: root, ContinueHandle: &handle}), ExitUnavailable)
+	requireDispatchExitCode(t, Continue(ContinueOptions{
+		Root: root, Handle: handle, Prompt: "continue after uncertain launch", Env: []string{},
+	}), ExitUnavailable)
+	record, err = loadRunRecord(root, run.Record.ID)
+	if err != nil || record.TerminationConfirmed || record.TerminationObservation != terminationObservationUncertainLaunch {
+		t.Fatalf("continuation changed uncertain launch evidence: %#v, %v", record, err)
+	}
+	retained, err = loadSession(root, session.Name)
+	if err != nil || retained.ActiveRunID != run.Record.ID {
+		t.Fatalf("continuation released the uncertain launch claim: %#v, %v", retained, err)
+	}
 }
 
 func TestLegacyRecordWithoutLaunchProtocolStaysUnconfirmed(t *testing.T) {

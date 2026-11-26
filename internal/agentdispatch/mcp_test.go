@@ -319,7 +319,7 @@ func TestMCPWaitReturnsTheDurableCompletedResult(t *testing.T) {
 	if err := writeRunRecord(run.Dir, &run.Record); err != nil {
 		t.Fatal(err)
 	}
-	if err := releaseConversation(root, dispatchSession.Name, run.Record.ID); err != nil {
+	if err := releaseConversation(root, run.Record); err != nil {
 		t.Fatal(err)
 	}
 	session := newMCPTestSession(t, newMCPTestTools(root))
@@ -385,7 +385,7 @@ func TestMCPContinueStartsTheNextInvocation(t *testing.T) {
 	if err := writeRunRecord(run.Dir, &run.Record); err != nil {
 		t.Fatal(err)
 	}
-	if err := releaseConversation(root, dispatchSession.Name, run.Record.ID); err != nil {
+	if err := releaseConversation(root, run.Record); err != nil {
 		t.Fatal(err)
 	}
 

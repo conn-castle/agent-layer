@@ -24,11 +24,7 @@ import (
 // either error alone would hide material recovery state from the caller.
 func finishRejectedResume(run *dispatchRun, claimErr error, publish func(string, *RunRecord) error) error {
 	now := time.Now().UTC()
-	run.Record.State = dispatchStateFailed
-	run.Record.RecoveryState = recoveryRetrySafe
-	run.Record.CompletedAt = &now
-	run.Record.TerminalReason = claimErr.Error()
-	run.Record.TerminalExitCode = terminalExitCode(claimErr)
+	setDispatchFailure(&run.Record, claimErr, recoveryRetrySafe, now)
 	applyTerminationEvidence(&run.Record, nil, true, now)
 	if err := publish(run.Dir, &run.Record); err != nil {
 		return wrapExitError(ExitConfig, "resume claim rejected; publish rejected resume terminal evidence", errors.Join(claimErr, err))
@@ -71,11 +67,14 @@ func executeDispatch(request dispatchExecution) error {
 		if err != nil {
 			return wrapExitError(ExitTargetFailure, fmt.Sprintf("generate %s dispatch session ID", request.Target.Name), err)
 		}
-		session.ProviderSessionID = id
-		session.State = sessionStateDurable
-		if err := persistSession(request.Root, session); err != nil {
-			return err
+		updated, err := persistOwnedSession(request.Root, session.Name, request.Run.Record.ID, func(current *Session) {
+			current.ProviderSessionID = id
+			current.State = sessionStateDurable
+		})
+		if err != nil {
+			return finishDispatchFailure(request, &preStartFailure{err: err})
 		}
+		session = updated
 	}
 	if err := writeIdentity(request.Stderr, session.Name, request.Target.Name, request.Mode, session.State == sessionStateDurable); err != nil {
 		return wrapExitError(ExitTargetFailure, "write dispatch identity", err)
@@ -97,12 +96,21 @@ func executeDispatch(request dispatchExecution) error {
 		if request.Mode == dispatchModeResume && id != session.ProviderSessionID {
 			return exitError(ExitTargetFailure, fmt.Sprintf("%s resume returned a different provider session ID", request.Target.Name))
 		}
-		session.ProviderSessionID = id
-		session.Agent = request.Target.Name
-		session.State = sessionStateDurable
-		session.RunID = request.Run.Record.ID
-		session.LastUsedAt = time.Now().UTC()
-		return persistSession(request.Root, session)
+		updated, err := persistOwnedSession(request.Root, session.Name, request.Run.Record.ID, func(current *Session) {
+			current.ProviderSessionID = id
+			current.Agent = request.Target.Name
+			current.State = sessionStateDurable
+			current.RunID = request.Run.Record.ID
+			current.Model = session.Model
+			current.ReasoningEffort = session.ReasoningEffort
+			current.TargetPinned = true
+			current.LastUsedAt = time.Now().UTC()
+		})
+		if err != nil {
+			return err
+		}
+		session = updated
+		return nil
 	}
 
 	for attempt := 1; attempt <= 2; attempt++ {
@@ -117,10 +125,13 @@ func executeDispatch(request dispatchExecution) error {
 			if err != nil {
 				return wrapExitError(ExitTargetFailure, fmt.Sprintf("generate retry %s session ID", request.Target.Name), err)
 			}
-			session.ProviderSessionID = id
-			if err := persistSession(request.Root, session); err != nil {
-				return err
+			updated, err := persistOwnedSession(request.Root, session.Name, request.Run.Record.ID, func(current *Session) {
+				current.ProviderSessionID = id
+			})
+			if err != nil {
+				return finishDispatchFailure(request, &preStartFailure{err: err})
 			}
+			session = updated
 		}
 		childEnv := dispatchEnvironment(request.Env, request.Project, request.Run, request.Depth)
 		command, err := buildProviderCommand(request.Target, request.Project, childEnv, request.Prompt, request.Model, request.Effort, request.TargetPinned, request.Mode, session.ProviderSessionID, request.Run, request.Stderr)
@@ -130,10 +141,15 @@ func executeDispatch(request dispatchExecution) error {
 		session.Model = command.Model
 		session.ReasoningEffort = command.Effort
 		if session.State == sessionStateDurable {
-			session.TargetPinned = true
-			if err := persistSession(request.Root, session); err != nil {
+			updated, err := persistOwnedSession(request.Root, session.Name, request.Run.Record.ID, func(current *Session) {
+				current.Model = command.Model
+				current.ReasoningEffort = command.Effort
+				current.TargetPinned = true
+			})
+			if err != nil {
 				return finishDispatchFailure(request, &preStartFailure{err: err})
 			}
+			session = updated
 		}
 		command.WorkDir = request.WorkDir
 		request.Run.Record.ProviderLogPath = command.LogPath
@@ -151,7 +167,7 @@ func executeDispatch(request dispatchExecution) error {
 		}
 		result, err := executeProvider(command, request.Prompt, request.Run, request.Root, request.NewCommand, persist)
 		if err != nil {
-			if isSafePreStartFailure(err) && attempt == 1 {
+			if attempt == 1 && isSafePreStartFailure(request.Run.Record, err) {
 				if cleanupErr := removeDispatchPrompt(request); cleanupErr != nil {
 					return recordDispatchFailure(request, errors.Join(err, cleanupErr))
 				}
@@ -263,18 +279,11 @@ func recordDispatchFailure(request dispatchExecution, cause error) error {
 		return finishDispatchCancellation(request)
 	}
 	now := time.Now().UTC()
-	request.Run.Record.State = dispatchStateFailed
-	switch {
-	case request.Run.Record.ProviderSessionID != "", request.Mode == dispatchModeResume:
-		request.Run.Record.RecoveryState = recoveryAcceptanceUnknown
-	case isSafePreStartFailure(cause):
-		request.Run.Record.RecoveryState = recoveryRetrySafe
-	default:
-		request.Run.Record.RecoveryState = recoveryAcceptanceUnknown
+	recovery := recoveryAcceptanceUnknown
+	if isSafePreStartFailure(request.Run.Record, cause) {
+		recovery = recoveryRetrySafe
 	}
-	request.Run.Record.CompletedAt = &now
-	request.Run.Record.TerminalReason = cause.Error()
-	request.Run.Record.TerminalExitCode = terminalExitCode(cause)
+	setDispatchFailure(&request.Run.Record, cause, recovery, now)
 	request.Run.Record.LaunchFenced = true
 	writeErr := writeRunRecord(request.Run.Dir, &request.Run.Record)
 	if writeErr == nil {
@@ -285,20 +294,26 @@ func recordDispatchFailure(request dispatchExecution, cause error) error {
 			request.Run.Record = updated
 		}
 	}
-	if request.Run.Record.TerminationConfirmed {
-		if err := releaseConversation(request.Root, request.Session.Name, request.Run.Record.ID); err != nil {
-			return err
-		}
+	if err := releaseIfConfirmed(request.Root, request.Run.Record); err != nil {
+		return err
 	}
 	if writeErr != nil {
 		return writeErr
 	}
-	if request.Mode == dispatchModeFresh && request.Run.Record.RecoveryState == recoveryRetrySafe {
+	if request.Mode == dispatchModeFresh && request.Run.Record.RecoveryState == recoveryRetrySafe && request.Run.Record.TerminationConfirmed {
 		if err := downgradeUnstartedSession(request.Root, request.Session.Name, request.Run.Record.ID); err != nil {
 			return err
 		}
 	}
 	return cause
+}
+
+func setDispatchFailure(record *RunRecord, cause error, recovery string, now time.Time) {
+	record.State = dispatchStateFailed
+	record.RecoveryState = recovery
+	record.CompletedAt = &now
+	record.TerminalReason = cause.Error()
+	record.TerminalExitCode = terminalExitCode(cause)
 }
 
 func persistUnprovenFailure(request dispatchExecution, cause error) error {
@@ -391,7 +406,12 @@ func terminalExitCode(err error) int {
 	return 1
 }
 
-func isSafePreStartFailure(err error) bool {
+func isSafePreStartFailure(record RunRecord, err error) bool {
+	// If clearing launch intent failed, the joined error can still contain a
+	// preStartFailure. Durable launch evidence takes precedence.
+	if record.ProviderLaunchIntent || record.PID != 0 || record.ProcessGroupID != 0 || record.ProcessStartIdentity != "" {
+		return false
+	}
 	var start *preStartFailure
 	return errors.As(err, &start)
 }

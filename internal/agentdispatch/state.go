@@ -57,18 +57,19 @@ var (
 // transcripts remain provider-owned; this record contains only the alias
 // needed for explicit continuation.
 type Session struct {
-	Name              string    `json:"name"`
-	Agent             string    `json:"agent"`
-	Model             string    `json:"model,omitempty"`
-	ReasoningEffort   string    `json:"reasoning_effort,omitempty"`
-	TargetPinned      bool      `json:"target_pinned,omitempty"`
-	ProviderSessionID string    `json:"provider_session_id,omitempty"`
-	CreatedAt         time.Time `json:"created_at"`
-	LastUsedAt        time.Time `json:"last_used_at"`
-	State             string    `json:"state,omitempty"`
-	RunID             string    `json:"run_id,omitempty"`
-	ActiveRunID       string    `json:"active_run_id,omitempty"`
-	ActiveClaimKnown  bool      `json:"active_claim_known,omitempty"`
+	Name                      string    `json:"name"`
+	Agent                     string    `json:"agent"`
+	Model                     string    `json:"model,omitempty"`
+	ReasoningEffort           string    `json:"reasoning_effort,omitempty"`
+	TargetPinned              bool      `json:"target_pinned,omitempty"`
+	ProviderSessionID         string    `json:"provider_session_id,omitempty"`
+	CreatedAt                 time.Time `json:"created_at"`
+	LastUsedAt                time.Time `json:"last_used_at"`
+	State                     string    `json:"state,omitempty"`
+	RunID                     string    `json:"run_id,omitempty"`
+	ActiveRunID               string    `json:"active_run_id,omitempty"`
+	ActiveClaimKnown          bool      `json:"active_claim_known,omitempty"`
+	ContinuationReservationID string    `json:"continuation_reservation_id,omitempty"`
 }
 
 // RunRecord is private, recoverable dispatch evidence. It never contains the
@@ -173,19 +174,30 @@ func validDispatchName(name string) bool {
 }
 
 func newDispatchRun(root string, agent string, version string, mode string) (*dispatchRun, error) {
-	return createDispatchRun(root, agent, version, mode, nil)
+	return createDispatchRun(root, agent, version, mode, "", "", nil)
 }
 
 // newReservedDispatchRun creates an invocation record that launches nothing
 // until `al dispatch start --reservation` claims it.
 func newReservedDispatchRun(root string, expiresAt time.Time) (*dispatchRun, error) {
-	return createDispatchRun(root, "", "", dispatchModeFresh, &expiresAt)
+	return createDispatchRun(root, "", "", dispatchModeFresh, "", "", &expiresAt)
 }
 
-func createDispatchRun(root string, agent string, version string, mode string, reservationExpiresAt *time.Time) (*dispatchRun, error) {
-	claudeLineage, err := providerLineageSupported(agent, version)
-	if err != nil {
-		return nil, err
+// newReservedContinuationRun creates a reserved continuation invocation record
+// for an existing conversation that launches nothing until
+// `al dispatch continue --reservation` claims it.
+func newReservedContinuationRun(root string, session Session, previousRunID string, mode string, expiresAt time.Time) (*dispatchRun, error) {
+	return createDispatchRun(root, session.Agent, "", mode, session.Name, previousRunID, &expiresAt)
+}
+
+func createDispatchRun(root string, agent string, version string, mode string, name string, previousRunID string, reservationExpiresAt *time.Time) (*dispatchRun, error) {
+	var claudeLineage bool
+	if reservationExpiresAt == nil {
+		var err error
+		claudeLineage, err = providerLineageSupported(agent, version)
+		if err != nil {
+			return nil, err
+		}
 	}
 	id, err := newUUID()
 	if err != nil {
@@ -201,11 +213,13 @@ func createDispatchRun(root string, agent string, version string, mode string, r
 	now := time.Now().UTC()
 	record := RunRecord{
 		ID:              id,
+		Name:            name,
 		Agent:           agent,
 		ProviderVersion: version,
 		Mode:            mode,
 		State:           dispatchStatePending,
 		RecoveryState:   recoveryRetrySafe,
+		PreviousRunID:   previousRunID,
 		// The launcher identity is the only crash evidence for the window
 		// before a worker identity is published; without it a run abandoned
 		// there could never be reconciled.
@@ -511,7 +525,12 @@ func classifyDispatchPoolOccupancy(root string) (retained int, active int, unrea
 			unreadable++
 			continue
 		}
-		if dispatchSessionActive(root, session) {
+		activeClaim, _, reservationUnreadable := dispatchSessionActivity(root, session)
+		if reservationUnreadable {
+			unreadable++
+			continue
+		}
+		if activeClaim {
 			active++
 			continue
 		}
@@ -530,8 +549,39 @@ func persistSession(root string, session Session) error {
 	})
 }
 
-func claimConversation(root string, name string, runID string) (Session, error) {
+// persistOwnedSession updates worker-owned fields on the current on-disk
+// session under the session lock, refusing to overwrite if another invocation
+// or a pending continuation reservation has taken ownership.
+func persistOwnedSession(root string, name string, runID string, update func(*Session)) (Session, error) {
+	path, err := sessionPath(root, name)
+	if err != nil {
+		return Session{}, err
+	}
+	var updated Session
+	err = withSessionLock(root, name, func() error {
+		current, err := loadSession(root, name)
+		if err != nil {
+			return err
+		}
+		if current.RunID != runID || (current.ActiveClaimKnown && current.ActiveRunID != runID) || current.ContinuationReservationID != "" {
+			return exitError(ExitUnavailable, fmt.Sprintf("dispatch run %s no longer owns conversation %q", runID, name))
+		}
+		update(&current)
+		if err := writeJSONAtomic(path, current); err != nil {
+			return wrapExitError(ExitConfig, "update owned dispatch mapping", err)
+		}
+		updated = current
+		return nil
+	})
+	return updated, err
+}
+
+func claimConversation(root string, name string, runID string, expectedPreviousRunID ...string) (Session, error) {
 	var claimed Session
+	expectedPrev := ""
+	if len(expectedPreviousRunID) > 0 {
+		expectedPrev = expectedPreviousRunID[0]
+	}
 	err := withSessionLock(root, name, func() error {
 		path, err := sessionPath(root, name)
 		if err != nil {
@@ -540,6 +590,13 @@ func claimConversation(root string, name string, runID string) (Session, error) 
 		var session Session
 		if err := readJSON(path, &session); err != nil {
 			return wrapExitError(ExitConfig, "read dispatch mapping for active claim", err)
+		}
+		pending, hasPending, err := settlePendingContinuationReservationLocked(root, &session, time.Now().UTC())
+		if err != nil {
+			return err
+		}
+		if hasPending {
+			return pendingContinuationReservationError(name, pending.ID)
 		}
 		ownerRunID := sessionOwnerRunID(session)
 		if ownerRunID != "" && ownerRunID != runID {
@@ -550,6 +607,9 @@ func claimConversation(root string, name string, runID string) (Session, error) 
 			if loadErr != nil && !errors.Is(loadErr, errDispatchRunNotFound) {
 				return loadErr
 			}
+		}
+		if expectedPrev != "" && session.RunID != expectedPrev {
+			return exitError(ExitUnavailable, fmt.Sprintf("dispatch conversation %q advanced to invocation %s while preparing continuation; retry with fresh state", name, session.RunID))
 		}
 		session.ActiveRunID = runID
 		session.ActiveClaimKnown = true
@@ -581,11 +641,9 @@ func downgradeUnstartedSession(root string, name string, runID string) error {
 			}
 			return wrapExitError(ExitConfig, "read dispatch mapping for pre-start downgrade", err)
 		}
-		if session.RunID != runID || session.State != sessionStateDurable {
+		if !clearProvisionalSessionID(&session, runID) {
 			return nil
 		}
-		session.ProviderSessionID = ""
-		session.State = sessionStatePending
 		if err := writeJSONAtomic(path, session); err != nil {
 			return wrapExitError(ExitConfig, "downgrade unstarted dispatch mapping", err)
 		}
@@ -593,14 +651,23 @@ func downgradeUnstartedSession(root string, name string, runID string) error {
 	})
 }
 
-func releaseConversation(root string, name string, runID string) error {
-	return withSessionLock(root, name, func() error {
-		return releaseConversationLocked(root, name, runID)
+func clearProvisionalSessionID(session *Session, runID string) bool {
+	if session.RunID != runID || session.State != sessionStateDurable {
+		return false
+	}
+	session.ProviderSessionID = ""
+	session.State = sessionStatePending
+	return true
+}
+
+func releaseConversation(root string, record RunRecord) error {
+	return withSessionLock(root, record.Name, func() error {
+		return releaseConversationLocked(root, record)
 	})
 }
 
-func releaseConversationLocked(root string, name string, runID string) error {
-	path, err := sessionPath(root, name)
+func releaseConversationLocked(root string, record RunRecord) error {
+	path, err := sessionPath(root, record.Name)
 	if err != nil {
 		return err
 	}
@@ -611,12 +678,36 @@ func releaseConversationLocked(root string, name string, runID string) error {
 		}
 		return wrapExitError(ExitConfig, "read dispatch mapping for claim release", err)
 	}
-	if session.ActiveRunID != runID {
+	changed := cancelledUnstartedFreshContinuation(record) && clearProvisionalSessionID(&session, record.ID)
+	if session.ActiveRunID == record.ID {
+		session.ActiveRunID = ""
+		session.ActiveClaimKnown = true
+		changed = true
+	}
+	if session.ContinuationReservationID == record.ID {
+		session.ContinuationReservationID = ""
+		// Retiring a pending continuation reservation counts as recent
+		// conversation activity so a subsequent reserve does not immediately
+		// prune a conversation when retention is shorter than reservation expiry.
+		if retiredAt := reservationRetirementTime(record); retiredAt.After(session.LastUsedAt) {
+			session.LastUsedAt = retiredAt
+		}
+		changed = true
+	}
+	if !changed {
 		return nil
 	}
-	session.ActiveRunID = ""
-	session.ActiveClaimKnown = true
 	return writeJSONAtomic(path, session)
+}
+
+func reservationRetirementTime(record RunRecord) time.Time {
+	if record.TerminationConfirmedAt != nil {
+		return *record.TerminationConfirmedAt
+	}
+	if record.CompletedAt != nil {
+		return *record.CompletedAt
+	}
+	return time.Time{}
 }
 
 func terminalDispatchState(state string) bool {
@@ -674,7 +765,7 @@ func loadSession(root string, name string) (Session, error) {
 // pruneExpiredSessions removes inactive, valid mappings whose last use is
 // older than the retention window. Corrupt mappings are preserved so normal
 // diagnostics can report them instead of silently erasing state.
-func pruneExpiredSessions(root string, now time.Time, retention time.Duration) error {
+func pruneExpiredSessions(root string, now time.Time, retention time.Duration, preserveSession string) error {
 	entries, err := os.ReadDir(dispatchStatePath(root))
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil
@@ -688,7 +779,7 @@ func pruneExpiredSessions(root string, now time.Time, retention time.Duration) e
 			continue
 		}
 		name := strings.TrimSuffix(entry.Name(), ".json")
-		if !validDispatchName(name) {
+		if name == preserveSession || !validDispatchName(name) {
 			continue
 		}
 		if err := pruneExpiredSession(root, name, cutoff); err != nil {
@@ -699,7 +790,11 @@ func pruneExpiredSessions(root string, now time.Time, retention time.Duration) e
 }
 
 func pruneDispatchEvidence(root string, now time.Time, retention time.Duration) error {
-	if err := pruneExpiredSessions(root, now, retention); err != nil {
+	return pruneDispatchEvidenceExcept(root, now, retention, "")
+}
+
+func pruneDispatchEvidenceExcept(root string, now time.Time, retention time.Duration, preserveSession string) error {
+	if err := pruneExpiredSessions(root, now, retention, preserveSession); err != nil {
 		return err
 	}
 	sessions, err := listSessions(root)
@@ -713,6 +808,9 @@ func pruneDispatchEvidence(root string, now time.Time, retention time.Duration) 
 		}
 		if session.ActiveRunID != "" {
 			current[session.ActiveRunID] = true
+		}
+		if session.ContinuationReservationID != "" {
+			current[session.ContinuationReservationID] = true
 		}
 	}
 	cutoff := now.UTC().Add(-retention)
@@ -782,7 +880,11 @@ func pruneExpiredSession(root string, name string, cutoff time.Time) error {
 				lastUsed = *record.CompletedAt
 			}
 		}
-		if lastUsed.IsZero() || !lastUsed.Before(cutoff) || dispatchSessionActive(root, session) {
+		if lastUsed.IsZero() || !lastUsed.Before(cutoff) {
+			return nil
+		}
+		active, retiredAt, reservationUnreadable := dispatchSessionActivity(root, session)
+		if reservationUnreadable || active || !retiredAt.Before(cutoff) {
 			return nil
 		}
 		path, err := sessionPath(root, name)
@@ -796,18 +898,32 @@ func pruneExpiredSession(root string, name string, cutoff time.Time) error {
 	})
 }
 
-func dispatchSessionActive(root string, session Session) bool {
+// dispatchSessionActivity uses one reservation snapshot for both activity and
+// retirement time, including when retirement has not reached the session file.
+// Reservation read errors preserve the mapping and feed occupancy diagnostics.
+func dispatchSessionActivity(root string, session Session) (active bool, retiredAt time.Time, reservationUnreadable bool) {
 	activeRunID := sessionOwnerRunID(session)
-	if activeRunID == "" {
-		return false
+	if activeRunID != "" {
+		record, err := loadRunRecord(root, activeRunID)
+		if err != nil {
+			// Retention must not erase a mapping when its active claim cannot be
+			// interpreted conservatively. Explicit operations surface the error.
+			return true, time.Time{}, false
+		}
+		if activeClaimBlocksReplacement(record) {
+			return true, time.Time{}, false
+		}
 	}
-	record, err := loadRunRecord(root, activeRunID)
-	if err != nil {
-		// Retention must not erase a mapping when its active claim cannot be
-		// interpreted conservatively. Explicit operations surface the error.
-		return true
+	if session.ContinuationReservationID != "" {
+		record, err := loadContinuationReservation(root, session)
+		if err != nil {
+			return false, time.Time{}, true
+		}
+		if record.ID != "" {
+			return activeClaimBlocksReplacement(record), reservationRetirementTime(record), false
+		}
 	}
-	return activeClaimBlocksReplacement(record)
+	return false, time.Time{}, false
 }
 
 func withSessionLock(root string, name string, fn func() error) error {
@@ -979,10 +1095,15 @@ func loadRunRecord(root string, id string) (RunRecord, error) {
 		return RunRecord{}, exitError(ExitUsage, fmt.Sprintf("dispatch run ID %q is invalid", id))
 	}
 	dir := filepathForRun(root, id)
+	path := filepath.Join(dir, dispatchRunFile)
 	var record RunRecord
-	if err := readJSON(filepath.Join(dir, dispatchRunFile), &record); err != nil {
+	if err := readJSON(path, &record); err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
-			return RunRecord{}, notFoundExitError(fmt.Sprintf("dispatch run %q was not found", id), errDispatchRunNotFound)
+			// A dangling symlink also returns not-exist when opened. Keep
+			// unreadable evidence distinct from a missing record.
+			if _, statErr := os.Lstat(path); errors.Is(statErr, fs.ErrNotExist) {
+				return RunRecord{}, notFoundExitError(fmt.Sprintf("dispatch run %q was not found", id), errDispatchRunNotFound)
+			}
 		}
 		return RunRecord{}, wrapExitError(ExitConfig, "read dispatch run record", err)
 	}

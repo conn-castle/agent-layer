@@ -86,7 +86,7 @@ func failedMCPConversation(t *testing.T, root, agent string) string {
 	if err := writeRunRecord(run.Dir, &run.Record); err != nil {
 		t.Fatal(err)
 	}
-	if err := releaseConversation(root, conversation.Name, run.Record.ID); err != nil {
+	if err := releaseConversation(root, run.Record); err != nil {
 		t.Fatal(err)
 	}
 	return conversation.Name

@@ -314,3 +314,141 @@ func TestDispatchPruningRetiresOnlyExpiredReservations(t *testing.T) {
 		t.Fatalf("unexpired reservation state = %q, want reserved", inspected.State)
 	}
 }
+
+func seedCompletedConversationForCLI(t *testing.T, root string) (string, string) {
+	t.Helper()
+	reserved := reserveForTest(t)
+	runDir := reservationRunDir(root, reserved.InvocationID)
+	answerPath := filepath.Join(runDir, "result.md")
+	if err := os.WriteFile(answerPath, []byte("completed answer\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+	rewriteDispatchJSON(t, filepath.Join(runDir, "dispatch.json"), func(record map[string]any) {
+		record["agent"] = "codex"
+		record["provider_version"] = "0.145.0"
+		record["state"] = "completed"
+		record["recovery_state"] = "resume_required"
+		record["completed_at"] = now
+		record["provider_session_id"] = "cli-provider-session"
+		record["launch_digest"] = "claimed"
+		record["launch_fenced"] = true
+		record["termination_confirmed"] = true
+		record["termination_confirmed_at"] = now
+		record["termination_proof"] = "prelaunch_no_intent"
+	})
+	rewriteDispatchJSON(t, reservationSessionPath(root, reserved.Handle), func(session map[string]any) {
+		session["agent"] = "codex"
+		session["provider_session_id"] = "cli-provider-session"
+		session["state"] = "durable"
+		session["run_id"] = reserved.InvocationID
+		session["active_run_id"] = ""
+		session["active_claim_known"] = true
+	})
+	return reserved.Handle, reserved.InvocationID
+}
+
+func TestDispatchOptionsAdvertisesContinuationReservations(t *testing.T) {
+	newReservationTestRepo(t, "")
+	cmd := newDispatchCmd()
+	var stdout, stderr bytes.Buffer
+	cmd.SetOut(&stdout)
+	cmd.SetErr(&stderr)
+	cmd.SetArgs([]string{"options"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("al dispatch options failed: %v (stderr: %s)", err, stderr.String())
+	}
+	var resp struct {
+		Reservations *struct {
+			Start    bool `json:"start"`
+			Continue bool `json:"continue"`
+		} `json:"reservations"`
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &resp); err != nil {
+		t.Fatalf("decode options JSON %q: %v", stdout.String(), err)
+	}
+	if resp.Reservations == nil || !resp.Reservations.Start || !resp.Reservations.Continue {
+		t.Fatalf("options reservations = %#v, want start=true continue=true", resp.Reservations)
+	}
+}
+
+func TestDispatchContinueReserveCLIContract(t *testing.T) {
+	root := newReservationTestRepo(t, "reservation_expiry_days = 2")
+	handle, firstID := seedCompletedConversationForCLI(t, root)
+
+	// Empty --continue fails without allocating a fresh start reservation.
+	if _, stderr, code := runDispatchCLI(t, "reserve", "--continue", ""); code != agentdispatch.ExitUsage {
+		t.Fatalf("reserve --continue '' exit %d, want %d: %s", code, agentdispatch.ExitUsage, stderr)
+	}
+
+	// Reserve continuation is idempotent and does not disturb handle queries.
+	contRes, stderr, code := runDispatchCLI(t, "reserve", "--continue", handle)
+	if code != 0 || contRes.Handle != handle || contRes.InvocationID == "" || contRes.InvocationID == firstID || contRes.State != "reserved" || contRes.ReservationExpiresAt == nil {
+		t.Fatalf("reserve --continue = %#v exit %d: %s", contRes, code, stderr)
+	}
+	contRes2, stderr, code := runDispatchCLI(t, "reserve", "--continue", handle)
+	if code != 0 || contRes2.InvocationID != contRes.InvocationID {
+		t.Fatalf("second reserve --continue = %#v exit %d: %s (want same ID %s)", contRes2, code, stderr, contRes.InvocationID)
+	}
+
+	// Handle inspect still reports the latest launched invocation; ID inspect reports reserved.
+	inspectedHandle, stderr, code := runDispatchCLI(t, "inspect", handle)
+	if code != 0 || inspectedHandle.InvocationID != firstID || inspectedHandle.State != "completed" {
+		t.Fatalf("inspect handle while pending = %#v exit %d: %s", inspectedHandle, code, stderr)
+	}
+	inspectedID, stderr, code := runDispatchCLI(t, "inspect", contRes.InvocationID)
+	if code != 0 || inspectedID.InvocationID != contRes.InvocationID || inspectedID.State != "reserved" {
+		t.Fatalf("inspect reserved ID = %#v exit %d: %s", inspectedID, code, stderr)
+	}
+
+	// Competing ordinary continue is refused.
+	if _, stderr, code := runDispatchCLI(t, "continue", handle, "--prompt", "competing"); code != agentdispatch.ExitUnavailable {
+		t.Fatalf("competing continue exit %d, want %d: %s", code, agentdispatch.ExitUnavailable, stderr)
+	}
+
+	// Empty/unknown --reservation on continue exits 80 without launching.
+	t.Setenv("PATH", t.TempDir())
+	for _, args := range [][]string{
+		{"continue", "--reservation", "", "--prompt", "x"},
+		{"continue", handle, "--reservation", "", "--prompt", "x"},
+		{"continue", "--reservation", handle, "--prompt", "x"},
+		{"continue", "--reservation", firstID, "--prompt", "x"},
+		{"continue", "--reservation", "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", "--prompt", "x"},
+	} {
+		if _, stderr, code := runDispatchCLI(t, args...); code != agentdispatch.ExitReservationNotFound {
+			t.Fatalf("al dispatch %v exit %d, want %d: %s", args, code, agentdispatch.ExitReservationNotFound, stderr)
+		}
+	}
+
+	// Missing both handle and --reservation exits 64 (usage).
+	if _, stderr, code := runDispatchCLI(t, "continue", "--prompt", "x"); code != agentdispatch.ExitUsage {
+		t.Fatalf("continue without handle or reservation exit %d, want %d: %s", code, agentdispatch.ExitUsage, stderr)
+	}
+
+	// Cancelling unstarted continuation reservation returns ExitReservationCancelled on launch
+	// and allows reserving a new continuation.
+	cancelled, stderr, code := runDispatchCLI(t, "cancel", contRes.InvocationID)
+	if code != 0 || cancelled.State != "cancelled" || !cancelled.TerminationConfirmed {
+		t.Fatalf("cancel continuation reservation = %#v exit %d: %s", cancelled, code, stderr)
+	}
+	if _, stderr, code := runDispatchCLI(t, "continue", "--reservation", contRes.InvocationID, "--prompt", "x"); code != agentdispatch.ExitReservationCancelled {
+		t.Fatalf("continue cancelled reservation exit %d, want %d: %s", code, agentdispatch.ExitReservationCancelled, stderr)
+	}
+
+	// Expiry returns ExitReservationExpired (81) and makes conversation continuable again.
+	contRes3, stderr, code := runDispatchCLI(t, "reserve", "--continue", handle)
+	if code != 0 || contRes3.InvocationID == contRes.InvocationID {
+		t.Fatalf("reserve after cancel = %#v exit %d: %s", contRes3, code, stderr)
+	}
+	past := time.Now().UTC().Add(-time.Minute).Format(time.RFC3339Nano)
+	rewriteDispatchJSON(t, filepath.Join(reservationRunDir(root, contRes3.InvocationID), "dispatch.json"), func(record map[string]any) {
+		record["reservation_expires_at"] = past
+	})
+	if _, stderr, code := runDispatchCLI(t, "continue", "--reservation", contRes3.InvocationID, "--prompt", "x"); code != agentdispatch.ExitReservationExpired {
+		t.Fatalf("continue expired reservation exit %d, want %d: %s", code, agentdispatch.ExitReservationExpired, stderr)
+	}
+	contRes4, stderr, code := runDispatchCLI(t, "reserve", "--continue", handle)
+	if code != 0 || contRes4.InvocationID == contRes3.InvocationID {
+		t.Fatalf("reserve after expiry = %#v exit %d: %s", contRes4, code, stderr)
+	}
+}

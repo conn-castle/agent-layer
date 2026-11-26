@@ -301,6 +301,7 @@ func (s *dispatchToolServer) handleOptions(ctx context.Context, _ *mcp.CallToolR
 	if err != nil {
 		return nil, nil, toolError(err)
 	}
+	options.Reservations = nil
 	options.Server = s.serverCode()
 	s.policy.constrainOptions(options)
 	return nil, options, nil

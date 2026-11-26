@@ -16,8 +16,17 @@ import (
 // OptionsResponse describes the agents that may be selected by dispatch start.
 type OptionsResponse struct {
 	Agents []AgentOption `json:"agents"`
+	// Reservations describes CLI reservation features supported by this binary.
+	// It is omitted on MCP responses because reservations are CLI-only.
+	Reservations *ReservationOptions `json:"reservations,omitempty"`
 	// Server is present only on MCP responses, describing the long-lived process.
 	Server *ServerCode `json:"server,omitempty"`
+}
+
+// ReservationOptions describes the CLI reservation modes supported by this binary.
+type ReservationOptions struct {
+	Start    bool `json:"start"`
+	Continue bool `json:"continue"`
 }
 
 // ServerCode identifies the code serving MCP requests, independently of providers.
@@ -77,11 +86,14 @@ func BuildOptions(req OptionsRequest) (*OptionsResponse, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	options := &OptionsResponse{Agents: buildTargetOptions(
-		project.Config,
-		agentoptions.DiscoveryRequest{Context: ctx, Project: project, Env: env, LookPath: lookPath, Live: true, Cleanup: req.Cleanup},
-		versionLookup,
-	)}
+	options := &OptionsResponse{
+		Agents: buildTargetOptions(
+			project.Config,
+			agentoptions.DiscoveryRequest{Context: ctx, Project: project, Env: env, LookPath: lookPath, Live: true, Cleanup: req.Cleanup},
+			versionLookup,
+		),
+		Reservations: &ReservationOptions{Start: true, Continue: true},
+	}
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
 	}
