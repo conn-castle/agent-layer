@@ -212,12 +212,8 @@ func Cancel(request CancelRequest) error {
 	}
 	if alreadyConfirmedCancelled {
 		runDir := filepathForRun(request.Root, record.ID)
-		if removeErr := removeSessionMCPArtifacts(runDir); removeErr != nil {
-			return removeErr
-		}
-		if removeErr := removeSessionMCPRuntimeDir(runDir); removeErr != nil {
-			return removeErr
-		}
+		_ = removeSessionMCPArtifacts(runDir)
+		_ = removeSessionMCPRuntimeDir(runDir)
 		if err := releaseIfConfirmed(request.Root, record); err != nil {
 			return err
 		}

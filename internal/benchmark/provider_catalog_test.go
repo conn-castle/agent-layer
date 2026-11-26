@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
+	"math"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -640,12 +641,19 @@ func TestStreamUsageParsingRejectsMalformedProviderEvidence(t *testing.T) {
 	if acpCost != legacyCost {
 		t.Fatalf("grok ACP fallback cost %#v != legacy equivalent %#v (double-counted cache tokens)", acpCost, legacyCost)
 	}
-	// Reject ACP usage where cacheRead + cacheCreation > inputTokens.
+	// Reject ACP usage where cacheRead + cacheCreation > inputTokens (including int-overflow edge case).
 	tooMuchCreation := 50
 	badACP := acpWithCreation
 	badACP.CacheCreationTokens = &tooMuchCreation
 	if _, err := priceStreamRequest("grok-acp-bad", adapterGrok, modelGrok45, badACP, pricing); err == nil {
 		t.Fatal("expected error when cacheRead + cacheCreation exceeds ACP total inputTokens")
+	}
+	huge := math.MaxInt
+	overflowACP := acpWithCreation
+	overflowACP.CacheReadInputTokens = &huge
+	overflowACP.CacheCreationTokens = &huge
+	if _, err := priceStreamRequest("grok-acp-overflow", adapterGrok, modelGrok45, overflowACP, pricing); err == nil {
+		t.Fatal("expected error on overflowing cacheRead + cacheCreation counts")
 	}
 
 	// Reject mismatched ACP run ID (untracked .stdout with same sessionId).

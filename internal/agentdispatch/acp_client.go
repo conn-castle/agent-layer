@@ -23,6 +23,7 @@ const (
 	acpPromptTimeout          = 24 * time.Hour
 	acpWriteDeadline          = 30 * time.Second
 	acpMaxFrameBytes          = 16 * 1024 * 1024
+	acpMaxCachedToolCalls     = 256
 	acpCancelPollInterval     = 200 * time.Millisecond
 	acpClientName             = "agent-layer"
 	acpClientVersion          = "1.0"
@@ -103,6 +104,7 @@ type acpClient struct {
 	sawToolSinceText bool
 	deniedTools      []string
 	toolCalls        map[string]acpPermissionTool
+	toolCallOrder    []string
 	grokMCPReady     map[string]acpGrokMCPStatus
 	grokMCPDone      bool
 	grokMCPDoneAt    time.Time
@@ -694,7 +696,11 @@ func (c *acpClient) checkGrokMCPStatusError() error {
 }
 
 func (c *acpClient) drainQueuedFrames() error {
-	for {
+	budget := cap(c.frames)
+	if budget <= 0 {
+		budget = 64
+	}
+	for range budget {
 		select {
 		case frame, ok := <-c.frames:
 			if !ok {
@@ -710,6 +716,7 @@ func (c *acpClient) drainQueuedFrames() error {
 			return nil
 		}
 	}
+	return nil
 }
 
 func (c *acpClient) handleNotification(msg acpJSONRPCMessage) error {
@@ -744,6 +751,7 @@ func (c *acpClient) handleSessionUpdate(raw json.RawMessage) error {
 		Update    struct {
 			SessionUpdate string          `json:"sessionUpdate"`
 			ToolCallID    string          `json:"toolCallId"`
+			Status        string          `json:"status"`
 			Name          string          `json:"name"`
 			Kind          string          `json:"kind"`
 			Title         string          `json:"title"`
@@ -785,21 +793,20 @@ func (c *acpClient) handleSessionUpdate(raw json.RawMessage) error {
 	case "agent_thought_chunk":
 		return c.emit(providerEvent{Kind: eventProgress, Activity: thoughtActivity})
 	case "tool_call", "tool_call_update":
-		if envelope.Update.ToolCallID != "" {
-			if c.toolCalls == nil {
-				c.toolCalls = make(map[string]acpPermissionTool)
-			}
-			c.toolCalls[envelope.Update.ToolCallID] = mergeACPPermissionTool(
-				c.toolCalls[envelope.Update.ToolCallID],
-				acpPermissionTool{
-					ToolCallID: envelope.Update.ToolCallID,
+		if id := envelope.Update.ToolCallID; id != "" {
+			switch strings.ToLower(strings.TrimSpace(envelope.Update.Status)) {
+			case "completed", "failed", "cancelled", "canceled":
+				delete(c.toolCalls, id)
+			default:
+				c.cacheToolCall(id, trimACPPermissionToolForCache(acpPermissionTool{
+					ToolCallID: id,
 					Name:       envelope.Update.Name,
 					Kind:       envelope.Update.Kind,
 					Title:      envelope.Update.Title,
 					Args:       envelope.Update.Args,
 					RawInput:   envelope.Update.RawInput,
-				},
-			)
+				}))
+			}
 		}
 		if c.promptActive && c.answer.Len() > 0 {
 			c.sawToolSinceText = true
@@ -810,6 +817,23 @@ func (c *acpClient) handleSessionUpdate(raw json.RawMessage) error {
 	default:
 		return c.emit(providerEvent{Kind: eventProgress, Activity: envelope.Update.SessionUpdate})
 	}
+}
+
+func (c *acpClient) cacheToolCall(id string, incoming acpPermissionTool) {
+	if c.toolCalls == nil {
+		c.toolCalls = make(map[string]acpPermissionTool)
+	}
+	if existing, exists := c.toolCalls[id]; exists {
+		c.toolCalls[id] = mergeACPPermissionTool(existing, incoming)
+		return
+	}
+	for len(c.toolCalls) >= acpMaxCachedToolCalls && len(c.toolCallOrder) > 0 {
+		oldest := c.toolCallOrder[0]
+		c.toolCallOrder = c.toolCallOrder[1:]
+		delete(c.toolCalls, oldest)
+	}
+	c.toolCalls[id] = incoming
+	c.toolCallOrder = append(c.toolCallOrder, id)
 }
 
 func appendRetainedText(builder *strings.Builder, chunk string) bool {

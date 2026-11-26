@@ -829,6 +829,7 @@ func pruneExpiredSessions(root string, now time.Time, retention time.Duration, p
 		return wrapExitError(ExitConfig, "list dispatch sessions for retention", err)
 	}
 	cutoff := now.UTC().Add(-retention)
+	var errs []error
 	for _, entry := range entries {
 		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
 			continue
@@ -838,10 +839,10 @@ func pruneExpiredSessions(root string, now time.Time, retention time.Duration, p
 			continue
 		}
 		if err := pruneExpiredSession(root, name, cutoff); err != nil {
-			return err
+			errs = append(errs, err)
 		}
 	}
-	return nil
+	return errors.Join(errs...)
 }
 
 func pruneDispatchEvidence(root string, now time.Time, retention time.Duration) error {
@@ -968,13 +969,11 @@ func pruneExpiredSession(root string, name string, cutoff time.Time) error {
 		if err != nil {
 			return err
 		}
-		if session.SessionMCPID != "" {
-			if err := removePrivateSessionMCPServers(root, session.SessionMCPID); err != nil {
-				return err
-			}
-		}
 		if err := os.Remove(path); err != nil && !errors.Is(err, fs.ErrNotExist) {
 			return wrapExitError(ExitConfig, "prune expired dispatch mapping", err)
+		}
+		if session.SessionMCPID != "" && parseUUID(session.SessionMCPID) == nil {
+			_ = removePrivateSessionMCPServers(root, session.SessionMCPID)
 		}
 		if session.Agent == AgentMuse && session.ProviderSessionID != "" {
 			if err := musepolicy.RemoveSessionMCPGrant(root, session.ProviderSessionID); err != nil {

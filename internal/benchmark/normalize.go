@@ -1063,10 +1063,14 @@ func priceStreamRequest(label, provider, model string, usage streamTokenUsage, p
 	}
 	ordinaryInput := *usage.InputTokens
 	if provider == adapterAntigravity || usage.InputIncludesCacheRead {
-		if cacheRead+creation > ordinaryInput {
+		if cacheRead > ordinaryInput {
 			return costRange{}, fmt.Errorf("%s usage %s has more cached than total input tokens", provider, label)
 		}
-		ordinaryInput -= cacheRead + creation
+		ordinaryInput -= cacheRead
+		if creation > ordinaryInput {
+			return costRange{}, fmt.Errorf("%s usage %s has more cached than total input tokens", provider, label)
+		}
+		ordinaryInput -= creation
 	}
 	// Legacy Grok CLI reports ordinary input and cache reads separately, while
 	// Antigravity and Grok ACP report input totals that include cache reads and

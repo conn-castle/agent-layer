@@ -217,6 +217,9 @@ func checkSessionMCPHandshakesReady(runDir string, servers []string, expectedNon
 		}
 		switch ownershipForIdentity(status.PID, status.ProcessStartIdentity) {
 		case ownershipOwned:
+			if processIsZombie(status.PID) {
+				return false, nil, fmt.Errorf("session MCP server %q exited before inference started", name)
+			}
 		case ownershipDead:
 			return false, nil, fmt.Errorf("session MCP server %q exited before inference started", name)
 		default:
@@ -228,6 +231,9 @@ func checkSessionMCPHandshakesReady(runDir string, servers []string, expectedNon
 			}
 			switch ownershipForIdentity(status.ChildPID, status.ChildStartIdentity) {
 			case ownershipOwned:
+				if processIsZombie(status.ChildPID) {
+					return false, nil, fmt.Errorf("session MCP server %q child process exited before inference started", name)
+				}
 			case ownershipDead:
 				return false, nil, fmt.Errorf("session MCP server %q child process exited before inference started", name)
 			default:
@@ -373,16 +379,49 @@ func runSessionMCPServerWithHandshake(rtDir, serverName, nonce, resolvedBinary s
 	if err != nil {
 		return failStartup(err, fmt.Sprintf("open stdin for session MCP server %q", serverName), "failed to open child stdin pipe")
 	}
-	childStdout, err := cmd.StdoutPipe()
+	childStdoutR, childStdoutW, err := os.Pipe()
 	if err != nil {
 		return failStartup(err, fmt.Sprintf("open stdout for session MCP server %q", serverName), "failed to open child stdout pipe")
 	}
+	defer func() { _ = childStdoutR.Close() }()
+	cmd.Stdout = childStdoutW
 	if err := cmd.Start(); err != nil {
+		_ = childStdoutW.Close()
 		return failStartup(err, fmt.Sprintf("start session MCP server %q (%q)", serverName, resolvedBinary), "failed to start server process")
 	}
+	_ = childStdoutW.Close()
 	status.ChildPID = cmd.Process.Pid
 	status.ChildStartIdentity = processStartIdentity(cmd.Process.Pid)
 	_ = writeSessionMCPHandshakeStatus(rtDir, status)
+
+	const childShutdownGrace = 2 * time.Second
+	var shutdownOnce sync.Once
+	var killTimerMu sync.Mutex
+	var killTimer *time.Timer
+	stopKillTimer := func() {
+		killTimerMu.Lock()
+		if killTimer != nil {
+			killTimer.Stop()
+		}
+		killTimerMu.Unlock()
+	}
+	defer stopKillTimer()
+	terminateChildBounded := func() {
+		shutdownOnce.Do(func() {
+			_ = childStdin.Close()
+			if cmd.Process != nil {
+				_ = cmd.Process.Signal(syscall.SIGTERM)
+			}
+			killTimerMu.Lock()
+			killTimer = time.AfterFunc(childShutdownGrace, func() {
+				if cmd.Process != nil {
+					_ = cmd.Process.Signal(syscall.SIGKILL)
+				}
+				_ = childStdoutR.Close()
+			})
+			killTimerMu.Unlock()
+		})
+	}
 
 	// Forward termination signals to the child so it is always reaped cleanly.
 	sigCh := make(chan os.Signal, 2)
@@ -439,31 +478,26 @@ func runSessionMCPServerWithHandshake(rtDir, serverName, nonce, resolvedBinary s
 						publish()
 					}
 					mu.Unlock()
-					if cmd.Process != nil {
-						_ = cmd.Process.Signal(syscall.SIGTERM)
-					}
+					terminateChildBounded()
 				}
 				return
 			}
 		}
 	}()
 
-	// Relay childStdout -> os.Stdout, recording validated initialize & tools/list
+	// Relay childStdoutR -> os.Stdout, recording validated initialize & tools/list
 	// outcomes AFTER forwarding the line. On os.Stdout write failure (EPIPE) or
-	// oversized frame, signal the child and drain childStdout to EOF before
-	// cmd.Wait per exec.Cmd.StdoutPipe contract so Wait can never deadlock.
+	// oversized frame, terminate the child with bounded SIGKILL escalation and
+	// pipe closure so a SIGTERM-ignoring server or descendant can never hang Wait.
 	stdoutDone := make(chan struct{})
 	go func() {
 		defer close(stdoutDone)
-		reader := bufio.NewReaderSize(childStdout, 64*1024)
+		reader := bufio.NewReaderSize(childStdoutR, 64*1024)
 		for {
 			line, readErr := readBoundedLine(reader, acpMaxFrameBytes)
 			if len(line) > 0 {
 				if _, writeErr := os.Stdout.Write(line); writeErr != nil {
-					_ = childStdin.Close()
-					if cmd.Process != nil {
-						_ = cmd.Process.Signal(syscall.SIGTERM)
-					}
+					terminateChildBounded()
 					_, _ = io.Copy(io.Discard, reader)
 					return
 				}
@@ -478,10 +512,7 @@ func runSessionMCPServerWithHandshake(rtDir, serverName, nonce, resolvedBinary s
 						publish()
 					}
 					mu.Unlock()
-					_ = childStdin.Close()
-					if cmd.Process != nil {
-						_ = cmd.Process.Signal(syscall.SIGTERM)
-					}
+					terminateChildBounded()
 					_, _ = io.Copy(io.Discard, reader)
 				}
 				return
@@ -491,6 +522,7 @@ func runSessionMCPServerWithHandshake(rtDir, serverName, nonce, resolvedBinary s
 
 	<-stdoutDone
 	waitErr := cmd.Wait()
+	stopKillTimer()
 
 	mu.Lock()
 	if (!status.Initialized || !status.ToolsListed) && !status.Failed {

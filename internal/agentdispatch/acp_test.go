@@ -3,6 +3,7 @@ package agentdispatch
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -540,7 +541,7 @@ func TestSessionMCPHandshakeRelayRecordsSuccessAndFailure(t *testing.T) {
 }
 
 func TestACPPermissionHardeningAndToolCallMetadataMerge(t *testing.T) {
-	// fetch follows AllowCommands; switch_mode is always benign.
+	// fetch and switch_mode follow AllowCommands (denied in none/mcp, allowed in commands/all/yolo).
 	for _, tc := range []struct {
 		mode      string
 		kind      string
@@ -551,8 +552,11 @@ func TestACPPermissionHardeningAndToolCallMetadataMerge(t *testing.T) {
 		{config.ApprovalModeCommands, "fetch", true},
 		{config.ApprovalModeAll, "fetch", true},
 		{config.ApprovalModeYOLO, "fetch", true},
-		{config.ApprovalModeNone, "switch_mode", true},
+		{config.ApprovalModeNone, "switch_mode", false},
+		{config.ApprovalModeMCP, "switch_mode", false},
+		{config.ApprovalModeCommands, "switch_mode", true},
 		{config.ApprovalModeAll, "switch_mode", true},
+		{config.ApprovalModeYOLO, "switch_mode", true},
 	} {
 		allowCmd := tc.mode == config.ApprovalModeCommands || tc.mode == config.ApprovalModeAll || tc.mode == config.ApprovalModeYOLO
 		got := acpShouldApproveTool(AgentGrok, acpLaunchConfig{
@@ -562,6 +566,38 @@ func TestACPPermissionHardeningAndToolCallMetadataMerge(t *testing.T) {
 		if got != tc.wantAllow {
 			t.Errorf("mode=%s kind=%s allow=%t, want %t", tc.mode, tc.kind, got, tc.wantAllow)
 		}
+	}
+
+	// Permission request Args must supersede cached RawInput so stale cached
+	// commands can never shadow the actual requested command.
+	cachedTool := trimACPPermissionToolForCache(acpPermissionTool{
+		ToolCallID: "tc-cmd",
+		Kind:       "execute",
+		RawInput:   map[string]any{"command": "git status", "huge_body": strings.Repeat("x", 1024)},
+	})
+	if _, retained := cachedTool.RawInput["huge_body"]; retained {
+		t.Fatal("trimACPPermissionToolForCache retained non-authorization payload key")
+	}
+	mergedCmd := mergeACPPermissionTool(cachedTool, acpPermissionTool{
+		ToolCallID: "tc-cmd",
+		Kind:       "execute",
+		Args:       map[string]any{"CommandLine": "rm -rf /"},
+	})
+	if acpShouldApproveTool(AgentAntigravity, acpLaunchConfig{
+		ApprovalsMode: config.ApprovalModeAll,
+		AllowCommands: true,
+		CommandsAllow: []string{"git status"},
+	}, mergedCmd) {
+		t.Fatal("stale cached RawInput allowed a disallowed request Args command")
+	}
+
+	// Tool-call cache must stay bounded at acpMaxCachedToolCalls.
+	var cacheClient acpClient
+	for i := range acpMaxCachedToolCalls + 25 {
+		cacheClient.cacheToolCall(fmt.Sprintf("tc-%d", i), acpPermissionTool{Kind: "other", Name: "mcp_wf_ping"})
+	}
+	if len(cacheClient.toolCalls) > acpMaxCachedToolCalls {
+		t.Fatalf("toolCalls cache grew to %d, want <= %d", len(cacheClient.toolCalls), acpMaxCachedToolCalls)
 	}
 
 	root := t.TempDir()

@@ -11,7 +11,10 @@ import (
 	"github.com/conn-castle/agent-layer/internal/projection"
 )
 
-const acpRPCMethodNotFound = -32601
+const (
+	acpRPCMethodNotFound = -32601
+	jsonCmdKey           = "cmd"
+)
 
 // acpLaunchConfig holds provider-agnostic ACP session parameters and
 // permission policy derived from Agent Layer project configuration.
@@ -57,13 +60,63 @@ func mergeACPPermissionTool(base, override acpPermissionTool) acpPermissionTool 
 	if override.Title != "" {
 		merged.Title = override.Title
 	}
-	if len(override.Args) > 0 {
+	// If the permission request supplies either Args or RawInput, treat its
+	// input as authoritative across both fields so stale cached RawInput can
+	// never shadow a request-supplied Args command (or vice versa).
+	if len(override.Args) > 0 || len(override.RawInput) > 0 {
 		merged.Args = override.Args
-	}
-	if len(override.RawInput) > 0 {
 		merged.RawInput = override.RawInput
 	}
 	return merged
+}
+
+func trimACPPermissionToolForCache(tool acpPermissionTool) acpPermissionTool {
+	trimmed := acpPermissionTool{
+		ToolCallID: tool.ToolCallID,
+		Name:       tool.Name,
+		Kind:       tool.Kind,
+		Title:      tool.Title,
+	}
+	if len(tool.Args) > 0 {
+		trimmed.Args = pickAuthToolFields(tool.Args)
+	}
+	if len(tool.RawInput) > 0 {
+		trimmed.RawInput = pickAuthToolFields(tool.RawInput)
+	}
+	return trimmed
+}
+
+func pickAuthToolFields(src map[string]any) map[string]any {
+	var dst map[string]any
+	copyString := func(key string) {
+		if val, ok := src[key].(string); ok && val != "" {
+			if dst == nil {
+				dst = make(map[string]any, 4)
+			}
+			dst[key] = val
+		}
+	}
+	for _, key := range []string{jsonCommandKey, "CommandLine", jsonCmdKey, "variant", "tool_name", "ServerName", "serverName"} {
+		copyString(key)
+	}
+	if nested, ok := src["tool_input"].(map[string]any); ok {
+		var nestedDst map[string]any
+		for _, key := range []string{jsonCommandKey, jsonCmdKey} {
+			if val, ok := nested[key].(string); ok && val != "" {
+				if nestedDst == nil {
+					nestedDst = make(map[string]any, 2)
+				}
+				nestedDst[key] = val
+			}
+		}
+		if len(nestedDst) > 0 {
+			if dst == nil {
+				dst = make(map[string]any, 1)
+			}
+			dst["tool_input"] = nestedDst
+		}
+	}
+	return dst
 }
 
 func acpToolLabel(tool acpPermissionTool) string {
@@ -105,6 +158,7 @@ func (c *acpClient) handleAgentRequest(msg acpJSONRPCMessage) error {
 	if tool.ToolCallID != "" && c.toolCalls != nil {
 		if cached, ok := c.toolCalls[tool.ToolCallID]; ok {
 			tool = mergeACPPermissionTool(cached, tool)
+			delete(c.toolCalls, tool.ToolCallID)
 		}
 	}
 	allow := acpShouldApproveTool(c.provider, c.cfg, tool)
@@ -154,9 +208,9 @@ func acpShouldApproveTool(provider string, cfg acpLaunchConfig, tool acpPermissi
 	// command or edit policy by spoofing an MCP-shaped title or payload.
 	kind := strings.ToLower(strings.TrimSpace(tool.Kind))
 	switch kind {
-	case "read", "search", "think", "switch_mode":
+	case "read", "search", "think":
 		return true
-	case "edit", "delete", "move", "fetch":
+	case "edit", "delete", "move", "fetch", "switch_mode":
 		return cfg.AllowCommands
 	case "execute":
 		if !cfg.AllowCommands {
@@ -261,13 +315,13 @@ func extractACPExecuteCommand(tool acpPermissionTool) string {
 		if m == nil {
 			continue
 		}
-		for _, key := range []string{jsonCommandKey, "CommandLine", "cmd"} {
+		for _, key := range []string{jsonCommandKey, "CommandLine", jsonCmdKey} {
 			if val, ok := m[key].(string); ok && strings.TrimSpace(val) != "" {
 				return strings.TrimSpace(val)
 			}
 		}
 		if nested, ok := m["tool_input"].(map[string]any); ok {
-			for _, key := range []string{jsonCommandKey, "cmd"} {
+			for _, key := range []string{jsonCommandKey, jsonCmdKey} {
 				if val, ok := nested[key].(string); ok && strings.TrimSpace(val) != "" {
 					return strings.TrimSpace(val)
 				}

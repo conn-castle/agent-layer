@@ -104,6 +104,9 @@ func resolvePathThroughExistingAncestors(path string) (string, error) {
 		if !errors.Is(evalErr, fs.ErrNotExist) {
 			return "", evalErr
 		}
+		if info, lerr := os.Lstat(cur); lerr == nil && info.Mode()&os.ModeSymlink != 0 { // #nosec G703 -- checking ancestor symlink status for workspace containment.
+			return "", fmt.Errorf("dangling symlink %q", cur)
+		}
 		parent := filepath.Dir(cur)
 		if parent == cur {
 			return "", evalErr

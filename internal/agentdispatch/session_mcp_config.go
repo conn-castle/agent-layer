@@ -519,7 +519,7 @@ func validateSessionMCPServersForProject(project *config.ProjectConfig, target t
 func antigravityNamespaceAmbiguous(a string, b string) bool {
 	na := strings.ReplaceAll(a, "-", "_")
 	nb := strings.ReplaceAll(b, "-", "_")
-	return strings.HasPrefix(a, b+"_") || strings.HasPrefix(b, a+"_") ||
+	return na == nb || strings.HasPrefix(a, b+"_") || strings.HasPrefix(b, a+"_") ||
 		strings.HasPrefix(na, nb+"_") || strings.HasPrefix(nb, na+"_")
 }
 

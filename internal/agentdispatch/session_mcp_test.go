@@ -1056,11 +1056,64 @@ func TestSessionMCPReviewHardeningRegressions(t *testing.T) {
 		t.Fatalf("server-to-client request mutated pending handshake: status=%#v pending=%v", hsStatus, pending)
 	}
 
-	// 8. Antigravity hyphen/underscore prefix collision rejected at preflight.
+	// 8. Antigravity hyphen/underscore prefix AND normalized equality collisions rejected at preflight.
 	agyTarget, _ := lookupTarget(AgentAntigravity)
 	project.Config.MCP.Servers = []config.MCPServer{{ID: "foo-bar", Enabled: boolPtr(true), Transport: config.TransportStdio, Command: "/bin/true"}}
 	if err := validateSessionMCPServersForProject(project, agyTarget, []SessionMCPServer{{Name: "foo", Command: "/bin/wf"}}); err == nil || !strings.Contains(err.Error(), "ambiguous Antigravity") {
 		t.Fatalf("expected Antigravity hyphen/underscore prefix rejection, got %v", err)
+	}
+	if err := validateSessionMCPServersForProject(project, agyTarget, []SessionMCPServer{{Name: "foo_bar", Command: "/bin/wf"}}); err == nil || !strings.Contains(err.Error(), "ambiguous Antigravity") {
+		t.Fatalf("expected Antigravity normalized equality rejection for foo_bar vs foo-bar, got %v", err)
+	}
+
+	// 9. Dangling symlink pointing into workspace fails closed in resolvePathThroughExistingAncestors.
+	danglingLink := filepath.Join(outside, "dangling-into-ws")
+	if err := os.Symlink(filepath.Join(ws, "not-yet-created"), danglingLink); err != nil {
+		t.Fatal(err)
+	}
+	if !pathWithinDir(filepath.Join(danglingLink, "leaf"), ws) {
+		t.Fatal("pathWithinDir failed to reject path through dangling symlink")
+	}
+
+	// 10. Zombie child process is rejected by checkSessionMCPHandshakesReady.
+	zombieRunDir := t.TempDir()
+	zombieCmd := exec.Command("true")
+	if err := zombieCmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = zombieCmd.Wait() }()
+	// Poll briefly until the unreaped child enters zombie state.
+	zombieDeadline := time.Now().Add(2 * time.Second)
+	for !processIsZombie(zombieCmd.Process.Pid) && time.Now().Before(zombieDeadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if processIsZombie(zombieCmd.Process.Pid) {
+		zombieRT, err := ensureSessionMCPRuntimeDir(zombieRunDir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		wrapperPID := os.Getpid()
+		wrapperStart := processStartIdentity(wrapperPID)
+		if err := writeJSONAtomic(filepath.Join(zombieRT, sessionMCPProcsFile), sessionMCPProcsDocument{
+			Processes: []sessionMCPProcess{{Server: "z", PID: wrapperPID, ProcessGroupID: wrapperPID, ProcessStartIdentity: wrapperStart}},
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if err := writeSessionMCPHandshakeStatus(zombieRT, sessionMCPHandshakeStatus{
+			Server:               "z",
+			Nonce:                "zn",
+			PID:                  wrapperPID,
+			ProcessStartIdentity: wrapperStart,
+			ChildPID:             zombieCmd.Process.Pid,
+			ChildStartIdentity:   processStartIdentity(zombieCmd.Process.Pid),
+			Initialized:          true,
+			ToolsListed:          true,
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if _, _, err := checkSessionMCPHandshakesReady(zombieRunDir, []string{"z"}, "zn"); err == nil || !strings.Contains(err.Error(), "child process exited") {
+			t.Fatalf("expected zombie child rejection, got %v", err)
+		}
 	}
 }
 
