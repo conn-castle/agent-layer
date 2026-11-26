@@ -1089,10 +1089,15 @@ func loadRunRecord(root string, id string) (RunRecord, error) {
 		return RunRecord{}, exitError(ExitUsage, fmt.Sprintf("dispatch run ID %q is invalid", id))
 	}
 	dir := filepathForRun(root, id)
+	path := filepath.Join(dir, dispatchRunFile)
 	var record RunRecord
-	if err := readJSON(filepath.Join(dir, dispatchRunFile), &record); err != nil {
+	if err := readJSON(path, &record); err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
-			return RunRecord{}, notFoundExitError(fmt.Sprintf("dispatch run %q was not found", id), errDispatchRunNotFound)
+			// A dangling symlink also returns not-exist when opened. Keep
+			// unreadable evidence distinct from a missing record.
+			if _, statErr := os.Lstat(path); errors.Is(statErr, fs.ErrNotExist) {
+				return RunRecord{}, notFoundExitError(fmt.Sprintf("dispatch run %q was not found", id), errDispatchRunNotFound)
+			}
 		}
 		return RunRecord{}, wrapExitError(ExitConfig, "read dispatch run record", err)
 	}

@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -1285,22 +1286,57 @@ func TestContinuationReservationKeepsSelectedAgedConversation(t *testing.T) {
 	}
 }
 
-func TestDanglingContinuationReservationDoesNotPreventPruning(t *testing.T) {
-	for _, id := range []string{"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", "../invalid"} {
-		t.Run(id, func(t *testing.T) {
+func TestMissingContinuationReservationDoesNotPreventPruning(t *testing.T) {
+	root := writeDispatchRepo(t, dispatchRepoConfig{})
+	session, _ := completedConversationForTest(t, root, AgentCodex, "dangling", false)
+	now := time.Now().UTC()
+	session.LastUsedAt = now.Add(-48 * time.Hour)
+	session.ContinuationReservationID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+	if err := persistSession(root, session); err != nil {
+		t.Fatal(err)
+	}
+	if err := pruneDispatchEvidence(root, now, 24*time.Hour); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := loadSession(root, session.Name); !errors.Is(err, errDispatchSessionNotFound) {
+		t.Fatalf("missing reservation prevented pruning: %v", err)
+	}
+}
+
+func TestUnreadableContinuationReservationPreventsPruningAndSettlement(t *testing.T) {
+	for _, corrupt := range []string{"malformed ID", "dangling symlink"} {
+		t.Run(corrupt, func(t *testing.T) {
 			root := writeDispatchRepo(t, dispatchRepoConfig{})
-			session, _ := completedConversationForTest(t, root, AgentCodex, "dangling", false)
+			session, _ := completedConversationForTest(t, root, AgentCodex, "unreadable", false)
+			reserved := reserveContinuationInTest(t, root, session.Name)
+			session.ContinuationReservationID = reserved.InvocationID
+			if corrupt == "malformed ID" {
+				session.ContinuationReservationID = "../invalid"
+			} else {
+				path := filepath.Join(filepathForRun(root, reserved.InvocationID), dispatchRunFile)
+				if err := os.Remove(path); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Symlink("missing-dispatch.json", path); err != nil {
+					t.Fatal(err)
+				}
+			}
 			now := time.Now().UTC()
 			session.LastUsedAt = now.Add(-48 * time.Hour)
-			session.ContinuationReservationID = id
 			if err := persistSession(root, session); err != nil {
 				t.Fatal(err)
 			}
 			if err := pruneDispatchEvidence(root, now, 24*time.Hour); err != nil {
 				t.Fatal(err)
 			}
-			if _, err := loadSession(root, session.Name); !errors.Is(err, errDispatchSessionNotFound) {
-				t.Fatalf("dangling reservation prevented pruning: %v", err)
+			err := Reserve(ReserveOptions{Root: root, ContinueHandle: &session.Name})
+			requireDispatchExitCode(t, err, ExitConfig)
+			requireDispatchExitCode(t, Continue(ContinueOptions{
+				Root: root, Handle: session.Name, Prompt: "second turn", Env: []string{},
+			}), ExitConfig)
+			mapping, err := loadSession(root, session.Name)
+			if err != nil || mapping.ContinuationReservationID != session.ContinuationReservationID {
+				t.Fatalf("unreadable reservation mapping was lost: %#v, %v", mapping, err)
 			}
 		})
 	}
@@ -1444,7 +1480,7 @@ func TestContinuationReservationExpiresDuringClaimPreparation(t *testing.T) {
 		record, _, claimed, err := claimContinuationReservation(root, session.Name, reserved.InvocationID, func(r *RunRecord, _ Session, _ RunRecord) {
 			time.Sleep(time.Until(deadline))
 			r.ProviderVersion = "launch metadata"
-		})
+		}, writeJSONAtomic)
 		if err != nil || claimed || record.LaunchDigest != "" || record.ProviderVersion != "" {
 			t.Fatalf("expired reservation recorded a claim: %#v, claimed %v, err %v", record, claimed, err)
 		}
@@ -1460,28 +1496,20 @@ func TestContinuationReservationMappingWriteFailureIsRetrySafe(t *testing.T) {
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	session, predecessor := completedConversationForTest(t, root, AgentCodex, "inherited", false)
 	reserved := reserveContinuationInTest(t, root, session.Name)
-	path, err := sessionPath(root, session.Name)
-	if err != nil {
-		t.Fatal(err)
-	}
-	backup := path + ".backup"
-	_, _, claimed, err := claimContinuationReservation(root, session.Name, reserved.InvocationID, func(r *RunRecord, mapping Session, _ RunRecord) {
+	competing := make(chan error, 1)
+	result, _, claimed, err := claimContinuationReservation(root, session.Name, reserved.InvocationID, func(r *RunRecord, mapping Session, _ RunRecord) {
 		r.ProviderSessionID = mapping.ProviderSessionID
-		if err := os.Rename(path, backup); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.Mkdir(path, 0o700); err != nil {
-			t.Fatal(err)
-		}
+	}, func(string, any) error {
+		go func() {
+			competing <- Reserve(ReserveOptions{Root: root, ContinueHandle: &session.Name})
+		}()
+		return syscall.ENOSPC
 	})
-	if err == nil || !claimed {
-		t.Fatalf("expected a durable claim followed by a mapping save failure: %v, %v", claimed, err)
+	if !errors.Is(err, syscall.ENOSPC) || !claimed || result.State != dispatchStateFailed || !result.TerminationConfirmed {
+		t.Fatalf("expected a terminal claim with the mapping save error: %#v, %v, %v", result, claimed, err)
 	}
-	if err := os.Remove(path); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Rename(backup, path); err != nil {
-		t.Fatal(err)
+	if err := <-competing; err != nil {
+		t.Fatalf("competing reserve could not recover the failed claim: %v", err)
 	}
 	record, err := loadRunRecord(root, reserved.InvocationID)
 	if err != nil || record.State != dispatchStateFailed || record.RecoveryState != recoveryRetrySafe ||

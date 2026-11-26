@@ -24,11 +24,7 @@ import (
 // either error alone would hide material recovery state from the caller.
 func finishRejectedResume(run *dispatchRun, claimErr error, publish func(string, *RunRecord) error) error {
 	now := time.Now().UTC()
-	run.Record.State = dispatchStateFailed
-	run.Record.RecoveryState = recoveryRetrySafe
-	run.Record.CompletedAt = &now
-	run.Record.TerminalReason = claimErr.Error()
-	run.Record.TerminalExitCode = terminalExitCode(claimErr)
+	setDispatchFailure(&run.Record, claimErr, recoveryRetrySafe, now)
 	applyTerminationEvidence(&run.Record, nil, true, now)
 	if err := publish(run.Dir, &run.Record); err != nil {
 		return wrapExitError(ExitConfig, "resume claim rejected; publish rejected resume terminal evidence", errors.Join(claimErr, err))
@@ -171,7 +167,7 @@ func executeDispatch(request dispatchExecution) error {
 		}
 		result, err := executeProvider(command, request.Prompt, request.Run, request.Root, request.NewCommand, persist)
 		if err != nil {
-			if isSafePreStartFailure(err) && attempt == 1 {
+			if attempt == 1 && isSafePreStartFailure(request.Run.Record, err) {
 				if cleanupErr := removeDispatchPrompt(request); cleanupErr != nil {
 					return recordDispatchFailure(request, errors.Join(err, cleanupErr))
 				}
@@ -283,16 +279,11 @@ func recordDispatchFailure(request dispatchExecution, cause error) error {
 		return finishDispatchCancellation(request)
 	}
 	now := time.Now().UTC()
-	request.Run.Record.State = dispatchStateFailed
-	switch {
-	case isSafePreStartFailure(cause):
-		request.Run.Record.RecoveryState = recoveryRetrySafe
-	default:
-		request.Run.Record.RecoveryState = recoveryAcceptanceUnknown
+	recovery := recoveryAcceptanceUnknown
+	if isSafePreStartFailure(request.Run.Record, cause) {
+		recovery = recoveryRetrySafe
 	}
-	request.Run.Record.CompletedAt = &now
-	request.Run.Record.TerminalReason = cause.Error()
-	request.Run.Record.TerminalExitCode = terminalExitCode(cause)
+	setDispatchFailure(&request.Run.Record, cause, recovery, now)
 	request.Run.Record.LaunchFenced = true
 	writeErr := writeRunRecord(request.Run.Dir, &request.Run.Record)
 	if writeErr == nil {
@@ -315,6 +306,14 @@ func recordDispatchFailure(request dispatchExecution, cause error) error {
 		}
 	}
 	return cause
+}
+
+func setDispatchFailure(record *RunRecord, cause error, recovery string, now time.Time) {
+	record.State = dispatchStateFailed
+	record.RecoveryState = recovery
+	record.CompletedAt = &now
+	record.TerminalReason = cause.Error()
+	record.TerminalExitCode = terminalExitCode(cause)
 }
 
 func persistUnprovenFailure(request dispatchExecution, cause error) error {
@@ -407,7 +406,12 @@ func terminalExitCode(err error) int {
 	return 1
 }
 
-func isSafePreStartFailure(err error) bool {
+func isSafePreStartFailure(record RunRecord, err error) bool {
+	// If clearing launch intent failed, the joined error can still contain a
+	// preStartFailure. Durable launch evidence takes precedence.
+	if record.ProviderLaunchIntent || record.PID != 0 || record.ProcessGroupID != 0 || record.ProcessStartIdentity != "" {
+		return false
+	}
 	var start *preStartFailure
 	return errors.As(err, &start)
 }

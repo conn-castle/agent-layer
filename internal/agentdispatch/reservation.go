@@ -193,7 +193,7 @@ func continueReservation(opts ContinueOptions) error {
 		if claudeLineage {
 			current.LineagePath = filepath.Join(filepathForRun(opts.Root, current.ID), "provider.lineage")
 		}
-	})
+	}, writeJSONAtomic)
 	if err != nil {
 		return err
 	}
@@ -404,12 +404,11 @@ func checkContinuationEligible(root string, session Session, current RunRecord) 
 	return target, nil
 }
 
-// A missing or malformed reservation ID cannot refer to a retained run.
-// Preserve other read errors so corrupt evidence is never silently discarded.
+// A missing reservation record can be cleared. Malformed IDs and unreadable
+// records require diagnosis, so keep their session mappings.
 func loadContinuationReservation(root string, id string) (RunRecord, error) {
-	validID := parseUUID(id) == nil
-	if !validID {
-		return RunRecord{}, nil
+	if err := parseUUID(id); err != nil {
+		return RunRecord{}, wrapExitError(ExitConfig, fmt.Sprintf("invalid dispatch continuation reservation ID %q", id), err)
 	}
 	record, err := loadRunRecord(root, id)
 	if errors.Is(err, errDispatchRunNotFound) {
@@ -550,12 +549,16 @@ func reconcileCurrentSessionRunLocked(root string, session *Session, now time.Ti
 // the global lock order), re-checks expiry and eligibility, transitions the
 // reservation from reserved to pending, and switches the conversation's active
 // claim to it.
-func claimContinuationReservation(root string, name string, id string, launch func(*RunRecord, Session, RunRecord)) (RunRecord, Session, bool, error) {
+func claimContinuationReservation(root string, name string, id string, launch func(*RunRecord, Session, RunRecord), publishSession func(string, any) error) (RunRecord, Session, bool, error) {
 	var record RunRecord
 	var claimedSession Session
 	claimed := false
 	dir := filepathForRun(root, id)
-	err := withSessionLock(root, name, func() error {
+	path, err := sessionPath(root, name)
+	if err != nil {
+		return record, claimedSession, claimed, err
+	}
+	err = withSessionLock(root, name, func() error {
 		return withRunLock(dir, func() error {
 			current, err := loadRunRecord(root, id)
 			if err != nil {
@@ -617,23 +620,29 @@ func claimContinuationReservation(root string, name string, id string, launch fu
 			session.ActiveClaimKnown = true
 			session.RunID = id
 			session.LastUsedAt = record.StartedAt
-			path, err := sessionPath(root, name)
-			if err != nil {
-				return err
-			}
-			if err := writeJSONAtomic(path, session); err != nil {
-				return wrapExitError(ExitConfig, "claim reserved continuation mapping", err)
+			if err := publishSession(path, session); err != nil {
+				claimErr := wrapExitError(ExitConfig, "claim reserved continuation mapping", err)
+				// The claim is consumed. Publish its pre-launch failure
+				// before releasing either lock so waiting callers can recover.
+				failed, persistErr := applyRunEvidenceLocked(dir, func(r *RunRecord) error {
+					now := time.Now().UTC()
+					setDispatchFailure(r, claimErr, recoveryRetrySafe, now)
+					applyTerminationEvidence(r, nil, true, now)
+					return nil
+				})
+				if persistErr != nil {
+					return errors.Join(claimErr, persistErr)
+				}
+				record = failed
+				if record.TerminationConfirmed {
+					return errors.Join(claimErr, releaseConversationLocked(root, record))
+				}
+				return claimErr
 			}
 			claimedSession = session
 			return nil
 		})
 	})
-	if claimed && err != nil {
-		// The run claim was persisted but the session mapping update failed.
-		// A worker was never launched, even if this run inherited a provider ID.
-		run := &dispatchRun{Record: record, Dir: dir}
-		err = finishDispatchFailure(dispatchExecution{Root: root, Run: run, Session: Session{Name: name}}, &preStartFailure{err: err})
-	}
 	return record, claimedSession, claimed, err
 }
 

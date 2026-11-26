@@ -508,6 +508,45 @@ func TestPreStartFailureDowngradesUnstartedDurableMapping(t *testing.T) {
 	}
 }
 
+func TestResumeFailureWithUnclearedLaunchIntentIsNotRetrySafe(t *testing.T) {
+	root := t.TempDir()
+	run, err := newDispatchRun(root, AgentCodex, supportedProviderVersions[AgentCodex], dispatchModeResume)
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := reserveSession(root, run, testDispatchSessionRetention)
+	if err != nil {
+		t.Fatal(err)
+	}
+	run.Record.State = dispatchStateStarting
+	run.Record.ProviderSessionID = "inherited-provider-id"
+	run.Record.ProviderLaunchIntent = true
+	if err := writeRunRecord(run.Dir, &run.Record); err != nil {
+		t.Fatal(err)
+	}
+	// This is the evidence and error shape left when cmd.Start and persisting
+	// clearance of its launch intent both fail.
+	cause := errors.Join(
+		&preStartFailure{err: exitError(ExitTargetFailure, "provider start failed")},
+		exitError(ExitConfig, "clear dispatch launch intent after start failure"),
+	)
+	if isSafePreStartFailure(run.Record, cause) {
+		t.Fatal("a worker could retry while launch intent is still recorded")
+	}
+	err = finishDispatchFailure(dispatchExecution{Root: root, Run: run, Session: session, Mode: dispatchModeResume}, cause)
+	requireDispatchExitCode(t, err, ExitTargetFailure)
+	record, err := loadRunRecord(root, run.Record.ID)
+	if err != nil || record.State != dispatchStateFailed || record.RecoveryState != recoveryAcceptanceUnknown ||
+		!record.ProviderLaunchIntent || !record.LaunchFenced || record.TerminationConfirmed ||
+		record.TerminationObservation != terminationObservationUncertainLaunch {
+		t.Fatalf("uncertain launch evidence was lost: %#v, %v", record, err)
+	}
+	mapping, err := loadSession(root, session.Name)
+	if err != nil || mapping.ActiveRunID != run.Record.ID {
+		t.Fatalf("uncertain launch released the conversation: %#v, %v", mapping, err)
+	}
+}
+
 func TestWorkerPublishesPreStartOwnershipRefusal(t *testing.T) {
 	for _, attempt := range []string{"initial", "retry"} {
 		t.Run(attempt, func(t *testing.T) {
