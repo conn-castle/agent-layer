@@ -314,8 +314,8 @@ func TestCrossProviderShutdownSnapshots(t *testing.T) {
 		{AgentCodex, `{"type":"thread.started","thread_id":"` + runtimeSessionID + `"}
 {"type":"agent_message","message":"private captured answer"}
 {"type":"turn.completed"}`, true},
-		{AgentGrok, `{"type":"text","data":"private captured answer"}
-{"type":"end","session_id":"` + runtimeSessionID + `","stopReason":"end_turn"}`, true},
+		{AgentMuse, `{"schema_version":1,"stream":{"kind":"session","id":"` + runtimeSessionID + `"},"payload_type":"session.run.linked","payload":{"kind":"session_run_linked","command_id":"root-1","run_stream":{"kind":"run","id":"root-1"}}}
+{"schema_version":1,"stream":{"kind":"session","id":"` + runtimeSessionID + `"},"payload_type":"run.terminal.completed","payload":{"kind":"run_terminal","command_id":"root-1","run_stream":{"kind":"run","id":"root-1"},"terminal":"completed","text":"private captured answer"}}`, true},
 		{AgentClaude, `{"type":"result","session_id":"` + runtimeSessionID + `","is_error":false,"result":"private captured answer"}`, true},
 		{AgentCodex, `{"type":"agent_message","message":"private captured answer"}`, false},
 		{AgentClaude, `{"type":"content_block_delta","delta":{"type":"text_delta","text":"private captured answer"}}`, false},

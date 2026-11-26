@@ -7,38 +7,50 @@ import (
 )
 
 type targetMeta struct {
-	Name               string
-	Binary             string
-	SkillPrefix        string
-	SharedSkillProject bool
+	Name                       string
+	Binary                     string
+	SkillPrefix                string
+	SharedSkillProject         bool
+	SessionMCPServersSupported bool
+	SessionMCPServersReason    string
 }
 
 func targetRegistry() []targetMeta {
 	return []targetMeta{
 		{
-			Name:               AgentCodex,
-			Binary:             AgentCodex,
-			SkillPrefix:        "$",
-			SharedSkillProject: true,
+			Name:                       AgentCodex,
+			Binary:                     AgentCodex,
+			SkillPrefix:                "$",
+			SharedSkillProject:         true,
+			SessionMCPServersSupported: true,
 		},
 		{
-			Name:        AgentClaude,
-			Binary:      AgentClaude,
-			SkillPrefix: "/",
+			Name:                       AgentClaude,
+			Binary:                     AgentClaude,
+			SkillPrefix:                "/",
+			SessionMCPServersSupported: true,
 		},
 		{
-			Name:               AgentAntigravity,
-			Binary:             "agy",
-			SkillPrefix:        "/",
-			SharedSkillProject: true,
+			Name:                       AgentAntigravity,
+			Binary:                     "agy",
+			SkillPrefix:                "/",
+			SharedSkillProject:         true,
+			SessionMCPServersSupported: true,
 		},
 		{
-			Name:               AgentGrok,
-			Binary:             AgentGrok,
-			SkillPrefix:        "/",
-			SharedSkillProject: true,
+			Name:                       AgentGrok,
+			Binary:                     AgentGrok,
+			SkillPrefix:                "/",
+			SharedSkillProject:         true,
+			SessionMCPServersSupported: true,
 		},
-		{Name: AgentMuse, Binary: AgentMuse, SkillPrefix: "/", SharedSkillProject: true},
+		{
+			Name:                       AgentMuse,
+			Binary:                     AgentMuse,
+			SkillPrefix:                "/",
+			SharedSkillProject:         true,
+			SessionMCPServersSupported: true,
+		},
 	}
 }
 

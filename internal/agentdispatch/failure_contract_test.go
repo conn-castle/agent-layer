@@ -8,7 +8,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 )
@@ -108,35 +107,6 @@ func TestRunnerFailsLoudlyForProviderAndCaptureFailures(t *testing.T) {
 	requireDispatchExitCode(t, err, ExitTargetFailure)
 	if elapsed := time.Since(publicationStarted); elapsed > terminationTestDeadline {
 		t.Fatalf("fenced launch after a concurrent record write waited %s", elapsed)
-	}
-
-	timeoutRun := newRun(t)
-	timeoutLog := filepath.Join(timeoutRun.Dir, "antigravity.log")
-	if err := os.WriteFile(timeoutLog, []byte("Error: timeout waiting for response\n"), 0o600); err != nil {
-		t.Fatalf("write timeout log: %v", err)
-	}
-	_, err = executeProvider(providerCommand{Path: "/bin/sh", Args: []string{"-c", `printf '{"event":"result","result":{"status":"SUCCESS","conversation_id":"conversation","response":"answer","usage":{"input_tokens":1}}}\n'`}, Env: os.Environ(), Provider: AgentAntigravity, LogPath: timeoutLog}, nil, timeoutRun, root, nil, func(string) error { return nil })
-	requireDispatchExitCode(t, err, ExitTargetFailure)
-	if timedOut, readErr := antigravityTimeoutReported(timeoutRun.Record.StderrPath, filepath.Join(root, "missing-log")); readErr == nil || timedOut {
-		t.Fatalf("missing Antigravity diagnostics = timedOut %t, error %v", timedOut, readErr)
-	}
-	if err := os.WriteFile(timeoutRun.Record.StderrPath, []byte("Error: timeout waiting for response\n"), 0o600); err != nil {
-		t.Fatalf("write timeout stderr: %v", err)
-	}
-	if timedOut, readErr := antigravityTimeoutReported(timeoutRun.Record.StderrPath, filepath.Join(root, "missing-log")); readErr == nil || timedOut {
-		t.Fatalf("timeout stderr with missing Antigravity log = timedOut %t, error %v", timedOut, readErr)
-	}
-	boundaryLog := filepath.Join(root, "boundary-timeout.log")
-	boundaryStderr := filepath.Join(root, "boundary-stderr.log")
-	boundaryDiagnostic := strings.Repeat("x", 64*1024-10) + "Error: timeout waiting for response"
-	if err := os.WriteFile(boundaryStderr, nil, 0o600); err != nil {
-		t.Fatalf("write boundary stderr: %v", err)
-	}
-	if err := os.WriteFile(boundaryLog, []byte(boundaryDiagnostic), 0o600); err != nil {
-		t.Fatalf("write boundary timeout log: %v", err)
-	}
-	if timedOut, readErr := antigravityTimeoutReported(boundaryStderr, boundaryLog); readErr != nil || !timedOut {
-		t.Fatalf("boundary-spanning Antigravity timeout = timedOut %t, error %v", timedOut, readErr)
 	}
 
 	if err := replayAnswer(filepath.Join(root, "missing-answer"), io.Discard); err == nil {

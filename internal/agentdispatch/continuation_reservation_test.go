@@ -1548,7 +1548,7 @@ func TestContinuationRepairsProvisionalSessionAfterTerminalWrite(t *testing.T) {
 			run.Record.LaunchFenced = true
 			if reserved {
 				// Simulate both writes finishing before mapping cleanup.
-				applyTerminationConfirmation(&run.Record, now)
+				applyTerminationConfirmationInDir(run.Dir, &run.Record, now)
 			}
 			if err := writeRunRecord(run.Dir, &run.Record); err != nil {
 				t.Fatal(err)

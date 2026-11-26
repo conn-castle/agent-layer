@@ -58,7 +58,7 @@ func Inspect(request InspectRequest) error {
 			if !terminalDispatchState(current.State) || current.TerminationConfirmed {
 				return nil
 			}
-			applyTerminationEvidence(current, nil, true, time.Now().UTC())
+			applyTerminationEvidenceInDir(dir, current, nil, true, time.Now().UTC())
 			return nil
 		})
 		if persistErr != nil {

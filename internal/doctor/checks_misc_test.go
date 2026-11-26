@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/conn-castle/agent-layer/internal/clients/grok"
 	"github.com/conn-castle/agent-layer/internal/clients/muse"
 	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/messages"
@@ -637,10 +638,10 @@ func TestCheckGrokBinary(t *testing.T) {
 	t.Run("ok at tested pin", func(t *testing.T) {
 		lookPathFunc = func(file string) (string, error) { return "/test/bin/grok", nil }
 		commandOutputFunc = func(_ context.Context, name string, args ...string) ([]byte, error) {
-			return []byte("grok 1.0.5 (deadbeef) [stable]\n"), nil
+			return []byte("grok " + grok.SupportedVersion + " (deadbeef) [stable]\n"), nil
 		}
 		results := CheckGrokBinary(context.Background())
-		if len(results) != 1 || results[0].Status != StatusOK || results[0].Message != "Grok version OK: 1.0.5" {
+		if len(results) != 1 || results[0].Status != StatusOK || results[0].Message != "Grok version OK: "+grok.SupportedVersion {
 			t.Fatalf("unexpected result: %#v", results)
 		}
 	})

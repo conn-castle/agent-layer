@@ -121,6 +121,7 @@ func newDispatchReserveCmd() *cobra.Command {
 
 func newDispatchStartCmd() *cobra.Command {
 	var agent, model, effort, role, skill, prompt, promptFile, reservation string
+	var mcpConfigs []string
 	cmd := &cobra.Command{
 		Use:          dispatchStartCommand,
 		Short:        "Start a new asynchronous agent conversation",
@@ -134,7 +135,8 @@ func newDispatchStartCmd() *cobra.Command {
 			opts := agentdispatch.StartOptions{
 				Context: cmd.Context(), Root: root, WorkDir: workingDir, Agent: agent, Model: model,
 				ReasoningEffort: effort, Role: role, Skill: skill, Prompt: prompt, PromptFile: promptFile,
-				Stdout: cmd.OutOrStdout(), Stderr: cmd.ErrOrStderr(), Env: os.Environ(),
+				MCPConfigs: mcpConfigs,
+				Stdout:     cmd.OutOrStdout(), Stderr: cmd.ErrOrStderr(), Env: os.Environ(),
 			}
 			// A present but empty --reservation (such as an unset shell
 			// variable) must fail as unknown, never fall back to a plain start.
@@ -150,6 +152,7 @@ func newDispatchStartCmd() *cobra.Command {
 	cmd.Flags().StringVar(&role, "role", "", messages.DispatchRoleFlag)
 	cmd.Flags().StringVar(&skill, "skill", "", messages.DispatchSkillFlag)
 	cmd.Flags().StringVar(&reservation, "reservation", "", messages.DispatchReservationFlag)
+	cmd.Flags().StringArrayVar(&mcpConfigs, "mcp-config", nil, messages.DispatchMCPConfigFlag)
 	addDispatchPromptFlags(cmd, &prompt, &promptFile)
 	return cmd
 }
@@ -284,6 +287,30 @@ func newDispatchWorkerCmd() *cobra.Command {
 	cmd.Flags().StringVar(&runID, "run", "", "")
 	_ = cmd.MarkFlagRequired("root")
 	_ = cmd.MarkFlagRequired("run")
+	return cmd
+}
+
+func newDispatchSessionMCPCmd() *cobra.Command {
+	var runDir, server, specPath, digest string
+	var verifyHandshake bool
+	cmd := &cobra.Command{
+		Use:          "__dispatch-session-mcp",
+		Hidden:       true,
+		Args:         cobra.NoArgs,
+		SilenceUsage: true,
+		RunE: func(_ *cobra.Command, _ []string) error {
+			return agentdispatch.RunSessionMCPServerWithOptions(runDir, server, specPath, digest, verifyHandshake)
+		},
+	}
+	cmd.Flags().StringVar(&runDir, "run-dir", "", "")
+	cmd.Flags().StringVar(&server, "server", "", "")
+	cmd.Flags().StringVar(&specPath, "spec", "", "")
+	cmd.Flags().StringVar(&digest, "digest", "", "")
+	cmd.Flags().BoolVar(&verifyHandshake, "verify-handshake", false, "")
+	_ = cmd.MarkFlagRequired("run-dir")
+	_ = cmd.MarkFlagRequired("server")
+	_ = cmd.MarkFlagRequired("spec")
+	_ = cmd.MarkFlagRequired("digest")
 	return cmd
 }
 

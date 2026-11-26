@@ -1,7 +1,6 @@
 package agentdispatch
 
 import (
-	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -237,24 +236,35 @@ func executeProvider(
 		cmd.Dir = root
 	}
 	cmd.Env = command.Env
-	// A file avoids exec's stdin-copy goroutine, which can outlive the leader
-	// when a descendant inherits an unread pipe. Unlink it while open so the
-	// prompt is not left behind as another durable artifact.
-	stdin, err := os.CreateTemp(run.Dir, "provider-stdin-*")
-	if err != nil {
-		return executionResult{}, wrapExitError(ExitConfig, "create dispatch provider stdin", err)
+	var acpStdinRead, acpStdinWrite *os.File
+	if command.UseACP {
+		acpStdinRead, acpStdinWrite, err = os.Pipe()
+		if err != nil {
+			return executionResult{}, wrapExitError(ExitTargetFailure, "open dispatch ACP stdin", err)
+		}
+		defer func() { _ = acpStdinRead.Close() }()
+		defer func() { _ = acpStdinWrite.Close() }()
+		cmd.Stdin = acpStdinRead
+	} else {
+		// A file avoids exec's stdin-copy goroutine, which can outlive the leader
+		// when a descendant inherits an unread pipe. Unlink it while open so the
+		// prompt is not left behind as another durable artifact.
+		stdin, err := os.CreateTemp(run.Dir, "provider-stdin-*")
+		if err != nil {
+			return executionResult{}, wrapExitError(ExitConfig, "create dispatch provider stdin", err)
+		}
+		defer func() { _ = stdin.Close() }()
+		if err := os.Remove(stdin.Name()); err != nil {
+			return executionResult{}, wrapExitError(ExitConfig, "unlink dispatch provider stdin", err)
+		}
+		if _, err := stdin.Write(prompt); err != nil {
+			return executionResult{}, wrapExitError(ExitConfig, "write dispatch provider stdin", err)
+		}
+		if _, err := stdin.Seek(0, io.SeekStart); err != nil {
+			return executionResult{}, wrapExitError(ExitConfig, "rewind dispatch provider stdin", err)
+		}
+		cmd.Stdin = stdin
 	}
-	defer func() { _ = stdin.Close() }()
-	if err := os.Remove(stdin.Name()); err != nil {
-		return executionResult{}, wrapExitError(ExitConfig, "unlink dispatch provider stdin", err)
-	}
-	if _, err := stdin.Write(prompt); err != nil {
-		return executionResult{}, wrapExitError(ExitConfig, "write dispatch provider stdin", err)
-	}
-	if _, err := stdin.Seek(0, io.SeekStart); err != nil {
-		return executionResult{}, wrapExitError(ExitConfig, "rewind dispatch provider stdin", err)
-	}
-	cmd.Stdin = stdin
 	// Own the pipes so cmd.Wait can observe process exit independently without
 	// closing output that the structured reader has not consumed yet.
 	stdoutPipe, stdoutWrite, err := os.Pipe()
@@ -316,6 +326,9 @@ func executeProvider(
 			return executionResult{}, errors.Join(err, stopErr)
 		}
 		return executionResult{}, err
+	}
+	if acpStdinRead != nil {
+		_ = acpStdinRead.Close()
 	}
 	_ = stdoutWrite.Close()
 	_ = stderrWrite.Close()
@@ -499,7 +512,7 @@ func executeProvider(
 	streamErr := make(chan error, 1)
 	stderrErr := make(chan error, 1)
 	go func() {
-		err := readStructuredEventsWithLineage(stdoutPipe, providerStdout, command.Provider, command.SessionID, command.ClaudeLineage, func(event providerEvent) error {
+		consumeProviderEvent := func(event providerEvent) error {
 			resultMu.Lock()
 			lastEvent = event
 			resultMu.Unlock()
@@ -514,25 +527,31 @@ func executeProvider(
 				}
 			}
 			return consume(event)
-		}, func(evidence claudeLineageEvidence) error {
-			encoded, marshalErr := json.Marshal(evidence)
-			if marshalErr != nil {
-				return marshalErr
-			}
-			if _, writeErr := lineage.Write(append(encoded, '\n')); writeErr != nil {
-				return writeErr
-			}
-			activity := "claude_lineage_invalid"
-			switch evidence.Kind {
-			case lineageKindToolUse:
-				activity = "claude_agent_tool_use"
-			case lineageKindTaskStarted:
-				activity = "claude_task_started"
-			case lineageKindTaskTerminal:
-				activity = "claude_task_" + evidence.Status
-			}
-			return consume(providerEvent{Kind: eventProgress, Activity: activity})
-		}, command.MuseBaseline)
+		}
+		var err error
+		if command.UseACP {
+			err = runACPDispatch(acpStdinWrite, stdoutPipe, providerStdout, command, prompt, root, run, consumeProviderEvent)
+		} else {
+			err = readStructuredEventsWithSessionMCP(stdoutPipe, providerStdout, command.Provider, command.SessionID, command.ClaudeLineage, command.SessionMCPServers, consumeProviderEvent, func(evidence claudeLineageEvidence) error {
+				encoded, marshalErr := json.Marshal(evidence)
+				if marshalErr != nil {
+					return marshalErr
+				}
+				if _, writeErr := lineage.Write(append(encoded, '\n')); writeErr != nil {
+					return writeErr
+				}
+				activity := "claude_lineage_invalid"
+				switch evidence.Kind {
+				case lineageKindToolUse:
+					activity = "claude_agent_tool_use"
+				case lineageKindTaskStarted:
+					activity = "claude_task_started"
+				case lineageKindTaskTerminal:
+					activity = "claude_task_" + evidence.Status
+				}
+				return consume(providerEvent{Kind: eventProgress, Activity: activity})
+			}, command.MuseBaseline)
+		}
 		stdoutDrained.Store(err == nil)
 		stdoutReaderDone.Store(true)
 		if err != nil {
@@ -550,10 +569,28 @@ func executeProvider(
 		stderrErr <- err
 	}()
 
+	var (
+		sessionMCPOnce sync.Once
+		sessionMCPDone = make(chan struct{})
+		sessionMCPErr  error
+	)
+	stopSessionMCPAsync := func() {
+		sessionMCPOnce.Do(func() {
+			go func() {
+				defer close(sessionMCPDone)
+				sessionMCPErr = closeAndTerminateSessionMCPProcesses(run.Dir, providerTerminationGrace)
+			}()
+		})
+	}
 	streamResult, stderrResult, waitErr, terminationErr := awaitProviderCompletion(
 		cmd, termination, leaderPID, leaderGroupID, leaderStart,
-		stdoutPipe, stderrPipe, streamErr, stderrErr, terminal, setFailure, semanticComplete, reportLifecycle,
+		stdoutPipe, stderrPipe, streamErr, stderrErr, terminal, setFailure, semanticComplete, reportLifecycle, stopSessionMCPAsync,
 	)
+	stopSessionMCPAsync()
+	<-sessionMCPDone
+	if sessionMCPErr != nil {
+		terminationErr = errors.Join(terminationErr, sessionMCPErr)
+	}
 	if err := approvalObserver.stop(); err != nil {
 		setFailure(err)
 	}
@@ -584,15 +621,6 @@ func executeProvider(
 	}
 	if primaryErr != nil {
 		return executionResult{}, primaryErr
-	}
-	if command.Provider == AgentAntigravity {
-		timedOut, err := antigravityTimeoutReported(run.Record.StderrPath, command.LogPath)
-		if err != nil {
-			return executionResult{}, wrapExitError(ExitTargetFailure, "inspect Antigravity terminal diagnostics", err)
-		}
-		if timedOut {
-			return executionResult{}, exitError(ExitTargetFailure, "antigravity reported terminal failure: Error: timeout waiting for response")
-		}
 	}
 	if !result.Complete || !result.AnswerSeen || result.SessionID == "" {
 		return executionResult{}, withProviderDiagnostic(exitError(ExitTargetFailure, fmt.Sprintf("%s dispatch completed without required terminal result, session ID, and final answer", command.Provider)), diagnostic)
@@ -632,6 +660,7 @@ func awaitProviderCompletion(
 	setFailure func(error),
 	semanticComplete func() bool,
 	reportLifecycle func(providerLifecycleSnapshot) error,
+	onLeaderStopped func(),
 ) (streamResult, stderrResult, waitErr, terminationErr error) {
 	wait := &providerWaitState{
 		cmd:             cmd,
@@ -672,7 +701,12 @@ func awaitProviderCompletion(
 			wait.shutdownTimer, wait.shutdownDeadline = nil, nil
 			wait.shutdownTrigger, wait.triggeredAt, wait.deadlineAt = "", nil, nil
 		}
-		wait.observeLeader(func() { startShutdownDeadline("leader_exit") })
+		wait.observeLeader(func() {
+			if onLeaderStopped != nil {
+				onLeaderStopped()
+			}
+			startShutdownDeadline("leader_exit")
+		})
 		if !terminationPolling && (wait.termination.hasRequested() || wait.shutdownTimer != nil) {
 			waitPoll.Reset(providerTerminationPollInterval)
 			terminationPolling = true
@@ -824,51 +858,6 @@ func (wait *providerWaitState) abandonUnproven() {
 	}
 	_ = wait.stdoutPipe.Close()
 	_ = wait.stderrPipe.Close()
-}
-
-func antigravityTimeoutReported(stderrPath string, logPath string) (bool, error) {
-	timedOut := false
-	marker := []byte("Error: timeout waiting for response")
-	for _, path := range []string{stderrPath, logPath} {
-		found, err := fileContains(path, marker)
-		if err != nil {
-			return false, fmt.Errorf("read %s: %w", path, err)
-		}
-		if found {
-			timedOut = true
-		}
-	}
-	return timedOut, nil
-}
-
-func fileContains(path string, marker []byte) (bool, error) {
-	if len(marker) == 0 {
-		return true, nil
-	}
-	file, err := os.Open(path) // #nosec G304 -- paths are in the active isolated run.
-	if err != nil {
-		return false, err
-	}
-	defer func() { _ = file.Close() }()
-
-	const chunkBytes = 64 * 1024
-	buffer := make([]byte, chunkBytes+len(marker)-1)
-	retained := 0
-	for {
-		read, readErr := file.Read(buffer[retained:])
-		available := retained + read
-		if bytes.Contains(buffer[:available], marker) {
-			return true, nil
-		}
-		if readErr != nil {
-			if readErr == io.EOF {
-				return false, nil
-			}
-			return false, readErr
-		}
-		retained = min(available, len(marker)-1)
-		copy(buffer[:retained], buffer[available-retained:available])
-	}
 }
 
 func replayAnswer(path string, stdout io.Writer) error {

@@ -528,6 +528,110 @@ func TestStreamUsageParsingRejectsMalformedProviderEvidence(t *testing.T) {
 	if _, _, _, err := parseStreamProviderUsage(path, adapterGrok); err == nil {
 		t.Fatal("oversized provider stream line was accepted")
 	}
+
+	// Verify ACP JSON-RPC provider.stdout usage extraction for Grok and Antigravity.
+	grokACP := `{"jsonrpc":"2.0","id":3,"result":{"sessionId":"11111111-1111-4111-8111-111111111111"}}` + "\n" +
+		`{"jsonrpc":"2.0","id":4,"result":{"stopReason":"end_turn","_meta":{"sessionId":"11111111-1111-4111-8111-111111111111","usage":{"inputTokens":120,"outputTokens":30,"cachedReadTokens":80,"cacheCreationTokens":0,"reasoningTokens":10,"costUsdTicks":500000000}}}}` + "\n"
+	if err := os.WriteFile(path, []byte(grokACP), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	gid, gUsage, gCost, err := parseStreamProviderUsage(path, adapterGrok)
+	if err != nil || gid != "11111111-1111-4111-8111-111111111111" || len(gUsage) != 1 || *gUsage[0].InputTokens != 120 || *gUsage[0].OutputTokens != 30 || gCost == nil || *gCost != 0.05 {
+		t.Fatalf("grok ACP usage = id=%q usage=%#v cost=%v err=%v", gid, gUsage, gCost, err)
+	}
+
+	agyACP := `{"jsonrpc":"2.0","id":2,"result":{"sessionId":"22222222-2222-4222-8222-222222222222"}}` + "\n" +
+		`{"jsonrpc":"2.0","id":3,"result":{"stopReason":"end_turn","usage":{"inputTokens":200,"outputTokens":40,"cachedReadTokens":100,"cachedWriteTokens":0,"thoughtTokens":12}}}` + "\n"
+	if err := os.WriteFile(path, []byte(agyACP), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	aid, aUsage, _, err := parseStreamProviderUsage(path, adapterAntigravity)
+	if err != nil || aid != "22222222-2222-4222-8222-222222222222" || len(aUsage) != 1 || *aUsage[0].InputTokens != 200 || *aUsage[0].OutputTokens != 40 || *aUsage[0].ReasoningTokens != 12 || !aUsage[0].InputIncludesCacheRead {
+		t.Fatalf("antigravity ACP usage = id=%q usage=%#v err=%v", aid, aUsage, err)
+	}
+	if !gUsage[0].InputIncludesCacheRead {
+		t.Fatalf("grok ACP usage should mark InputIncludesCacheRead=true: %#v", gUsage[0])
+	}
+
+	// Resumed ACP stream where session/resume returned {} (no sessionId on stdout)
+	// must succeed when fallback session ID is provided from the dispatch record.
+	agyResumed := `{"jsonrpc":"2.0","id":2,"result":{}}` + "\n" +
+		`{"jsonrpc":"2.0","id":3,"result":{"stopReason":"end_turn","usage":{"inputTokens":200,"outputTokens":40,"cachedReadTokens":100,"cachedWriteTokens":0,"thoughtTokens":12}}}` + "\n"
+	if err := os.WriteFile(path, []byte(agyResumed), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	rid, rUsage, _, rIsACP, err := parseStreamProviderUsageWithFallback(path, adapterAntigravity, "33333333-3333-4333-8333-333333333333")
+	if err != nil || !rIsACP || rid != "33333333-3333-4333-8333-333333333333" || len(rUsage) != 1 {
+		t.Fatalf("resumed antigravity ACP fallback usage = id=%q isACP=%t usage=%#v err=%v", rid, rIsACP, rUsage, err)
+	}
+
+	// Grok ACP with result.usage (camelCase) and Antigravity ACP with _meta.usage both work.
+	grokResultUsage := `{"jsonrpc":"2.0","id":2,"result":{"sessionId":"44444444-4444-4444-8444-444444444444"}}` + "\n" +
+		`{"jsonrpc":"2.0","id":3,"result":{"stopReason":"end_turn","usage":{"inputTokens":90,"outputTokens":10,"cachedReadTokens":20,"cachedWriteTokens":0,"thoughtTokens":5}}}` + "\n"
+	if err := os.WriteFile(path, []byte(grokResultUsage), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if id, u, _, err := parseStreamProviderUsage(path, adapterGrok); err != nil || id != "44444444-4444-4444-8444-444444444444" || len(u) != 1 || *u[0].InputTokens != 90 {
+		t.Fatalf("grok ACP result.usage = id=%q usage=%#v err=%v", id, u, err)
+	}
+
+	// Resumed ACP conversation (fresh + continue sharing one provider_session_id) sums both invocations.
+	acpStage := t.TempDir()
+	coordPath := filepath.Join(acpStage, "jobs", "task", "agent", "antigravity.jsonl")
+	run1Out := filepath.Join(acpStage, "jobs", "task", "agent-layer-dispatch", "run1.stdout")
+	run2Out := filepath.Join(acpStage, "jobs", "task", "agent-layer-dispatch", "run2.stdout")
+	run1Rec := filepath.Join(acpStage, "jobs", "task", "agent-layer-dispatch", "run1.json")
+	run2Rec := filepath.Join(acpStage, "jobs", "task", "agent-layer-dispatch", "run2.json")
+	for _, p := range []string{coordPath, run1Out} {
+		if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	coordStream := `{"event":"result","result":{"status":"SUCCESS","conversation_id":"coord-1","response":"ok","usage":{"input_tokens":10,"output_tokens":5,"thinking_tokens":0,"cache_read_tokens":0}}}` + "\n"
+	childTurn1 := `{"jsonrpc":"2.0","id":2,"result":{"sessionId":"shared-acp-sess"}}` + "\n" +
+		`{"jsonrpc":"2.0","id":3,"result":{"stopReason":"end_turn","usage":{"inputTokens":100,"outputTokens":20,"cachedReadTokens":50,"cachedWriteTokens":0,"thoughtTokens":5}}}` + "\n"
+	childTurn2 := `{"jsonrpc":"2.0","id":2,"result":{}}` + "\n" +
+		`{"jsonrpc":"2.0","id":3,"result":{"stopReason":"end_turn","usage":{"inputTokens":150,"outputTokens":30,"cachedReadTokens":100,"cachedWriteTokens":0,"thoughtTokens":5}}}` + "\n"
+	for p, body := range map[string]string{
+		coordPath: coordStream,
+		run1Out:   childTurn1,
+		run2Out:   childTurn2,
+		run1Rec:   `{"id":"run1","provider_session_id":"shared-acp-sess","state":"completed"}`,
+		run2Rec:   `{"id":"run2","provider_session_id":"shared-acp-sess","state":"completed"}`,
+	} {
+		if err := os.WriteFile(p, []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	multiCost, err := streamProviderAttemptCost(acpStage, adapterAntigravity, modelGeminiFlashLow)
+	if err != nil {
+		t.Fatalf("streamProviderAttemptCost multi-turn ACP: %v", err)
+	}
+	if multiCost.invocations != 3 || multiCost.child.minimum <= 0 || multiCost.coordinator.minimum <= 0 {
+		t.Fatalf("multi-turn ACP cost = %#v, want 3 invocations (1 coord + 2 child turns)", multiCost)
+	}
+
+	// Grok ACP fallback pricing must NOT double-count cachedReadTokens.
+	pricing, err := loadBenchmarkPricing()
+	if err != nil {
+		t.Fatal(err)
+	}
+	acpCost, err := priceStreamRequest("grok-acp", adapterGrok, modelGrok45, gUsage[0], pricing)
+	if err != nil {
+		t.Fatalf("priceStreamRequest grok ACP: %v", err)
+	}
+	// Compare against equivalent legacy Grok CLI usage where uncached input = 120 - 80 = 40.
+	uncached := 40
+	legacyUsage := gUsage[0]
+	legacyUsage.InputTokens = &uncached
+	legacyUsage.InputIncludesCacheRead = false
+	legacyCost, err := priceStreamRequest("grok-cli", adapterGrok, modelGrok45, legacyUsage, pricing)
+	if err != nil {
+		t.Fatalf("priceStreamRequest grok legacy: %v", err)
+	}
+	if acpCost != legacyCost {
+		t.Fatalf("grok ACP fallback cost %#v != legacy equivalent %#v (double-counted cache reads)", acpCost, legacyCost)
+	}
 }
 
 func TestAntigravityPricingRejectsCacheBeyondTotalInput(t *testing.T) {

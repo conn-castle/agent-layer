@@ -1,7 +1,6 @@
 package agentdispatch
 
 import (
-	"bufio"
 	"bytes"
 	"encoding/json"
 	"errors"
@@ -16,7 +15,6 @@ import (
 	"testing"
 
 	"github.com/conn-castle/agent-layer/internal/clients"
-	clientgrok "github.com/conn-castle/agent-layer/internal/clients/grok"
 	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/messages"
 	"github.com/conn-castle/agent-layer/internal/testutil"
@@ -28,8 +26,8 @@ func TestProviderCommandArgv(t *testing.T) {
 	templates := map[string]string{
 		AgentClaude:      "--print --output-format stream-json --verbose --include-partial-messages FRESH:--session-id RESUME:--resume SESSION --model argv-model --effort argv-effort --dangerously-skip-permissions",
 		AgentCodex:       "exec RESUME:resume --json RESUME:SESSION --model argv-model -c model_reasoning_effort=argv-effort -c approval_policy=never -c sandbox_mode=danger-full-access -c web_search=live -",
-		AgentAntigravity: "--gemini_dir=ROOT/.agy --dangerously-skip-permissions --log-file LOG --model argv-model RESUME:--conversation RESUME:SESSION --output-format stream-json --print-timeout 24h --print argv-prompt",
-		AgentGrok:        "--no-auto-update --prompt-file PROMPT --output-format streaming-json FRESH:--session-id RESUME:--resume SESSION --model argv-model --reasoning-effort argv-effort --permission-mode bypassPermissions --always-approve",
+		AgentAntigravity: "acp --stdio --gemini_dir=ROOT/.agy --dangerously-skip-permissions",
+		AgentGrok:        "--no-auto-update agent --no-leader --model argv-model --reasoning-effort argv-effort --always-approve stdio",
 		AgentMuse:        "exec --json --prompt-file PROMPT --workspace ROOT --trust-workspace --session-id SESSION --user-input-auto-resolve --model argv-model --reasoning-effort argv-effort --yolo",
 	}
 	for agent, template := range templates {
@@ -67,11 +65,8 @@ func TestProviderCommandArgv(t *testing.T) {
 				if !slices.Equal(command.Args, want) {
 					t.Fatalf("argv = %q, want %q", command.Args, want)
 				}
-				wantLog := ""
-				if agent == AgentAntigravity {
-					wantLog = filepath.Join(run.Dir, "antigravity.log")
-				}
-				if command.Path != target.Binary || command.Provider != agent || command.RunMode != mode || command.SessionID != runtimeSessionID || command.LogPath != wantLog || command.ClaudeLineage || command.ObserveMuseApprovals {
+				wantACP := agent == AgentAntigravity || agent == AgentGrok
+				if command.Path != target.Binary || command.Provider != agent || command.RunMode != mode || command.SessionID != runtimeSessionID || command.LogPath != "" || command.UseACP != wantACP || (wantACP && command.ACP == nil) || command.ClaudeLineage || command.ObserveMuseApprovals {
 					t.Fatalf("command metadata = %#v", command)
 				}
 			})
@@ -135,7 +130,7 @@ func TestProviderCommandResolvesModelAndEffort(t *testing.T) {
 				if command.Model != want.model || command.Effort != want.effort {
 					t.Fatalf("resolved model %q effort %q, want %q %q", command.Model, command.Effort, want.model, want.effort)
 				}
-				if slices.Contains(command.Args, "--model") != (want.model != "") {
+				if agent != AgentAntigravity && slices.Contains(command.Args, "--model") != (want.model != "") {
 					t.Fatalf("argv %q does not match resolved model %q", command.Args, want.model)
 				}
 			})
@@ -144,7 +139,7 @@ func TestProviderCommandResolvesModelAndEffort(t *testing.T) {
 }
 
 func TestProviderCommandRequiresFreshSessionBeforeStagingPrompt(t *testing.T) {
-	for _, provider := range []struct{ agent, name string }{{AgentClaude, "Claude"}, {AgentGrok, "Grok"}, {AgentMuse, "Muse"}} {
+	for _, provider := range []struct{ agent, name string }{{AgentClaude, "Claude"}, {AgentMuse, "Muse"}} {
 		t.Run(provider.agent, func(t *testing.T) {
 			root := t.TempDir()
 			run := &dispatchRun{Dir: root}
@@ -200,18 +195,6 @@ func TestClaudeLineageCapabilityGatesFreshAndResumeCommands(t *testing.T) {
 	}
 	if supportedProviderVersions[AgentClaude] != claudeTestedVersion {
 		t.Fatalf("Claude tested baseline changed to %q", supportedProviderVersions[AgentClaude])
-	}
-}
-
-func TestAntigravityRejectsPromptTooLargeForPrintMode(t *testing.T) {
-	target, ok := lookupTarget(AgentAntigravity)
-	if !ok {
-		t.Fatal("Antigravity target missing")
-	}
-	_, err := buildProviderCommand(target, &config.ProjectConfig{}, nil, bytes.Repeat([]byte("x"), AntigravityPromptMaxBytes+1), "", "", false, dispatchModeFresh, "", &dispatchRun{}, io.Discard)
-	var exitErr *ExitError
-	if !errors.As(err, &exitErr) || exitErr.Code != ExitUsage {
-		t.Fatalf("oversized Antigravity prompt error = %T %v, want ExitUsage", err, err)
 	}
 }
 
@@ -624,18 +607,6 @@ func TestClaudeStructuredProjectionRejectsDuplicateAndCrossPairedBlocks(t *testi
 	}
 }
 
-func TestReadDiagnosticLineRetainsOversizedLinePrefix(t *testing.T) {
-	reader := bufio.NewReaderSize(strings.NewReader("conversation-marker-and-noise\nnext\n"), 8)
-	line, err := readDiagnosticLine(reader, len("conversation-marker"))
-	if err != nil || line != "conversation-marker" {
-		t.Fatalf("oversized diagnostic prefix = %q, %v", line, err)
-	}
-	next, err := readDiagnosticLine(reader, 32)
-	if err != nil || next != "next\n" {
-		t.Fatalf("diagnostic after oversized line = %q, %v", next, err)
-	}
-}
-
 func TestSelectiveJSONReaderTruncatesRetainedAnswerAndConsumesRecord(t *testing.T) {
 	parser := newSelectiveJSONReader()
 	parser.retainedStringBytes = 8
@@ -1022,219 +993,27 @@ func TestClaudeRunnerRejectsStoppedBackgroundBashWithoutLaterResult(t *testing.T
 	}
 }
 
-func TestAntigravityLogIDIsStrictAndVersionGateFailsLoudly(t *testing.T) {
-	logPath := filepath.Join(t.TempDir(), "antigravity.log")
-	if err := os.WriteFile(logPath, []byte("I0712 19:00:00.123456 42 logger.go] Created conversation AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA\n"), 0o600); err != nil {
-		t.Fatalf("write log: %v", err)
-	}
-	id, err := antigravitySessionID(logPath)
-	if err != nil || id != "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" {
-		t.Fatalf("Antigravity ID = %q, %v", id, err)
-	}
-	conflicting := "Created conversation AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA\n" +
-		"Print mode: conversation=BBBBBBBB-BBBB-4BBB-8BBB-BBBBBBBBBBBB, sending message\n"
-	if err := os.WriteFile(logPath, []byte(conflicting), 0o600); err != nil {
-		t.Fatalf("write conflicting log: %v", err)
-	}
-	if id, err := antigravitySessionID(logPath); err == nil || id != "" {
-		t.Fatalf("conflicting Antigravity IDs = %q, %v", id, err)
-	}
-	longDiagnostic := strings.Repeat("x", 128*1024)
-	if err := os.WriteFile(logPath, []byte(longDiagnostic+"\nCreated conversation AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA\n"), 0o600); err != nil {
-		t.Fatalf("write long diagnostic log: %v", err)
-	}
-	if id, err := antigravitySessionID(logPath); err != nil || id != "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" {
-		t.Fatalf("long diagnostic log ID = %q, %v", id, err)
-	}
-	_, err = requireSupportedVersion("ignored", AgentCodex, func(string, string) (string, error) { return "0.1.0", nil })
+func TestVersionGateFailsLoudly(t *testing.T) {
+	_, err := requireSupportedVersion("ignored", AgentCodex, func(string, string) (string, error) { return "0.1.0", nil })
 	requireDispatchExitCode(t, err, ExitUnavailable)
-}
-
-func TestGrokStructuredEvents(t *testing.T) {
-	expectedSession := runtimeSessionID
-
-	t.Run("thought progress event", func(t *testing.T) {
-		events, err := reduceStructuredTestEvent(AgentGrok, expectedSession, []byte(`{"type":"thought","data":"thinking about the plan"}`))
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if len(events) != 1 || events[0].Kind != eventProgress || events[0].Activity != "thought" {
-			t.Fatalf("events = %#v", events)
-		}
-	})
-
-	t.Run("accumulates text chunks and completes on end", func(t *testing.T) {
-		streamData, readErr := os.ReadFile(filepath.Join("testdata", "grok", "v1.0.5-streaming.jsonl"))
-		if readErr != nil {
-			t.Fatalf("read provider-derived Grok fixture: %v", readErr)
-		}
-		var events []providerEvent
-		err := readStructuredEventsWithLineage(bytes.NewReader(streamData), io.Discard, AgentGrok, expectedSession, false, func(e providerEvent) error {
-			events = append(events, e)
-			return nil
-		}, nil)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if len(events) != 6 {
-			t.Fatalf("got %d events, want 6: %#v", len(events), events)
-		}
-		// Expect: progress(thought), progress(text_delta), progress(text_delta), session, answer("Hello world!"), complete
-		if events[3].Kind != eventSession || events[3].SessionID != expectedSession {
-			t.Fatalf("expected session event, got %#v", events[3])
-		}
-		if events[4].Kind != eventAnswer || events[4].Answer != "Hello world!" {
-			t.Fatalf("expected answer 'Hello world!', got %#v", events[4])
-		}
-		if events[5].Kind != eventComplete {
-			t.Fatalf("expected complete event, got %#v", events[5])
-		}
-	})
-
-	t.Run("reports failure on mismatched session ID", func(t *testing.T) {
-		events, err := reduceStructuredTestEvent(AgentGrok, expectedSession, []byte(`{"type":"end","sessionId":"other-session","stopReason":"end_turn"}`))
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if len(events) != 1 || events[0].Kind != eventFailure {
-			t.Fatalf("expected failure event, got %#v", events)
-		}
-	})
-
-	t.Run("accepts documented completed turn spelling", func(t *testing.T) {
-		var text strings.Builder
-		text.WriteString("complete")
-		events := reduceGrokEvent(expectedSession, map[string]any{
-			"type": "end", "sessionId": expectedSession, "stopReason": "end_turn",
-		}, &text, new(bool))
-		if len(events) != 3 || events[2].Kind != eventComplete {
-			t.Fatalf("expected completed events, got %#v", events)
-		}
-	})
-
-	t.Run("reports failure on abnormal stop reason", func(t *testing.T) {
-		events, err := reduceStructuredTestEvent(AgentGrok, expectedSession, []byte(`{"type":"end","sessionId":"`+expectedSession+`","stopReason":"refusal"}`))
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if len(events) != 1 || events[0].Kind != eventFailure || !strings.Contains(events[0].Reason, "refusal") {
-			t.Fatalf("expected refusal failure event, got %#v", events)
-		}
-	})
-
-	t.Run("reports failure on error event", func(t *testing.T) {
-		events, err := reduceStructuredTestEvent(AgentGrok, expectedSession, []byte(`{"type":"error","message":"rate limit exceeded"}`))
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if len(events) != 1 || events[0].Kind != eventFailure || !strings.Contains(events[0].Reason, "rate limit") {
-			t.Fatalf("expected error failure event, got %#v", events)
-		}
-	})
-
-	t.Run("fails on provider-observed permission denial before completed end", func(t *testing.T) {
-		streamData, readErr := os.ReadFile(filepath.Join("testdata", "grok", "v1.0.5-denied-tool.jsonl"))
-		if readErr != nil {
-			t.Fatalf("read provider-derived Grok denial fixture: %v", readErr)
-		}
-		var events []providerEvent
-		err := readStructuredEventsWithLineage(bytes.NewReader(streamData), io.Discard, AgentGrok, expectedSession, false, func(event providerEvent) error {
-			events = append(events, event)
-			if event.Kind == eventFailure {
-				return errors.New(event.Reason)
-			}
-			return nil
-		}, nil)
-		if err == nil || !strings.Contains(err.Error(), "Denied by permission policy") {
-			t.Fatalf("denied stream error = %v, events = %#v", err, events)
-		}
-		if !slices.ContainsFunc(events, func(event providerEvent) bool { return event.Kind == eventFailure }) {
-			t.Fatalf("denied stream emitted no failure: %#v", events)
-		}
-		if slices.ContainsFunc(events, func(event providerEvent) bool { return event.Kind == eventComplete }) {
-			t.Fatalf("denied stream reached completion: %#v", events)
-		}
-	})
-
-	t.Run("accepts provider-observed resumed session echo", func(t *testing.T) {
-		const resumedSession = "7b0f2d84-9a63-4e17-8c52-14f6b93d20aa"
-		streamData, readErr := os.ReadFile(filepath.Join("testdata", "grok", "v1.0.5-resume-streaming.jsonl"))
-		if readErr != nil {
-			t.Fatalf("read provider-derived Grok resume fixture: %v", readErr)
-		}
-		var events []providerEvent
-		err := readStructuredEventsWithLineage(bytes.NewReader(streamData), io.Discard, AgentGrok, resumedSession, false, func(event providerEvent) error {
-			events = append(events, event)
-			return nil
-		}, nil)
-		if err != nil {
-			t.Fatalf("resume stream error: %v", err)
-		}
-		if !slices.ContainsFunc(events, func(event providerEvent) bool { return event.Kind == eventComplete }) {
-			t.Fatalf("resume stream did not complete: %#v", events)
-		}
-	})
-
-	t.Run("ordinary failed tool update remains progress", func(t *testing.T) {
-		events, err := reduceStructuredTestEvent(AgentGrok, expectedSession, []byte(`{"type":"tool_call_update","status":"failed","content":[{"type":"content","content":{"type":"text","text":"Command exited with status 1"}}]}`))
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if len(events) != 1 || events[0].Kind != eventProgress || events[0].Activity != grokToolUpdateType {
-			t.Fatalf("ordinary failed tool events = %#v", events)
-		}
-	})
-
-	t.Run("overlong denial reports the tool-update retention limit", func(t *testing.T) {
-		message := "Tool `run_terminal_command` was not executed: Denied by permission policy: " + strings.Repeat("x", 700)
-		record := fmt.Sprintf(`{"type":"tool_call_update","status":"failed","content":[{"type":"content","content":{"type":"text","text":%q}}]}`, message)
-		events, err := reduceStructuredTestEvent(AgentGrok, expectedSession, []byte(record))
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if len(events) != 1 || events[0].Kind != eventFailure || !strings.Contains(events[0].Reason, "retaining 512 bytes") {
-			t.Fatalf("overlong denial events = %#v", events)
-		}
-		if strings.Contains(events[0].Reason, "256 MiB") {
-			t.Fatalf("overlong denial used final-answer notice: %q", events[0].Reason)
-		}
-	})
-}
-
-func TestGrokRunnerReadsStreamingJSONThroughEOF(t *testing.T) {
-	root := t.TempDir()
-	run, err := newDispatchRun(root, AgentGrok, clientgrok.SupportedVersion, dispatchModeFresh)
-	if err != nil {
-		t.Fatal(err)
-	}
-	fixtureContent := `{"type":"thought","data":"thinking"}` + "\n" +
-		`{"type":"text","data":"Grok output"}` + "\n" +
-		`{"type":"end","sessionId":"` + runtimeSessionID + `","stopReason":"end_turn"}` + "\n"
-	result, err := executeProvider(providerCommand{
-		Path:      "/bin/sh",
-		Args:      []string{"-c", `printf '%s' "$1"`, "sh", fixtureContent},
-		Env:       os.Environ(),
-		Provider:  AgentGrok,
-		SessionID: runtimeSessionID,
-	}, []byte("prompt"), run, root, nil, func(string) error { return nil })
-	if err != nil {
-		t.Fatal(err)
-	}
-	if result.Answer != "Grok output" || !result.Complete || result.SessionID != runtimeSessionID {
-		t.Fatalf("result = %#v", result)
-	}
+	_, err = requireSupportedVersion("ignored", AgentAntigravity, func(string, string) (string, error) { return "1.1.21", nil })
+	requireDispatchExitCode(t, err, ExitUnavailable)
+	_, err = requireSupportedVersion("ignored", AgentGrok, func(string, string) (string, error) { return "1.0.5", nil })
+	requireDispatchExitCode(t, err, ExitUnavailable)
 }
 
 func TestRunnerThrottlesProgressRecordWritesForTokenStreams(t *testing.T) {
 	root := t.TempDir()
-	run, err := newDispatchRun(root, AgentGrok, clientgrok.SupportedVersion, dispatchModeFresh)
+	run, err := newDispatchRun(root, AgentCodex, supportedProviderVersions[AgentCodex], dispatchModeFresh)
 	if err != nil {
 		t.Fatal(err)
 	}
 	startRevision := run.Record.Revision
 	const chunks = 5000
-	fixture := strings.Repeat(`{"type":"text","data":"x"}`+"\n", chunks) +
-		`{"type":"end","sessionId":"` + runtimeSessionID + `","stopReason":"end_turn"}` + "\n"
+	fixture := `{"type":"thread.started","thread_id":"` + runtimeSessionID + `"}` + "\n" +
+		strings.Repeat(`{"type":"progress"}`+"\n", chunks) +
+		`{"type":"agent_message","message":"done"}` + "\n" +
+		`{"type":"turn.completed"}` + "\n"
 	fixturePath := filepath.Join(t.TempDir(), "stream.jsonl")
 	if err := os.WriteFile(fixturePath, []byte(fixture), 0o600); err != nil {
 		t.Fatal(err)
@@ -1243,174 +1022,20 @@ func TestRunnerThrottlesProgressRecordWritesForTokenStreams(t *testing.T) {
 		Path:      "/bin/sh",
 		Args:      []string{"-c", `cat "$1"`, "sh", fixturePath},
 		Env:       os.Environ(),
-		Provider:  AgentGrok,
+		Provider:  AgentCodex,
 		SessionID: runtimeSessionID,
 	}, []byte("prompt"), run, root, nil, func(string) error { return nil })
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !result.Complete || result.Answer != strings.Repeat("x", chunks) {
-		t.Fatalf("complete = %v, answer length = %d", result.Complete, len(result.Answer))
+	if !result.Complete || result.Answer != "done" {
+		t.Fatalf("complete = %v, answer = %q", result.Complete, result.Answer)
 	}
 	// A record write per token stalled this stream past providerShutdownGrace;
 	// a bounded count proves progress writes are throttled without timing them.
 	if writes := run.Record.Revision - startRevision; writes > 50 {
 		t.Fatalf("run record written %d times for %d progress events", writes, chunks)
 	}
-}
-
-func TestAntigravitySuccessfulTerminalReturnsRealisticFinalAnswer(t *testing.T) {
-	stream, err := os.ReadFile(filepath.Join("testdata", "antigravity", "v1.1.21-success.jsonl"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	var emitted struct {
-		Result struct {
-			ConversationID string         `json:"conversation_id"`
-			Response       string         `json:"response"`
-			Usage          map[string]any `json:"usage"`
-		} `json:"result"`
-	}
-	if err := json.Unmarshal(bytes.TrimSpace(stream), &emitted); err != nil {
-		t.Fatalf("decode independent provider fixture: %v", err)
-	}
-	if len(emitted.Result.Response) <= structuredJSONKeyBytes {
-		t.Fatalf("fixture response is only %d bytes; it must cross the metadata boundary", len(emitted.Result.Response))
-	}
-
-	root := t.TempDir()
-	run, err := newDispatchRun(root, AgentAntigravity, supportedProviderVersions[AgentAntigravity], dispatchModeFresh)
-	if err != nil {
-		t.Fatal(err)
-	}
-	logPath := filepath.Join(run.Dir, "antigravity.log")
-	if err := os.WriteFile(logPath, nil, 0o600); err != nil {
-		t.Fatal(err)
-	}
-	result, err := executeProvider(providerCommand{
-		Path:     "/bin/sh",
-		Args:     []string{"-c", `printf '%s' "$1"`, "sh", string(stream)},
-		Env:      os.Environ(),
-		Provider: AgentAntigravity,
-		LogPath:  logPath,
-	}, []byte("inspect the image"), run, root, nil, func(string) error { return nil })
-	if err != nil {
-		t.Fatalf("successful Antigravity dispatch failed: %v", err)
-	}
-	if !result.Complete || result.SessionID != emitted.Result.ConversationID || result.Answer != emitted.Result.Response {
-		t.Fatalf("terminal result = %#v, want complete session %q and the provider's full answer", result, emitted.Result.ConversationID)
-	}
-}
-
-func TestStructuredProviderStreamsRejectDuplicateTerminalEvents(t *testing.T) {
-	tests := []struct {
-		name     string
-		agent    string
-		expected string
-		stream   string
-	}{
-		{
-			name: "grok", agent: AgentGrok, expected: runtimeSessionID,
-			stream: `{"type":"text","data":"answer"}` + "\n" +
-				`{"type":"end","sessionId":"` + runtimeSessionID + `","stopReason":"end_turn"}` + "\n" +
-				`{"type":"end","sessionId":"` + runtimeSessionID + `","stopReason":"end_turn"}` + "\n",
-		},
-		{
-			name: "antigravity", agent: AgentAntigravity,
-			stream: `{"event":"result","result":{"status":"SUCCESS","conversation_id":"conversation","response":"answer","usage":{"input_tokens":1}}}` + "\n" +
-				`{"event":"result","result":{"status":"SUCCESS","conversation_id":"conversation","response":"answer","usage":{"input_tokens":1}}}` + "\n",
-		},
-	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			var events []providerEvent
-			err := readStructuredEventsWithLineage(strings.NewReader(test.stream), io.Discard, test.agent, test.expected, false, func(event providerEvent) error {
-				events = append(events, event)
-				return nil
-			}, nil)
-			if err != nil {
-				t.Fatalf("read structured stream: %v", err)
-			}
-			if len(events) == 0 || events[len(events)-1].Kind != eventFailure || !strings.Contains(events[len(events)-1].Reason, "multiple terminal") {
-				t.Fatalf("duplicate terminal stream events = %#v", events)
-			}
-		})
-	}
-}
-
-func TestAntigravityIncompleteInitIsProgressAndTerminalStillAuthoritative(t *testing.T) {
-	progress, err := reduceStructuredTestEvent(AgentAntigravity, "", []byte(`{"event":"init"}`))
-	if err != nil || len(progress) != 1 || progress[0].Kind != eventProgress || progress[0].Activity != antigravityInitEvent {
-		t.Fatalf("incomplete init = %#v, %v", progress, err)
-	}
-	session, err := reduceStructuredTestEvent(AgentAntigravity, "", []byte(`{"event":"init","conversation_id":"conversation"}`))
-	if err != nil || len(session) != 1 || session[0].Kind != eventSession || session[0].SessionID != "conversation" {
-		t.Fatalf("valid init = %#v, %v", session, err)
-	}
-	stream := `{"event":"init"}` + "\n" +
-		`{"event":"result","result":{"status":"SUCCESS","conversation_id":"conversation","response":"answer","usage":{"input_tokens":1,"output_tokens":2,"thinking_tokens":1,"cache_read_tokens":0}}}` + "\n"
-	var events []providerEvent
-	if err := readStructuredEventsWithLineage(strings.NewReader(stream), io.Discard, AgentAntigravity, "", false, func(event providerEvent) error {
-		events = append(events, event)
-		return nil
-	}, nil); err != nil {
-		t.Fatal(err)
-	}
-	if len(events) != 5 || events[0].Kind != eventProgress || events[0].Activity != antigravityInitEvent || events[1].Kind != eventSession || events[1].SessionID != "conversation" || events[2].Kind != eventAnswer || events[2].Answer != "answer" || events[3].Kind != eventProgress || events[4].Kind != eventComplete {
-		t.Fatalf("incomplete init plus terminal = %#v", events)
-	}
-}
-
-func TestAntigravityStructuredEventsRequireSuccessfulUsageBearingTerminal(t *testing.T) {
-	events, err := reduceStructuredTestEvent(AgentAntigravity, "", []byte(`{"event":"result","result":{"status":"SUCCESS","conversation_id":"conversation","response":"answer","usage":{"input_tokens":1,"output_tokens":2,"thinking_tokens":1,"cache_read_tokens":0}}}`))
-	if err != nil {
-		t.Fatalf("read Antigravity terminal: %v", err)
-	}
-	if len(events) != 4 || events[0].Kind != eventSession || events[0].SessionID != "conversation" || events[1].Kind != eventAnswer || events[1].Answer != "answer" || events[2].Kind != eventProgress || events[2].Activity != grokUsageEventType || events[2].Usage["input_tokens"] == nil || events[3].Kind != eventComplete {
-		t.Fatalf("Antigravity terminal events = %#v", events)
-	}
-	for _, raw := range []string{
-		`{"event":"result","result":{"status":"ERROR","conversation_id":"conversation","response":"answer","usage":{}}}`,
-		`{"event":"result","result":{"status":"SUCCESS","conversation_id":"","response":"answer","usage":{}}}`,
-		`{"event":"result","result":{"status":"SUCCESS","conversation_id":"conversation","response":"answer"}}`,
-	} {
-		events, err = reduceStructuredTestEvent(AgentAntigravity, "", []byte(raw))
-		if err != nil || len(events) == 0 || events[len(events)-1].Kind != eventFailure {
-			t.Fatalf("Antigravity invalid terminal %s = %#v, %v", raw, events, err)
-		}
-		for _, event := range events {
-			if event.Kind == eventAnswer || event.Kind == eventComplete {
-				t.Fatalf("invalid terminal published an answer or completion: %#v", events)
-			}
-		}
-	}
-	events, err = reduceStructuredTestEvent(AgentAntigravity, "", []byte(`{"event":"result","result":{"status":"ERROR","error":"invalid model selection","conversation_id":"","response":"","usage":{}}}`))
-	if err != nil || len(events) != 1 || events[0].Kind != eventFailure || !strings.Contains(events[0].Reason, "invalid model selection") {
-		t.Fatalf("Antigravity provider error detail = %#v, %v", events, err)
-	}
-}
-
-func TestGrokRunnerFailsProviderObservedPermissionDenial(t *testing.T) {
-	root := t.TempDir()
-	run, err := newDispatchRun(root, AgentGrok, clientgrok.SupportedVersion, dispatchModeFresh)
-	if err != nil {
-		t.Fatal(err)
-	}
-	streamData, err := os.ReadFile(filepath.Join("testdata", "grok", "v1.0.5-denied-tool.jsonl"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, err = executeProvider(providerCommand{
-		Path:      "/bin/sh",
-		Args:      []string{"-c", `printf '%s' "$1"`, "sh", string(streamData)},
-		Env:       os.Environ(),
-		Provider:  AgentGrok,
-		SessionID: runtimeSessionID,
-	}, []byte("prompt"), run, root, nil, func(string) error { return nil })
-	if err == nil || !strings.Contains(err.Error(), "Denied by permission policy") {
-		t.Fatalf("denied provider run error = %v", err)
-	}
-	requireDispatchExitCode(t, err, ExitTargetFailure)
 }
 
 func TestDispatchClearsDisabledCodexHome(t *testing.T) {

@@ -33,53 +33,37 @@ const (
 	processStatusDead      = "dead"
 	providerVersionTimeout = 10 * time.Second
 	maxRetainedAnswerBytes = 256 * 1024 * 1024
-	// AntigravityPromptMaxBytes retains headroom below common ARG_MAX limits
-	// because Antigravity accepts print-mode prompts only as an argument.
-	AntigravityPromptMaxBytes = 100 * 1024
-	// AntigravityPrintTimeout keeps a headless dispatch alive long enough for
-	// a normal agent turn while the runner remains responsible for cancellation.
-	AntigravityPrintTimeout = "24h"
 	// claudePrintBackgroundWaitCeilingEnv removes headless Claude's wait limit
 	// for background subagents and workflows. Bash has a separate exit grace;
 	// interactive Claude launches do not use this override.
 	claudePrintBackgroundWaitCeilingEnv   = "CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS"
 	claudePrintBackgroundWaitCeilingValue = "0"
 	truncatedAnswerNotice                 = "\n\n[Agent Layer truncated this final answer after retaining 256 MiB. Resume the conversation and ask the agent to summarize the final answer in another turn.]\n"
-	grokEventDataTruncatedNotice          = "\n\n[Agent Layer truncated this Grok text event after retaining 64 KiB.]\n"
-	// claudePermissionModeAcceptEdits auto-accepts file edits and common
-	// filesystem commands for paths in the working directory. Other commands
-	// still require an allow rule, which dispatch supplies via --allowedTools.
+	// Keep grokEventDataTruncatedNotice and grokToolUpdateTruncatedNotice for
+	// selectiveJSONReader bounded field truncation compatibility.
+	grokEventDataTruncatedNotice    = "\n\n[Agent Layer truncated this Grok text event after retaining 64 KiB.]\n"
 	claudePermissionModeAcceptEdits = "acceptEdits"
-	// claudePermissionModeDontAsk denies anything without an allow rule instead
-	// of waiting for a prompt that a headless run can never answer.
-	claudePermissionModeDontAsk = "dontAsk"
-	// claudePermissionsPassthroughKey and claudeDefaultModePassthroughKey locate
-	// an explicit permission mode in agents.claude.agent_specific.
+	claudePermissionModeDontAsk     = "dontAsk"
 	claudePermissionsPassthroughKey = "permissions"
 	claudeDefaultModePassthroughKey = "defaultMode"
-	// permissionDenialsKey is the Claude terminal-result field listing tool calls
-	// that were denied. Claude still reports such a run as a success.
-	permissionDenialsKey          = "permission_denials"
-	toolNameKey                   = "tool_name"
-	textDeltaActivity             = "text_delta"
-	thoughtActivity               = "thought"
-	grokToolUpdateType            = "tool_call_update"
-	grokToolFailedStatus          = "failed"
-	grokUsageEventType            = "usage"
-	grokToolDeniedPrefix          = "Tool `"
-	grokPermissionDenied          = " was not executed: Denied by permission policy:"
-	grokToolUpdateTruncatedNotice = "\n\n[Agent Layer truncated this Grok tool update after retaining 512 bytes.]\n"
-	antigravityEffortLow          = "low"
-	antigravityEffortMedium       = "medium"
-	antigravityEffortHigh         = "high"
-	antigravityInitEvent          = "init"
-	execSubcommand                = "exec"
-	promptFileFlag                = "--prompt-file"
-	jsonRPCKey                    = "jsonrpc"
-	jsonRPCVersion                = "2.0"
-	jsonMethodKey                 = "method"
-	jsonParamsKey                 = "params"
-	jsonSessionIDCamelKey         = "sessionId"
+	permissionDenialsKey            = "permission_denials"
+	toolNameKey                     = "tool_name"
+	textDeltaActivity               = "text_delta"
+	thoughtActivity                 = "thought"
+	grokToolUpdateType              = "tool_call_update"
+	grokUsageEventType              = "usage"
+	grokToolUpdateTruncatedNotice   = "\n\n[Agent Layer truncated this Grok tool update after retaining 512 bytes.]\n"
+	antigravityEffortLow            = "low"
+	antigravityEffortMedium         = "medium"
+	antigravityEffortHigh           = "high"
+	execSubcommand                  = "exec"
+	promptFileFlag                  = "--prompt-file"
+	jsonRPCKey                      = "jsonrpc"
+	jsonRPCVersion                  = "2.0"
+	jsonMethodKey                   = "method"
+	jsonParamsKey                   = "params"
+	jsonSessionIDCamelKey           = "sessionId"
+	grokSandboxEnv                  = "GROK_SANDBOX"
 )
 
 // codexDispatchSandboxMode resolves the Codex sandbox for a non-YOLO dispatch.
@@ -114,12 +98,6 @@ func claudeDefaultPermissionModePinned(passthrough config.ProviderPassthrough) b
 
 var versionPattern = regexp.MustCompile(`\b(?:v)?(\d+\.\d+\.\d+)\b`)
 
-const uuidExpression = `(?i:[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})`
-
-var antigravityLogPrefix = regexp.MustCompile(`^[IWE]\d{4} \d{2}:\d{2}:\d{2}\.\d+ \d+ [^]]+\] (.*)$`)
-var antigravityCreatedConversation = regexp.MustCompile(`^Created conversation (` + uuidExpression + `)$`)
-var antigravityPrintConversation = regexp.MustCompile(`^Print mode: conversation=(` + uuidExpression + `), sending message$`)
-
 type providerCommand struct {
 	Path                 string
 	Args                 []string
@@ -134,6 +112,9 @@ type providerCommand struct {
 	ClaudeLineage        bool
 	ObserveMuseApprovals bool
 	MuseBaseline         *museRecoveryBaseline
+	SessionMCPServers    []string
+	UseACP               bool
+	ACP                  *acpLaunchConfig
 }
 
 type providerEvent struct {
@@ -179,7 +160,7 @@ const (
 var supportedProviderVersions = map[string]string{
 	AgentClaude:      claudeTestedVersion,
 	AgentCodex:       "0.144.1",
-	AgentAntigravity: "1.1.21",
+	AgentAntigravity: "1.5.1",
 	AgentGrok:        grok.SupportedVersion,
 	AgentMuse:        muse.SupportedVersion,
 }
@@ -272,30 +253,55 @@ func buildProviderCommand(
 	run *dispatchRun,
 	diagnostics io.Writer,
 ) (providerCommand, error) {
+	return buildProviderCommandForSession(target, project, "", env, prompt, model, effort, targetPinned, mode, sessionID, nil, run, diagnostics)
+}
+
+func buildProviderCommandForSession(
+	target targetMeta,
+	project *config.ProjectConfig,
+	workDir string,
+	env []string,
+	prompt []byte,
+	model string,
+	effort string,
+	targetPinned bool,
+	mode string,
+	sessionID string,
+	sessionMCP []SessionMCPServer,
+	run *dispatchRun,
+	diagnostics io.Writer,
+) (providerCommand, error) {
 	if project == nil || run == nil {
 		return providerCommand{}, exitError(ExitConfig, "build dispatch provider command without project or run")
 	}
 	if len(prompt) > MaxStdinPromptBytes {
 		return providerCommand{}, exitError(ExitUsage, fmt.Sprintf("dispatch prompt is %d bytes; the maximum is %d bytes", len(prompt), MaxStdinPromptBytes))
 	}
-	command := providerCommand{Path: target.Binary, Env: env, Provider: target.Name, RunMode: mode}
+	if err := validateSessionMCPServersForProject(project, target, sessionMCP); err != nil {
+		return providerCommand{}, err
+	}
+	effectiveWorkDir := workDir
+	if effectiveWorkDir == "" {
+		effectiveWorkDir = project.Root
+	}
+	command := providerCommand{Path: target.Binary, Env: env, Provider: target.Name, RunMode: mode, SessionMCPServers: sessionMCPServerNames(sessionMCP)}
 	switch target.Name {
 	case AgentClaude:
-		return buildClaudeCommand(command, project, model, effort, targetPinned, mode, sessionID, run, diagnostics)
+		return buildClaudeCommand(command, project, effectiveWorkDir, model, effort, targetPinned, mode, sessionID, sessionMCP, run, diagnostics)
 	case AgentCodex:
-		return buildCodexCommand(command, project, model, effort, targetPinned, mode, sessionID, diagnostics)
+		return buildCodexCommand(command, project, effectiveWorkDir, model, effort, targetPinned, mode, sessionID, sessionMCP, run, diagnostics)
 	case AgentAntigravity:
-		return buildAntigravityCommand(command, project, prompt, model, effort, mode, sessionID, run)
+		return buildAntigravityCommand(command, target, project, effectiveWorkDir, model, effort, sessionID, sessionMCP, run)
 	case AgentGrok:
-		return buildGrokCommand(command, project, prompt, model, effort, targetPinned, mode, sessionID, run, diagnostics)
+		return buildGrokCommand(command, target, project, effectiveWorkDir, model, effort, targetPinned, sessionID, sessionMCP, run, diagnostics)
 	case AgentMuse:
-		return buildMuseCommand(command, project, prompt, model, effort, targetPinned, mode, sessionID, run)
+		return buildMuseCommand(command, project, effectiveWorkDir, prompt, model, effort, targetPinned, mode, sessionID, sessionMCP, run)
 	default:
 		return providerCommand{}, exitError(ExitUsage, fmt.Sprintf("unsupported dispatch provider %q", target.Name))
 	}
 }
 
-func buildClaudeCommand(command providerCommand, project *config.ProjectConfig, model, effort string, targetPinned bool, mode, sessionID string, run *dispatchRun, diagnostics io.Writer) (providerCommand, error) {
+func buildClaudeCommand(command providerCommand, project *config.ProjectConfig, workDir string, model, effort string, targetPinned bool, mode, sessionID string, sessionMCP []SessionMCPServer, run *dispatchRun, diagnostics io.Writer) (providerCommand, error) {
 	if err := requireFreshSessionID("Claude", mode, sessionID); err != nil {
 		return providerCommand{}, err
 	}
@@ -318,6 +324,17 @@ func buildClaudeCommand(command providerCommand, project *config.ProjectConfig, 
 	args = appendFlag(args, "--effort", resolvedEffort)
 	command.Model = resolvedModel
 	command.Effort = resolvedEffort
+	if len(sessionMCP) > 0 {
+		staged, err := stageSessionMCPSpec(run.Dir, workDir, command.Env, sessionMCP)
+		if err != nil {
+			return providerCommand{}, err
+		}
+		mcpConfigPath, err := stageClaudeSessionMCPConfig(run.Dir, staged, sessionMCP)
+		if err != nil {
+			return providerCommand{}, err
+		}
+		args = append(args, "--mcp-config", mcpConfigPath)
+	}
 	if project.Config.Approvals.Mode == config.ApprovalModeYOLO {
 		args = append(args, "--dangerously-skip-permissions")
 	} else {
@@ -330,11 +347,20 @@ func buildClaudeCommand(command providerCommand, project *config.ProjectConfig, 
 		// approval inert, so the same rules are delivered on the command line.
 		// The flag repeats rather than joining on "," so a command pattern
 		// containing a comma cannot corrupt the list.
+		seenRule := make(map[string]bool)
 		for _, rule := range projection.ClaudeAllowRules(
 			project.Config,
 			project.CommandsAllow,
 			projection.EffectiveServerIDs(project.Config, projection.ClientClaude),
 		) {
+			seenRule[rule] = true
+			args = append(args, "--allowedTools", rule)
+		}
+		for _, rule := range projection.MCPRules(sessionMCPServerNames(sessionMCP), projection.ClaudeMCPRule) {
+			if seenRule[rule] {
+				continue
+			}
+			seenRule[rule] = true
 			args = append(args, "--allowedTools", rule)
 		}
 	}
@@ -347,7 +373,7 @@ func buildClaudeCommand(command providerCommand, project *config.ProjectConfig, 
 	return command, nil
 }
 
-func buildCodexCommand(command providerCommand, project *config.ProjectConfig, model, effort string, targetPinned bool, mode, sessionID string, diagnostics io.Writer) (providerCommand, error) {
+func buildCodexCommand(command providerCommand, project *config.ProjectConfig, workDir string, model, effort string, targetPinned bool, mode, sessionID string, sessionMCP []SessionMCPServer, run *dispatchRun, diagnostics io.Writer) (providerCommand, error) {
 	args := []string{execSubcommand}
 	if mode == dispatchModeResume {
 		args = append(args, "resume")
@@ -381,6 +407,15 @@ func buildCodexCommand(command providerCommand, project *config.ProjectConfig, m
 		// allowlisted command is approved and then fails on its first write.
 		args = append(args, "-c", config.CodexSandboxModeKey+"="+codexDispatchSandboxMode(project.Config, project.CommandsAllow))
 	}
+	if len(sessionMCP) > 0 {
+		staged, err := stageSessionMCPSpec(run.Dir, workDir, command.Env, sessionMCP)
+		if err != nil {
+			return providerCommand{}, err
+		}
+		for _, server := range normalizeSessionMCPServers(sessionMCP) {
+			args = append(args, "-c", codexSessionMCPConfigArg(run.Dir, staged, server.Name))
+		}
+	}
 	args = append(args, "-")
 	command.Args = args
 	command.Env = codex.ConfigureEnvironment(project.Root, command.Env, project.Config.Agents.Codex, diagnostics)
@@ -391,29 +426,17 @@ func buildCodexCommand(command providerCommand, project *config.ProjectConfig, m
 	return command, nil
 }
 
-func buildAntigravityCommand(command providerCommand, project *config.ProjectConfig, prompt []byte, model, effort, mode, sessionID string, run *dispatchRun) (providerCommand, error) {
-	if len(prompt) > AntigravityPromptMaxBytes {
-		return providerCommand{}, exitError(ExitUsage, fmt.Sprintf("antigravity prompt is %d bytes; `al dispatch` caps it at %d bytes because agy --print has no stdin/file path. Use --agent claude or --agent codex for larger prompts.", len(prompt), AntigravityPromptMaxBytes))
-	}
-	args, err := antigravity.BaseArgs(project.Root, project.Config)
+func buildAntigravityCommand(command providerCommand, target targetMeta, project *config.ProjectConfig, workDir string, model, effort, sessionID string, sessionMCP []SessionMCPServer, run *dispatchRun) (providerCommand, error) {
+	baseArgs, err := antigravity.BaseArgs(project.Root, project.Config)
 	if err != nil {
 		return providerCommand{}, wrapExitError(ExitConfig, "prepare Antigravity launch", err)
 	}
-	logPath := filepath.Join(run.Dir, "antigravity.log")
-	file, err := os.OpenFile(logPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600) // #nosec G304 -- path is inside an isolated UUID run directory.
-	if err != nil {
-		return providerCommand{}, wrapExitError(ExitConfig, "create Antigravity dispatch log", err)
+	args := append([]string{"acp", "--stdio"}, baseArgs...)
+	if project.Config.Approvals.Mode != config.ApprovalModeYOLO {
+		args = append(args, "--sandbox")
 	}
-	if closeErr := file.Close(); closeErr != nil {
-		return providerCommand{}, wrapExitError(ExitConfig, "close Antigravity dispatch log", closeErr)
-	}
-	args = append(args, "--log-file", logPath)
 	resolvedModel := resolveSetting(model, project.Config.Agents.Antigravity.Model, true)
-	args = appendFlag(args, "--model", resolvedModel)
 	command.Model = resolvedModel
-	if mode == dispatchModeResume {
-		args = append(args, "--conversation", sessionID)
-	}
 	if derivedEffort, ok := antigravitySlugEffort(resolvedModel); ok {
 		configured := strings.TrimSpace(effort)
 		if configured != "" && configured != derivedEffort {
@@ -425,65 +448,68 @@ func buildAntigravityCommand(command providerCommand, project *config.ProjectCon
 	} else {
 		command.Effort = strings.TrimSpace(effort)
 	}
-	args = append(args, "--output-format", "stream-json")
-	args = append(args, "--print-timeout", AntigravityPrintTimeout, "--print", string(prompt))
+	var staged stagedSessionMCP
+	if len(sessionMCP) > 0 {
+		staged, err = stageSessionMCPSpec(run.Dir, workDir, command.Env, sessionMCP)
+		if err != nil {
+			return providerCommand{}, err
+		}
+	}
 	command.Args = args
 	command.Env = antigravity.ConfigureEnvironment(command.Env)
 	command.SessionID = sessionID
-	command.LogPath = logPath
+	command.UseACP = true
+	command.ACP = buildACPLaunchConfig(target, project, workDir, staged, sessionMCP, run.Dir)
 	return command, nil
 }
 
-func buildGrokCommand(command providerCommand, project *config.ProjectConfig, prompt []byte, model, effort string, targetPinned bool, mode, sessionID string, run *dispatchRun, diagnostics io.Writer) (providerCommand, error) {
-	if err := requireFreshSessionID("Grok", mode, sessionID); err != nil {
-		return providerCommand{}, err
+func buildGrokCommand(command providerCommand, target targetMeta, project *config.ProjectConfig, workDir string, model, effort string, targetPinned bool, sessionID string, sessionMCP []SessionMCPServer, run *dispatchRun, diagnostics io.Writer) (providerCommand, error) {
+	args := []string{"--no-auto-update"}
+	if project.Config.Approvals.Mode != config.ApprovalModeYOLO {
+		// Pin default permission mode so user or project bypassPermissions /
+		// broad allow settings cannot bypass ACP session/request_permission.
+		args = append(args, "--permission-mode", "default")
 	}
-	promptPath, err := writeDispatchPromptFile(run, prompt, "Grok")
-	if err != nil {
-		return providerCommand{}, err
-	}
-	args := []string{"--no-auto-update", promptFileFlag, promptPath, "--output-format", "streaming-json"}
-	if mode == dispatchModeResume {
-		args = append(args, "--resume", sessionID)
-	} else {
-		args = append(args, "--session-id", sessionID)
-	}
+	args = append(args, "agent", "--no-leader")
 	resolvedModel := resolveSetting(model, project.Config.Agents.Grok.Model, !targetPinned)
 	args = appendFlag(args, "--model", resolvedModel)
 	resolvedEffort := resolveSetting(effort, project.Config.Agents.Grok.ReasoningEffort, !targetPinned)
 	args = appendFlag(args, "--reasoning-effort", resolvedEffort)
 	command.Model = resolvedModel
 	command.Effort = resolvedEffort
-	if config.GrokDisableMemory(project.Config.Agents.Grok) {
-		args = append(args, "--no-memory")
-	}
-	args = append(args, grok.SandboxArgs(project.Config, project.CommandsAllow)...)
 	if project.Config.Approvals.Mode == config.ApprovalModeYOLO {
-		args = append(args, "--permission-mode", "bypassPermissions", "--always-approve")
-	} else {
-		if projection.BuildApprovals(project.Config, project.CommandsAllow).AllowCommands {
-			args = append(args, "--permission-mode", claudePermissionModeAcceptEdits)
-		} else {
-			args = append(args, "--permission-mode", claudePermissionModeDontAsk)
-		}
-		for _, rule := range projection.GrokAllowRules(
-			project.Config,
-			project.CommandsAllow,
-			projection.EffectiveServerIDs(project.Config, projection.ClientGrok),
-		) {
-			args = append(args, "--allow", rule)
-		}
+		args = append(args, "--always-approve")
 	}
-	command.Args = args
+	args = append(args, "stdio")
 	if err := grok.EnsureHome(project.Root); err != nil {
 		return providerCommand{}, wrapExitError(ExitConfig, "prepare Grok home", err)
 	}
-	command.Env = grok.ConfigureEnvironment(project.Root, command.Env, project.Config.Agents.Grok, diagnostics)
+	env := grok.ConfigureEnvironment(project.Root, command.Env, project.Config.Agents.Grok, diagnostics)
+	switch {
+	case project.Config.Approvals.Mode == config.ApprovalModeYOLO:
+		env = clients.UnsetEnv(env, grokSandboxEnv)
+	case projection.BuildApprovals(project.Config, project.CommandsAllow).AllowCommands:
+		env = clients.SetEnv(env, grokSandboxEnv, grok.SandboxWorkspace)
+	default:
+		env = clients.SetEnv(env, grokSandboxEnv, grok.SandboxReadOnly)
+	}
+	var staged stagedSessionMCP
+	if len(sessionMCP) > 0 {
+		var err error
+		staged, err = stageSessionMCPSpec(run.Dir, workDir, command.Env, sessionMCP)
+		if err != nil {
+			return providerCommand{}, err
+		}
+	}
+	command.Args = args
+	command.Env = env
 	command.SessionID = sessionID
+	command.UseACP = true
+	command.ACP = buildACPLaunchConfig(target, project, workDir, staged, sessionMCP, run.Dir)
 	return command, nil
 }
 
-func buildMuseCommand(command providerCommand, project *config.ProjectConfig, prompt []byte, model, effort string, targetPinned bool, mode, sessionID string, run *dispatchRun) (providerCommand, error) {
+func buildMuseCommand(command providerCommand, project *config.ProjectConfig, workDir string, prompt []byte, model, effort string, targetPinned bool, mode, sessionID string, sessionMCP []SessionMCPServer, run *dispatchRun) (providerCommand, error) {
 	if err := requireFreshSessionID("Muse", mode, sessionID); err != nil {
 		return providerCommand{}, err
 	}
@@ -501,6 +527,19 @@ func buildMuseCommand(command providerCommand, project *config.ProjectConfig, pr
 	} else {
 		args = append(args, "--approval-mode", "untrusted", "--approval-judge", "off")
 		command.ObserveMuseApprovals = true
+	}
+	if len(sessionMCP) > 0 {
+		staged, err := stageSessionMCPSpec(run.Dir, workDir, command.Env, sessionMCP)
+		if err != nil {
+			return providerCommand{}, err
+		}
+		for _, server := range normalizeSessionMCPServers(sessionMCP) {
+			cfgArg, err := museSessionMCPConfigArg(run.Dir, staged, server.Name)
+			if err != nil {
+				return providerCommand{}, err
+			}
+			args = append(args, "-c", cfgArg)
+		}
 	}
 	command.Args = args
 	command.SessionID = sessionID
@@ -716,17 +755,6 @@ func codexEventReason(value map[string]any) string {
 	return reason
 }
 
-func appendRetainedGrokText(dst *strings.Builder, chunk string) {
-	if dst == nil || chunk == "" || dst.Len() >= maxRetainedAnswerBytes {
-		return
-	}
-	remain := maxRetainedAnswerBytes - dst.Len()
-	if len(chunk) > remain {
-		chunk = chunk[:remain]
-	}
-	dst.WriteString(chunk)
-}
-
 type museReducer struct {
 	expectedSession    string
 	rootRunID          string
@@ -842,133 +870,66 @@ func (m *museReducer) reduce(value map[string]any) []providerEvent {
 	return events
 }
 
-func reduceGrokEvent(expected string, value map[string]any, textAccumulator *strings.Builder, terminalSeen *bool) []providerEvent {
-	eventType, _ := value[jsonTypeKey].(string)
-	switch eventType {
-	case thoughtActivity:
-		return []providerEvent{{Kind: eventProgress, Activity: thoughtActivity}}
-	case "text":
-		chunk, _ := value["data"].(string)
-		if chunk != "" && textAccumulator != nil {
-			appendRetainedGrokText(textAccumulator, chunk)
-		}
-		return []providerEvent{{Kind: eventProgress, Activity: textDeltaActivity}}
-	case grokUsageEventType:
-		// The selective reader retains usage and the raw provider.stdout capture
-		// keeps the complete record for benchmark attribution.  It is not a UI
-		// lifecycle event, so ordinary dispatch output remains unchanged.
-		return nil
-	case grokToolUpdateType:
-		if status, _ := value["status"].(string); status == grokToolFailedStatus {
-			if content, ok := mapValueV013(value, "content"); ok {
-				if nested, found := mapValueV013(content, "content"); found {
-					if message, _ := nested[jsonTextKey].(string); strings.HasPrefix(message, grokToolDeniedPrefix) && strings.Contains(message, grokPermissionDenied) {
-						return []providerEvent{{Kind: eventFailure, Reason: "Grok denied a tool call, so the dispatch could not do the requested work. Check the effective Grok permissions before dispatching again: approvals.mode and .agent-layer/commands.allow decide what is allowed, and a deny rule or managed policy overrides both. Provider detail: " + message}}
-					}
-				}
-			}
-		}
-		return []providerEvent{{Kind: eventProgress, Activity: grokToolUpdateType}}
-	case "end":
-		if terminalSeen != nil && *terminalSeen {
-			return []providerEvent{{Kind: eventFailure, Reason: "Grok stream has multiple terminal end events"}}
-		}
-		if terminalSeen != nil {
-			*terminalSeen = true
-		}
-		id, _ := firstStringV013(value, "session_id", jsonSessionIDCamelKey)
-		if id == "" || id != expected {
-			return []providerEvent{{Kind: eventFailure, Reason: "Grok terminal result did not return the caller-assigned session ID"}}
-		}
-		stopReason, _ := firstStringV013(value, "stopReason", "stop_reason")
-		if !grok.IsSuccessfulStopReason(stopReason) {
-			return []providerEvent{{Kind: eventFailure, Reason: fmt.Sprintf("Grok terminated with abnormal stop reason %q", stopReason)}}
-		}
-		var answer string
-		if textAccumulator != nil {
-			answer = textAccumulator.String()
-			if textAccumulator.Len() >= maxRetainedAnswerBytes {
-				answer += truncatedAnswerNotice
-			}
-		}
-		if answer == "" {
-			return []providerEvent{{Kind: eventFailure, Reason: "Grok terminal result did not contain a final answer"}}
-		}
-		return []providerEvent{
-			{Kind: eventSession, SessionID: id},
-			{Kind: eventAnswer, Answer: answer},
-			{Kind: eventComplete},
-		}
-	case "error":
-		reason, _ := firstStringV013(value, "message", "error", "reason")
-		if reason == "" {
-			reason = "Grok reported a terminal failure"
-		}
-		return []providerEvent{{Kind: eventFailure, Reason: reason}}
-	}
-	if eventType != "" {
-		return []providerEvent{{Kind: eventProgress, Activity: eventType}}
-	}
-	return nil
+// claudeSessionMCPTracker enforces no silent degradation for Claude
+// session-scoped MCP servers. Claude Code continues running even when an
+// --mcp-config server fails to start; this tracker inspects system/init and
+// immediately fails the invocation if any required session server is missing or
+// not connected, or if Claude finishes without confirming startup.
+type claudeSessionMCPTracker struct {
+	expected  []string
+	confirmed bool
 }
 
-func reduceAntigravityEvent(value map[string]any, terminalSeen *bool) []providerEvent {
-	eventType, _ := value[jsonEventKey].(string)
-	if eventType == antigravityInitEvent {
-		id, _ := firstStringV013(value, "conversation_id")
-		if id == "" {
-			// Ignore an incomplete lifecycle notification. The terminal
-			// result invariant still rejects a run without an identity.
-			return []providerEvent{{Kind: eventProgress, Activity: eventType}}
+func (t *claudeSessionMCPTracker) reduce(record structuredRecord, events []providerEvent) []providerEvent {
+	if len(t.expected) == 0 {
+		return events
+	}
+	eventType, _ := record.Fields[jsonTypeKey].(string)
+	subtype, _ := record.Fields["subtype"].(string)
+	if eventType == claudeSystemEventType && subtype == "init" {
+		statuses := make(map[string]string, len(record.Claude.MCPServers))
+		for _, srv := range record.Claude.MCPServers {
+			statuses[srv.Name] = srv.Status
 		}
-		return []providerEvent{{Kind: eventSession, SessionID: id}}
-	}
-	if eventType != jsonResultKey {
-		if eventType == "" {
-			return nil
+		for _, name := range t.expected {
+			status, ok := statuses[name]
+			if !ok {
+				return []providerEvent{{
+					Kind:   eventFailure,
+					Reason: fmt.Sprintf("Claude session MCP server %q was not initialized (missing from Claude init mcp_servers); check the server command and configuration", name),
+				}}
+			}
+			if status != "connected" {
+				return []providerEvent{{
+					Kind:   eventFailure,
+					Reason: fmt.Sprintf("Claude session MCP server %q failed to start (status: %q); check the server command, arguments, and environment", name, status),
+				}}
+			}
 		}
-		return []providerEvent{{Kind: eventProgress, Activity: eventType}}
+		t.confirmed = true
+		return events
 	}
-	if terminalSeen != nil && *terminalSeen {
-		return []providerEvent{{Kind: eventFailure, Reason: "Antigravity stream has multiple terminal result events"}}
-	}
-	if terminalSeen != nil {
-		*terminalSeen = true
-	}
-	result, _ := value[jsonResultKey].(map[string]any)
-	if result == nil {
-		return []providerEvent{{Kind: eventFailure, Reason: "Antigravity terminal result is not an object"}}
-	}
-	id, _ := firstStringV013(result, "conversation_id")
-	var events []providerEvent
-	if id != "" {
-		events = append(events, providerEvent{Kind: eventSession, SessionID: id})
-	}
-	status, _ := result[jsonStatusKey].(string)
-	if status != "SUCCESS" {
-		reason := "Antigravity terminal result was unsuccessful"
-		if providerError, _ := firstStringV013(result, "error"); providerError != "" {
-			reason += ": " + providerError
+	if !t.confirmed {
+		for _, event := range events {
+			if event.Kind == eventComplete || event.Kind == eventAnswer {
+				return []providerEvent{{
+					Kind:   eventFailure,
+					Reason: fmt.Sprintf("Claude produced output without confirming startup of required session MCP servers (%s)", strings.Join(t.expected, ", ")),
+				}}
+			}
 		}
-		return append(events, providerEvent{Kind: eventFailure, Reason: reason})
 	}
-	answer, _ := firstStringV013(result, jsonResponseKey)
-	if id == "" || answer == "" {
-		return append(events, providerEvent{Kind: eventFailure, Reason: "Antigravity terminal result has no conversation ID or final answer"})
-	}
-	usage, _ := result[grokUsageEventType].(map[string]any)
-	if usage == nil {
-		return append(events, providerEvent{Kind: eventFailure, Reason: "Antigravity terminal result has no usage object"})
-	}
-	return append(events, providerEvent{Kind: eventAnswer, Answer: answer}, providerEvent{Kind: eventProgress, Activity: "usage", Usage: usage}, providerEvent{Kind: eventComplete})
+	return events
 }
 
 func readStructuredEventsWithLineage(reader io.Reader, rawWriter io.Writer, agent string, expectedSession string, claudeLineage bool, consume func(providerEvent) error, consumeLineage func(claudeLineageEvidence) error, recovery ...*museRecoveryBaseline) error {
+	return readStructuredEventsWithSessionMCP(reader, rawWriter, agent, expectedSession, claudeLineage, nil, consume, consumeLineage, recovery...)
+}
+
+func readStructuredEventsWithSessionMCP(reader io.Reader, rawWriter io.Writer, agent string, expectedSession string, claudeLineage bool, expectedSessionMCP []string, consume func(providerEvent) error, consumeLineage func(claudeLineageEvidence) error, recovery ...*museRecoveryBaseline) error {
 	source := bufio.NewReaderSize(io.TeeReader(reader, rawWriter), structuredJSONBufferBytes)
 	parser := newSelectiveJSONReader()
 	normalizer := claudeLineageNormalizer{ignoredTasks: make(map[string]struct{})}
-	var grokAccumulator strings.Builder
-	var grokTerminalSeen, antigravityTerminalSeen bool
 	museState := museReducer{expectedSession: expectedSession}
 	if len(recovery) > 0 {
 		museState.recovery = recovery[0]
@@ -1000,6 +961,7 @@ func readStructuredEventsWithLineage(reader io.Reader, rawWriter io.Writer, agen
 		return consumeEvent(event)
 	}
 	claudeTasks := claudeTaskTracker{outstanding: make(map[string]struct{})}
+	claudeSessionMCP := claudeSessionMCPTracker{expected: expectedSessionMCP}
 	finish := func() error {
 		if agent == AgentMuse && museState.awaitingBackground {
 			return consume(providerEvent{Kind: eventFailure, Reason: "Muse completed without a final answer"})
@@ -1007,6 +969,9 @@ func readStructuredEventsWithLineage(reader io.Reader, rawWriter io.Writer, agen
 		if agent == AgentClaude && claudeTasks.completionPending {
 			if claudeTasks.pendingTaskFailure != "" {
 				return consume(providerEvent{Kind: eventFailure, Reason: fmt.Sprintf("Claude background task reported %s after the latest successful result; Claude exited without a later result", claudeTasks.pendingTaskFailure)})
+			}
+			if len(claudeSessionMCP.expected) > 0 && !claudeSessionMCP.confirmed {
+				return consume(providerEvent{Kind: eventFailure, Reason: fmt.Sprintf("Claude completed without confirming startup of required session MCP servers (%s)", strings.Join(claudeSessionMCP.expected, ", "))})
 			}
 			// The stream ended without a later result, so the latest
 			// successful result is the final answer.
@@ -1079,13 +1044,9 @@ func readStructuredEventsWithLineage(reader io.Reader, rawWriter io.Writer, agen
 					lineageEvents = normalizer.reduce(record)
 				}
 			}
-			events = claudeTasks.reduce(record, reduceClaudeEvent(expectedSession, record.Fields))
+			events = claudeSessionMCP.reduce(record, claudeTasks.reduce(record, reduceClaudeEvent(expectedSession, record.Fields)))
 		case AgentCodex:
 			events = reduceCodexEvent(record.Fields)
-		case AgentGrok:
-			events = reduceGrokEvent(expectedSession, record.Fields, &grokAccumulator, &grokTerminalSeen)
-		case AgentAntigravity:
-			events = reduceAntigravityEvent(record.Fields, &antigravityTerminalSeen)
 		case AgentMuse:
 			events = museState.reduce(record.Fields)
 			for i := range events {
@@ -1121,75 +1082,6 @@ func readStructuredEventsWithLineage(reader io.Reader, rawWriter io.Writer, agen
 	}
 }
 
-// antigravitySessionID extracts one consistent conversation ID from a run log.
-func antigravitySessionID(logPath string) (string, error) {
-	file, err := os.Open(logPath) // #nosec G304 -- path is created in this run's private directory.
-	if err != nil {
-		return "", err
-	}
-	defer func() { _ = file.Close() }()
-
-	found := ""
-	reader := bufio.NewReaderSize(file, 64*1024)
-	for {
-		line, readErr := readDiagnosticLine(reader, 4*1024)
-		if readErr != nil && readErr != io.EOF {
-			return "", fmt.Errorf("read Antigravity dispatch log: %w", readErr)
-		}
-		if line == "" && readErr == io.EOF {
-			break
-		}
-		candidate := strings.TrimSpace(line)
-		if match := antigravityLogPrefix.FindStringSubmatch(candidate); len(match) == 2 {
-			candidate = match[1]
-		}
-		var id string
-		if match := antigravityCreatedConversation.FindStringSubmatch(candidate); len(match) == 2 {
-			id = strings.ToLower(match[1])
-		} else if match := antigravityPrintConversation.FindStringSubmatch(candidate); len(match) == 2 {
-			id = strings.ToLower(match[1])
-		}
-		if id == "" {
-			continue
-		}
-		if found != "" && found != id {
-			return "", fmt.Errorf("antigravity dispatch log reported conflicting conversation IDs %s and %s", found, id)
-		}
-		found = id
-		if readErr == io.EOF {
-			break
-		}
-	}
-	return found, nil
-}
-
-// readDiagnosticLine retains only a small prefix while consuming the complete
-// line. Conversation markers are short; oversized diagnostics are reduced to
-// their prefix without constraining the provider log itself.
-func readDiagnosticLine(reader *bufio.Reader, retainBytes int) (string, error) {
-	line := make([]byte, 0, retainBytes)
-	truncated := false
-	for {
-		fragment, err := reader.ReadSlice('\n')
-		if !truncated {
-			remaining := retainBytes - len(line)
-			if len(fragment) <= remaining {
-				line = append(line, fragment...)
-			} else {
-				truncated = true
-				line = append(line, fragment[:remaining]...)
-			}
-		}
-		if err == bufio.ErrBufferFull {
-			continue
-		}
-		if truncated {
-			return string(line), err
-		}
-		return string(line), err
-	}
-}
-
 func compatibleTargetVersion(path string, target targetMeta, lookup func(string, string) (string, error)) (targetMeta, string, error) {
 	installed, err := requireSupportedVersion(path, target.Name, lookup)
 	if err != nil {
@@ -1203,9 +1095,10 @@ func dispatchEnvironment(base []string, project *config.ProjectConfig, dispatchR
 	info := &run.Info{ID: dispatchRun.Record.ID, Dir: dispatchRun.Dir}
 	env := clients.BuildEnv(base, project.Env, info)
 	// A dispatched worker belongs to its own conversation, never the caller's
-	// HerdR pane. Remove the complete HerdR namespace before the native child
-	// and its hooks can inherit it.
+	// HerdR pane or session MCP wrapper environment. Remove both namespaces
+	// before the native child and its hooks can inherit them.
 	env = withoutHerdREnvironment(env)
+	env = withoutSessionMCPEnvironment(env)
 	env = clients.SetEnv(env, clients.EnvDispatchActive, fmt.Sprintf("%d", depth))
 	return clients.SetEnv(env, updatewarn.EnvSuppress, "1")
 }

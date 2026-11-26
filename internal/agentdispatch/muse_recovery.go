@@ -321,7 +321,7 @@ func singleLineMuseText(text string) string {
 
 func queryMuseRecoveryBaseline(encoder *json.Encoder, decoder *json.Decoder, sessionID string) (*museRecoveryBaseline, error) {
 	if err := initializeMuseRPC(encoder, decoder); err != nil {
-		return nil, &museBaselineStepError{step: "initialize", err: err}
+		return nil, &museBaselineStepError{step: acpMethodInitialize, err: err}
 	}
 	if err := encoder.Encode(map[string]any{
 		jsonRPCKey: jsonRPCVersion, "id": 2, jsonMethodKey: museSessionRead,
@@ -356,7 +356,7 @@ func queryMuseRecoveryBaseline(encoder *json.Encoder, decoder *json.Decoder, ses
 		result.LastTurn.Terminal, result.LastTurn.TurnID = "", ""
 	}
 	id := result.Session.ActiveTurnID
-	if id == "" && (result.LastTurn.Terminal == "failed" || result.LastTurn.Terminal == "cancelled") {
+	if id == "" && (result.LastTurn.Terminal == dispatchStateFailed || result.LastTurn.Terminal == dispatchStateCancelled) {
 		id = result.LastTurn.TurnID
 	}
 	return &museRecoveryBaseline{SessionID: sessionID, RootID: id, ViewCursor: result.ViewCursor, ObservedAt: time.Now().UTC(), Source: museSessionRead, ActiveAtRead: result.Session.ActiveTurnID != "", TerminalRootID: result.LastTurn.TurnID, TerminalState: result.LastTurn.Terminal}, nil
@@ -364,8 +364,8 @@ func queryMuseRecoveryBaseline(encoder *json.Encoder, decoder *json.Decoder, ses
 
 func initializeMuseRPC(encoder *json.Encoder, decoder *json.Decoder) error {
 	if err := encoder.Encode(map[string]any{
-		jsonRPCKey: jsonRPCVersion, "id": 1, jsonMethodKey: "initialize",
-		jsonParamsKey: map[string]any{"clientInfo": map[string]any{"name": "agent_layer", museRPCVersionKey: "1"}, "capabilities": map[string]any{"userInputDialogs": false}},
+		jsonRPCKey: jsonRPCVersion, "id": 1, jsonMethodKey: acpMethodInitialize,
+		jsonParamsKey: map[string]any{"clientInfo": map[string]any{jsonNameKey: "agent_layer", museRPCVersionKey: "1"}, "capabilities": map[string]any{"userInputDialogs": false}},
 	}); err != nil {
 		return fmt.Errorf("initialize Muse session observer: %w", err)
 	}

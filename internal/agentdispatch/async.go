@@ -77,7 +77,11 @@ func Start(opts StartOptions) error {
 	if opts.Reservation != nil {
 		return startReservation(opts, requested, promptText, stderr, env, depth)
 	}
-	project, target, version, prompt, err := prepareStart(opts.runOptions(promptText), requested, stderr, depth)
+	sessionMCP, err := resolveSessionMCPServers(opts.MCPConfigs, opts.SessionMCPServers)
+	if err != nil {
+		return err
+	}
+	project, target, version, prompt, err := prepareStart(opts.runOptions(promptText, sessionMCP), requested, stderr, depth)
 	if err != nil {
 		return err
 	}
@@ -103,6 +107,7 @@ func Start(opts StartOptions) error {
 	}
 	session.Model = opts.Model
 	session.ReasoningEffort = opts.ReasoningEffort
+	session.SessionMCPServers = sessionMCP
 	if err := persistSession(opts.Root, session); err != nil {
 		return finishDispatchFailure(dispatchExecution{Root: opts.Root, Run: run, Session: session}, err)
 	}
@@ -110,10 +115,10 @@ func Start(opts StartOptions) error {
 	return publishInvocation(opts.Context, opts.Root, run, session, request, writerOrDiscard(opts.Stdout), opts.launchWorker)
 }
 
-func (o StartOptions) runOptions(prompt string) runOptions {
+func (o StartOptions) runOptions(prompt string, sessionMCP []SessionMCPServer) runOptions {
 	return runOptions{
 		Root: o.Root, WorkDir: o.WorkDir, Model: o.Model, ReasoningEffort: o.ReasoningEffort,
-		Skill: o.Skill, Prompt: prompt, LookPath: o.LookPath, VersionLookup: o.VersionLookup,
+		Skill: o.Skill, Prompt: prompt, SessionMCPServers: sessionMCP, LookPath: o.LookPath, VersionLookup: o.VersionLookup,
 	}
 }
 
@@ -193,6 +198,9 @@ func Continue(opts ContinueOptions) error {
 	if err != nil {
 		return err
 	}
+	if err := hydrateSessionMCPServers(opts.Root, &session); err != nil {
+		return err
+	}
 	if opts.beforeProvider != nil {
 		release, err := opts.beforeProvider(opts.Context, target.Name)
 		if err != nil {
@@ -201,7 +209,7 @@ func Continue(opts ContinueOptions) error {
 		defer release()
 	}
 	_, target, version, prompt, err := prepareStart(runOptions{
-		Root: opts.Root, WorkDir: opts.WorkDir, Prompt: promptText,
+		Root: opts.Root, WorkDir: opts.WorkDir, Prompt: promptText, SessionMCPServers: session.SessionMCPServers,
 		LookPath: opts.LookPath, VersionLookup: opts.VersionLookup,
 	}, target, stderr, depth)
 	if err != nil {
@@ -451,6 +459,9 @@ func RunWorker(root string, runID string, gate io.Reader) error {
 	}
 	session, err := loadSession(root, record.Name)
 	if err != nil {
+		return failWorkerBeforeExecution(root, runID, err)
+	}
+	if err := hydrateSessionMCPServers(root, &session); err != nil {
 		return failWorkerBeforeExecution(root, runID, err)
 	}
 	project, err := loadWorkerProject(root)

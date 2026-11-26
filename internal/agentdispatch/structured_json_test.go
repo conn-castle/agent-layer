@@ -236,27 +236,17 @@ func TestEscapedSolidusCountsAsOneRetainedByte(t *testing.T) {
 	}
 }
 
-func TestGrokStructuredReaderBoundsSingleTextEvent(t *testing.T) {
-	const sessionID = "caller-session"
-	largeChunk := strings.Repeat("x", 2*structuredJSONBufferBytes)
-	stream := `{"type":"text","data":"` + largeChunk + `"}` + "\n" +
-		`{"type":"end","session_id":"` + sessionID + `","stopReason":"end_turn"}` + "\n"
-	var events []providerEvent
-	if err := readStructuredEventsWithLineage(strings.NewReader(stream), io.Discard, AgentGrok, sessionID, false, func(event providerEvent) error {
-		events = append(events, event)
-		return nil
-	}, nil); err != nil {
-		t.Fatal(err)
+func TestACPAppendRetainedTextBoundsAndPreservesUTF8(t *testing.T) {
+	var builder strings.Builder
+	prefix := strings.Repeat("x", maxRetainedAnswerBytes-2)
+	if truncated := appendRetainedText(&builder, prefix); truncated {
+		t.Fatal("prefix unexpectedly marked truncated")
 	}
-
-	want := largeChunk[:structuredJSONBufferBytes] + grokEventDataTruncatedNotice
-	for _, event := range events {
-		if event.Kind == eventAnswer {
-			if event.Answer != want {
-				t.Fatalf("bounded Grok answer length = %d, want %d", len(event.Answer), len(want))
-			}
-			return
-		}
+	// Multi-byte UTF-8 rune ("🏰" is 4 bytes) does not fit in the remaining 2 bytes.
+	if truncated := appendRetainedText(&builder, "🏰tail"); !truncated {
+		t.Fatal("oversized chunk not marked truncated")
 	}
-	t.Fatalf("no answer event in %#v", events)
+	if builder.Len() != maxRetainedAnswerBytes-2 {
+		t.Fatalf("retained bytes = %d, want %d (must not split multi-byte rune)", builder.Len(), maxRetainedAnswerBytes-2)
+	}
 }

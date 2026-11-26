@@ -302,6 +302,7 @@ const (
 	DispatchReservationFlag              = "Reservation handle from al dispatch reserve to launch at most once"
 	DispatchContinueReservationFlag      = "Reservation invocation ID from al dispatch reserve --continue to launch at most once"
 	DispatchReserveContinueFlag          = "Existing conversation handle to reserve the next continuation invocation for"
+	DispatchMCPConfigFlag                = "Path to JSON file defining session-scoped stdio MCP servers (repeatable)"
 	DispatchReserveShort                 = "Reserve a named invocation for one later start or continuation"
 	DispatchReserveLong                  = "Durably create an invocation in the \"reserved\" state without launching anything, and write its handle and invocation ID as one JSON object.\n\nWithout --continue, allocates a new conversation handle to launch with `al dispatch start --reservation <handle>`. With --continue <handle>, reserves the next continuation invocation of that existing conversation to launch with `al dispatch continue --reservation <invocation-id>`, returning any unexpired pending continuation reservation idempotently. A repeated launch errors without launching anything. Unstarted reservations expire after dispatch.reservation_expiry_days (default 7)."
 	DispatchOptionsUse                   = "options"

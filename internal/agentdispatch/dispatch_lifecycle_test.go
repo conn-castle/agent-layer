@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -67,7 +68,7 @@ func TestRejectedResumeExposesTerminalPublicationFailure(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if retained != session {
+	if !reflect.DeepEqual(retained, session) {
 		t.Fatalf("publication failure mutated active mapping: before = %#v, after = %#v", session, retained)
 	}
 	durable, err := loadRunRecord(root, attempted.Record.ID)
@@ -464,7 +465,7 @@ func TestClaimReplacementBlockedByCompatibilityOwnerWithUnprovableOwnership(t *t
 	if err != nil {
 		t.Fatal(err)
 	}
-	if afterClaim != beforeClaim {
+	if !reflect.DeepEqual(afterClaim, beforeClaim) {
 		t.Fatalf("blocked compatibility claim mutated mapping: before = %#v, after = %#v", beforeClaim, afterClaim)
 	}
 }

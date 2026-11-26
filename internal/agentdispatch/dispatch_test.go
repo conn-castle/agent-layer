@@ -19,7 +19,27 @@ import (
 	"github.com/conn-castle/agent-layer/internal/updatewarn"
 )
 
-const antigravityStructuredOK = `printf '{"event":"result","result":{"status":"SUCCESS","conversation_id":"22222222-2222-4222-8222-222222222222","response":"agy ok","usage":{"input_tokens":1,"output_tokens":2,"thinking_tokens":1,"cache_read_tokens":0}}}\n'`
+const antigravityStructuredOK = `while IFS= read -r line; do
+  if [ -n "${AL_TEST_LOG:-}" ]; then
+    printf 'ACP=%s\n' "$line" >> "$AL_TEST_LOG"
+  fi
+  id="$(printf '%s\n' "$line" | sed -n 's/.*"id":\([0-9][0-9]*\).*/\1/p')"
+  case "$line" in
+    *'"method":"initialize"'*)
+      printf '{"jsonrpc":"2.0","id":%s,"result":{"protocolVersion":1}}\n' "$id"
+      ;;
+    *'"method":"session/new"'*|*'"method":"session/resume"'*)
+      printf '{"jsonrpc":"2.0","id":%s,"result":{"sessionId":"22222222-2222-4222-8222-222222222222"}}\n' "$id"
+      ;;
+    *'"method":"session/set_model"'*|*'"method":"session/set_config_option"'*)
+      printf '{"jsonrpc":"2.0","id":%s,"result":{}}\n' "$id"
+      ;;
+    *'"method":"session/prompt"'*)
+      printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"22222222-2222-4222-8222-222222222222","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"%s"}}}}\n' "${AL_TEST_AGY_ANSWER:-agy ok}"
+      printf '{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"end_turn","usage":{"inputTokens":1,"outputTokens":2,"thoughtTokens":1,"cachedReadTokens":0}}}\n' "$id"
+      ;;
+  esac
+done`
 
 func TestProviderAssignedSessionPreservesResolvedSettings(t *testing.T) {
 	for _, tc := range []struct {
@@ -377,11 +397,10 @@ func TestRunAntigravityUsesConfiguredModel(t *testing.T) {
 	if stdout.String() != "agy ok" {
 		t.Fatalf("stdout = %q", stdout.String())
 	}
-	assertFileContains(t, logPath, "ARG_3=--model")
-	assertFileContains(t, logPath, "ARG_4=Gemini 3.1 Pro (High)")
-	assertFileContains(t, logPath, "ARG_5=--output-format")
-	assertFileContains(t, logPath, "ARG_6=stream-json")
-	assertFileContains(t, logPath, "ARG_7=--print-timeout")
+	assertFileContains(t, logPath, "ARG_0=acp")
+	assertFileContains(t, logPath, "ARG_1=--stdio")
+	assertFileContains(t, logPath, `"method":"session/set_model"`)
+	assertFileContains(t, logPath, `"modelId":"Gemini 3.1 Pro (High)"`)
 }
 
 func TestRunAntigravityUsesModelOverride(t *testing.T) {
@@ -410,8 +429,8 @@ func TestRunAntigravityUsesModelOverride(t *testing.T) {
 	if stdout.String() != "agy ok" {
 		t.Fatalf("stdout = %q", stdout.String())
 	}
-	assertFileContains(t, logPath, "ARG_3=--model")
-	assertFileContains(t, logPath, "ARG_4=Gemini 3.5 Flash (High)")
+	assertFileContains(t, logPath, `"method":"session/set_model"`)
+	assertFileContains(t, logPath, `"modelId":"Gemini 3.5 Flash (High)"`)
 	assertFileDoesNotContain(t, logPath, "Gemini 3.1 Pro (High)")
 }
 
@@ -419,7 +438,7 @@ func TestRunAntigravityExactSlugCapturesStructuredEvents(t *testing.T) {
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	binDir := t.TempDir()
 	logPath := filepath.Join(t.TempDir(), "agy.log")
-	writeDispatchStub(t, binDir, "agy", `printf '{"event":"result","result":{"status":"SUCCESS","conversation_id":"22222222-2222-4222-8222-222222222222","response":"agy structured ok","usage":{"input_tokens":1,"output_tokens":2,"thinking_tokens":1,"cache_read_tokens":0}}}\n'`)
+	writeDispatchStub(t, binDir, "agy", antigravityStructuredOK)
 	var stdout bytes.Buffer
 	err := executeFreshDispatch(dispatchExecRequest{
 		Root:            root,
@@ -427,7 +446,7 @@ func TestRunAntigravityExactSlugCapturesStructuredEvents(t *testing.T) {
 		Model:           "gemini-3.5-flash-low",
 		ReasoningEffort: "low",
 		Prompt:          "Review",
-		Env:             []string{"PATH=" + testPath(binDir), "AL_TEST_LOG=" + logPath},
+		Env:             []string{"PATH=" + testPath(binDir), "AL_TEST_LOG=" + logPath, "AL_TEST_AGY_ANSWER=agy structured ok"},
 		Stdout:          &stdout,
 		Stderr:          &bytes.Buffer{},
 		LookPath:        mockLookPath(binDir),
@@ -438,17 +457,27 @@ func TestRunAntigravityExactSlugCapturesStructuredEvents(t *testing.T) {
 	if stdout.String() != "agy structured ok" {
 		t.Fatalf("stdout = %q", stdout.String())
 	}
-	assertFileContains(t, logPath, "ARG_3=--model")
-	assertFileContains(t, logPath, "ARG_4=gemini-3.5-flash-low")
-	assertFileContains(t, logPath, "ARG_5=--output-format")
-	assertFileContains(t, logPath, "ARG_6=stream-json")
+	assertFileContains(t, logPath, "ARG_0=acp")
+	assertFileContains(t, logPath, "ARG_1=--stdio")
+	assertFileContains(t, logPath, `"method":"session/set_model"`)
+	assertFileContains(t, logPath, `"modelId":"gemini-3.5-flash-low"`)
 }
 
-func TestRunAntigravityRejectsMismatchedStreamAndDiagnosticIDs(t *testing.T) {
+func TestRunAntigravityRejectsEmptySessionID(t *testing.T) {
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	binDir := t.TempDir()
 	logPath := filepath.Join(t.TempDir(), "agy.log")
-	writeDispatchStub(t, binDir, "agy", antigravityStructuredOK)
+	writeDispatchStub(t, binDir, "agy", `while IFS= read -r line; do
+  id="$(printf '%s\n' "$line" | sed -n 's/.*"id":\([0-9][0-9]*\).*/\1/p')"
+  case "$line" in
+    *'"method":"initialize"'*)
+      printf '{"jsonrpc":"2.0","id":%s,"result":{"protocolVersion":1}}\n' "$id"
+      ;;
+    *'"method":"session/new"'*)
+      printf '{"jsonrpc":"2.0","id":%s,"result":{"sessionId":""}}\n' "$id"
+      ;;
+  esac
+done`)
 	var stdout bytes.Buffer
 	err := executeFreshDispatch(dispatchExecRequest{
 		Root:   root,
@@ -457,7 +486,6 @@ func TestRunAntigravityRejectsMismatchedStreamAndDiagnosticIDs(t *testing.T) {
 		Env: []string{
 			"PATH=" + testPath(binDir),
 			"AL_TEST_LOG=" + logPath,
-			"AL_TEST_AGY_LOG_ID=33333333-3333-4333-8333-333333333333",
 		},
 		Stdout:   &stdout,
 		Stderr:   &bytes.Buffer{},
@@ -465,10 +493,10 @@ func TestRunAntigravityRejectsMismatchedStreamAndDiagnosticIDs(t *testing.T) {
 	})
 	requireDispatchExitCode(t, err, ExitTargetFailure)
 	if stdout.Len() != 0 {
-		t.Fatalf("mismatched Antigravity answer leaked to caller: %q", stdout.String())
+		t.Fatalf("invalid Antigravity answer leaked to caller: %q", stdout.String())
 	}
-	if !strings.Contains(err.Error(), "different provider conversation IDs") {
-		t.Fatalf("mismatch error = %q", err)
+	if !strings.Contains(err.Error(), "empty sessionId") {
+		t.Fatalf("empty session error = %q", err)
 	}
 }
 
@@ -526,25 +554,39 @@ func TestGrokFreshAndResumeDispatchPreserveProviderSession(t *testing.T) {
 	replaceDispatchConfigText(t, root, "[agents.grok]\nenabled = false", "[agents.grok]\nenabled = true")
 	binDir := t.TempDir()
 	logPath := filepath.Join(t.TempDir(), "grok.log")
+	rpcLog := filepath.Join(t.TempDir(), "grok-rpc.log")
 	writeDispatchStub(t, binDir, "grok", `
-session=""
-previous=""
-for arg in "$@"; do
-  if [ "$previous" = "session" ]; then
-    session="$arg"
-    previous=""
-    continue
-  fi
-  if [ "$arg" = "--session-id" ] || [ "$arg" = "--resume" ]; then previous="session"; fi
+while IFS= read -r line; do
+  printf '%s\n' "$line" >> "$AL_TEST_RPC_LOG"
+  id="$(printf '%s\n' "$line" | sed -n 's/.*"id":\([0-9][0-9]*\).*/\1/p')"
+  case "$line" in
+    *'"method":"initialize"'*)
+      printf '{"jsonrpc":"2.0","id":%s,"result":{"protocolVersion":1,"authMethods":[{"id":"cached_token"}]}}\n' "$id"
+      ;;
+    *'"method":"authenticate"'*)
+      printf '{"jsonrpc":"2.0","id":%s,"result":{}}\n' "$id"
+      ;;
+    *'"method":"session/new"'*)
+      printf '{"jsonrpc":"2.0","id":%s,"result":{"sessionId":"11111111-1111-4111-8111-111111111111"}}\n' "$id"
+      ;;
+    *'"method":"session/resume"'*)
+      printf '{"jsonrpc":"2.0","id":%s,"result":{"sessionId":"11111111-1111-4111-8111-111111111111"}}\n' "$id"
+      ;;
+    *'"method":"session/set_config_option"'*)
+      printf '{"jsonrpc":"2.0","id":%s,"result":{}}\n' "$id"
+      ;;
+    *'"method":"session/prompt"'*)
+      printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"11111111-1111-4111-8111-111111111111","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"grok ok"}}}}\n'
+      printf '{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"end_turn","_meta":{"sessionId":"11111111-1111-4111-8111-111111111111","usage":{"inputTokens":10,"outputTokens":5}}}}\n' "$id"
+      ;;
+  esac
 done
-printf '{"type":"text","data":"grok ok"}\n'
-printf '{"type":"end","stopReason":"end_turn","sessionId":"%s"}\n' "$session"
 `)
 
 	var stdout bytes.Buffer
 	err := executeFreshDispatch(dispatchExecRequest{
 		Root: root, Agent: AgentGrok, Prompt: "Review",
-		Env:    []string{"PATH=" + testPath(binDir), "AL_TEST_LOG=" + logPath},
+		Env:    []string{"PATH=" + testPath(binDir), "AL_TEST_LOG=" + logPath, "AL_TEST_RPC_LOG=" + rpcLog},
 		Stdout: &stdout, Stderr: &bytes.Buffer{}, LookPath: mockLookPath(binDir),
 	})
 	if err != nil {
@@ -564,13 +606,17 @@ printf '{"type":"end","stopReason":"end_turn","sessionId":"%s"}\n' "$session"
 	if err := parseUUID(session.ProviderSessionID); err != nil {
 		t.Fatalf("provider session ID %q: %v", session.ProviderSessionID, err)
 	}
-	assertFileContains(t, logPath, "ARG_5=--session-id")
-	assertFileContains(t, logPath, "ARG_6="+session.ProviderSessionID)
+	assertFileContains(t, logPath, "ARG_0=--no-auto-update")
+	assertFileContains(t, logPath, "ARG_1=--permission-mode")
+	assertFileContains(t, logPath, "ARG_2=default")
+	assertFileContains(t, logPath, "ARG_3=agent")
+	assertFileContains(t, logPath, "ARG_4=--no-leader")
+	assertFileContains(t, rpcLog, `"method":"session/new"`)
 
 	stdout.Reset()
 	err = executeContinueDispatch(dispatchExecRequest{
 		Root: root, Prompt: "Continue",
-		Env:    []string{"PATH=" + testPath(binDir), "AL_TEST_LOG=" + logPath},
+		Env:    []string{"PATH=" + testPath(binDir), "AL_TEST_LOG=" + logPath, "AL_TEST_RPC_LOG=" + rpcLog},
 		Stdout: &stdout, Stderr: &bytes.Buffer{}, LookPath: mockLookPath(binDir),
 	}, session.Name)
 	if err != nil {
@@ -586,19 +632,18 @@ printf '{"type":"end","stopReason":"end_turn","sessionId":"%s"}\n' "$session"
 	if resumed.ProviderSessionID != session.ProviderSessionID {
 		t.Fatalf("resume changed provider session ID from %q to %q", session.ProviderSessionID, resumed.ProviderSessionID)
 	}
-	assertFileContains(t, logPath, "ARG_5=--resume")
+	assertFileContains(t, rpcLog, `"method":"session/resume"`)
+	assertFileContains(t, rpcLog, session.ProviderSessionID)
 }
 
 func TestAntigravityCommandConstruction(t *testing.T) {
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	binDir := t.TempDir()
 	logPath := filepath.Join(t.TempDir(), "agy.log")
-	promptPath := filepath.Join(t.TempDir(), "agy.prompt")
 	writeDispatchStub(t, binDir, "agy", antigravityStructuredOK)
 	env := []string{
 		"PATH=" + testPath(binDir),
 		"AL_TEST_LOG=" + logPath,
-		"AL_TEST_PROMPT=" + promptPath,
 	}
 	var stdout bytes.Buffer
 	err := executeFreshDispatch(dispatchExecRequest{
@@ -616,12 +661,9 @@ func TestAntigravityCommandConstruction(t *testing.T) {
 	if stdout.String() != "agy ok" {
 		t.Fatalf("stdout = %q", stdout.String())
 	}
-	assertFileContains(t, logPath, "ARG_0=--gemini_dir="+filepath.Join(root, ".agy"))
-	assertFileContains(t, logPath, "ARG_3=--output-format")
-	assertFileContains(t, logPath, "ARG_4=stream-json")
-	assertFileContains(t, logPath, "ARG_5=--print-timeout")
-	assertFileContains(t, logPath, "ARG_6="+AntigravityPrintTimeout)
-	assertFileContains(t, logPath, "ARG_7=--print")
+	assertFileContains(t, logPath, "ARG_0=acp")
+	assertFileContains(t, logPath, "ARG_1=--stdio")
+	assertFileContains(t, logPath, "ARG_2=--gemini_dir="+filepath.Join(root, ".agy"))
 	assertFileContains(t, logPath, "AGY_CLI_DISABLE_AUTO_UPDATE=1")
 }
 
@@ -805,7 +847,21 @@ func writeDispatchStub(t *testing.T, binDir string, name string, outputScript st
 		t.Fatalf("mkdir bin: %v", err)
 	}
 	path := filepath.Join(binDir, name)
-	version := map[string]string{"claude": "2.1.207", "codex": "0.144.1", "agy": "1.1.21", "grok": "1.0.5"}[name]
+	version := map[string]string{
+		"claude": supportedProviderVersions[AgentClaude],
+		"codex":  supportedProviderVersions[AgentCodex],
+		"agy":    supportedProviderVersions[AgentAntigravity],
+		"grok":   supportedProviderVersions[AgentGrok],
+		"muse":   supportedProviderVersions[AgentMuse],
+	}[name]
+	drainStdin := `if [ -n "${AL_TEST_PROMPT:-}" ]; then
+  cat > "$AL_TEST_PROMPT"
+else
+  cat >/dev/null
+fi`
+	if name == "agy" || name == "grok" {
+		drainStdin = ""
+	}
 	content := fmt.Sprintf(`#!/bin/sh
 if [ "${1:-}" = "--version" ]; then
   printf '%%s\n' %q
@@ -817,13 +873,9 @@ fi
     echo "ARG_${i}=${arg}"
     i=$((i + 1))
   done
-  env | grep -E '^(AL_|CODEX_HOME|CLAUDE_CONFIG_DIR|CLAUDE_CODE_|AGY_CLI)' | sort || true
+  env | grep -E '^(AL_|CODEX_HOME|CLAUDE_CONFIG_DIR|CLAUDE_CODE_|AGY_CLI|GROK_)' | sort || true
 } >> "$AL_TEST_LOG"
-if [ -n "${AL_TEST_PROMPT:-}" ]; then
-  cat > "$AL_TEST_PROMPT"
-else
-  cat >/dev/null
-fi
+%s
 if [ %q = "codex" ]; then
   printf '{"type":"thread.started","thread_id":"11111111-1111-4111-8111-111111111111"}\n'
 fi
@@ -847,18 +899,7 @@ fi
 if [ %q = "codex" ]; then
   printf '{"type":"turn.completed"}\n'
 fi
-if [ %q = "agy" ]; then
-  previous=""
-  for arg in "$@"; do
-    if [ "$previous" = "log" ]; then
-      printf 'Created conversation %%s\n' "${AL_TEST_AGY_LOG_ID:-22222222-2222-4222-8222-222222222222}" > "$arg"
-      previous=""
-      continue
-    fi
-    if [ "$arg" = "--log-file" ]; then previous="log"; fi
-  done
-fi
-`, version, name, outputScript, name, name, name)
+`, version, drainStdin, name, outputScript, name, name)
 	if err := os.WriteFile(path, []byte(content), 0o700); err != nil { // #nosec G306 -- test writes an executable shell stub in a test-owned bin directory.
 		t.Fatalf("write stub: %v", err)
 	}

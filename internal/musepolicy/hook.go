@@ -22,7 +22,12 @@ var museIdentifier = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
 
 // MCPPrefixes validates unambiguous native tool namespaces before granting calls.
 func MCPPrefixes(cfg config.Config) ([]string, error) {
-	ids := projection.EffectiveServerIDs(cfg, projection.ClientMuse)
+	return MCPPrefixesForIDs(projection.EffectiveServerIDs(cfg, projection.ClientMuse))
+}
+
+// MCPPrefixesForIDs validates unambiguous native Muse tool namespaces for an
+// explicit list of MCP server IDs.
+func MCPPrefixesForIDs(ids []string) ([]string, error) {
 	seen := make(map[string]string)
 	var prefixes []string
 	for _, id := range ids {
@@ -43,9 +48,10 @@ func MCPPrefixes(cfg config.Config) ([]string, error) {
 // whose native hook registration predates a sync. Native denies take precedence.
 func HandleMCP(root string, input io.Reader, output io.Writer) error {
 	var event struct {
-		Event string `json:"hook_event_name"`
-		Tool  string `json:"tool_name"`
-		CWD   string `json:"cwd"`
+		Event     string `json:"hook_event_name"`
+		Tool      string `json:"tool_name"`
+		CWD       string `json:"cwd"`
+		SessionID string `json:"session_id"`
 	}
 	dec := json.NewDecoder(input)
 	if err := dec.Decode(&event); err != nil {
@@ -82,22 +88,48 @@ func HandleMCP(root string, input io.Reader, output io.Writer) error {
 	if err != nil {
 		return err
 	}
-	if !config.IsAgentEnabled(cfg.Agents.Muse.Enabled) || !projection.BuildApprovals(*cfg, nil).AllowMCP {
+	if !config.IsAgentEnabled(cfg.Agents.Muse.Enabled) {
 		return json.NewEncoder(output).Encode(response)
 	}
-	prefixes, err := MCPPrefixes(*cfg)
-	if err != nil {
-		return err
+	allowDecision := func() map[string]any {
+		return map[string]any{"hookSpecificOutput": map[string]any{"hookEventName": permissionRequest, "decision": map[string]any{"behavior": policyAllow}}}
 	}
-	for _, prefix := range prefixes {
-		if strings.HasPrefix(event.Tool, prefix) && len(event.Tool) > len(prefix) {
-			tool := strings.TrimPrefix(event.Tool, prefix)
-			if strings.HasPrefix(tool, "_") || strings.Contains(tool, "__") {
-				return json.NewEncoder(output).Encode(response)
+	if projection.BuildApprovals(*cfg, nil).AllowMCP {
+		prefixes, err := MCPPrefixes(*cfg)
+		if err != nil {
+			return err
+		}
+		if matchesAllowedMCPTool(event.Tool, prefixes) {
+			return json.NewEncoder(output).Encode(allowDecision())
+		}
+	}
+	if strings.TrimSpace(event.SessionID) != "" {
+		grant, ok, err := readSessionMCPGrant(canonical, strings.TrimSpace(event.SessionID))
+		if err != nil {
+			return err
+		}
+		if ok && len(grant.ServerIDs) > 0 {
+			prefixes, err := MCPPrefixesForIDs(grant.ServerIDs)
+			if err != nil {
+				return err
 			}
-			response = map[string]any{"hookSpecificOutput": map[string]any{"hookEventName": permissionRequest, "decision": map[string]any{"behavior": policyAllow}}}
-			break
+			if matchesAllowedMCPTool(event.Tool, prefixes) {
+				return json.NewEncoder(output).Encode(allowDecision())
+			}
 		}
 	}
 	return json.NewEncoder(output).Encode(response)
+}
+
+func matchesAllowedMCPTool(toolName string, prefixes []string) bool {
+	for _, prefix := range prefixes {
+		if strings.HasPrefix(toolName, prefix) && len(toolName) > len(prefix) {
+			tool := strings.TrimPrefix(toolName, prefix)
+			if strings.HasPrefix(tool, "_") || strings.Contains(tool, "__") {
+				return false
+			}
+			return true
+		}
+	}
+	return false
 }

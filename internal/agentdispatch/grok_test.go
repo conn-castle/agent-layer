@@ -12,36 +12,54 @@ import (
 	"time"
 )
 
-func TestGrokDispatchCommandStagesPromptPath(t *testing.T) {
+func TestGrokDispatchCommandUsesACPAndMuseStagesPromptPath(t *testing.T) {
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	project := loadApprovalsTestProject(t, root)
-	target, ok := lookupTarget(AgentGrok)
+	grokTarget, ok := lookupTarget(AgentGrok)
 	if !ok {
 		t.Fatal("grok target missing from registry")
 	}
-	run, err := newDispatchRun(root, AgentGrok, supportedProviderVersions[AgentGrok], dispatchModeFresh)
+	grokRun, err := newDispatchRun(root, AgentGrok, supportedProviderVersions[AgentGrok], dispatchModeFresh)
 	if err != nil {
 		t.Fatal(err)
 	}
-	command, err := buildProviderCommand(target, project, []string{}, []byte("private prompt"), "", "", false, dispatchModeFresh, runtimeSessionID, run, io.Discard)
+	grokCmd, err := buildProviderCommand(grokTarget, project, []string{}, []byte("private prompt"), "", "", false, dispatchModeFresh, "", grokRun, io.Discard)
 	if err != nil {
 		t.Fatalf("build grok command: %v", err)
 	}
-	// The provider receives the private prompt through the staged path.
-	want := filepath.Join(run.Dir, "prompt.txt")
-	if len(command.Args) < 3 || command.Args[1] != "--prompt-file" || command.Args[2] != want {
-		t.Fatalf("grok prompt arguments = %q", command.Args)
+	if !grokCmd.UseACP || grokCmd.ACP == nil {
+		t.Fatalf("grok command did not configure ACP: %#v", grokCmd)
+	}
+	if _, statErr := os.Stat(filepath.Join(grokRun.Dir, "prompt.txt")); !os.IsNotExist(statErr) {
+		t.Fatalf("grok ACP should not stage prompt.txt: %v", statErr)
+	}
+
+	museTarget, ok := lookupTarget(AgentMuse)
+	if !ok {
+		t.Fatal("muse target missing from registry")
+	}
+	museRun, err := newDispatchRun(root, AgentMuse, supportedProviderVersions[AgentMuse], dispatchModeFresh)
+	if err != nil {
+		t.Fatal(err)
+	}
+	museCmd, err := buildProviderCommand(museTarget, project, []string{}, []byte("private prompt"), "", "", false, dispatchModeFresh, runtimeSessionID, museRun, io.Discard)
+	if err != nil {
+		t.Fatalf("build muse command: %v", err)
+	}
+	want := filepath.Join(museRun.Dir, "prompt.txt")
+	if !argPairPresent(museCmd.Args, "--prompt-file", want) {
+		t.Fatalf("muse prompt arguments = %q", museCmd.Args)
 	}
 	staged, err := os.ReadFile(want) // #nosec G304 -- want is a test-owned run path.
 	if err != nil {
-		t.Fatalf("read staged grok prompt: %v", err)
+		t.Fatalf("read staged muse prompt: %v", err)
 	}
 	if string(staged) != "private prompt" {
-		t.Fatalf("staged grok prompt = %q", staged)
+		t.Fatalf("staged muse prompt = %q", staged)
 	}
 	info, err := os.Stat(want)
 	if err != nil || info.Mode().Perm() != 0o600 {
-		t.Fatalf("staged grok prompt permissions: %v, %v", info, err)
+		t.Fatalf("staged muse prompt permissions: %v, %v", info, err)
 	}
 }
 
@@ -70,13 +88,14 @@ func TestGrokDispatchEarlyFailureRemovesPrompt(t *testing.T) {
 	}
 }
 
-func TestGrokPublicDispatchPromptCleanup(t *testing.T) {
+func TestMusePublicDispatchPromptCleanup(t *testing.T) {
 	for _, mode := range []string{"success", "cleanup-failure", "provider-failure"} {
 		t.Run(mode, func(t *testing.T) {
 			root := writeDispatchRepo(t, dispatchRepoConfig{})
-			replaceDispatchConfigText(t, root, "[agents.grok]\nenabled = false", "[agents.grok]\nenabled = true")
+			replaceDispatchConfigText(t, root, "[approvals]\nmode = \"all\"", "[approvals]\nmode = \"yolo\"")
+			replaceDispatchConfigText(t, root, "[agents.muse]\nenabled = false", "[agents.muse]\nenabled = true")
 			binDir := t.TempDir()
-			writeDispatchStub(t, binDir, "grok", `
+			writeDispatchStub(t, binDir, "muse", `
 while [ "$#" -gt 0 ]; do
  case "$1" in
  --prompt-file) prompt="$2"; shift ;;
@@ -89,15 +108,15 @@ if [ "$AL_TEST_CLEANUP_MODE" != success ]; then
  rm "$prompt" && mkdir "$prompt" && printf private > "$prompt/retained" || exit 10
 fi
 if [ "$AL_TEST_CLEANUP_MODE" = provider-failure ]; then exit 11; fi
-printf '{"type":"text","data":"completed answer"}\n'
-printf '{"type":"end","stopReason":"end_turn","sessionId":"%s"}\n' "$session"
+printf '{"schema_version":1,"stream":{"kind":"session","id":"%s"},"payload_type":"session.run.linked","payload":{"kind":"session_run_linked","command_id":"root-1","run_stream":{"kind":"run","id":"root-1"}}}\n' "$session"
+printf '{"schema_version":1,"stream":{"kind":"session","id":"%s"},"payload_type":"run.terminal.completed","payload":{"kind":"run_terminal","command_id":"root-1","run_stream":{"kind":"run","id":"root-1"},"terminal":"completed","text":"completed answer"}}\n' "$session"
 `)
 			t.Setenv("PATH", testPath(binDir))
 			t.Setenv("AL_TEST_LOG", filepath.Join(t.TempDir(), "provider.log"))
 			t.Setenv("AL_TEST_CLEANUP_MODE", mode)
 			var gate *os.File
 			var started bytes.Buffer
-			err := Start(StartOptions{Root: root, WorkDir: root, Agent: AgentGrok, Prompt: "private prompt", Stdout: &started, Env: os.Environ(), LookPath: mockLookPath(binDir), VersionLookup: func(string, string) (string, error) { return supportedProviderVersions[AgentGrok], nil }, launchWorker: func(string, string, string) (launchedWorker, error) {
+			err := Start(StartOptions{Root: root, WorkDir: root, Agent: AgentMuse, Prompt: "private prompt", Stdout: &started, Env: os.Environ(), LookPath: mockLookPath(binDir), VersionLookup: func(string, string) (string, error) { return supportedProviderVersions[AgentMuse], nil }, launchWorker: func(string, string, string) (launchedWorker, error) {
 				read, write, err := os.Pipe()
 				gate = read
 				return launchedWorker{gate: write, pid: os.Getpid(), startIdentity: processStartIdentity(os.Getpid())}, err
@@ -152,10 +171,11 @@ printf '{"type":"end","stopReason":"end_turn","sessionId":"%s"}\n' "$session"
 	}
 }
 
-func TestGrokPreLaunchFailurePersistsPromptCleanupError(t *testing.T) {
+func TestMusePreLaunchFailurePersistsPromptCleanupError(t *testing.T) {
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	project := loadApprovalsTestProject(t, root)
-	run, err := newDispatchRun(root, AgentGrok, supportedProviderVersions[AgentGrok], dispatchModeFresh)
+	project.Config.Approvals.Mode = "yolo"
+	run, err := newDispatchRun(root, AgentMuse, supportedProviderVersions[AgentMuse], dispatchModeFresh)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -163,9 +183,9 @@ func TestGrokPreLaunchFailurePersistsPromptCleanupError(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	target, _ := lookupTarget(AgentGrok)
+	target, _ := lookupTarget(AgentMuse)
 	promptPath := filepath.Join(run.Dir, "prompt.txt")
-	err = executeDispatch(dispatchExecution{Root: root, Project: project, Target: target, Version: supportedProviderVersions[AgentGrok], Mode: dispatchModeFresh, Run: run, Session: session, Prompt: []byte("private prompt"), Stdout: io.Discard, Stderr: io.Discard, NewCommand: func(string, ...string) *exec.Cmd {
+	err = executeDispatch(dispatchExecution{Root: root, Project: project, Target: target, Version: supportedProviderVersions[AgentMuse], Mode: dispatchModeFresh, Run: run, Session: session, Prompt: []byte("private prompt"), Stdout: io.Discard, Stderr: io.Discard, NewCommand: func(string, ...string) *exec.Cmd {
 		// Command construction has staged the real prompt, but the provider cannot start.
 		data, err := os.ReadFile(promptPath) // #nosec G304 -- test-owned run path.
 		if err != nil || string(data) != "private prompt" {
@@ -198,10 +218,10 @@ func TestGrokPreLaunchFailurePersistsPromptCleanupError(t *testing.T) {
 	}
 }
 
-func TestGrokCancelledPromptCleanupFailureReleasesConversation(t *testing.T) {
+func TestMuseCancelledPromptCleanupFailureReleasesConversation(t *testing.T) {
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	project := loadApprovalsTestProject(t, root)
-	run, err := newDispatchRun(root, AgentGrok, supportedProviderVersions[AgentGrok], dispatchModeFresh)
+	run, err := newDispatchRun(root, AgentMuse, supportedProviderVersions[AgentMuse], dispatchModeFresh)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -209,7 +229,7 @@ func TestGrokCancelledPromptCleanupFailureReleasesConversation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	target, _ := lookupTarget(AgentGrok)
+	target, _ := lookupTarget(AgentMuse)
 	if _, err := buildProviderCommand(target, project, nil, []byte("private prompt"), "", "", false, dispatchModeFresh, run.Record.ID, run, io.Discard); err != nil {
 		t.Fatal(err)
 	}
@@ -256,11 +276,11 @@ func TestGrokCancelledPromptCleanupFailureReleasesConversation(t *testing.T) {
 
 func TestCancelledDispatchPreservesCleanupErrorWhenEvidenceFails(t *testing.T) {
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
-	run, err := newDispatchRun(root, AgentGrok, supportedProviderVersions[AgentGrok], dispatchModeFresh)
+	run, err := newDispatchRun(root, AgentMuse, supportedProviderVersions[AgentMuse], dispatchModeFresh)
 	if err != nil {
 		t.Fatal(err)
 	}
-	target, _ := lookupTarget(AgentGrok)
+	target, _ := lookupTarget(AgentMuse)
 	prompt := filepath.Join(run.Dir, "prompt.txt")
 	if err := os.Mkdir(prompt, 0o700); err != nil {
 		t.Fatal(err)

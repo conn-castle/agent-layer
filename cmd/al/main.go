@@ -153,7 +153,7 @@ func shouldBypassDispatch(args []string) bool {
 		return false
 	}
 	command := firstCommandArg(args[1:])
-	return command == commandInit || command == commandUpdate || command == commandUpgrade || command == "__dispatch-worker"
+	return command == commandInit || command == commandUpdate || command == commandUpgrade || command == "__dispatch-worker" || command == "__dispatch-session-mcp"
 }
 
 // isDispatchMCPServer reports whether args run the hidden MCP server command,
