@@ -563,12 +563,12 @@ The first interrupt (Ctrl-C) stops `al sync`, `al wizard`, `al upgrade rollback`
 | `al sync` | Regenerate client configs without launching a client. |
 | `al <client>` | Sync and launch a client (agy/claude/codex/copilot/grok/muse/vscode). |
 | `al dispatch options` | List dispatchable agents and their allowed overrides. |
-| `al dispatch reserve` | Create a named invocation that launches nothing until `al dispatch start --reservation` starts it once. |
+| `al dispatch reserve [--continue <handle>]` | Create a reserved invocation that launches nothing until `start --reservation` or `continue --reservation` launches it once. |
 | `al dispatch start` | Start a headless conversation asynchronously and return its handle. |
 | `al dispatch wait <handle>` | Wait up to eight minutes; return `running` if work continues, otherwise return the terminal result. |
 | `al dispatch inspect <handle-or-invocation-id>` | Observe one invocation without waiting. |
 | `al dispatch output <handle-or-invocation-id>` | Read bounded final or partial output. |
-| `al dispatch continue <handle>` | Start another invocation in a terminal conversation. |
+| `al dispatch continue [--reservation <invocation-id>] [<handle>]` | Start another invocation in a terminal conversation. |
 | `al dispatch cancel <handle>` | Cancel a running invocation. |
 | `al benchmark init <selection.json>` | Create a self-contained benchmark study from a DeltaSelect selection. |
 | `al benchmark readiness` | Certify task environments without provider inference. |

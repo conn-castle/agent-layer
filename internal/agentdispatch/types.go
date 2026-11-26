@@ -159,19 +159,29 @@ type StartOptions struct {
 	beforeProvider func(context.Context, string) (func(), error)
 }
 
-// ReserveOptions configures one reservation of a not-yet-started conversation.
+// ReserveOptions configures one reservation of a not-yet-started conversation
+// or of the next continuation invocation of an existing conversation.
 type ReserveOptions struct {
-	Root   string
-	Stdout io.Writer
+	Root string
+	// ContinueHandle, when set, reserves the next continuation invocation of an
+	// existing conversation instead of allocating a new conversation. A set but
+	// empty handle fails without creating anything.
+	ContinueHandle *string
+	Stdout         io.Writer
 }
 
 // ContinueOptions configures one asynchronous continuation of a conversation.
 type ContinueOptions struct {
 	// Context cancels prompt-file preparation and guards publication; see StartOptions.Context.
-	Context        context.Context
-	Root           string
-	WorkDir        string
-	Handle         string
+	Context context.Context
+	Root    string
+	WorkDir string
+	Handle  string
+	// Reservation, when set, launches an `al dispatch reserve --continue`
+	// record (by its returned invocation ID) instead of creating a new
+	// continuation. A set but empty selector names no reservation and launches
+	// nothing.
+	Reservation    *string
 	Prompt         string
 	PromptFile     string
 	Stdout         io.Writer

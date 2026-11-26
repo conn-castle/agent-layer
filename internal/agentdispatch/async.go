@@ -148,6 +148,9 @@ func prepareStart(opts runOptions, requested targetMeta, stderr io.Writer, depth
 
 // Continue starts the next invocation in an existing terminal conversation.
 func Continue(opts ContinueOptions) error {
+	if opts.Reservation != nil {
+		return continueReservation(opts)
+	}
 	promptText, err := resolvePromptSource(opts.Context, opts.Prompt, opts.PromptFile)
 	if err != nil {
 		return err
@@ -156,34 +159,39 @@ func Continue(opts ContinueOptions) error {
 	if err != nil {
 		return err
 	}
-	session, err := loadSession(opts.Root, strings.TrimSpace(opts.Handle))
-	if err != nil {
+	handle := strings.TrimSpace(opts.Handle)
+	if handle == "" {
+		return exitError(ExitUsage, "dispatch continue requires a conversation handle")
+	}
+	if _, err := loadSession(opts.Root, handle); err != nil {
 		return err
 	}
-	current, err := resolveWaitRun(opts.Root, session.Name)
+	var session Session
+	var current RunRecord
+	var target targetMeta
+	err = withSessionLock(opts.Root, handle, func() error {
+		now := time.Now().UTC()
+		var loadErr error
+		session, loadErr = loadSession(opts.Root, handle)
+		if loadErr != nil {
+			return loadErr
+		}
+		pending, hasPending, settleErr := settlePendingContinuationReservationLocked(opts.Root, &session, now)
+		if settleErr != nil {
+			return settleErr
+		}
+		if hasPending {
+			return pendingContinuationReservationError(session.Name, pending.ID)
+		}
+		current, loadErr = reconcileCurrentSessionRunLocked(opts.Root, &session, now)
+		if loadErr != nil {
+			return loadErr
+		}
+		target, loadErr = checkContinuationEligible(opts.Root, session, current)
+		return loadErr
+	})
 	if err != nil {
 		return err
-	}
-	if session.State == sessionStateReserved {
-		if current.LaunchDigest != "" {
-			return exitError(ExitUnavailable, fmt.Sprintf("dispatch conversation %q cannot be continued: its reserved start of invocation %s was interrupted before the conversation was recorded; inspect that invocation and start a new conversation", session.Name, current.ID))
-		}
-		return exitError(ExitUnavailable, fmt.Sprintf("dispatch conversation %q is a reservation that never started; launch it with `al dispatch start --reservation`", session.Name))
-	}
-	if !terminalDispatchState(current.State) {
-		return exitError(ExitUnavailable, fmt.Sprintf("dispatch conversation %q is running", session.Name))
-	}
-	if session.ProviderSessionID == "" && current.RecoveryState != recoveryRetrySafe {
-		return exitError(ExitUnavailable, fmt.Sprintf("cannot continue dispatch conversation %q: provider acceptance is unknown and no provider session ID was recorded; inspect the previous run before explicitly starting a new conversation", session.Name))
-	}
-	if current.State == dispatchStateCompleted {
-		if _, err := completedResultPath(opts.Root, current); err != nil {
-			return err
-		}
-	}
-	target, ok := lookupTarget(session.Agent)
-	if !ok {
-		return exitError(ExitConfig, fmt.Sprintf("dispatch conversation %q has unsupported provider %q", session.Name, session.Agent))
 	}
 	if opts.beforeProvider != nil {
 		release, err := opts.beforeProvider(opts.Context, target.Name)
@@ -199,7 +207,7 @@ func Continue(opts ContinueOptions) error {
 	if err != nil {
 		return err
 	}
-	run, err := newDispatchRun(opts.Root, target.Name, version, dispatchModeResume)
+	run, err := newDispatchRun(opts.Root, target.Name, version, continuationMode(session))
 	if err != nil {
 		return err
 	}
@@ -211,16 +219,29 @@ func Continue(opts ContinueOptions) error {
 	if err := writeRunRecord(run.Dir, &run.Record); err != nil {
 		return err
 	}
-	session, err = claimConversation(opts.Root, session.Name, run.Record.ID)
+	session, err = claimConversation(opts.Root, session.Name, run.Record.ID, current.ID)
 	if err != nil {
 		return finishRejectedResume(run, err, writeRunRecord)
 	}
-	mode := dispatchModeResume
-	if session.ProviderSessionID == "" {
-		mode = dispatchModeFresh
-	}
-	request := workerRequest{Root: opts.Root, WorkDir: opts.WorkDir, RunID: run.Record.ID, Mode: mode, Prompt: prompt, Depth: depth + 1, Model: session.Model, Effort: session.ReasoningEffort, TargetPinned: session.TargetPinned}
+	request := continuationWorkerRequest(opts, run.Record.ID, session, prompt, depth)
 	return publishInvocation(opts.Context, opts.Root, run, session, request, writerOrDiscard(opts.Stdout), opts.launchWorker)
+}
+
+func continuationMode(session Session) string {
+	if session.ProviderSessionID == "" {
+		return dispatchModeFresh
+	}
+	return dispatchModeResume
+}
+
+// continuationWorkerRequest builds the worker request shared by ordinary and
+// reserved continuations so both inherit identical session configuration.
+func continuationWorkerRequest(opts ContinueOptions, runID string, session Session, prompt []byte, depth int) workerRequest {
+	return workerRequest{
+		Root: opts.Root, WorkDir: opts.WorkDir, RunID: runID,
+		Mode: continuationMode(session), Prompt: prompt, Depth: depth + 1,
+		Model: session.Model, Effort: session.ReasoningEffort, TargetPinned: session.TargetPinned,
+	}
 }
 
 func resolvePromptSource(ctx context.Context, prompt string, promptFile string) (string, error) {

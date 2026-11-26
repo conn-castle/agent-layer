@@ -14,45 +14,7 @@ func tryReconcileOrphan(root string, record RunRecord) (RunRecord, error) {
 	var next RunRecord
 	acquired, err := tryWithRunLock(dir, func() error {
 		updated, applyErr := applyRunEvidenceLocked(dir, func(current *RunRecord) error {
-			if current.State == dispatchStateReserved {
-				// A reservation has no worker or provider to reconcile; its
-				// recorded launcher is the reserve command, which exits at once.
-				expireReservation(current, time.Now().UTC())
-				return nil
-			}
-			if terminalDispatchState(current.State) {
-				applyTerminationEvidence(current, nil, true, time.Now().UTC())
-				return nil
-			}
-			if invocationOwnership(*current) != ownershipDead {
-				return nil
-			}
-			if current.ProviderLaunchIntent && current.PID == 0 && current.ProcessStartIdentity == "" {
-				applyTerminationEvidence(current, nil, false, time.Now().UTC())
-				current.TerminationObservation = terminationObservationUncertainLaunch
-				return nil
-			}
-			if current.PID != 0 || current.ProcessGroupID != 0 {
-				if !providerProcessGroupDead(current.ProcessGroupID) && !providerProcessGroupReused(*current) {
-					liveGroupErr := exitError(ExitUnavailable, fmt.Sprintf("dispatch run %s lost its worker and provider leader but process group %d remains; cannot prove termination, so the active claim is retained; inspect surviving processes and verify their ownership before manual recovery (do not signal a group by ID alone)", current.ID, current.ProcessGroupID))
-					applyTerminationEvidence(current, liveGroupErr, false, time.Now().UTC())
-					current.TerminationObservation = terminationObservationGroupLive
-					return nil
-				}
-			} else if !usesLaunchIntentProtocol(*current) {
-				applyTerminationEvidence(current, nil, false, time.Now().UTC())
-				return nil
-			}
-			now := time.Now().UTC()
-			current.State = dispatchStateFailed
-			current.RecoveryState = recoveryAcceptanceUnknown
-			current.CompletedAt = &now
-			current.TerminalReason = "dispatch worker stopped before publishing a terminal result"
-			if current.SupervisorPID == 0 && current.PID == 0 && !current.ProviderLaunchIntent {
-				current.TerminalReason = "dispatch was interrupted before launching its worker"
-			}
-			current.TerminalExitCode = ExitTargetFailure
-			applyTerminationEvidence(current, nil, true, now)
+			reconcileOrphanLocked(current, time.Now().UTC())
 			return nil
 		})
 		if applyErr != nil {
@@ -75,6 +37,11 @@ func tryReconcileOrphan(root string, record RunRecord) (RunRecord, error) {
 		if removeErr := removeWorkerRequest(dir); removeErr != nil {
 			return next, removeErr
 		}
+		if next.Mode == dispatchModeFresh && next.RecoveryState == recoveryRetrySafe && next.TerminationConfirmed {
+			if downgradeErr := downgradeUnstartedSession(root, next.Name, next.ID); downgradeErr != nil {
+				return next, downgradeErr
+			}
+		}
 	}
 	if next.TerminationConfirmed {
 		if releaseErr := tryReleaseIfConfirmed(root, next); releaseErr != nil {
@@ -82,6 +49,56 @@ func tryReconcileOrphan(root string, record RunRecord) (RunRecord, error) {
 		}
 	}
 	return next, nil
+}
+
+// reconcileOrphanLocked transitions an expired reservation or provably dead
+// invocation to a terminal state under its run lock.
+func reconcileOrphanLocked(current *RunRecord, now time.Time) {
+	if current.State == dispatchStateReserved {
+		// A reservation has no worker or provider to reconcile; its
+		// recorded launcher is the reserve command, which exits at once.
+		expireReservation(current, now)
+		return
+	}
+	if terminalDispatchState(current.State) {
+		applyTerminationEvidence(current, nil, true, now)
+		return
+	}
+	if invocationOwnership(*current) != ownershipDead {
+		return
+	}
+	if current.ProviderLaunchIntent && current.PID == 0 && current.ProcessStartIdentity == "" {
+		applyTerminationEvidence(current, nil, false, now)
+		current.TerminationObservation = terminationObservationUncertainLaunch
+		return
+	}
+	if current.PID != 0 || current.ProcessGroupID != 0 {
+		if !providerProcessGroupDead(current.ProcessGroupID) && !providerProcessGroupReused(*current) {
+			liveGroupErr := exitError(ExitUnavailable, fmt.Sprintf("dispatch run %s lost its worker and provider leader but process group %d remains; cannot prove termination, so the active claim is retained; inspect surviving processes and verify their ownership before manual recovery (do not signal a group by ID alone)", current.ID, current.ProcessGroupID))
+			applyTerminationEvidence(current, liveGroupErr, false, now)
+			current.TerminationObservation = terminationObservationGroupLive
+			return
+		}
+	} else if !usesLaunchIntentProtocol(*current) {
+		applyTerminationEvidence(current, nil, false, now)
+		return
+	}
+	current.State = dispatchStateFailed
+	current.RecoveryState = recoveryAcceptanceUnknown
+	current.CompletedAt = &now
+	current.TerminalReason = "dispatch worker stopped before publishing a terminal result"
+	if current.SupervisorPID == 0 && current.PID == 0 && !current.ProviderLaunchIntent {
+		current.TerminalReason = "dispatch was interrupted before launching its worker"
+	}
+	// A fresh-mode continuation whose launcher or worker died before writing
+	// provider launch intent never contacted a provider, so a conversation
+	// without a provider session ID remains continuable (and any provisional
+	// caller-assigned session ID is cleared on reconciliation).
+	if current.PreviousRunID != "" && current.Mode == dispatchModeFresh && current.PID == 0 && !current.ProviderLaunchIntent && usesLaunchIntentProtocol(*current) {
+		current.RecoveryState = recoveryRetrySafe
+	}
+	current.TerminalExitCode = ExitTargetFailure
+	applyTerminationEvidence(current, nil, true, now)
 }
 
 func tryReleaseIfConfirmed(root string, record RunRecord) error {

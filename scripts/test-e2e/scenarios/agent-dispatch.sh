@@ -202,6 +202,141 @@ check_dispatch_reservations() {
   else
     fail "repeated reservation start after continuation launches nothing (launches: $launches)"
   fi
+
+  # Exercise continuation reservations end-to-end against the built binary.
+  local options_file="$repo_dir/dispatch-options.json"
+  rc=0
+  (cd "$repo_dir" && al dispatch options >"$options_file" 2>"$stderr_file") || rc=$?
+  if [[ $rc -eq 0 ]] && grep -q '"reservations":{"start":true,"continue":true}' "$options_file"; then
+    pass "dispatch options advertises start and continuation reservation support"
+  else
+    fail "dispatch options advertises start and continuation reservation support (exit code: $rc)"
+    dispatch_show_stderr "$stderr_file"
+  fi
+
+  local cont_res_file="$repo_dir/cont-reserve.json"
+  local cont_res_repeat_file="$repo_dir/cont-reserve-repeat.json"
+  rc=0
+  (cd "$repo_dir" && al dispatch reserve --continue "$reservation" >"$cont_res_file" 2>"$stderr_file") || rc=$?
+  local cont_res_id
+  cont_res_id="$(dispatch_json_field "$cont_res_file" invocation_id)"
+  if [[ $rc -eq 0 ]] && grep -q '"state":"reserved"' "$cont_res_file" && [[ -n "$cont_res_id" && "$cont_res_id" != "$continuation_id" ]]; then
+    pass "dispatch reserve --continue returns a reserved invocation ID"
+  else
+    fail "dispatch reserve --continue returns a reserved invocation ID (exit code: $rc)"
+    dispatch_show_stderr "$stderr_file"
+  fi
+
+  rc=0
+  (cd "$repo_dir" && al dispatch reserve --continue "$reservation" >"$cont_res_repeat_file" 2>"$stderr_file") || rc=$?
+  local cont_res_repeat_id
+  cont_res_repeat_id="$(dispatch_json_field "$cont_res_repeat_file" invocation_id)"
+  if [[ $rc -eq 0 && "$cont_res_repeat_id" == "$cont_res_id" ]]; then
+    pass "repeated reserve --continue returns the existing pending reservation"
+  else
+    fail "repeated reserve --continue returns the existing pending reservation (exit code: $rc, got: $cont_res_repeat_id, want: $cont_res_id)"
+    dispatch_show_stderr "$stderr_file"
+  fi
+
+  # While pending, inspect by handle reports the latest launched invocation and competing continue is refused.
+  local handle_inspect_file="$repo_dir/cont-handle-inspect.json"
+  rc=0
+  (cd "$repo_dir" && al dispatch inspect "$reservation" >"$handle_inspect_file" 2>"$stderr_file") || rc=$?
+  if [[ $rc -eq 0 ]] && grep -q "\"invocation_id\":\"$continuation_id\"" "$handle_inspect_file" && grep -q '"state":"completed"' "$handle_inspect_file"; then
+    pass "inspect by handle reports latest launched invocation while continuation reservation is pending"
+  else
+    fail "inspect by handle reports latest launched invocation while continuation reservation is pending (exit code: $rc)"
+    dispatch_show_stderr "$stderr_file"
+  fi
+
+  rc=0
+  (cd "$repo_dir" && al dispatch continue "$reservation" --prompt "Competing" >/dev/null 2>&1) || rc=$?
+  if [[ $rc -eq 69 ]]; then
+    pass "competing continue is refused while continuation reservation is pending"
+  else
+    fail "competing continue is refused while continuation reservation is pending (got: $rc)"
+  fi
+
+  # Concurrent launches of the continuation reservation launch once and reject the rest with exit 82.
+  local cont_pids=() cont_stderr_paths=() cont_started=0 cont_already=0
+  local cont_stderr
+  for index in {1..8}; do
+    cont_stderr="$repo_dir/cont-reserved-${index}.stderr"
+    (cd "$repo_dir" && MOCK_DISPATCH_DELAY_SECONDS=0.5 al dispatch continue --reservation "$cont_res_id" \
+      --prompt "Reserved continuation" >"$repo_dir/cont-reserved-${index}.json" \
+      2>"$cont_stderr") &
+    cont_pids+=("$!")
+    cont_stderr_paths+=("$cont_stderr")
+  done
+  for index in "${!cont_pids[@]}"; do
+    if wait "${cont_pids[$index]}"; then
+      cont_started=$((cont_started + 1))
+    else
+      rc=$?
+      if [[ $rc -eq 82 ]]; then
+        cont_already=$((cont_already + 1))
+      else
+        fail "concurrent continuation reservation exited $rc, want 0 or 82"
+        dispatch_show_stderr "${cont_stderr_paths[$index]}"
+      fi
+    fi
+  done
+  local cont_same_id
+  cont_same_id="$(grep -l "\"invocation_id\":\"$cont_res_id\"" "$repo_dir"/cont-reserved-*.json | wc -l | tr -d ' ')"
+  if [[ "$cont_started" -eq 1 && "$cont_same_id" -eq 1 && "$cont_already" -eq 7 ]]; then
+    pass "eight concurrent reserved continues launch once and reject seven as already started"
+  else
+    fail "eight concurrent reserved continues launch once and reject seven as already started (started: $cont_started, same id: $cont_same_id, already: $cont_already)"
+  fi
+  dispatch_wait_terminated "$repo_dir" "$cont_res_id" "$wait_file" "$stderr_file" \
+    "wait on continuation reservation ID returns completed invocation" completed "$cont_res_id"
+
+  # Replay of the continuation reservation and of the original start reservation both exit 82 without launching.
+  rc=0
+  (cd "$repo_dir" && al dispatch continue --reservation "$cont_res_id" --prompt "Replay" >/dev/null 2>"$repeat_error") || rc=$?
+  if [[ $rc -eq 82 ]] && grep -q 'already started' "$repeat_error"; then
+    pass "repeated reserved continue exits 82 as already started"
+  else
+    fail "repeated reserved continue exits 82 as already started (got: $rc)"
+    dispatch_show_stderr "$repeat_error"
+  fi
+
+  rc=0
+  (cd "$repo_dir" && al dispatch start --reservation "$reservation" --agent codex --prompt "Replay start" >/dev/null 2>"$repeat_error") || rc=$?
+  if [[ $rc -eq 82 ]] && grep -q 'already started' "$repeat_error"; then
+    pass "original start reservation replay still exits 82 after reserved continuation"
+  else
+    fail "original start reservation replay still exits 82 after reserved continuation (got: $rc)"
+    dispatch_show_stderr "$repeat_error"
+  fi
+
+  # Cancel an unstarted continuation reservation and verify the conversation stays continuable.
+  local cancel_res_file="$repo_dir/cont-cancel-reserve.json"
+  rc=0
+  (cd "$repo_dir" && al dispatch reserve --continue "$reservation" >"$cancel_res_file" 2>"$stderr_file") || rc=$?
+  local cancel_res_id
+  cancel_res_id="$(dispatch_json_field "$cancel_res_file" invocation_id)"
+  rc=0
+  (cd "$repo_dir" && al dispatch cancel "$cancel_res_id" >/dev/null 2>"$stderr_file") || rc=$?
+  if [[ $rc -eq 0 ]]; then
+    pass "cancel retires an unstarted continuation reservation"
+  else
+    fail "cancel retires an unstarted continuation reservation (exit code: $rc)"
+    dispatch_show_stderr "$stderr_file"
+  fi
+  rc=0
+  (cd "$repo_dir" && al dispatch continue --reservation "$cancel_res_id" --prompt "After cancel" >/dev/null 2>&1) || rc=$?
+  if [[ $rc -eq 83 ]]; then
+    pass "continue of cancelled continuation reservation exits 83"
+  else
+    fail "continue of cancelled continuation reservation exits 83 (got: $rc)"
+  fi
+  launches="$(grep -c -- '---END---' "$MOCK_DISPATCH_CODEX_LOG" || true)"
+  if [[ "$launches" -eq 3 ]]; then
+    pass "continuation reservations launched provider exactly once more (total 3)"
+  else
+    fail "continuation reservations launched provider exactly once more (launches: $launches, want 3)"
+  fi
 }
 
 # Keep independent slots running after failures, but only wait on valid starts.

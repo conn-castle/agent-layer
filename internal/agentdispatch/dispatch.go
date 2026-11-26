@@ -71,11 +71,14 @@ func executeDispatch(request dispatchExecution) error {
 		if err != nil {
 			return wrapExitError(ExitTargetFailure, fmt.Sprintf("generate %s dispatch session ID", request.Target.Name), err)
 		}
-		session.ProviderSessionID = id
-		session.State = sessionStateDurable
-		if err := persistSession(request.Root, session); err != nil {
+		updated, err := persistOwnedSession(request.Root, session.Name, request.Run.Record.ID, func(current *Session) {
+			current.ProviderSessionID = id
+			current.State = sessionStateDurable
+		})
+		if err != nil {
 			return err
 		}
+		session = updated
 	}
 	if err := writeIdentity(request.Stderr, session.Name, request.Target.Name, request.Mode, session.State == sessionStateDurable); err != nil {
 		return wrapExitError(ExitTargetFailure, "write dispatch identity", err)
@@ -97,12 +100,18 @@ func executeDispatch(request dispatchExecution) error {
 		if request.Mode == dispatchModeResume && id != session.ProviderSessionID {
 			return exitError(ExitTargetFailure, fmt.Sprintf("%s resume returned a different provider session ID", request.Target.Name))
 		}
-		session.ProviderSessionID = id
-		session.Agent = request.Target.Name
-		session.State = sessionStateDurable
-		session.RunID = request.Run.Record.ID
-		session.LastUsedAt = time.Now().UTC()
-		return persistSession(request.Root, session)
+		updated, err := persistOwnedSession(request.Root, session.Name, request.Run.Record.ID, func(current *Session) {
+			current.ProviderSessionID = id
+			current.Agent = request.Target.Name
+			current.State = sessionStateDurable
+			current.RunID = request.Run.Record.ID
+			current.LastUsedAt = time.Now().UTC()
+		})
+		if err != nil {
+			return err
+		}
+		session = updated
+		return nil
 	}
 
 	for attempt := 1; attempt <= 2; attempt++ {
@@ -117,10 +126,13 @@ func executeDispatch(request dispatchExecution) error {
 			if err != nil {
 				return wrapExitError(ExitTargetFailure, fmt.Sprintf("generate retry %s session ID", request.Target.Name), err)
 			}
-			session.ProviderSessionID = id
-			if err := persistSession(request.Root, session); err != nil {
+			updated, err := persistOwnedSession(request.Root, session.Name, request.Run.Record.ID, func(current *Session) {
+				current.ProviderSessionID = id
+			})
+			if err != nil {
 				return err
 			}
+			session = updated
 		}
 		childEnv := dispatchEnvironment(request.Env, request.Project, request.Run, request.Depth)
 		command, err := buildProviderCommand(request.Target, request.Project, childEnv, request.Prompt, request.Model, request.Effort, request.TargetPinned, request.Mode, session.ProviderSessionID, request.Run, request.Stderr)
@@ -130,10 +142,15 @@ func executeDispatch(request dispatchExecution) error {
 		session.Model = command.Model
 		session.ReasoningEffort = command.Effort
 		if session.State == sessionStateDurable {
-			session.TargetPinned = true
-			if err := persistSession(request.Root, session); err != nil {
+			updated, err := persistOwnedSession(request.Root, session.Name, request.Run.Record.ID, func(current *Session) {
+				current.Model = command.Model
+				current.ReasoningEffort = command.Effort
+				current.TargetPinned = true
+			})
+			if err != nil {
 				return finishDispatchFailure(request, &preStartFailure{err: err})
 			}
+			session = updated
 		}
 		command.WorkDir = request.WorkDir
 		request.Run.Record.ProviderLogPath = command.LogPath

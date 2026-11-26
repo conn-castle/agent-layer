@@ -126,7 +126,7 @@ worker launches and the agent runs.
 ```text
 al dispatch options
 
-al dispatch reserve
+al dispatch reserve [--continue <handle>]
 
 al dispatch start --agent <agent> [--model <model>] \
   [--reasoning-effort <effort>] [--role <role>] [--skill <skill>] \
@@ -139,7 +139,7 @@ al dispatch inspect <handle-or-invocation-id>
 
 al dispatch output <handle-or-invocation-id> --artifact final_answer|events [--offset <next_offset> | --tail]
 
-al dispatch continue <handle> \
+al dispatch continue [--reservation <invocation-id>] [<handle>] \
   (--prompt <text> | --prompt-file <path>)
 
 al dispatch cancel <handle-or-invocation-id>
@@ -295,11 +295,17 @@ values.
         "allow_custom": true
       }
     }
-  ]
+  ],
+  "reservations": {
+    "start": true,
+    "continue": true
+  }
 }
 ```
 
-Known but unavailable agents remain present with `available: false` and an
+CLI `options` includes `reservations` advertising support for start and
+continuation reservations; MCP `dispatch_options` omits it because reservations
+are CLI only. Known but unavailable agents remain present with `available: false` and an
 `unavailable_reason`. Unsupported overrides have `supported: false`; callers
 must omit those flags.
 
@@ -455,15 +461,23 @@ instead of repeating `continue`.
 
 ## Reservations
 
-Reservations let callers allocate a conversation name before launching. A
-repeated start is rejected, so an at-least-once workflow step cannot launch
+Reservations let callers allocate a conversation name before starting, or
+reserve the next invocation of an existing conversation before continuing. A
+repeated launch is rejected, so an at-least-once workflow step cannot launch
 the same retained reservation twice. They are CLI only: no MCP tool exposes
-them, and agents using MCP should use `dispatch_start`.
+them, and agents using MCP should use `dispatch_start` and `dispatch_continue`.
+`al dispatch options` advertises CLI reservation support under
+`"reservations": {"start": true, "continue": true}`.
 
 ```text
 al dispatch reserve
 al dispatch start --reservation <handle> --agent <agent> ... (--prompt <text> | --prompt-file <path>)
+
+al dispatch reserve --continue <handle>
+al dispatch continue --reservation <invocation-id> [<handle>] (--prompt <text> | --prompt-file <path>)
 ```
+
+### Start reservations
 
 `reserve` durably creates an invocation in the `reserved` state, with an Agent
 Layer generated handle and invocation ID, and launches nothing. It returns:
@@ -484,52 +498,92 @@ never choose identifiers: a reservation selector that Agent Layer did not
 return fails without launching. The `invocation_id` remains available for
 tracking an exact invocation; it is not accepted by `start --reservation`. A
 repeated start recognizes the original reserved invocation even after the
-conversation has been continued. After retention removes the reservation, its
+conversation has been continued (including when a continuation reservation is
+pending or completed). After retention removes the reservation, its
 three-word handle can be reused. A retry of that old handle could then start a
 different reservation, so callers must stop retrying before retention ends.
 
-The first start that reaches the reservation launches it through the normal
-intent-before-start protocol and returns the normal start result. Concurrent
-starts are serialized by the invocation's record lock, so at most one launches.
-Every later start fails with exit 82 and guidance to inspect the invocation
-and continue only when available; it launches nothing regardless of the
-launch arguments. A start interrupted
-mid-launch is resolved by the normal launch recovery (for example `failed`
-with unknown provider acceptance) and is never relaunched. This guarantees
-at-most-once launch while the reservation is retained, not eventual execution:
-a crash after claiming can leave a failed invocation that never contacted the
-provider. In that case, inspect the failed invocation before starting a new
-conversation; continuation may be unavailable.
+### Continuation reservations
 
-`inspect`, `wait`, `output`, and `cancel` accept a reservation's handle or
-invocation ID. `inspect` reports `reserved` and `reservation_expires_at`.
-`wait` on an unstarted reservation waits for the bounded interval like any
-other nonterminal invocation, but its timeout result reports `reserved` rather
-than `running`, with `condition_met: false`. `cancel` retires an unstarted reservation as `cancelled` with
-confirmed termination, without launching. `continue` rejects a reservation
-that never started.
+`al dispatch reserve --continue <handle>` checks ordinary continuation
+eligibility and durably creates a `reserved` continuation invocation for
+`<handle>`, returning the same JSON shape (`handle`, `invocation_id`,
+`state: "reserved"`, `termination_confirmed: false`, `reservation_expires_at`)
+without launching anything.
+
+- **Idempotency**: Calling `reserve --continue <handle>` while an unexpired
+  pending continuation reservation already exists for `<handle>` returns that
+  existing reservation rather than creating another or stranding the
+  conversation.
+- **No disturbance while pending**: While a continuation reservation is pending,
+  `wait`, `inspect`, and `output` addressed by `<handle>` continue to report the
+  conversation's latest launched invocation. Address the pending reservation
+  directly by its `invocation_id` with `wait`, `inspect`, `output`, or `cancel`.
+- **Exclusivity**: While a continuation reservation is pending, competing
+  `continue` calls that do not target that reservation are refused without
+  launching anything.
+- **At-most-once launch**: Launch the reservation with
+  `al dispatch continue --reservation <invocation-id>` (optionally also passing
+  `<handle>` to verify conversation ownership) and the prompt source.
+  Continuation eligibility is re-checked at launch; failures before claiming
+  leave the reservation startable. Concurrent launches are serialized so at most
+  one starts. Every later launch of that retained reservation — including after
+  later continuations — fails with exit 82 and launches nothing.
+- **Cancel, expiry, and crashes**: Cancelling an unstarted continuation
+  reservation (`al dispatch cancel <invocation-id>`) or letting it expire
+  launches nothing and returns the conversation to a continuable state. A launch
+  interrupted by a crash is never relaunched under the same reservation: once
+  termination is provable (for example a crash before provider launch intent or
+  after provider process exit), it resolves to a failed invocation and the
+  conversation stays continuable; a crash between provider launch intent and
+  provider identity publication remains explicitly uncertain and fenced,
+  matching ordinary dispatch recovery.
+
+### Launch, expiry, and exit codes
+
+The first launch that reaches a reservation runs it through the normal
+intent-before-start protocol and returns the normal start or continue result.
+Concurrent launches are serialized under the lock, so at most one launches.
+Every later launch fails with exit 82; it launches nothing regardless of the
+launch arguments. A launch interrupted mid-launch is resolved by the normal
+launch recovery (for example `failed` with unknown provider acceptance) and is
+never relaunched. This guarantees at-most-once launch while the reservation is
+retained, not eventual execution: a crash after claiming can leave a failed
+invocation that never contacted the provider. For a start reservation, inspect
+the failed invocation before starting a new conversation; continuation may be
+unavailable.
+
+`inspect`, `wait`, `output`, and `cancel` accept a reservation's invocation ID
+(and for start reservations, its handle). `inspect` reports `reserved` and
+`reservation_expires_at`. `wait` on an unstarted reservation waits for the
+bounded interval like any other nonterminal invocation, but its timeout result
+reports `reserved` rather than `running`, with `condition_met: false`. `cancel`
+retires an unstarted reservation as `cancelled` with confirmed termination,
+without launching. `continue` rejects a start reservation that never started.
 
 A reservation that is not started within `dispatch.reservation_expiry_days`
 (default 7) is retired as `cancelled` with the error `reservation expired
 before it started`. Retired reservations never launch and are removed by
-normal `session_retention_days` retention, counted from retirement for both the
-handle and the invocation. Retention also applies to a started reservation: once
-its invocation ended longer ago than the retention window, even while later
-continuations keep the conversation, a repeat start fails with exit 80.
+normal `session_retention_days` retention, counted from retirement. An unexpired
+pending continuation reservation prevents its conversation from being pruned by
+retention. Retention also applies to a started reservation: once its invocation
+ended longer ago than the retention window, even while later continuations keep
+the conversation, a repeat launch fails with exit 80.
 
-`start --reservation` fails with these exit codes. None of them launches
-anything:
+`start --reservation` and `continue --reservation` fail with these exit codes.
+None of them launches anything:
 
 | Exit code | Meaning |
 | --- | --- |
-| 80 | Not found: the selector names no reservation, for example a typo, an invented or empty value, an invocation ID, a non-reservation handle, or a reservation already removed by retention. |
+| 80 | Not found: the selector names no matching reservation, for example a typo, an invented or empty value, the wrong reservation kind or conversation handle, a non-reservation target, or a reservation already removed by retention. |
 | 81 | Expired: the reservation expired before it started. It never launched and never will; reserve again. |
-| 82 | Already started: this reservation has claimed its one start. Wait for it to finish, then continue if available. |
+| 82 | Already started: this reservation has claimed its one launch. Inspect it before taking further action; nothing new was launched. |
 | 83 | Cancelled: the reservation was cancelled before it started. It never launched and never will. |
 
-Other failures keep the ordinary dispatch exit codes. A start that fails
+Other failures keep the ordinary dispatch exit codes. A launch that fails
 before it claims the reservation, for example because the agent is disabled
-or unavailable, leaves the reservation startable.
+or unavailable or continuation eligibility no longer holds, leaves the
+reservation startable.
 
 ## Public surface
 

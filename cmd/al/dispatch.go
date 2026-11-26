@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -93,7 +94,8 @@ func newDispatchOptionsCmd() *cobra.Command {
 }
 
 func newDispatchReserveCmd() *cobra.Command {
-	return &cobra.Command{
+	var continueHandle string
+	cmd := &cobra.Command{
 		Use:          "reserve",
 		Short:        messages.DispatchReserveShort,
 		Long:         messages.DispatchReserveLong,
@@ -104,9 +106,17 @@ func newDispatchReserveCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return dispatchCommandError(cmd, agentdispatch.Reserve(agentdispatch.ReserveOptions{Root: root, Stdout: cmd.OutOrStdout()}))
+			opts := agentdispatch.ReserveOptions{Root: root, Stdout: cmd.OutOrStdout()}
+			// A present but empty --continue (such as an unset shell variable)
+			// must fail instead of allocating a fresh start reservation.
+			if cmd.Flags().Changed("continue") {
+				opts.ContinueHandle = &continueHandle
+			}
+			return dispatchCommandError(cmd, agentdispatch.Reserve(opts))
 		},
 	}
+	cmd.Flags().StringVar(&continueHandle, "continue", "", messages.DispatchReserveContinueFlag)
+	return cmd
 }
 
 func newDispatchStartCmd() *cobra.Command {
@@ -164,21 +174,36 @@ func newDispatchWaitCmd() *cobra.Command {
 }
 
 func newDispatchContinueCmd() *cobra.Command {
-	var prompt, promptFile string
+	var prompt, promptFile, reservation string
 	cmd := &cobra.Command{
-		Use: "continue <handle>", Short: "Continue a terminal agent conversation",
-		Args: cobra.ExactArgs(1), SilenceUsage: true,
+		Use: "continue [<handle>]", Short: "Continue a terminal agent conversation or launch a continuation reservation",
+		Args: cobra.MaximumNArgs(1), SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			root, workingDir, err := resolveRepoRootAndWorkingDir()
 			if err != nil {
 				return err
 			}
-			return dispatchCommandError(cmd, agentdispatch.Continue(agentdispatch.ContinueOptions{
-				Context: cmd.Context(), Root: root, WorkDir: workingDir, Handle: args[0], Prompt: prompt,
+			opts := agentdispatch.ContinueOptions{
+				Context: cmd.Context(), Root: root, WorkDir: workingDir, Prompt: prompt,
 				PromptFile: promptFile, Stdout: cmd.OutOrStdout(), Stderr: cmd.ErrOrStderr(), Env: os.Environ(),
-			}))
+			}
+			if len(args) == 1 {
+				if strings.TrimSpace(args[0]) == "" {
+					return dispatchCommandError(cmd, &agentdispatch.ExitError{Code: agentdispatch.ExitUsage, Message: "dispatch continue handle cannot be empty"})
+				}
+				opts.Handle = args[0]
+			}
+			// A present but empty --reservation (such as an unset shell
+			// variable) must fail as unknown, never fall back to a plain continue.
+			if cmd.Flags().Changed("reservation") {
+				opts.Reservation = &reservation
+			} else if len(args) == 0 {
+				return dispatchCommandError(cmd, &agentdispatch.ExitError{Code: agentdispatch.ExitUsage, Message: "dispatch continue requires a conversation handle or --reservation <invocation-id>"})
+			}
+			return dispatchCommandError(cmd, agentdispatch.Continue(opts))
 		},
 	}
+	cmd.Flags().StringVar(&reservation, "reservation", "", messages.DispatchContinueReservationFlag)
 	addDispatchPromptFlags(cmd, &prompt, &promptFile)
 	return cmd
 }
