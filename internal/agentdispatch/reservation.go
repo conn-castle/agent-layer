@@ -406,9 +406,14 @@ func checkContinuationEligible(root string, session Session, current RunRecord) 
 
 // A missing reservation record can be cleared. Malformed IDs and unreadable
 // records require diagnosis, so keep their session mappings.
-func loadContinuationReservation(root string, id string) (RunRecord, error) {
+func loadContinuationReservation(root string, session Session) (RunRecord, error) {
+	id := session.ContinuationReservationID
 	if err := parseUUID(id); err != nil {
-		return RunRecord{}, wrapExitError(ExitConfig, fmt.Sprintf("invalid dispatch continuation reservation ID %q", id), err)
+		path, pathErr := sessionPath(root, session.Name)
+		if pathErr != nil {
+			return RunRecord{}, pathErr
+		}
+		return RunRecord{}, wrapExitError(ExitConfig, fmt.Sprintf("invalid dispatch continuation reservation ID %q in mapping %q", id, path), err)
 	}
 	record, err := loadRunRecord(root, id)
 	if errors.Is(err, errDispatchRunNotFound) {
@@ -442,7 +447,7 @@ func settlePendingContinuationReservationLocked(root string, session *Session, n
 	if resID == "" {
 		return RunRecord{}, false, nil
 	}
-	record, err := loadContinuationReservation(root, resID)
+	record, err := loadContinuationReservation(root, *session)
 	if err != nil {
 		return RunRecord{}, false, err
 	}
@@ -452,7 +457,7 @@ func settlePendingContinuationReservationLocked(root string, session *Session, n
 	dir := filepathForRun(root, resID)
 	var updated RunRecord
 	err = withRunLock(dir, func() error {
-		record, loadErr := loadContinuationReservation(root, resID)
+		record, loadErr := loadContinuationReservation(root, *session)
 		if loadErr != nil || record.ID == "" {
 			return loadErr
 		}

@@ -1329,8 +1329,18 @@ func TestUnreadableContinuationReservationPreventsPruningAndSettlement(t *testin
 			if err := pruneDispatchEvidence(root, now, 24*time.Hour); err != nil {
 				t.Fatal(err)
 			}
-			err := Reserve(ReserveOptions{Root: root, ContinueHandle: &session.Name})
+			retained, active, unreadable, err := classifyDispatchPoolOccupancy(root)
+			if err != nil || retained != 0 || active != 0 || unreadable != 1 {
+				t.Fatalf("corrupt reservation occupancy = %d retained, %d active, %d unreadable, %v; want 0, 0, 1, nil", retained, active, unreadable, err)
+			}
+			err = Reserve(ReserveOptions{Root: root, ContinueHandle: &session.Name})
 			requireDispatchExitCode(t, err, ExitConfig)
+			if corrupt == "malformed ID" {
+				path, pathErr := sessionPath(root, session.Name)
+				if pathErr != nil || !strings.Contains(err.Error(), path) {
+					t.Fatalf("malformed reservation error %q does not name the mapping %q: %v", err, path, pathErr)
+				}
+			}
 			requireDispatchExitCode(t, Continue(ContinueOptions{
 				Root: root, Handle: session.Name, Prompt: "second turn", Env: []string{},
 			}), ExitConfig)

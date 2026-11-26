@@ -525,7 +525,12 @@ func classifyDispatchPoolOccupancy(root string) (retained int, active int, unrea
 			unreadable++
 			continue
 		}
-		if activeClaim, _ := dispatchSessionActivity(root, session); activeClaim {
+		activeClaim, _, reservationUnreadable := dispatchSessionActivity(root, session)
+		if reservationUnreadable {
+			unreadable++
+			continue
+		}
+		if activeClaim {
 			active++
 			continue
 		}
@@ -878,8 +883,8 @@ func pruneExpiredSession(root string, name string, cutoff time.Time) error {
 		if lastUsed.IsZero() || !lastUsed.Before(cutoff) {
 			return nil
 		}
-		active, retiredAt := dispatchSessionActivity(root, session)
-		if active || !retiredAt.Before(cutoff) {
+		active, retiredAt, reservationUnreadable := dispatchSessionActivity(root, session)
+		if reservationUnreadable || active || !retiredAt.Before(cutoff) {
 			return nil
 		}
 		path, err := sessionPath(root, name)
@@ -895,29 +900,30 @@ func pruneExpiredSession(root string, name string, cutoff time.Time) error {
 
 // dispatchSessionActivity uses one reservation snapshot for both activity and
 // retirement time, including when retirement has not reached the session file.
-func dispatchSessionActivity(root string, session Session) (bool, time.Time) {
+// Reservation read errors preserve the mapping and feed occupancy diagnostics.
+func dispatchSessionActivity(root string, session Session) (active bool, retiredAt time.Time, reservationUnreadable bool) {
 	activeRunID := sessionOwnerRunID(session)
 	if activeRunID != "" {
 		record, err := loadRunRecord(root, activeRunID)
 		if err != nil {
 			// Retention must not erase a mapping when its active claim cannot be
 			// interpreted conservatively. Explicit operations surface the error.
-			return true, time.Time{}
+			return true, time.Time{}, false
 		}
 		if activeClaimBlocksReplacement(record) {
-			return true, time.Time{}
+			return true, time.Time{}, false
 		}
 	}
 	if session.ContinuationReservationID != "" {
-		record, err := loadContinuationReservation(root, session.ContinuationReservationID)
+		record, err := loadContinuationReservation(root, session)
 		if err != nil {
-			return true, time.Time{}
+			return false, time.Time{}, true
 		}
 		if record.ID != "" {
-			return activeClaimBlocksReplacement(record), reservationRetirementTime(record)
+			return activeClaimBlocksReplacement(record), reservationRetirementTime(record), false
 		}
 	}
-	return false, time.Time{}
+	return false, time.Time{}, false
 }
 
 func withSessionLock(root string, name string, fn func() error) error {
