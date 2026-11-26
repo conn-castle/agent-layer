@@ -175,8 +175,15 @@ func TestDispatchSessionMCPWrapperEndToEndWithBuiltBinary(t *testing.T) {
 	}
 	noisyPIDFile := filepath.Join(tmp, "noisy.pid")
 	mcpNoisy := filepath.Join(customBin, "mcp-noisy")
-	mcpNoisyScript := "#!/bin/sh\nprintf '%s\\n' \"$$\" > " + noisyPIDFile + "\ni=0\nwhile [ $i -lt 5000 ]; do\n  printf '{\"jsonrpc\":\"2.0\",\"method\":\"noise\",\"params\":{\"pad\":\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"}}\\n'\n  i=$((i + 1))\ndone\n"
+	mcpNoisyScript := "#!/bin/sh\nprintf '%s\\n' \"$$\" > " + noisyPIDFile + "\nwhile :; do\n  printf '{\"jsonrpc\":\"2.0\",\"method\":\"noise\",\"params\":{\"pad\":\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"}}\\n'\ndone\n"
 	if err := os.WriteFile(mcpNoisy, []byte(mcpNoisyScript), 0o700); err != nil { // #nosec G306 -- synthetic executable test fixture.
+		t.Fatal(err)
+	}
+	stubbornPIDFile := filepath.Join(tmp, "stubborn.pid")
+	mcpStubborn := filepath.Join(customBin, "mcp-stubborn")
+	// Ignores SIGTERM, emits a >16 MiB frame without newline, then sleeps holding stdout open.
+	mcpStubbornScript := "#!/bin/sh\ntrap '' TERM\nprintf '%s\\n' \"$$\" > " + stubbornPIDFile + "\ndd if=/dev/zero bs=1048576 count=17 2>/dev/null | tr '\\0' 'x'\nsleep 60\n"
+	if err := os.WriteFile(mcpStubborn, []byte(mcpStubbornScript), 0o700); err != nil { // #nosec G306 -- synthetic executable test fixture.
 		t.Fatal(err)
 	}
 	hsSpec := map[string]any{
@@ -185,6 +192,7 @@ func TestDispatchSessionMCPWrapperEndToEndWithBuiltBinary(t *testing.T) {
 			{"name": "ok-srv", "command": mcpOK},
 			{"name": "bad-srv", "command": "/bin/false"},
 			{"name": "noisy-srv", "command": mcpNoisy},
+			{"name": "stubborn-srv", "command": mcpStubborn},
 		},
 	}
 	hsBytes, err := json.Marshal(hsSpec)
@@ -258,6 +266,26 @@ func TestDispatchSessionMCPWrapperEndToEndWithBuiltBinary(t *testing.T) {
 	if err := noisyCmd.Start(); err != nil {
 		t.Fatal(err)
 	}
+	// Read at least one byte so the child is confirmed running and emitting output.
+	oneByte := make([]byte, 1)
+	if _, err := noisyOut.Read(oneByte); err != nil {
+		t.Fatalf("read first byte from noisy-srv: %v", err)
+	}
+	var noisyPID int
+	pidDeadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(pidDeadline) {
+		if rawPID, readErr := os.ReadFile(noisyPIDFile); readErr == nil { // #nosec G304 -- test PID file.
+			if parsed, convErr := strconv.Atoi(strings.TrimSpace(string(rawPID))); convErr == nil && parsed > 0 {
+				noisyPID = parsed
+				break
+			}
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if noisyPID <= 0 {
+		_ = noisyCmd.Process.Kill()
+		t.Fatal("noisy-srv did not write a valid PID before closing stdout")
+	}
 	_ = noisyOut.Close()
 	noisyDone := make(chan error, 1)
 	go func() { noisyDone <- noisyCmd.Wait() }()
@@ -267,12 +295,35 @@ func TestDispatchSessionMCPWrapperEndToEndWithBuiltBinary(t *testing.T) {
 		_ = noisyCmd.Process.Kill()
 		t.Fatal("handshake wrapper deadlocked in Wait after stdout closed (EPIPE)")
 	}
-	if rawPID, readErr := os.ReadFile(noisyPIDFile); readErr == nil { // #nosec G304 -- test PID file.
-		if childPID, convErr := strconv.Atoi(strings.TrimSpace(string(rawPID))); convErr == nil && childPID > 0 {
-			if err := syscall.Kill(childPID, 0); !errors.Is(err, syscall.ESRCH) {
-				t.Fatalf("noisy child process %d still alive after wrapper exit on EPIPE: %v", childPID, err)
-			}
-		}
+	if err := syscall.Kill(noisyPID, 0); !errors.Is(err, syscall.ESRCH) {
+		t.Fatalf("noisy child process %d still alive after wrapper exit on EPIPE: %v", noisyPID, err)
+	}
+
+	// Verify an oversized frame from a SIGTERM-ignoring server triggers bounded
+	// SIGKILL escalation so the wrapper exits and reaps the child cleanly.
+	stubbornCmd := exec.Command(alBin, "__dispatch-session-mcp", "--run-dir", hsRunDir, "--server", "stubborn-srv", "--spec", hsSpecPath, "--digest", hsDigest, "--verify-handshake")
+	stubbornCmd.Env = append(os.Environ(), "TMPDIR="+hsTmp)
+	stubbornDone := make(chan error, 1)
+	if err := stubbornCmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	go func() { stubbornDone <- stubbornCmd.Wait() }()
+	select {
+	case <-stubbornDone:
+	case <-time.After(10 * time.Second):
+		_ = stubbornCmd.Process.Kill()
+		t.Fatal("handshake wrapper deadlocked on oversized frame from SIGTERM-ignoring server")
+	}
+	rawStubbornPID, err := os.ReadFile(stubbornPIDFile) // #nosec G304 -- test PID file.
+	if err != nil {
+		t.Fatalf("read stubborn-srv PID file: %v", err)
+	}
+	stubbornPID, err := strconv.Atoi(strings.TrimSpace(string(rawStubbornPID)))
+	if err != nil || stubbornPID <= 0 {
+		t.Fatalf("invalid stubborn-srv PID %q: %v", string(rawStubbornPID), err)
+	}
+	if err := syscall.Kill(stubbornPID, 0); !errors.Is(err, syscall.ESRCH) {
+		t.Fatalf("SIGTERM-ignoring child %d still alive after oversized-frame escalation: %v", stubbornPID, err)
 	}
 }
 

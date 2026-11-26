@@ -464,6 +464,22 @@ func TestClaudeSessionMCPNoSilentDegradation(t *testing.T) {
 		t.Fatalf("nested array status did not fail wf-a: %#v", events)
 	}
 
+	// Required session MCP server appearing after >256 project servers in Claude init must still be retained.
+	var manyServers strings.Builder
+	manyServers.WriteString(`{"type":"system","subtype":"init","session_id":"` + runtimeSessionID + `","mcp_servers":[`)
+	for i := range claudeMCPServersLimit + 5 {
+		if i > 0 {
+			manyServers.WriteByte(',')
+		}
+		_, _ = fmt.Fprintf(&manyServers, `{"name":"proj-%d","status":"connected"}`, i)
+	}
+	manyServers.WriteString(`,{"name":"wf-late","status":"connected"}]}`)
+	events = runStream(manyServers.String()+"\n"+okResult+"\n", []string{"wf-late"})
+	if slices.ContainsFunc(events, func(e providerEvent) bool { return e.Kind == eventFailure }) ||
+		!slices.ContainsFunc(events, func(e providerEvent) bool { return e.Kind == eventComplete }) {
+		t.Fatalf("required session MCP server after index %d was dropped: %#v", claudeMCPServersLimit, events)
+	}
+
 	// Result without any init event -> fails instead of silently succeeding.
 	events = runStream(okResult+"\n", []string{"wf-a"})
 	if slices.ContainsFunc(events, func(e providerEvent) bool { return e.Kind == eventComplete }) {
@@ -773,9 +789,18 @@ func TestTerminationConfirmedWaitsForTrackedSessionMCPProcesses(t *testing.T) {
 	if err := sleeper.Start(); err != nil {
 		t.Fatalf("start sleeper: %v", err)
 	}
-	t.Cleanup(func() {
-		_ = syscall.Kill(-sleeper.Process.Pid, syscall.SIGKILL)
+	reaped := make(chan struct{})
+	go func() {
 		_ = sleeper.Wait()
+		close(reaped)
+	}()
+	t.Cleanup(func() {
+		select {
+		case <-reaped:
+		default:
+			_ = syscall.Kill(-sleeper.Process.Pid, syscall.SIGKILL)
+			<-reaped
+		}
 	})
 	startID := processStartIdentity(sleeper.Process.Pid)
 	if startID == "" {
@@ -830,21 +855,6 @@ func TestTerminationConfirmedWaitsForTrackedSessionMCPProcesses(t *testing.T) {
 	if inspected.TerminationConfirmed {
 		t.Fatalf("Inspect confirmed termination while session MCP server was alive: %#v", inspected)
 	}
-
-	// Reap sleeper in the background so zombie exits once Cancel kills it.
-	reaped := make(chan struct{})
-	go func() {
-		_ = sleeper.Wait()
-		close(reaped)
-	}()
-	t.Cleanup(func() {
-		select {
-		case <-reaped:
-		default:
-			_ = syscall.Kill(-sleeper.Process.Pid, syscall.SIGKILL)
-			<-reaped
-		}
-	})
 
 	// Cancel must terminate the surviving session MCP process group and confirm termination.
 	var cancelOut bytes.Buffer
@@ -1081,39 +1091,43 @@ func TestSessionMCPReviewHardeningRegressions(t *testing.T) {
 	if err := zombieCmd.Start(); err != nil {
 		t.Fatal(err)
 	}
-	defer func() { _ = zombieCmd.Wait() }()
+	t.Cleanup(func() {
+		_ = zombieCmd.Wait()
+		_ = removeSessionMCPRuntimeDir(zombieRunDir)
+	})
 	// Poll briefly until the unreaped child enters zombie state.
 	zombieDeadline := time.Now().Add(2 * time.Second)
 	for !processIsZombie(zombieCmd.Process.Pid) && time.Now().Before(zombieDeadline) {
 		time.Sleep(10 * time.Millisecond)
 	}
-	if processIsZombie(zombieCmd.Process.Pid) {
-		zombieRT, err := ensureSessionMCPRuntimeDir(zombieRunDir)
-		if err != nil {
-			t.Fatal(err)
-		}
-		wrapperPID := os.Getpid()
-		wrapperStart := processStartIdentity(wrapperPID)
-		if err := writeJSONAtomic(filepath.Join(zombieRT, sessionMCPProcsFile), sessionMCPProcsDocument{
-			Processes: []sessionMCPProcess{{Server: "z", PID: wrapperPID, ProcessGroupID: wrapperPID, ProcessStartIdentity: wrapperStart}},
-		}); err != nil {
-			t.Fatal(err)
-		}
-		if err := writeSessionMCPHandshakeStatus(zombieRT, sessionMCPHandshakeStatus{
-			Server:               "z",
-			Nonce:                "zn",
-			PID:                  wrapperPID,
-			ProcessStartIdentity: wrapperStart,
-			ChildPID:             zombieCmd.Process.Pid,
-			ChildStartIdentity:   processStartIdentity(zombieCmd.Process.Pid),
-			Initialized:          true,
-			ToolsListed:          true,
-		}); err != nil {
-			t.Fatal(err)
-		}
-		if _, _, err := checkSessionMCPHandshakesReady(zombieRunDir, []string{"z"}, "zn"); err == nil || !strings.Contains(err.Error(), "child process exited") {
-			t.Fatalf("expected zombie child rejection, got %v", err)
-		}
+	if !processIsZombie(zombieCmd.Process.Pid) {
+		t.Fatalf("unreaped child pid %d did not enter zombie state within deadline", zombieCmd.Process.Pid)
+	}
+	zombieRT, err := ensureSessionMCPRuntimeDir(zombieRunDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wrapperPID := os.Getpid()
+	wrapperStart := processStartIdentity(wrapperPID)
+	if err := writeJSONAtomic(filepath.Join(zombieRT, sessionMCPProcsFile), sessionMCPProcsDocument{
+		Processes: []sessionMCPProcess{{Server: "z", PID: wrapperPID, ProcessGroupID: wrapperPID, ProcessStartIdentity: wrapperStart}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeSessionMCPHandshakeStatus(zombieRT, sessionMCPHandshakeStatus{
+		Server:               "z",
+		Nonce:                "zn",
+		PID:                  wrapperPID,
+		ProcessStartIdentity: wrapperStart,
+		ChildPID:             zombieCmd.Process.Pid,
+		ChildStartIdentity:   processStartIdentity(zombieCmd.Process.Pid),
+		Initialized:          true,
+		ToolsListed:          true,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := checkSessionMCPHandshakesReady(zombieRunDir, []string{"z"}, "zn"); err == nil || !strings.Contains(err.Error(), "child process exited") {
+		t.Fatalf("expected zombie child rejection, got %v", err)
 	}
 }
 

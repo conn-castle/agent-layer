@@ -76,6 +76,7 @@ type selectiveJSONReader struct {
 	record              *structuredRecord
 	block               *claudeToolUseBlock
 	mcpServer           *claudeMCPServerStatus
+	expectedMCPServers  map[string]struct{}
 }
 
 // structuredJSONLineReader exposes one JSONL record at a time without
@@ -256,8 +257,11 @@ func (p *selectiveJSONReader) readArray(result map[string]any, path []string, de
 				return err
 			}
 			p.mcpServer = nil
-			if len(p.record.Claude.MCPServers) < claudeMCPServersLimit && entry.Name != "" {
-				p.record.Claude.MCPServers = append(p.record.Claude.MCPServers, entry)
+			if entry.Name != "" {
+				_, isExpected := p.expectedMCPServers[entry.Name]
+				if len(p.record.Claude.MCPServers) < claudeMCPServersLimit || isExpected {
+					p.record.Claude.MCPServers = append(p.record.Claude.MCPServers, entry)
+				}
 			}
 		} else if err := p.readValue(result, path, depth+1); err != nil {
 			return err

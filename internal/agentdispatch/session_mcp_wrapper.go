@@ -398,8 +398,10 @@ func runSessionMCPServerWithHandshake(rtDir, serverName, nonce, resolvedBinary s
 	var shutdownOnce sync.Once
 	var killTimerMu sync.Mutex
 	var killTimer *time.Timer
+	var killTimerStopped bool
 	stopKillTimer := func() {
 		killTimerMu.Lock()
+		killTimerStopped = true
 		if killTimer != nil {
 			killTimer.Stop()
 		}
@@ -413,17 +415,20 @@ func runSessionMCPServerWithHandshake(rtDir, serverName, nonce, resolvedBinary s
 				_ = cmd.Process.Signal(syscall.SIGTERM)
 			}
 			killTimerMu.Lock()
-			killTimer = time.AfterFunc(childShutdownGrace, func() {
-				if cmd.Process != nil {
-					_ = cmd.Process.Signal(syscall.SIGKILL)
-				}
-				_ = childStdoutR.Close()
-			})
+			if !killTimerStopped {
+				killTimer = time.AfterFunc(childShutdownGrace, func() {
+					if cmd.Process != nil {
+						_ = cmd.Process.Signal(syscall.SIGKILL)
+					}
+					_ = childStdoutR.Close()
+				})
+			}
 			killTimerMu.Unlock()
 		})
 	}
 
-	// Forward termination signals to the child so it is always reaped cleanly.
+	// Forward termination signals to the child with bounded SIGKILL escalation
+	// so a SIGTERM-ignoring server or descendant cannot hang wrapper exit.
 	sigCh := make(chan os.Signal, 2)
 	signal.Notify(sigCh, syscall.SIGTERM, syscall.SIGINT)
 	stopSig := make(chan struct{})
@@ -433,10 +438,8 @@ func runSessionMCPServerWithHandshake(rtDir, serverName, nonce, resolvedBinary s
 	}()
 	go func() {
 		select {
-		case sig := <-sigCh:
-			if cmd.Process != nil {
-				_ = cmd.Process.Signal(sig)
-			}
+		case <-sigCh:
+			terminateChildBounded()
 		case <-stopSig:
 		}
 	}()

@@ -46,7 +46,7 @@ type acpPermissionTool struct {
 	RawInput   map[string]any `json:"rawInput"`
 }
 
-func mergeACPPermissionTool(base, override acpPermissionTool) acpPermissionTool {
+func mergeACPToolCallUpdate(base, override acpPermissionTool) acpPermissionTool {
 	merged := base
 	if override.ToolCallID != "" {
 		merged.ToolCallID = override.ToolCallID
@@ -60,10 +60,21 @@ func mergeACPPermissionTool(base, override acpPermissionTool) acpPermissionTool 
 	if override.Title != "" {
 		merged.Title = override.Title
 	}
-	// If the permission request supplies either Args or RawInput, treat its
-	// input as authoritative across both fields so stale cached RawInput can
-	// never shadow a request-supplied Args command (or vice versa).
-	if len(override.Args) > 0 || len(override.RawInput) > 0 {
+	if len(override.Args) > 0 {
+		merged.Args = override.Args
+	}
+	if len(override.RawInput) > 0 {
+		merged.RawInput = override.RawInput
+	}
+	return merged
+}
+
+func mergeACPPermissionTool(base, override acpPermissionTool) acpPermissionTool {
+	merged := mergeACPToolCallUpdate(base, override)
+	// If the permission request itself supplies an execute command (via Args or
+	// RawInput), replace both input maps with the request's maps so a stale
+	// cached RawInput command can never shadow a request-supplied Args command.
+	if extractACPExecuteCommand(override) != "" {
 		merged.Args = override.Args
 		merged.RawInput = override.RawInput
 	}
@@ -88,16 +99,22 @@ func trimACPPermissionToolForCache(tool acpPermissionTool) acpPermissionTool {
 
 func pickAuthToolFields(src map[string]any) map[string]any {
 	var dst map[string]any
-	copyString := func(key string) {
-		if val, ok := src[key].(string); ok && val != "" {
-			if dst == nil {
-				dst = make(map[string]any, 4)
-			}
-			dst[key] = val
+	ensureDst := func() {
+		if dst == nil {
+			dst = make(map[string]any, 4)
 		}
 	}
-	for _, key := range []string{jsonCommandKey, "CommandLine", jsonCmdKey, "variant", "tool_name", "ServerName", "serverName"} {
-		copyString(key)
+	// Preserve explicit "variant" presence (even when empty) because Grok MCP
+	// classification distinguishes an omitted variant from a non-"UseTool" value.
+	if val, ok := src["variant"].(string); ok {
+		ensureDst()
+		dst["variant"] = val
+	}
+	for _, key := range []string{jsonCommandKey, "CommandLine", jsonCmdKey, "tool_name", "ServerName", "serverName"} {
+		if val, ok := src[key].(string); ok && val != "" {
+			ensureDst()
+			dst[key] = val
+		}
 	}
 	if nested, ok := src["tool_input"].(map[string]any); ok {
 		var nestedDst map[string]any
@@ -110,9 +127,7 @@ func pickAuthToolFields(src map[string]any) map[string]any {
 			}
 		}
 		if len(nestedDst) > 0 {
-			if dst == nil {
-				dst = make(map[string]any, 1)
-			}
+			ensureDst()
 			dst["tool_input"] = nestedDst
 		}
 	}
@@ -155,10 +170,9 @@ func (c *acpClient) handleAgentRequest(msg acpJSONRPCMessage) error {
 		})
 	}
 	tool := req.ToolCall
-	if tool.ToolCallID != "" && c.toolCalls != nil {
-		if cached, ok := c.toolCalls[tool.ToolCallID]; ok {
+	if tool.ToolCallID != "" {
+		if cached, ok := c.lookupCachedToolCall(tool.ToolCallID); ok {
 			tool = mergeACPPermissionTool(cached, tool)
-			delete(c.toolCalls, tool.ToolCallID)
 		}
 	}
 	allow := acpShouldApproveTool(c.provider, c.cfg, tool)
@@ -291,12 +305,15 @@ func extractACPMCPServerName(provider string, tool acpPermissionTool, sessionSer
 			}
 			return "", true
 		}
-		// Eager MCP tools are named mcp_<server>_<tool> in structured tool.Name.
+		// Eager MCP tools are named mcp_<server>_<tool> in structured tool.Name
+		// (Antigravity normalizes hyphens to underscores in tool names).
 		// Never fall back to free-form tool.Title.
 		if strings.HasPrefix(tool.Name, "mcp_") {
 			rest := strings.TrimPrefix(tool.Name, "mcp_")
 			for _, server := range allServers {
-				if strings.HasPrefix(rest, server+"_") && len(rest) > len(server)+1 {
+				normalized := strings.ReplaceAll(server, "-", "_")
+				if (strings.HasPrefix(rest, server+"_") && len(rest) > len(server)+1) ||
+					(strings.HasPrefix(rest, normalized+"_") && len(rest) > len(normalized)+1) {
 					return server, true
 				}
 			}

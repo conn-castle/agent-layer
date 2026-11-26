@@ -319,7 +319,7 @@ func beginCancellation(root string, id string) (RunRecord, *ownedProviderProcess
 				// processes remain live, allow Cancel to terminate them.
 				if !sessionMCPProcessesStopped(dir) &&
 					(current.PID == 0 || ownershipForIdentity(current.PID, current.ProcessStartIdentity) == ownershipDead) &&
-					providerProcessGroupDead(current.ProcessGroupID) {
+					(providerProcessGroupDead(current.ProcessGroupID) || providerProcessGroupReused(current)) {
 					return nil
 				}
 				group, groupErr := cancellationProcessGroup(dir, current)

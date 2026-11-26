@@ -3,6 +3,7 @@ package agentdispatch
 import (
 	"bufio"
 	"bytes"
+	"container/list"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -103,14 +104,19 @@ type acpClient struct {
 	answerTruncated  bool
 	sawToolSinceText bool
 	deniedTools      []string
-	toolCalls        map[string]acpPermissionTool
-	toolCallOrder    []string
+	toolCalls        map[string]*list.Element
+	toolCallOrder    *list.List
 	grokMCPReady     map[string]acpGrokMCPStatus
 	grokMCPDone      bool
 	grokMCPDoneAt    time.Time
 	sessionID        string
 	promptActive     bool
 	cancelled        bool
+}
+
+type acpCachedToolEntry struct {
+	id   string
+	tool acpPermissionTool
 }
 
 type acpGrokMCPStatus struct {
@@ -157,16 +163,17 @@ func runACPDispatch(
 	go readACPFrames(stdout, rawWriter, frames, stopReader, readerDone)
 
 	client := &acpClient{
-		stdin:        stdin,
-		frames:       frames,
-		provider:     command.Provider,
-		cfg:          *command.ACP,
-		root:         root,
-		runID:        run.Record.ID,
-		runDir:       run.Dir,
-		consume:      consume,
-		toolCalls:    make(map[string]acpPermissionTool),
-		grokMCPReady: make(map[string]acpGrokMCPStatus),
+		stdin:         stdin,
+		frames:        frames,
+		provider:      command.Provider,
+		cfg:           *command.ACP,
+		root:          root,
+		runID:         run.Record.ID,
+		runDir:        run.Dir,
+		consume:       consume,
+		toolCalls:     make(map[string]*list.Element),
+		toolCallOrder: list.New(),
+		grokMCPReady:  make(map[string]acpGrokMCPStatus),
 	}
 
 	defer func() {
@@ -633,7 +640,8 @@ func (c *acpClient) verifySessionMCPReady(sessionID string) error {
 		}
 		grokReady := c.provider != AgentGrok || c.grokSessionMCPAllReady()
 		if grokReady && handshakesReady {
-			if err := c.drainQueuedFrames(); err != nil {
+			drainedAll, err := c.drainQueuedFrames()
+			if err != nil {
 				return err
 			}
 			if c.provider == AgentGrok {
@@ -643,6 +651,15 @@ func (c *acpClient) verifySessionMCPReady(sessionID string) error {
 				if !c.grokSessionMCPAllReady() {
 					continue
 				}
+			}
+			if !drainedAll {
+				if time.Now().After(deadline) {
+					return fmt.Errorf("timed out draining queued ACP frames while verifying session MCP readiness for session %s", sessionID)
+				}
+				if c.checkCancelled() {
+					return errors.New("dispatch was cancelled")
+				}
+				continue
 			}
 			return nil
 		}
@@ -695,7 +712,7 @@ func (c *acpClient) checkGrokMCPStatusError() error {
 	return nil
 }
 
-func (c *acpClient) drainQueuedFrames() error {
+func (c *acpClient) drainQueuedFrames() (bool, error) {
 	budget := cap(c.frames)
 	if budget <= 0 {
 		budget = 64
@@ -704,19 +721,19 @@ func (c *acpClient) drainQueuedFrames() error {
 		select {
 		case frame, ok := <-c.frames:
 			if !ok {
-				return fmt.Errorf("%s ACP stdout closed while initializing session MCP servers", c.provider)
+				return false, fmt.Errorf("%s ACP stdout closed while initializing session MCP servers", c.provider)
 			}
 			if frame.err != nil {
-				return frame.err
+				return false, frame.err
 			}
 			if _, _, err := c.dispatchFrame(frame.msg, 0); err != nil {
-				return err
+				return false, err
 			}
 		default:
-			return nil
+			return true, nil
 		}
 	}
-	return nil
+	return len(c.frames) == 0, nil
 }
 
 func (c *acpClient) handleNotification(msg acpJSONRPCMessage) error {
@@ -796,7 +813,7 @@ func (c *acpClient) handleSessionUpdate(raw json.RawMessage) error {
 		if id := envelope.Update.ToolCallID; id != "" {
 			switch strings.ToLower(strings.TrimSpace(envelope.Update.Status)) {
 			case "completed", "failed", "cancelled", "canceled":
-				delete(c.toolCalls, id)
+				c.evictToolCall(id)
 			default:
 				c.cacheToolCall(id, trimACPPermissionToolForCache(acpPermissionTool{
 					ToolCallID: id,
@@ -819,21 +836,59 @@ func (c *acpClient) handleSessionUpdate(raw json.RawMessage) error {
 	}
 }
 
-func (c *acpClient) cacheToolCall(id string, incoming acpPermissionTool) {
+func (c *acpClient) lookupCachedToolCall(id string) (acpPermissionTool, bool) {
 	if c.toolCalls == nil {
-		c.toolCalls = make(map[string]acpPermissionTool)
+		return acpPermissionTool{}, false
 	}
-	if existing, exists := c.toolCalls[id]; exists {
-		c.toolCalls[id] = mergeACPPermissionTool(existing, incoming)
+	elem, ok := c.toolCalls[id]
+	if !ok {
+		return acpPermissionTool{}, false
+	}
+	entry, ok := elem.Value.(*acpCachedToolEntry)
+	if !ok || entry == nil {
+		return acpPermissionTool{}, false
+	}
+	return entry.tool, true
+}
+
+func (c *acpClient) evictToolCall(id string) {
+	if c.toolCalls == nil {
 		return
 	}
-	for len(c.toolCalls) >= acpMaxCachedToolCalls && len(c.toolCallOrder) > 0 {
-		oldest := c.toolCallOrder[0]
-		c.toolCallOrder = c.toolCallOrder[1:]
-		delete(c.toolCalls, oldest)
+	if elem, ok := c.toolCalls[id]; ok {
+		delete(c.toolCalls, id)
+		if c.toolCallOrder != nil {
+			c.toolCallOrder.Remove(elem)
+		}
 	}
-	c.toolCalls[id] = incoming
-	c.toolCallOrder = append(c.toolCallOrder, id)
+}
+
+func (c *acpClient) cacheToolCall(id string, incoming acpPermissionTool) {
+	if c.toolCalls == nil {
+		c.toolCalls = make(map[string]*list.Element)
+	}
+	if c.toolCallOrder == nil {
+		c.toolCallOrder = list.New()
+	}
+	if elem, exists := c.toolCalls[id]; exists {
+		if entry, ok := elem.Value.(*acpCachedToolEntry); ok && entry != nil {
+			entry.tool = mergeACPToolCallUpdate(entry.tool, incoming)
+			c.toolCallOrder.MoveToBack(elem)
+			return
+		}
+	}
+	for len(c.toolCalls) >= acpMaxCachedToolCalls {
+		front := c.toolCallOrder.Front()
+		if front == nil {
+			break
+		}
+		c.toolCallOrder.Remove(front)
+		if entry, ok := front.Value.(*acpCachedToolEntry); ok && entry != nil {
+			delete(c.toolCalls, entry.id)
+		}
+	}
+	elem := c.toolCallOrder.PushBack(&acpCachedToolEntry{id: id, tool: incoming})
+	c.toolCalls[id] = elem
 }
 
 func appendRetainedText(builder *strings.Builder, chunk string) bool {

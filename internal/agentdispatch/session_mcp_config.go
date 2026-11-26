@@ -487,40 +487,72 @@ func validateSessionMCPServersForProject(project *config.ProjectConfig, target t
 					return exitError(ExitUsage, fmt.Sprintf("session MCP server %q has an ambiguous Grok MCP tool prefix with project MCP server %q; rename the session server", server.Name, existing))
 				}
 			}
-		case AgentAntigravity:
-			// Antigravity eager MCP tools use a single-underscore separator
-			// ("mcp_<server>_<tool>"), so a server name that is an underscore
-			// prefix of another server name creates an ambiguous approval namespace.
-			agyExisting := make(map[string]struct{}, len(projectIDs)+1)
-			for existing := range projectIDs {
-				agyExisting[existing] = struct{}{}
-			}
-			for _, id := range projection.EffectiveServerIDs(project.Config, projection.ClientAntigravity) {
-				agyExisting[id] = struct{}{}
-			}
-			for existing := range agyExisting {
-				if antigravityNamespaceAmbiguous(server.Name, existing) {
-					return exitError(ExitUsage, fmt.Sprintf("session MCP server %q has an ambiguous Antigravity MCP tool prefix with project MCP server %q; rename the session server", server.Name, existing))
-				}
-			}
-			if antigravityNamespaceAmbiguous(server.Name, projection.BuiltInDispatchServerID) {
-				return exitError(ExitUsage, fmt.Sprintf("session MCP server %q has an ambiguous Antigravity MCP tool prefix with reserved server %q; rename the session server", server.Name, projection.BuiltInDispatchServerID))
-			}
-			for _, other := range servers {
-				if other.Name != server.Name && antigravityNamespaceAmbiguous(server.Name, other.Name) {
-					return exitError(ExitUsage, fmt.Sprintf("session MCP servers %q and %q have ambiguous Antigravity MCP tool prefixes; rename one server", server.Name, other.Name))
-				}
-			}
 		}
+	}
+	if target.Name == AgentAntigravity {
+		// Antigravity eager MCP tools use a single-underscore separator
+		// ("mcp_<server>_<tool>"), normalized with hyphens replaced by
+		// underscores. Validate in O(N * nameLen) via an index of normalized
+		// names rather than an O(N^2) pair scan.
+		return validateAntigravitySessionMCPNamespaces(project, projectIDs, servers)
 	}
 	return nil
 }
 
-func antigravityNamespaceAmbiguous(a string, b string) bool {
-	na := strings.ReplaceAll(a, "-", "_")
-	nb := strings.ReplaceAll(b, "-", "_")
-	return na == nb || strings.HasPrefix(a, b+"_") || strings.HasPrefix(b, a+"_") ||
-		strings.HasPrefix(na, nb+"_") || strings.HasPrefix(nb, na+"_")
+func validateAntigravitySessionMCPNamespaces(project *config.ProjectConfig, projectIDs map[string]struct{}, servers []SessionMCPServer) error {
+	projectNorm := make(map[string]string, len(projectIDs)+2)
+	for existing := range projectIDs {
+		projectNorm[strings.ReplaceAll(existing, "-", "_")] = existing
+	}
+	for _, id := range projection.EffectiveServerIDs(project.Config, projection.ClientAntigravity) {
+		projectNorm[strings.ReplaceAll(id, "-", "_")] = id
+	}
+	reservedNorm := strings.ReplaceAll(projection.BuiltInDispatchServerID, "-", "_")
+
+	sessionNorm := make(map[string]string, len(servers))
+	for _, server := range servers {
+		norm := strings.ReplaceAll(server.Name, "-", "_")
+		sessionNorm[norm] = server.Name
+	}
+
+	// Check every project/reserved server's underscore prefixes against sessionNorm,
+	// and every session server's underscore prefixes against projectNorm, reservedNorm, and sessionNorm.
+	findPrefixMatch := func(norm string, table map[string]string) (string, bool) {
+		if other, ok := table[norm]; ok {
+			return other, true
+		}
+		for i := 0; i < len(norm); i++ {
+			if norm[i] == '_' {
+				if other, ok := table[norm[:i]]; ok {
+					return other, true
+				}
+			}
+		}
+		return "", false
+	}
+
+	for _, server := range servers {
+		norm := strings.ReplaceAll(server.Name, "-", "_")
+		if existing, ok := findPrefixMatch(norm, projectNorm); ok {
+			return exitError(ExitUsage, fmt.Sprintf("session MCP server %q has an ambiguous Antigravity MCP tool prefix with project MCP server %q; rename the session server", server.Name, existing))
+		}
+		if norm == reservedNorm || strings.HasPrefix(norm, reservedNorm+"_") || strings.HasPrefix(reservedNorm, norm+"_") {
+			return exitError(ExitUsage, fmt.Sprintf("session MCP server %q has an ambiguous Antigravity MCP tool prefix with reserved server %q; rename the session server", server.Name, projection.BuiltInDispatchServerID))
+		}
+		for i := 0; i < len(norm); i++ {
+			if norm[i] == '_' {
+				if other, ok := sessionNorm[norm[:i]]; ok && other != server.Name {
+					return exitError(ExitUsage, fmt.Sprintf("session MCP servers %q and %q have ambiguous Antigravity MCP tool prefixes; rename one server", server.Name, other))
+				}
+			}
+		}
+	}
+	for normProj, existing := range projectNorm {
+		if srvName, ok := findPrefixMatch(normProj, sessionNorm); ok {
+			return exitError(ExitUsage, fmt.Sprintf("session MCP server %q has an ambiguous Antigravity MCP tool prefix with project MCP server %q; rename the session server", srvName, existing))
+		}
+	}
+	return nil
 }
 
 func claudePermissionListBlocksSessionMCP(passthrough config.ProviderPassthrough, listKey string, serverName string) (string, bool) {

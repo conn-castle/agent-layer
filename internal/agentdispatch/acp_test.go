@@ -591,13 +591,63 @@ func TestACPPermissionHardeningAndToolCallMetadataMerge(t *testing.T) {
 		t.Fatal("stale cached RawInput allowed a disallowed request Args command")
 	}
 
-	// Tool-call cache must stay bounded at acpMaxCachedToolCalls.
+	// Tool-call cache must stay bounded at acpMaxCachedToolCalls, evict cleanly
+	// without leaking order entries, and never delete a re-inserted live entry.
 	var cacheClient acpClient
-	for i := range acpMaxCachedToolCalls + 25 {
+	cacheClient.cacheToolCall("tc-reused", acpPermissionTool{Kind: "other", Name: "mcp_wf_ping"})
+	cacheClient.evictToolCall("tc-reused")
+	cacheClient.cacheToolCall("tc-reused", acpPermissionTool{Kind: "other", Name: "mcp_wf_ping"})
+	for i := range acpMaxCachedToolCalls - 1 {
 		cacheClient.cacheToolCall(fmt.Sprintf("tc-%d", i), acpPermissionTool{Kind: "other", Name: "mcp_wf_ping"})
 	}
-	if len(cacheClient.toolCalls) > acpMaxCachedToolCalls {
-		t.Fatalf("toolCalls cache grew to %d, want <= %d", len(cacheClient.toolCalls), acpMaxCachedToolCalls)
+	if len(cacheClient.toolCalls) != acpMaxCachedToolCalls || cacheClient.toolCallOrder.Len() != acpMaxCachedToolCalls {
+		t.Fatalf("cache size=(%d,%d), want (%d,%d)", len(cacheClient.toolCalls), cacheClient.toolCallOrder.Len(), acpMaxCachedToolCalls, acpMaxCachedToolCalls)
+	}
+	if _, ok := cacheClient.lookupCachedToolCall("tc-reused"); !ok {
+		t.Fatal("re-inserted live tool call was prematurely evicted")
+	}
+
+	// Explicit empty Grok variant must be preserved by cache trimming so it is
+	// never conflated with an omitted variant.
+	emptyVariant := trimACPPermissionToolForCache(acpPermissionTool{
+		Kind:     "other",
+		RawInput: map[string]any{"variant": "", "tool_name": "wf__ping"},
+	})
+	if acpShouldApproveTool(AgentGrok, acpLaunchConfig{
+		ApprovalsMode:     config.ApprovalModeNone,
+		SessionMCPServers: []string{"wf"},
+	}, emptyVariant) {
+		t.Fatal("empty Grok variant was dropped during cache trim and approved as MCP tool")
+	}
+
+	// Antigravity hyphenated session/project MCP servers normalize hyphens to
+	// underscores in eager mcp_<server>_<tool> names and must still match.
+	if !acpShouldApproveTool(AgentAntigravity, acpLaunchConfig{
+		ApprovalsMode:     config.ApprovalModeNone,
+		SessionMCPServers: []string{"wf-tools"},
+	}, acpPermissionTool{Kind: "other", Name: "mcp_wf_tools_ping"}) {
+		t.Fatal("Antigravity hyphenated session MCP server wf-tools was not approved for mcp_wf_tools_ping")
+	}
+	if !acpShouldApproveTool(AgentAntigravity, acpLaunchConfig{
+		ApprovalsMode:     config.ApprovalModeMCP,
+		AllowMCP:          true,
+		ProjectMCPServers: []string{"proj-tools"},
+	}, acpPermissionTool{Kind: "other", Name: "mcp_proj_tools_ping"}) {
+		t.Fatal("Antigravity hyphenated project MCP server proj-tools was not approved for mcp_proj_tools_ping")
+	}
+
+	// Grok tool_call_update supplying Args must NOT drop cached RawInput, and
+	// permission request supplying non-command Args must NOT drop cached RawInput.
+	grokCached := mergeACPToolCallUpdate(
+		acpPermissionTool{ToolCallID: "tc-g", Kind: "other", RawInput: map[string]any{"variant": "UseTool", "tool_name": "wf__ping"}},
+		acpPermissionTool{ToolCallID: "tc-g", Args: map[string]any{"extra": "value"}},
+	)
+	grokMerged := mergeACPPermissionTool(grokCached, acpPermissionTool{ToolCallID: "tc-g", Args: map[string]any{"extra": "v2"}})
+	if !acpShouldApproveTool(AgentGrok, acpLaunchConfig{
+		ApprovalsMode:     config.ApprovalModeNone,
+		SessionMCPServers: []string{"wf"},
+	}, grokMerged) {
+		t.Fatal("Grok cached RawInput was dropped when Args arrived on update/permission request")
 	}
 
 	root := t.TempDir()

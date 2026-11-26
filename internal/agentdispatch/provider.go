@@ -932,6 +932,12 @@ func readStructuredEventsWithLineage(reader io.Reader, rawWriter io.Writer, agen
 func readStructuredEventsWithSessionMCP(reader io.Reader, rawWriter io.Writer, agent string, expectedSession string, claudeLineage bool, expectedSessionMCP []string, consume func(providerEvent) error, consumeLineage func(claudeLineageEvidence) error, recovery ...*museRecoveryBaseline) error {
 	source := bufio.NewReaderSize(io.TeeReader(reader, rawWriter), structuredJSONBufferBytes)
 	parser := newSelectiveJSONReader()
+	if len(expectedSessionMCP) > 0 {
+		parser.expectedMCPServers = make(map[string]struct{}, len(expectedSessionMCP))
+		for _, name := range expectedSessionMCP {
+			parser.expectedMCPServers[name] = struct{}{}
+		}
+	}
 	normalizer := claudeLineageNormalizer{ignoredTasks: make(map[string]struct{})}
 	museState := museReducer{expectedSession: expectedSession}
 	if len(recovery) > 0 {

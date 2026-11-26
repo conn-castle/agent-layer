@@ -733,7 +733,17 @@ func releaseConversationLocked(root string, record RunRecord) error {
 		}
 		return wrapExitError(ExitConfig, "read dispatch mapping for claim release", err)
 	}
-	changed := cancelledUnstartedFreshContinuation(record) && clearProvisionalSessionID(&session, record.ID)
+	var retiredMuseSessionID string
+	changed := false
+	if cancelledUnstartedFreshContinuation(record) {
+		previousSessionID := session.ProviderSessionID
+		if clearProvisionalSessionID(&session, record.ID) {
+			changed = true
+			if session.Agent == AgentMuse && previousSessionID != "" {
+				retiredMuseSessionID = previousSessionID
+			}
+		}
+	}
 	if session.ActiveRunID == record.ID {
 		session.ActiveRunID = ""
 		session.ActiveClaimKnown = true
@@ -751,6 +761,11 @@ func releaseConversationLocked(root string, record RunRecord) error {
 	}
 	if !changed {
 		return nil
+	}
+	if retiredMuseSessionID != "" {
+		if err := musepolicy.RemoveSessionMCPGrant(root, retiredMuseSessionID); err != nil {
+			return wrapExitError(ExitConfig, "remove cancelled unstarted Muse session MCP grant", err)
+		}
 	}
 	return writeJSONAtomic(path, session)
 }
