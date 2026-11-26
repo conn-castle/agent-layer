@@ -76,7 +76,7 @@ func executeDispatch(request dispatchExecution) error {
 			current.State = sessionStateDurable
 		})
 		if err != nil {
-			return err
+			return finishDispatchFailure(request, &preStartFailure{err: err})
 		}
 		session = updated
 	}
@@ -105,6 +105,9 @@ func executeDispatch(request dispatchExecution) error {
 			current.Agent = request.Target.Name
 			current.State = sessionStateDurable
 			current.RunID = request.Run.Record.ID
+			current.Model = session.Model
+			current.ReasoningEffort = session.ReasoningEffort
+			current.TargetPinned = true
 			current.LastUsedAt = time.Now().UTC()
 		})
 		if err != nil {
@@ -130,7 +133,7 @@ func executeDispatch(request dispatchExecution) error {
 				current.ProviderSessionID = id
 			})
 			if err != nil {
-				return err
+				return finishDispatchFailure(request, &preStartFailure{err: err})
 			}
 			session = updated
 		}
@@ -282,8 +285,6 @@ func recordDispatchFailure(request dispatchExecution, cause error) error {
 	now := time.Now().UTC()
 	request.Run.Record.State = dispatchStateFailed
 	switch {
-	case request.Run.Record.ProviderSessionID != "", request.Mode == dispatchModeResume:
-		request.Run.Record.RecoveryState = recoveryAcceptanceUnknown
 	case isSafePreStartFailure(cause):
 		request.Run.Record.RecoveryState = recoveryRetrySafe
 	default:
@@ -302,15 +303,13 @@ func recordDispatchFailure(request dispatchExecution, cause error) error {
 			request.Run.Record = updated
 		}
 	}
-	if request.Run.Record.TerminationConfirmed {
-		if err := releaseConversation(request.Root, request.Session.Name, request.Run.Record.ID); err != nil {
-			return err
-		}
+	if err := releaseIfConfirmed(request.Root, request.Run.Record); err != nil {
+		return err
 	}
 	if writeErr != nil {
 		return writeErr
 	}
-	if request.Mode == dispatchModeFresh && request.Run.Record.RecoveryState == recoveryRetrySafe {
+	if request.Mode == dispatchModeFresh && request.Run.Record.RecoveryState == recoveryRetrySafe && request.Run.Record.TerminationConfirmed {
 		if err := downgradeUnstartedSession(request.Root, request.Session.Name, request.Run.Record.ID); err != nil {
 			return err
 		}

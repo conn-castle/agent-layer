@@ -508,6 +508,49 @@ func TestPreStartFailureDowngradesUnstartedDurableMapping(t *testing.T) {
 	}
 }
 
+func TestWorkerPublishesPreStartOwnershipRefusal(t *testing.T) {
+	for _, attempt := range []string{"initial", "retry"} {
+		t.Run(attempt, func(t *testing.T) {
+			root := t.TempDir()
+			run, err := newDispatchRun(root, AgentClaude, supportedProviderVersions[AgentClaude], dispatchModeFresh)
+			if err != nil {
+				t.Fatal(err)
+			}
+			session, err := reserveSession(root, run, testDispatchSessionRetention)
+			if err != nil {
+				t.Fatal(err)
+			}
+			releaseClaim := func() {
+				if err := releaseConversation(root, run.Record); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if attempt == "initial" {
+				releaseClaim()
+			}
+			project := &config.ProjectConfig{Root: root, Config: dispatchTestConfig(AgentClaude)}
+			err = executeDispatch(dispatchExecution{
+				Root: root, Project: project, Target: targetMeta{Name: AgentClaude},
+				Version: supportedProviderVersions[AgentClaude], Run: run, Session: session, Mode: dispatchModeFresh,
+				Stderr: io.Discard, Stdout: io.Discard,
+				NewCommand: func(string, ...string) *exec.Cmd {
+					if attempt == "initial" {
+						t.Fatal("worker reached the provider without ownership")
+					}
+					releaseClaim()
+					return exec.Command(filepath.Join(root, "missing-provider")) // #nosec G204 -- missing test executable simulates a safe start failure.
+				},
+			})
+			requireDispatchExitCode(t, err, ExitUnavailable)
+			record, err := loadRunRecord(root, run.Record.ID)
+			if err != nil || record.State != dispatchStateFailed || record.RecoveryState != recoveryRetrySafe ||
+				!record.TerminationConfirmed || !strings.Contains(record.TerminalReason, "no longer owns conversation") {
+				t.Fatalf("worker did not finalize the ownership refusal: %#v, %v", record, err)
+			}
+		})
+	}
+}
+
 func TestDispatchInputAndEnvironmentContracts(t *testing.T) {
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	project, stderr, env, depth, err := loadDispatchProject(root, nil, []string{clients.EnvDispatchActive + "=2"})

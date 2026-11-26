@@ -21,6 +21,63 @@ import (
 
 const antigravityStructuredOK = `printf '{"event":"result","result":{"status":"SUCCESS","conversation_id":"22222222-2222-4222-8222-222222222222","response":"agy ok","usage":{"input_tokens":1,"output_tokens":2,"thinking_tokens":1,"cache_read_tokens":0}}}\n'`
 
+func TestProviderAssignedSessionPreservesResolvedSettings(t *testing.T) {
+	for _, tc := range []struct {
+		agent, executable, response, model, effort string
+		repoConfig                                 dispatchRepoConfig
+	}{
+		{
+			agent: AgentCodex, executable: "codex",
+			response: `printf '{"type":"item.completed","item":{"type":"agent_message","text":"done"}}\n'`,
+			model:    "gpt-5.4", effort: "high",
+			repoConfig: dispatchRepoConfig{CodexModel: "gpt-5.4", CodexReasoningEffort: "high"},
+		},
+		{
+			agent: AgentAntigravity, executable: "agy", response: antigravityStructuredOK,
+			model: "gemini-4-neon-medium", effort: "medium",
+			repoConfig: dispatchRepoConfig{AntigravityModel: "gemini-4-neon-medium"},
+		},
+	} {
+		t.Run(tc.agent, func(t *testing.T) {
+			root := writeDispatchRepo(t, tc.repoConfig)
+			binDir := t.TempDir()
+			logPath := filepath.Join(t.TempDir(), "provider.log")
+			writeDispatchStub(t, binDir, tc.executable, tc.response)
+			if err := executeFreshDispatch(dispatchExecRequest{
+				Root: root, Agent: tc.agent, Prompt: "First turn",
+				Env:      []string{"PATH=" + testPath(binDir), "AL_TEST_LOG=" + logPath},
+				LookPath: mockLookPath(binDir),
+			}); err != nil {
+				t.Fatal(err)
+			}
+			sessions, err := listSessions(root)
+			if err != nil || len(sessions) != 1 {
+				t.Fatalf("fresh dispatch sessions = %#v, %v", sessions, err)
+			}
+			session := sessions[0]
+			if session.ProviderSessionID == "" || session.Model != tc.model || session.ReasoningEffort != tc.effort || !session.TargetPinned {
+				t.Fatalf("fresh dispatch lost resolved settings: %#v", session)
+			}
+			reserved := reserveContinuationInTest(t, root, session.Name)
+			if err := Continue(ContinueOptions{
+				Root: root, WorkDir: root, Reservation: &reserved.InvocationID, Prompt: "Second turn",
+				Env: []string{}, LookPath: alwaysFound,
+				VersionLookup: func(string, string) (string, error) { return supportedProviderVersions[tc.agent], nil },
+				launchWorker:  fakeWorkerLauncher(nil),
+			}); err != nil {
+				t.Fatal(err)
+			}
+			var request workerRequest
+			if err := readJSON(filepath.Join(filepathForRun(root, reserved.InvocationID), workerRequestFile), &request); err != nil {
+				t.Fatal(err)
+			}
+			if request.Model != tc.model || request.Effort != tc.effort || !request.TargetPinned {
+				t.Fatalf("continuation did not inherit resolved settings: %#v", request)
+			}
+		})
+	}
+}
+
 func TestRunUsesSuppliedRepositoryRootWithoutCreatingWorktree(t *testing.T) {
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	git := func(args ...string) string {
@@ -631,6 +688,8 @@ type dispatchRepoConfig struct {
 	ClaudeModel                  string
 	ClaudeReasoningEffort        string
 	ClaudeLocalConfigDir         bool
+	CodexModel                   string
+	CodexReasoningEffort         string
 	CodexLocalConfigDir          bool
 	DispatchMaxDepth             int
 	DispatchSessionRetentionDays int
@@ -689,6 +748,8 @@ enabled = false
 
 [agents.codex]
 enabled = true
+model = %q
+reasoning_effort = %q
 %s
 
 [agents.vscode]
@@ -706,7 +767,8 @@ enabled = false
 [warnings]
 instruction_token_threshold = 50000
 mcp_server_threshold = 50
-`, dispatchBlock, antigravityModelLine, repoConfig.ClaudeModel, repoConfig.ClaudeReasoningEffort, localConfigLine, codexLocalConfigLine)
+`, dispatchBlock, antigravityModelLine, repoConfig.ClaudeModel, repoConfig.ClaudeReasoningEffort, localConfigLine,
+		repoConfig.CodexModel, repoConfig.CodexReasoningEffort, codexLocalConfigLine)
 	if err := os.WriteFile(paths.ConfigPath, []byte(configToml), 0o600); err != nil {
 		t.Fatalf("write config: %v", err)
 	}

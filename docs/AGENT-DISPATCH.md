@@ -532,20 +532,24 @@ without launching anything.
 - **Cancel, expiry, and crashes**: Cancelling an unstarted continuation
   reservation (`al dispatch cancel <invocation-id>`) or letting it expire
   launches nothing and returns the conversation to a continuable state. A launch
-  interrupted by a crash is never relaunched under the same reservation: once
-  termination is provable (for example a crash before provider launch intent or
-  after provider process exit), it resolves to a failed invocation and the
-  conversation stays continuable; a crash between provider launch intent and
-  provider identity publication remains explicitly uncertain and fenced,
-  matching ordinary dispatch recovery.
+  interrupted by a crash is never relaunched under the same reservation. Once
+  termination is provable, it resolves to a failed invocation. Another
+  continuation requires a usable provider session ID or proof that the
+  invocation failed before contacting the provider. A crash between provider
+  launch intent and process identity publication leaves termination uncertain
+  and the launch fenced, matching ordinary dispatch recovery.
 
 ### Launch, expiry, and exit codes
 
 The first launch that reaches a reservation runs it through the normal
 intent-before-start protocol and returns the normal start or continue result.
 Concurrent launches are serialized under the lock, so at most one launches.
-Every later launch fails with exit 82; it launches nothing regardless of the
-launch arguments. A launch interrupted mid-launch is resolved by the normal
+Replaying an already-claimed start reservation returns exit 82 once
+`start --reservation` reaches reservation lookup. It reads the prompt first,
+so a missing prompt file can produce a prompt error. Replaying a retained,
+already-claimed continuation reaches reservation lookup before reading the
+prompt and can report exit 82 even if the original prompt file is gone.
+A launch interrupted mid-launch is resolved by the normal
 launch recovery (for example `failed` with unknown provider acceptance) and is
 never relaunched. This guarantees at-most-once launch while the reservation is
 retained, not eventual execution: a crash after claiming can leave a failed

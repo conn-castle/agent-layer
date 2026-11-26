@@ -154,7 +154,7 @@ func releaseIfConfirmed(root string, record RunRecord) error {
 	if !record.TerminationConfirmed {
 		return nil
 	}
-	return releaseConversation(root, record.Name, record.ID)
+	return releaseConversation(root, record)
 }
 
 // cancelledBeforeLaunchError keeps one wording and ExitTargetFailure for every

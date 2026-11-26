@@ -11,6 +11,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 )
 
@@ -254,13 +255,29 @@ func TestContinuationReservationLaunchesAtMostOnceAndSurvivesMoveOn(t *testing.T
 
 	var launches atomic.Int32
 	launcher := fakeWorkerLauncher(&launches)
+	const concurrent = 8
+	var arrived atomic.Int32
+	ready := make(chan struct{})
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	defer cancel()
 	launch := func(handle string, selector string, prompt string) (Result, error) {
 		var stdout bytes.Buffer
 		err := Continue(ContinueOptions{
-			Root: root, WorkDir: root, Handle: handle, Reservation: &selector, Prompt: prompt,
+			Context: ctx, Root: root, WorkDir: root, Handle: handle, Reservation: &selector, Prompt: prompt,
 			Stdout: &stdout, Env: []string{}, LookPath: alwaysFound,
 			VersionLookup: func(string, string) (string, error) { return supportedProviderVersions[AgentCodex], nil },
-			launchWorker:  launcher,
+			beforeProvider: func(ctx context.Context, _ string) (func(), error) {
+				if arrived.Add(1) == concurrent {
+					close(ready)
+				}
+				select {
+				case <-ready:
+					return func() {}, nil
+				case <-ctx.Done():
+					return nil, ctx.Err()
+				}
+			},
+			launchWorker: launcher,
 		})
 		var res Result
 		if err == nil {
@@ -272,7 +289,6 @@ func TestContinuationReservationLaunchesAtMostOnceAndSurvivesMoveOn(t *testing.T
 	}
 
 	// Concurrent launches of the same continuation reservation: exactly one wins.
-	const concurrent = 8
 	results := make([]Result, concurrent)
 	errs := make([]error, concurrent)
 	var wg sync.WaitGroup
@@ -318,7 +334,7 @@ func TestContinuationReservationLaunchesAtMostOnceAndSurvivesMoveOn(t *testing.T
 	if err := os.WriteFile(filepath.Join(filepathForRun(root, reserved.InvocationID), "result.md"), []byte("second answer\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := updateRunEvidence(filepathForRun(root, reserved.InvocationID), func(r *RunRecord) error {
+	completed, err := updateRunEvidence(filepathForRun(root, reserved.InvocationID), func(r *RunRecord) error {
 		r.State = dispatchStateCompleted
 		r.RecoveryState = recoveryResumeRequired
 		r.CompletedAt = &now
@@ -327,10 +343,11 @@ func TestContinuationReservationLaunchesAtMostOnceAndSurvivesMoveOn(t *testing.T
 		r.TerminationConfirmedAt = &now
 		r.TerminationProof = terminationProofPrelaunchNoIntent
 		return nil
-	}); err != nil {
+	})
+	if err != nil {
 		t.Fatal(err)
 	}
-	if err := releaseConversation(root, session.Name, reserved.InvocationID); err != nil {
+	if err := releaseConversation(root, completed); err != nil {
 		t.Fatal(err)
 	}
 
@@ -349,7 +366,7 @@ func TestContinuationReservationLaunchesAtMostOnceAndSurvivesMoveOn(t *testing.T
 	}
 
 	// Replaying the earlier continuation reservation after move-on still reports already started.
-	_, err := launch("", reserved.InvocationID, "Replay after move-on")
+	_, err = launch("", reserved.InvocationID, "Replay after move-on")
 	var exitErr *ExitError
 	if !errors.As(err, &exitErr) || exitErr.Code != ExitReservationAlreadyStarted || !strings.Contains(err.Error(), "already started") {
 		t.Fatalf("replay after move-on = %v, want exit %d", err, ExitReservationAlreadyStarted)
@@ -651,6 +668,10 @@ func TestContinuationReservationEligibilityCheckedAtReserveAndLaunch(t *testing.
 		err = Reserve(ReserveOptions{Root: root, ContinueHandle: &handle})
 		if !errors.As(err, &exitErr) || exitErr.Code != ExitUnavailable {
 			t.Fatalf("reserve on unconfirmed cancelled conversation = %v, want ExitUnavailable", err)
+		}
+		record, err := loadRunRecord(root, run.Record.ID)
+		if err != nil || record.TerminationConfirmed || record.LaunchFenced {
+			t.Fatalf("continue implicitly fenced unconfirmed cancellation: %#v, %v", record, err)
 		}
 	})
 
@@ -1055,10 +1076,18 @@ func TestCancelledWorkerCannotClobberNewerContinuationReservation(t *testing.T) 
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	session, firstRun := completedConversationForTest(t, root, AgentCodex, "provider-sess-clobber", false)
 	reserved := reserveContinuationInTest(t, root, session.Name)
+	session, err := loadSession(root, session.Name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Simulate a stale claim in the mapping so only the reservation guard
+	// blocks a write from the termination-confirmed predecessor.
+	session.ActiveRunID = firstRun.Record.ID
+	if err := persistSession(root, session); err != nil {
+		t.Fatal(err)
+	}
 
-	// A stale worker for firstRun tries to persist session metadata after
-	// firstRun lost ownership and a new continuation reservation was recorded.
-	_, err := persistOwnedSession(root, session.Name, firstRun.Record.ID, func(s *Session) {
+	_, err = persistOwnedSession(root, session.Name, firstRun.Record.ID, func(s *Session) {
 		s.Model = "stale-worker-model"
 	})
 	var exitErr *ExitError
@@ -1225,12 +1254,246 @@ func TestContinuationReservationMissingRunRecordSelfHeals(t *testing.T) {
 	session, _ := completedConversationForTest(t, root, AgentCodex, "provider-sess-missing", false)
 	reserved := reserveContinuationInTest(t, root, session.Name)
 
-	if err := os.RemoveAll(filepathForRun(root, reserved.InvocationID)); err != nil {
+	runDir := filepathForRun(root, reserved.InvocationID)
+	if err := os.RemoveAll(runDir); err != nil {
 		t.Fatal(err)
 	}
 	next := reserveContinuationInTest(t, root, session.Name)
 	if next.InvocationID == reserved.InvocationID || next.State != dispatchStateReserved {
 		t.Fatalf("reserve after deleted pending run dir = %#v", next)
+	}
+	if _, err := os.Stat(runDir); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("settling an absent run recreated %s: %v", runDir, err)
+	}
+}
+
+func TestContinuationReservationKeepsSelectedAgedConversation(t *testing.T) {
+	root := writeDispatchRepo(t, dispatchRepoConfig{DispatchSessionRetentionDays: 1})
+	selected, _ := completedConversationForTest(t, root, AgentCodex, "selected", false)
+	other, _ := completedConversationForTest(t, root, AgentCodex, "other", false)
+	for _, session := range []Session{selected, other} {
+		session.LastUsedAt = time.Now().UTC().Add(-48 * time.Hour)
+		if err := persistSession(root, session); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if reserved := reserveContinuationInTest(t, root, selected.Name); reserved.Handle != selected.Name {
+		t.Fatalf("reserve returned another conversation: %#v", reserved)
+	}
+	if _, err := loadSession(root, other.Name); !errors.Is(err, errDispatchSessionNotFound) {
+		t.Fatalf("unrelated aged conversation survived pruning: %v", err)
+	}
+}
+
+func TestDanglingContinuationReservationDoesNotPreventPruning(t *testing.T) {
+	for _, id := range []string{"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", "../invalid"} {
+		t.Run(id, func(t *testing.T) {
+			root := writeDispatchRepo(t, dispatchRepoConfig{})
+			session, _ := completedConversationForTest(t, root, AgentCodex, "dangling", false)
+			now := time.Now().UTC()
+			session.LastUsedAt = now.Add(-48 * time.Hour)
+			session.ContinuationReservationID = id
+			if err := persistSession(root, session); err != nil {
+				t.Fatal(err)
+			}
+			if err := pruneDispatchEvidence(root, now, 24*time.Hour); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := loadSession(root, session.Name); !errors.Is(err, errDispatchSessionNotFound) {
+				t.Fatalf("dangling reservation prevented pruning: %v", err)
+			}
+		})
+	}
+}
+
+func TestContinuationReservationRetirementSurvivesPruningBeforeSlotCleanup(t *testing.T) {
+	for _, outcome := range []string{"cancelled", "expired"} {
+		t.Run(outcome, func(t *testing.T) {
+			root := writeDispatchRepo(t, dispatchRepoConfig{})
+			session, _ := completedConversationForTest(t, root, AgentCodex, "retired", false)
+			reserved := reserveContinuationInTest(t, root, session.Name)
+			retiredAt := time.Now().UTC().Add(time.Hour)
+			session, err := loadSession(root, session.Name)
+			if err != nil {
+				t.Fatal(err)
+			}
+			session.LastUsedAt = retiredAt.Add(-48 * time.Hour)
+			if err := persistSession(root, session); err != nil {
+				t.Fatal(err)
+			}
+			dir := filepathForRun(root, reserved.InvocationID)
+			var record RunRecord
+			if outcome == "cancelled" {
+				if _, _, _, err := beginCancellation(root, reserved.InvocationID); err != nil {
+					t.Fatal(err)
+				}
+				record, err = persistConfirmedTermination(dir)
+			} else {
+				record, err = updateRunEvidence(dir, func(r *RunRecord) error {
+					r.ReservationExpiresAt = &retiredAt
+					expireReservation(r, retiredAt)
+					return nil
+				})
+			}
+			if err != nil || !record.TerminationConfirmed {
+				t.Fatalf("retire reservation: %#v, %v", record, err)
+			}
+			if err := pruneDispatchEvidence(root, retiredAt, 24*time.Hour); err != nil {
+				t.Fatal(err)
+			}
+			stale, err := loadSession(root, session.Name)
+			if err != nil || stale.ContinuationReservationID != reserved.InvocationID {
+				t.Fatalf("pruned conversation with outstanding retirement: %#v, %v", stale, err)
+			}
+			if err := releaseIfConfirmed(root, record); err != nil {
+				t.Fatal(err)
+			}
+			released, err := loadSession(root, session.Name)
+			if err != nil || released.ContinuationReservationID != "" || !released.LastUsedAt.Equal(*record.TerminationConfirmedAt) {
+				t.Fatalf("release did not use recorded retirement time: %#v, %v", released, err)
+			}
+			next := reserveContinuationInTest(t, root, session.Name)
+			if next.InvocationID == reserved.InvocationID {
+				t.Fatalf("reused retired reservation: %#v", next)
+			}
+		})
+	}
+}
+
+func TestContinuationRepairsProvisionalSessionAfterTerminalWrite(t *testing.T) {
+	for _, reserved := range []bool{false, true} {
+		mode := "ordinary"
+		if reserved {
+			mode = "reserved"
+		}
+		t.Run(mode, func(t *testing.T) {
+			root := writeDispatchRepo(t, dispatchRepoConfig{})
+			run, err := newDispatchRun(root, AgentClaude, supportedProviderVersions[AgentClaude], dispatchModeFresh)
+			if err != nil {
+				t.Fatal(err)
+			}
+			session, err := reserveSession(root, run, testDispatchSessionRetention)
+			if err != nil {
+				t.Fatal(err)
+			}
+			session.State = sessionStateDurable
+			session.ProviderSessionID = "provisional-id"
+			if err := persistSession(root, session); err != nil {
+				t.Fatal(err)
+			}
+			now := time.Now().UTC()
+			run.Record.State = dispatchStateFailed
+			run.Record.RecoveryState = recoveryRetrySafe
+			run.Record.CompletedAt = &now
+			run.Record.LaunchFenced = true
+			if reserved {
+				// Simulate both writes finishing before mapping cleanup.
+				applyTerminationConfirmation(&run.Record, now)
+			}
+			if err := writeRunRecord(run.Dir, &run.Record); err != nil {
+				t.Fatal(err)
+			}
+			// For ordinary continue, simulate a crash after the terminal
+			// write but before recording confirmation of the fenced run.
+			var stdout bytes.Buffer
+			opts := ContinueOptions{
+				Root: root, WorkDir: root, Handle: session.Name, Prompt: "Retry without provider ID",
+				Stdout: &stdout, Env: []string{}, LookPath: alwaysFound,
+				VersionLookup: func(string, string) (string, error) { return supportedProviderVersions[AgentClaude], nil },
+				launchWorker:  fakeWorkerLauncher(nil),
+			}
+			if reserved {
+				reservation := reserveContinuationInTest(t, root, session.Name)
+				opts.Reservation = &reservation.InvocationID
+			}
+			if err := Continue(opts); err != nil {
+				t.Fatal(err)
+			}
+			var result Result
+			if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
+				t.Fatal(err)
+			}
+			var request workerRequest
+			if err := readJSON(filepath.Join(filepathForRun(root, result.InvocationID), workerRequestFile), &request); err != nil {
+				t.Fatal(err)
+			}
+			mapping, err := loadSession(root, session.Name)
+			if err != nil || mapping.ProviderSessionID != "" || mapping.State != sessionStatePending || request.Mode != dispatchModeFresh {
+				t.Fatalf("continued with a provisional provider ID: %#v, mode %s, err %v", mapping, request.Mode, err)
+			}
+			previous, err := loadRunRecord(root, run.Record.ID)
+			if err != nil || !previous.TerminationConfirmed || previous.State != dispatchStateFailed {
+				t.Fatalf("predecessor remains unreconciled: %#v, %v", previous, err)
+			}
+		})
+	}
+}
+
+func TestContinuationReservationExpiresDuringClaimPreparation(t *testing.T) {
+	root := writeDispatchRepo(t, dispatchRepoConfig{})
+	session, predecessor := completedConversationForTest(t, root, AgentCodex, "expiring", false)
+	reserved := reserveContinuationInTest(t, root, session.Name)
+	synctest.Test(t, func(t *testing.T) {
+		deadline := time.Now().UTC().Add(time.Second)
+		if _, err := updateRunEvidence(filepathForRun(root, reserved.InvocationID), func(r *RunRecord) error {
+			r.ReservationExpiresAt = &deadline
+			return nil
+		}); err != nil {
+			t.Fatal(err)
+		}
+		record, _, claimed, err := claimContinuationReservation(root, session.Name, reserved.InvocationID, func(r *RunRecord, _ Session, _ RunRecord) {
+			time.Sleep(time.Until(deadline))
+			r.ProviderVersion = "launch metadata"
+		})
+		if err != nil || claimed || record.LaunchDigest != "" || record.ProviderVersion != "" {
+			t.Fatalf("expired reservation recorded a claim: %#v, claimed %v, err %v", record, claimed, err)
+		}
+		requireDispatchExitCode(t, reportClaimedContinuationReservation(record), ExitReservationExpired)
+		mapping, err := loadSession(root, session.Name)
+		if err != nil || mapping.ContinuationReservationID != "" || mapping.RunID != predecessor.Record.ID {
+			t.Fatalf("expiry changed the current invocation: %#v, %v", mapping, err)
+		}
+	})
+}
+
+func TestContinuationReservationMappingWriteFailureIsRetrySafe(t *testing.T) {
+	root := writeDispatchRepo(t, dispatchRepoConfig{})
+	session, predecessor := completedConversationForTest(t, root, AgentCodex, "inherited", false)
+	reserved := reserveContinuationInTest(t, root, session.Name)
+	path, err := sessionPath(root, session.Name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	backup := path + ".backup"
+	_, _, claimed, err := claimContinuationReservation(root, session.Name, reserved.InvocationID, func(r *RunRecord, mapping Session, _ RunRecord) {
+		r.ProviderSessionID = mapping.ProviderSessionID
+		if err := os.Rename(path, backup); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Mkdir(path, 0o700); err != nil {
+			t.Fatal(err)
+		}
+	})
+	if err == nil || !claimed {
+		t.Fatalf("expected a durable claim followed by a mapping save failure: %v, %v", claimed, err)
+	}
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(backup, path); err != nil {
+		t.Fatal(err)
+	}
+	record, err := loadRunRecord(root, reserved.InvocationID)
+	if err != nil || record.State != dispatchStateFailed || record.RecoveryState != recoveryRetrySafe ||
+		!record.TerminationConfirmed || record.ProviderSessionID != session.ProviderSessionID ||
+		!strings.Contains(record.TerminalReason, "claim reserved continuation mapping") {
+		t.Fatalf("mapping save failure recorded incorrect evidence: %#v, %v", record, err)
+	}
+	requireDispatchExitCode(t, reportClaimedContinuationReservation(record), ExitReservationAlreadyStarted)
+	next := reserveContinuationInTest(t, root, session.Name)
+	record, err = loadRunRecord(root, next.InvocationID)
+	if err != nil || next.InvocationID == reserved.InvocationID || record.PreviousRunID != predecessor.Record.ID {
+		t.Fatalf("could not reserve again from the predecessor: %#v, %v", record, err)
 	}
 }
 
@@ -1291,8 +1554,9 @@ func TestCancelContinuationReservationPreservesAgedConversation(t *testing.T) {
 	if err := Cancel(CancelRequest{Root: root, InvocationID: reserved.InvocationID}); err != nil {
 		t.Fatal(err)
 	}
-	// A subsequent reserve --continue prunes before loading; because cancel
-	// refreshed LastUsedAt, the conversation survives pruning.
+	if err := pruneDispatchEvidence(root, time.Now(), 24*time.Hour); err != nil {
+		t.Fatal(err)
+	}
 	fresh := reserveContinuationInTest(t, root, session.Name)
 	if fresh.InvocationID == reserved.InvocationID || fresh.Handle != session.Name {
 		t.Fatalf("reserve after cancelling aged conversation = %#v", fresh)
@@ -1393,7 +1657,7 @@ func TestOrdinaryContinueRejectsStalePredecessorAndMidPrepReservation(t *testing
 				if err := os.WriteFile(filepath.Join(filepathForRun(root, res.InvocationID), "result.md"), []byte("turn 2\n"), 0o600); err != nil {
 					t.Fatal(err)
 				}
-				if _, err := updateRunEvidence(filepathForRun(root, res.InvocationID), func(r *RunRecord) error {
+				completed, err := updateRunEvidence(filepathForRun(root, res.InvocationID), func(r *RunRecord) error {
 					r.State = dispatchStateCompleted
 					r.RecoveryState = recoveryResumeRequired
 					r.CompletedAt = &now
@@ -1402,10 +1666,11 @@ func TestOrdinaryContinueRejectsStalePredecessorAndMidPrepReservation(t *testing
 					r.TerminationConfirmedAt = &now
 					r.TerminationProof = terminationProofPrelaunchNoIntent
 					return nil
-				}); err != nil {
+				})
+				if err != nil {
 					t.Fatal(err)
 				}
-				if err := releaseConversation(root, session.Name, res.InvocationID); err != nil {
+				if err := releaseConversation(root, completed); err != nil {
 					t.Fatal(err)
 				}
 				return func() {}, nil

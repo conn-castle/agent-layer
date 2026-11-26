@@ -118,7 +118,7 @@ func TestContinueWithoutIdentityRequiresProvenSafeRetry(t *testing.T) {
 			if err := writeRunRecord(run.Dir, &run.Record); err != nil {
 				t.Fatal(err)
 			}
-			if err := releaseConversation(root, session.Name, run.Record.ID); err != nil {
+			if err := releaseConversation(root, run.Record); err != nil {
 				t.Fatal(err)
 			}
 			launched := false

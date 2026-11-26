@@ -106,7 +106,7 @@ func tryReleaseIfConfirmed(root string, record RunRecord) error {
 		return nil
 	}
 	_, err := tryWithSessionLock(root, record.Name, func() error {
-		return releaseConversationLocked(root, record.Name, record.ID)
+		return releaseConversationLocked(root, record)
 	})
 	return err
 }

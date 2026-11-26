@@ -525,7 +525,7 @@ func classifyDispatchPoolOccupancy(root string) (retained int, active int, unrea
 			unreadable++
 			continue
 		}
-		if dispatchSessionActive(root, session) {
+		if activeClaim, _ := dispatchSessionActivity(root, session); activeClaim {
 			active++
 			continue
 		}
@@ -636,11 +636,9 @@ func downgradeUnstartedSession(root string, name string, runID string) error {
 			}
 			return wrapExitError(ExitConfig, "read dispatch mapping for pre-start downgrade", err)
 		}
-		if session.RunID != runID || session.State != sessionStateDurable {
+		if !clearProvisionalSessionID(&session, runID) {
 			return nil
 		}
-		session.ProviderSessionID = ""
-		session.State = sessionStatePending
 		if err := writeJSONAtomic(path, session); err != nil {
 			return wrapExitError(ExitConfig, "downgrade unstarted dispatch mapping", err)
 		}
@@ -648,14 +646,23 @@ func downgradeUnstartedSession(root string, name string, runID string) error {
 	})
 }
 
-func releaseConversation(root string, name string, runID string) error {
-	return withSessionLock(root, name, func() error {
-		return releaseConversationLocked(root, name, runID)
+func clearProvisionalSessionID(session *Session, runID string) bool {
+	if session.RunID != runID || session.State != sessionStateDurable {
+		return false
+	}
+	session.ProviderSessionID = ""
+	session.State = sessionStatePending
+	return true
+}
+
+func releaseConversation(root string, record RunRecord) error {
+	return withSessionLock(root, record.Name, func() error {
+		return releaseConversationLocked(root, record)
 	})
 }
 
-func releaseConversationLocked(root string, name string, runID string) error {
-	path, err := sessionPath(root, name)
+func releaseConversationLocked(root string, record RunRecord) error {
+	path, err := sessionPath(root, record.Name)
 	if err != nil {
 		return err
 	}
@@ -667,18 +674,18 @@ func releaseConversationLocked(root string, name string, runID string) error {
 		return wrapExitError(ExitConfig, "read dispatch mapping for claim release", err)
 	}
 	changed := false
-	if session.ActiveRunID == runID {
+	if session.ActiveRunID == record.ID {
 		session.ActiveRunID = ""
 		session.ActiveClaimKnown = true
 		changed = true
 	}
-	if session.ContinuationReservationID == runID {
+	if session.ContinuationReservationID == record.ID {
 		session.ContinuationReservationID = ""
 		// Retiring a pending continuation reservation counts as recent
 		// conversation activity so a subsequent reserve does not immediately
 		// prune a conversation when retention is shorter than reservation expiry.
-		if now := time.Now().UTC(); now.After(session.LastUsedAt) {
-			session.LastUsedAt = now
+		if retiredAt := reservationRetirementTime(record); retiredAt.After(session.LastUsedAt) {
+			session.LastUsedAt = retiredAt
 		}
 		changed = true
 	}
@@ -686,6 +693,16 @@ func releaseConversationLocked(root string, name string, runID string) error {
 		return nil
 	}
 	return writeJSONAtomic(path, session)
+}
+
+func reservationRetirementTime(record RunRecord) time.Time {
+	if record.TerminationConfirmedAt != nil {
+		return *record.TerminationConfirmedAt
+	}
+	if record.CompletedAt != nil {
+		return *record.CompletedAt
+	}
+	return time.Time{}
 }
 
 func terminalDispatchState(state string) bool {
@@ -743,7 +760,7 @@ func loadSession(root string, name string) (Session, error) {
 // pruneExpiredSessions removes inactive, valid mappings whose last use is
 // older than the retention window. Corrupt mappings are preserved so normal
 // diagnostics can report them instead of silently erasing state.
-func pruneExpiredSessions(root string, now time.Time, retention time.Duration) error {
+func pruneExpiredSessions(root string, now time.Time, retention time.Duration, preserveSession string) error {
 	entries, err := os.ReadDir(dispatchStatePath(root))
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil
@@ -757,7 +774,7 @@ func pruneExpiredSessions(root string, now time.Time, retention time.Duration) e
 			continue
 		}
 		name := strings.TrimSuffix(entry.Name(), ".json")
-		if !validDispatchName(name) {
+		if name == preserveSession || !validDispatchName(name) {
 			continue
 		}
 		if err := pruneExpiredSession(root, name, cutoff); err != nil {
@@ -768,7 +785,11 @@ func pruneExpiredSessions(root string, now time.Time, retention time.Duration) e
 }
 
 func pruneDispatchEvidence(root string, now time.Time, retention time.Duration) error {
-	if err := pruneExpiredSessions(root, now, retention); err != nil {
+	return pruneDispatchEvidenceExcept(root, now, retention, "")
+}
+
+func pruneDispatchEvidenceExcept(root string, now time.Time, retention time.Duration, preserveSession string) error {
+	if err := pruneExpiredSessions(root, now, retention, preserveSession); err != nil {
 		return err
 	}
 	sessions, err := listSessions(root)
@@ -854,7 +875,11 @@ func pruneExpiredSession(root string, name string, cutoff time.Time) error {
 				lastUsed = *record.CompletedAt
 			}
 		}
-		if lastUsed.IsZero() || !lastUsed.Before(cutoff) || dispatchSessionActive(root, session) {
+		if lastUsed.IsZero() || !lastUsed.Before(cutoff) {
+			return nil
+		}
+		active, retiredAt := dispatchSessionActivity(root, session)
+		if active || !retiredAt.Before(cutoff) {
 			return nil
 		}
 		path, err := sessionPath(root, name)
@@ -868,27 +893,31 @@ func pruneExpiredSession(root string, name string, cutoff time.Time) error {
 	})
 }
 
-func dispatchSessionActive(root string, session Session) bool {
+// dispatchSessionActivity uses one reservation snapshot for both activity and
+// retirement time, including when retirement has not reached the session file.
+func dispatchSessionActivity(root string, session Session) (bool, time.Time) {
 	activeRunID := sessionOwnerRunID(session)
 	if activeRunID != "" {
 		record, err := loadRunRecord(root, activeRunID)
 		if err != nil {
 			// Retention must not erase a mapping when its active claim cannot be
 			// interpreted conservatively. Explicit operations surface the error.
-			return true
+			return true, time.Time{}
 		}
 		if activeClaimBlocksReplacement(record) {
-			return true
+			return true, time.Time{}
 		}
 	}
 	if session.ContinuationReservationID != "" {
-		record, err := loadRunRecord(root, session.ContinuationReservationID)
+		record, err := loadContinuationReservation(root, session.ContinuationReservationID)
 		if err != nil {
-			return true
+			return true, time.Time{}
 		}
-		return activeClaimBlocksReplacement(record)
+		if record.ID != "" {
+			return activeClaimBlocksReplacement(record), reservationRetirementTime(record)
+		}
 	}
-	return false
+	return false, time.Time{}
 }
 
 func withSessionLock(root string, name string, fn func() error) error {

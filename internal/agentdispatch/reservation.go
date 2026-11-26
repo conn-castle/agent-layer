@@ -57,19 +57,21 @@ func reserveContinuation(opts ReserveOptions) error {
 	if err != nil {
 		return wrapExitError(ExitConfig, err.Error(), err)
 	}
-	now := time.Now().UTC()
-	retention := config.DispatchSessionRetention(project.Config)
-	if err := pruneDispatchEvidence(opts.Root, now, retention); err != nil {
-		return err
-	}
 	// Verify the session exists before opening its lock file so invalid or
 	// unknown handles never create stray lock files.
 	if _, err := loadSession(opts.Root, handle); err != nil {
 		return err
 	}
+	// Like ordinary continue, allow the caller to use the named conversation
+	// if it is still present, even if it is due for retention pruning.
+	retention := config.DispatchSessionRetention(project.Config)
+	if err := pruneDispatchEvidenceExcept(opts.Root, time.Now(), retention, handle); err != nil {
+		return err
+	}
 	expiry := config.DispatchReservationExpiry(project.Config)
 	var reserved RunRecord
 	err = withSessionLock(opts.Root, handle, func() error {
+		now := time.Now().UTC()
 		session, err := loadSession(opts.Root, handle)
 		if err != nil {
 			return err
@@ -192,10 +194,6 @@ func continueReservation(opts ContinueOptions) error {
 			current.LineagePath = filepath.Join(filepathForRun(opts.Root, current.ID), "provider.lineage")
 		}
 	})
-	if claimed && err != nil {
-		run := &dispatchRun{Record: record, Dir: filepathForRun(opts.Root, record.ID)}
-		return finishDispatchFailure(dispatchExecution{Root: opts.Root, Run: run, Session: Session{Name: record.Name}}, err)
-	}
 	if err != nil {
 		return err
 	}
@@ -406,6 +404,35 @@ func checkContinuationEligible(root string, session Session, current RunRecord) 
 	return target, nil
 }
 
+// A missing or malformed reservation ID cannot refer to a retained run.
+// Preserve other read errors so corrupt evidence is never silently discarded.
+func loadContinuationReservation(root string, id string) (RunRecord, error) {
+	validID := parseUUID(id) == nil
+	if !validID {
+		return RunRecord{}, nil
+	}
+	record, err := loadRunRecord(root, id)
+	if errors.Is(err, errDispatchRunNotFound) {
+		return RunRecord{}, nil
+	}
+	return record, err
+}
+
+func clearContinuationReservationLocked(root string, session *Session, lastUsedAt time.Time) error {
+	path, err := sessionPath(root, session.Name)
+	if err != nil {
+		return err
+	}
+	session.ContinuationReservationID = ""
+	if lastUsedAt.After(session.LastUsedAt) {
+		session.LastUsedAt = lastUsedAt
+	}
+	if err := writeJSONAtomic(path, *session); err != nil {
+		return wrapExitError(ExitConfig, "clear dispatch continuation reservation", err)
+	}
+	return nil
+}
+
 // settlePendingContinuationReservationLocked reconciles any recorded pending
 // continuation reservation while the caller holds the session lock. It returns
 // (record, true, nil) when an unexpired reservation is still pending, clears
@@ -416,16 +443,18 @@ func settlePendingContinuationReservationLocked(root string, session *Session, n
 	if resID == "" {
 		return RunRecord{}, false, nil
 	}
+	record, err := loadContinuationReservation(root, resID)
+	if err != nil {
+		return RunRecord{}, false, err
+	}
+	if record.ID == "" {
+		return RunRecord{}, false, clearContinuationReservationLocked(root, session, now)
+	}
 	dir := filepathForRun(root, resID)
 	var updated RunRecord
-	missing := false
-	err := withRunLock(dir, func() error {
-		record, loadErr := loadRunRecord(root, resID)
-		if errors.Is(loadErr, errDispatchRunNotFound) {
-			missing = true
-			return nil
-		}
-		if loadErr != nil {
+	err = withRunLock(dir, func() error {
+		record, loadErr := loadContinuationReservation(root, resID)
+		if loadErr != nil || record.ID == "" {
 			return loadErr
 		}
 		if record.State == dispatchStateReserved || !record.TerminationConfirmed {
@@ -444,19 +473,8 @@ func settlePendingContinuationReservationLocked(root string, session *Session, n
 	if err != nil {
 		return RunRecord{}, false, err
 	}
-	if missing {
-		path, err := sessionPath(root, session.Name)
-		if err != nil {
-			return RunRecord{}, false, err
-		}
-		session.ContinuationReservationID = ""
-		if now.After(session.LastUsedAt) {
-			session.LastUsedAt = now
-		}
-		if err := writeJSONAtomic(path, *session); err != nil {
-			return RunRecord{}, false, wrapExitError(ExitConfig, "clear missing continuation reservation", err)
-		}
-		return RunRecord{}, false, nil
+	if updated.ID == "" {
+		return RunRecord{}, false, clearContinuationReservationLocked(root, session, now)
 	}
 	if updated.State == dispatchStateReserved {
 		return updated, true, nil
@@ -467,47 +485,38 @@ func settlePendingContinuationReservationLocked(root string, session *Session, n
 		}
 	}
 	if updated.TerminationConfirmed {
-		path, err := sessionPath(root, session.Name)
-		if err != nil {
-			return RunRecord{}, false, err
-		}
-		session.ContinuationReservationID = ""
-		if now.After(session.LastUsedAt) {
-			session.LastUsedAt = now
-		}
-		if err := writeJSONAtomic(path, *session); err != nil {
-			return RunRecord{}, false, wrapExitError(ExitConfig, "clear retired continuation reservation", err)
-		}
-		return RunRecord{}, false, nil
+		return RunRecord{}, false, clearContinuationReservationLocked(root, session, reservationRetirementTime(updated))
 	}
 	return updated, false, exitError(ExitUnavailable, fmt.Sprintf("dispatch conversation %q is already active in run %s", session.Name, resID))
 }
 
-// reconcileCurrentSessionRunLocked reconciles a dead nonterminal current
-// invocation under the already-held session lock (following session-then-run
-// lock order), clearing its active claim and any provisional fresh-mode
-// provider session ID when termination is durably confirmed.
+// reconcileCurrentSessionRunLocked reconciles the current invocation under
+// the already-held session lock, clearing its active claim and any unused
+// provisional provider session ID when termination is durably confirmed.
 func reconcileCurrentSessionRunLocked(root string, session *Session, now time.Time) (RunRecord, error) {
 	current, err := currentSessionRun(root, *session)
 	if err != nil {
 		return RunRecord{}, err
 	}
-	if session.State == sessionStateReserved || terminalDispatchState(current.State) {
+	if session.State == sessionStateReserved {
 		return current, nil
 	}
 	dir := filepathForRun(root, current.ID)
-	var updated RunRecord
-	if err := withRunLock(dir, func() error {
-		var applyErr error
-		updated, applyErr = applyRunEvidenceLocked(dir, func(r *RunRecord) error {
-			reconcileOrphanLocked(r, now)
+	if !current.TerminationConfirmed {
+		current, err = updateRunEvidence(dir, func(r *RunRecord) error {
+			if !terminalDispatchState(r.State) {
+				reconcileOrphanLocked(r, now)
+			} else if confirmed, _, _ := observeTermination(*r); confirmed && !r.TerminationConfirmed {
+				// Use existing evidence for a terminal run. A continuation
+				// must not establish a launch fence to allow replacement.
+				applyTerminationConfirmation(r, now)
+			}
 			return nil
 		})
-		return applyErr
-	}); err != nil {
-		return RunRecord{}, err
+		if err != nil {
+			return RunRecord{}, err
+		}
 	}
-	current = updated
 	if current.State == dispatchStateFailed {
 		if removeErr := removeWorkerRequest(dir); removeErr != nil {
 			return RunRecord{}, removeErr
@@ -515,10 +524,8 @@ func reconcileCurrentSessionRunLocked(root string, session *Session, now time.Ti
 	}
 	if current.TerminationConfirmed {
 		changed := false
-		if current.State == dispatchStateFailed && current.Mode == dispatchModeFresh && current.RecoveryState == recoveryRetrySafe && session.RunID == current.ID && session.State == sessionStateDurable {
-			session.ProviderSessionID = ""
-			session.State = sessionStatePending
-			changed = true
+		if current.State == dispatchStateFailed && current.Mode == dispatchModeFresh && current.RecoveryState == recoveryRetrySafe {
+			changed = clearProvisionalSessionID(session, current.ID)
 		}
 		if session.ActiveRunID == current.ID {
 			session.ActiveRunID = ""
@@ -550,64 +557,66 @@ func claimContinuationReservation(root string, name string, id string, launch fu
 	dir := filepathForRun(root, id)
 	err := withSessionLock(root, name, func() error {
 		return withRunLock(dir, func() error {
-			now := time.Now().UTC()
 			current, err := loadRunRecord(root, id)
 			if err != nil {
 				return err
 			}
-			if current.State == dispatchStateReserved {
-				if current.ReservationExpiresAt != nil && !now.Before(*current.ReservationExpiresAt) {
-					expired, applyErr := applyRunEvidenceLocked(dir, func(r *RunRecord) error {
-						expireReservation(r, now)
-						return nil
-					})
-					if applyErr != nil {
-						return applyErr
-					}
-					record = expired
-					return releaseConversationLocked(root, name, id)
-				}
-			} else {
+			if current.State != dispatchStateReserved {
 				record = current
 				if current.TerminationConfirmed {
-					return releaseConversationLocked(root, name, id)
+					return releaseConversationLocked(root, current)
 				}
 				return nil
 			}
-			session, err := loadSession(root, name)
-			if err != nil {
-				return err
-			}
-			if session.ContinuationReservationID != id {
-				return exitError(ExitUnavailable, fmt.Sprintf("dispatch continuation reservation %s no longer owns conversation %q", id, name))
-			}
-			prevRun, err := currentSessionRun(root, session)
-			if err != nil {
-				return err
-			}
-			if _, err := checkContinuationEligible(root, session, prevRun); err != nil {
-				return err
-			}
+			var session Session
 			updated, err := applyRunEvidenceLocked(dir, func(r *RunRecord) error {
-				launch(r, session, prevRun)
-				r.LaunchDigest = reservationLaunchClaim
-				r.State = dispatchStatePending
-				r.RecoveryState = recoveryRetrySafe
-				r.StartedAt = now
-				r.LauncherPID = os.Getpid()
-				r.LauncherStartIdentity = processStartIdentity(os.Getpid())
+				expireReservation(r, time.Now().UTC())
+				if r.State != dispatchStateReserved {
+					return nil
+				}
+				mapping, err := loadSession(root, name)
+				if err != nil {
+					return err
+				}
+				session = mapping
+				if session.ContinuationReservationID != id {
+					return exitError(ExitUnavailable, fmt.Sprintf("dispatch continuation reservation %s no longer owns conversation %q", id, name))
+				}
+				prevRun, err := currentSessionRun(root, session)
+				if err != nil {
+					return err
+				}
+				if _, err := checkContinuationEligible(root, session, prevRun); err != nil {
+					return err
+				}
+				next := *r
+				launch(&next, session, prevRun)
+				next.LauncherPID = os.Getpid()
+				next.LauncherStartIdentity = processStartIdentity(next.LauncherPID)
+				now := time.Now().UTC()
+				expireReservation(r, now)
+				if r.State == dispatchStateReserved {
+					next.LaunchDigest = reservationLaunchClaim
+					next.State = dispatchStatePending
+					next.RecoveryState = recoveryRetrySafe
+					next.StartedAt = now
+					*r = next
+				}
 				return nil
 			})
 			if err != nil {
 				return err
 			}
 			record = updated
+			if record.State != dispatchStatePending {
+				return releaseConversationLocked(root, record)
+			}
 			claimed = true
 			session.ContinuationReservationID = ""
 			session.ActiveRunID = id
 			session.ActiveClaimKnown = true
 			session.RunID = id
-			session.LastUsedAt = now
+			session.LastUsedAt = record.StartedAt
 			path, err := sessionPath(root, name)
 			if err != nil {
 				return err
@@ -619,6 +628,12 @@ func claimContinuationReservation(root string, name string, id string, launch fu
 			return nil
 		})
 	})
+	if claimed && err != nil {
+		// The run claim was persisted but the session mapping update failed.
+		// A worker was never launched, even if this run inherited a provider ID.
+		run := &dispatchRun{Record: record, Dir: dir}
+		err = finishDispatchFailure(dispatchExecution{Root: root, Run: run, Session: Session{Name: name}}, &preStartFailure{err: err})
+	}
 	return record, claimedSession, claimed, err
 }
 

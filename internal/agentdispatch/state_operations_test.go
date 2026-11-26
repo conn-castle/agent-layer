@@ -263,7 +263,7 @@ func TestDispatchSessionRetentionPrunesOnlyExpiredInactiveMappings(t *testing.T)
 	if err := writeJSONAtomic(filepath.Join(cancelledRunDir, dispatchRunFile), RunRecord{ID: cancelledRunID, State: dispatchStateCancelled, RecoveryState: recoveryAcceptanceUnknown, CompletedAt: &old}); err != nil {
 		t.Fatalf("write cancelled run: %v", err)
 	}
-	if err := pruneExpiredSessions(root, now, testDispatchSessionRetention); err != nil {
+	if err := pruneExpiredSessions(root, now, testDispatchSessionRetention, ""); err != nil {
 		t.Fatalf("pruneExpiredSessions: %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(dispatchStatePath(root), expired.Name+".json")); !os.IsNotExist(err) {
@@ -286,7 +286,7 @@ func TestDispatchSessionRetentionPrunesOnlyExpiredInactiveMappings(t *testing.T)
 	if err := os.WriteFile(corruptPath, []byte("not-json"), 0o600); err != nil {
 		t.Fatalf("write corrupt mapping: %v", err)
 	}
-	if err := pruneExpiredSessions(root, now, testDispatchSessionRetention); err == nil {
+	if err := pruneExpiredSessions(root, now, testDispatchSessionRetention, ""); err == nil {
 		t.Fatal("retention hid a corrupt mapping")
 	}
 	if _, err := os.Stat(corruptPath); err != nil {
@@ -471,7 +471,7 @@ func TestDanglingDispatchMappingRemainsCorruptAndOccupied(t *testing.T) {
 	}{
 		{"load", func() error { _, err := loadSession(root, name); return err }},
 		{"list", func() error { _, err := listSessions(root); return err }},
-		{"retention", func() error { return pruneExpiredSessions(root, time.Now(), testDispatchSessionRetention) }},
+		{"retention", func() error { return pruneExpiredSessions(root, time.Now(), testDispatchSessionRetention, "") }},
 	} {
 		t.Run(operation.name, func(t *testing.T) {
 			err := operation.run()

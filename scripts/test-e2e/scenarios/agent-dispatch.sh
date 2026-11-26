@@ -331,6 +331,17 @@ check_dispatch_reservations() {
   else
     fail "continue of cancelled continuation reservation exits 83 (got: $rc)"
   fi
+  local reopened_file="$repo_dir/cont-reopened-reserve.json"
+  local reopened_id
+  rc=0
+  (cd "$repo_dir" && al dispatch reserve --continue "$reservation" >"$reopened_file" 2>"$stderr_file") || rc=$?
+  reopened_id="$(dispatch_json_field "$reopened_file" invocation_id)"
+  if [[ $rc -eq 0 && -n "$reopened_id" && "$reopened_id" != "$cancel_res_id" ]]; then
+    pass "cancel reopens the conversation for a new continuation reservation"
+  else
+    fail "cancel reopens the conversation for a new continuation reservation (exit code: $rc, invocation ID: $reopened_id)"
+    dispatch_show_stderr "$stderr_file"
+  fi
   launches="$(grep -c -- '---END---' "$MOCK_DISPATCH_CODEX_LOG" || true)"
   if [[ "$launches" -eq 3 ]]; then
     pass "continuation reservations launched provider exactly once more (total 3)"
