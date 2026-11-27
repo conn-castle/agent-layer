@@ -53,6 +53,7 @@ const (
 )
 
 // IsSuccessfulStopReason reports whether Grok completed the turn.
+// Other terminal reasons must fail dispatch/probe.
 func IsSuccessfulStopReason(reason string) bool {
 	return reason == SuccessfulStopReason
 }
