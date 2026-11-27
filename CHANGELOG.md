@@ -6,6 +6,9 @@ All notable changes to this project will be documented in this file.
 ### Changed
 - Benchmarks pin Antigravity 1.5.18 and Grok 1.0.25. The shared Pier adapter update changes the identity of every existing benchmark study and arm, including Codex and Claude. A normal `al benchmark run` can execute those cells again and incur provider charges. Use `--recover-only` to regenerate compatible completed reports or finalize evidence-backed terminal test timeouts without paid calls (#567).
 
+### Fixed
+- Session-scoped MCP startup verification for ACP providers (`grok` and `antigravity`) is now protocol-agnostic and switches both stdio streams to raw passthrough immediately after the first successful JSON-RPC 2.0 startup exchange. This fixes compatibility with MCP `2026-07-28` (`server/discover`) client/server pairs such as Antigravity 1.5.18 with the Python MCP 2.x SDK, treats valid JSON-RPC `-32601` (`Method not found`) startup responses as non-fatal version-negotiation probes, and removes post-startup frame-size limits on large MCP payloads. ACP startup readiness confirms the first successful JSON-RPC startup round-trip rather than validating method-specific `initialize` and `tools/list` response schemas.
+
 ## v1.4.0 - 2026-11-25
 
 ### Changed

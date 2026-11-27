@@ -1,6 +1,7 @@
 package agentdispatch
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/json"
 	"errors"
@@ -13,6 +14,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"testing"
 	"time"
@@ -1071,15 +1073,22 @@ func TestSessionMCPReviewHardeningRegressions(t *testing.T) {
 	}
 
 	// 7. Server-to-client JSON-RPC request carrying method must not spoof handshake response.
-	var mu sync.Mutex
-	pending := map[string]string{"1": acpMethodInitialize}
 	var hsStatus sessionMCPHandshakeStatus
-	observeMCPHandshakeResponse(
-		[]byte(`{"jsonrpc":"2.0","id":1,"method":"sampling/createMessage","params":{}}`),
-		&mu, pending, &hsStatus, func() {},
-	)
-	if hsStatus.Initialized || hsStatus.Failed || pending["1"] != acpMethodInitialize {
-		t.Fatalf("server-to-client request mutated pending handshake: status=%#v pending=%v", hsStatus, pending)
+	tracker := newSessionMCPHandshakeTracker(sessionMCPHandshakeStatus{Server: "wf"}, func(s sessionMCPHandshakeStatus) {
+		hsStatus = s
+	})
+	tracker.trackRequest([]byte(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}`))
+	decision := tracker.prepareResponse([]byte(`{"jsonrpc":"2.0","id":1,"method":"sampling/createMessage","params":{}}`))
+	tracker.commitResponse(decision)
+	if decision.outcome != sessionMCPResponseIgnore || hsStatus.Ready || hsStatus.Failed || tracker.isPassthrough() {
+		t.Fatalf("server-to-client request mutated pending handshake: decision=%#v status=%#v", decision, hsStatus)
+	}
+	idKey, ok := canonicalJSONRPCIDKey(json.RawMessage(`1`))
+	if !ok {
+		t.Fatal("canonicalJSONRPCIDKey(1) failed")
+	}
+	if _, stillPending := tracker.pending[idKey]; !stillPending {
+		t.Fatalf("server-to-client request evicted pending id 1: pending=%d", len(tracker.pending))
 	}
 
 	// 8. Antigravity hyphen/underscore prefix AND normalized equality collisions rejected at preflight.
@@ -1137,8 +1146,7 @@ func TestSessionMCPReviewHardeningRegressions(t *testing.T) {
 		ProcessStartIdentity: wrapperStart,
 		ChildPID:             zombieCmd.Process.Pid,
 		ChildStartIdentity:   processStartIdentity(zombieCmd.Process.Pid),
-		Initialized:          true,
-		ToolsListed:          true,
+		Ready:                true,
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -1296,4 +1304,803 @@ func sessionMCPTestPathWithinDir(t *testing.T, path, dir string) bool {
 		t.Fatalf("relate %q to %q: %v", resolvedPath, resolvedDir, err)
 	}
 	return filepath.IsLocal(rel)
+}
+
+func TestSessionMCPHandshakeTrackerProtocolAgnostic(t *testing.T) {
+	observe := func(tr *sessionMCPHandshakeTracker, line string) sessionMCPResponseDecision {
+		d := tr.prepareResponse([]byte(line))
+		tr.commitResponse(d)
+		return d
+	}
+
+	t.Run("mcp_2025_11_25_and_2026_07_28_two_phase_ready", func(t *testing.T) {
+		for _, tc := range []struct {
+			name string
+			req  string
+			resp string
+		}{
+			{
+				"mcp_2025_11_25_initialize",
+				`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25"}}`,
+				`{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"2025-11-25","capabilities":{},"serverInfo":{"name":"srv","version":"1.0"}}}`,
+			},
+			{
+				"mcp_2026_07_28_server_discover",
+				`{"jsonrpc":"2.0","id":1,"method":"server/discover","params":{}}`,
+				`{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"2026-07-28","capabilities":{}}}`,
+			},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				var published []sessionMCPHandshakeStatus
+				tr := newSessionMCPHandshakeTracker(sessionMCPHandshakeStatus{Server: "srv"}, func(s sessionMCPHandshakeStatus) {
+					published = append(published, s)
+				})
+				tr.trackRequest([]byte(tc.req))
+				// Phase 1 arms passthrough BEFORE Ready is published.
+				d := tr.prepareResponse([]byte(tc.resp))
+				if d.outcome != sessionMCPResponseReady || !tr.isPassthrough() || len(published) != 0 || tr.status.Ready {
+					t.Fatalf("prepareResponse should arm passthrough without publishing ready: d=%#v passthrough=%t published=%#v", d, tr.isPassthrough(), published)
+				}
+				// Phase 2 publishes Ready after stdout write succeeds.
+				tr.commitResponse(d)
+				if len(published) != 1 || !published[0].Ready || published[0].Failed || len(tr.pending) != 0 {
+					t.Fatalf("commitResponse failed: published=%#v pending=%d", published, len(tr.pending))
+				}
+			})
+		}
+	})
+
+	t.Run("version_negotiation_32601_fallback_and_strict_error_validation", func(t *testing.T) {
+		var published []sessionMCPHandshakeStatus
+		tr := newSessionMCPHandshakeTracker(sessionMCPHandshakeStatus{Server: "srv"}, func(s sessionMCPHandshakeStatus) {
+			published = append(published, s)
+		})
+		tr.trackRequest([]byte(`{"jsonrpc":"2.0","id":1,"method":"server/discover","params":{}}`))
+		observe(tr, `{"jsonrpc":"2.0","id":1,"error":{"code":-32601,"message":"Method not found"}}`)
+		if tr.isPassthrough() || len(published) != 0 || tr.status.Failed || len(tr.pending) != 0 {
+			t.Fatalf("-32601 fallback should neither fail nor mark ready: passthrough=%t status=%#v pending=%d", tr.isPassthrough(), tr.status, len(tr.pending))
+		}
+		// Serializers that include explicit `"result": null` alongside `-32601` error are also tolerated.
+		tr.trackRequest([]byte(`{"jsonrpc":"2.0","id":2,"method":"server/discover","params":{}}`))
+		observe(tr, `{"jsonrpc":"2.0","id":2,"result":null,"error":{"code":-32601,"message":"Method not found"}}`)
+		if tr.isPassthrough() || len(published) != 0 || tr.status.Failed || len(tr.pending) != 0 {
+			t.Fatalf("-32601 with explicit null result should neither fail nor mark ready: passthrough=%t status=%#v", tr.isPassthrough(), tr.status)
+		}
+		tr.trackRequest([]byte(`{"jsonrpc":"2.0","id":3,"method":"initialize","params":{}}`))
+		observe(tr, `{"jsonrpc":"2.0","id":3,"result":{"protocolVersion":"2025-11-25","capabilities":{},"serverInfo":{"name":"srv"}}}`)
+		if !tr.isPassthrough() || len(published) != 1 || !published[0].Ready || published[0].Failed {
+			t.Fatalf("fallback initialize did not confirm ready: passthrough=%t published=%#v", tr.isPassthrough(), published)
+		}
+	})
+
+	t.Run("jsonrpc_2_0_error_and_envelope_validation", func(t *testing.T) {
+		for _, tc := range []struct {
+			name      string
+			respLine  string
+			wantReady bool
+			wantFail  bool
+			wantErr   string
+		}{
+			{"internal_error", `{"jsonrpc":"2.0","id":1,"error":{"code":-32603,"message":"boom"}}`, false, true, "startup request returned JSON-RPC error -32603"},
+			{"server_error", `{"jsonrpc":"2.0","id":1,"error":{"code":-32000,"message":"auth"}}`, false, true, "startup request returned JSON-RPC error -32000"},
+			{"32601_missing_message", `{"jsonrpc":"2.0","id":1,"error":{"code":-32601}}`, false, true, "startup request returned malformed JSON-RPC error"},
+			{"32601_null_message", `{"jsonrpc":"2.0","id":1,"error":{"code":-32601,"message":null}}`, false, true, "startup request returned malformed JSON-RPC error"},
+			{"32601_float_code", `{"jsonrpc":"2.0","id":1,"error":{"code":-32601.0,"message":"Method not found"}}`, false, true, "startup request returned malformed JSON-RPC error"},
+			{"empty_error_object", `{"jsonrpc":"2.0","id":1,"error":{}}`, false, true, "startup request returned malformed JSON-RPC error"},
+			{"malformed_error_string", `{"jsonrpc":"2.0","id":1,"error":"not-an-object"}`, false, true, "startup request returned malformed JSON-RPC error"},
+			{"both_result_and_error", `{"jsonrpc":"2.0","id":1,"result":{},"error":{"code":-32601,"message":"Method not found"}}`, false, true, "startup request returned invalid JSON-RPC response"},
+			{"wrong_case_result_rejected", `{"jsonrpc":"2.0","id":1,"Result":{}}`, false, true, "startup request returned invalid JSON-RPC response"},
+			{"neither_result_nor_error", `{"jsonrpc":"2.0","id":1}`, false, true, "startup request returned invalid JSON-RPC response"},
+			{"explicit_null_error_without_result", `{"jsonrpc":"2.0","id":1,"error":null}`, false, true, "startup request returned invalid JSON-RPC response"},
+			{"explicit_null_result_accepted", `{"jsonrpc":"2.0","id":1,"result":null}`, true, false, ""},
+			{"explicit_null_error_with_null_result_accepted", `{"jsonrpc":"2.0","id":1,"error":null,"result":null}`, true, false, ""},
+			{"empty_object_result_accepted", `{"jsonrpc":"2.0","id":1,"result":{}}`, true, false, ""},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				var published []sessionMCPHandshakeStatus
+				tr := newSessionMCPHandshakeTracker(sessionMCPHandshakeStatus{Server: "srv"}, func(s sessionMCPHandshakeStatus) {
+					published = append(published, s)
+				})
+				tr.trackRequest([]byte(`{"jsonrpc":"2.0","id":1,"method":"secret-token-method"}`))
+				tr.trackRequest([]byte(`{"jsonrpc":"2.0","id":2,"method":"initialize"}`))
+				observe(tr, tc.respLine)
+				if len(published) != 1 || published[0].Ready != tc.wantReady || published[0].Failed != tc.wantFail || tr.isPassthrough() != tc.wantReady {
+					t.Fatalf("got passthrough=%t published=%#v, want ready=%t failed=%t", tr.isPassthrough(), published, tc.wantReady, tc.wantFail)
+				}
+				if tc.wantErr != "" && published[0].Error != tc.wantErr {
+					t.Fatalf("error = %q, want %q", published[0].Error, tc.wantErr)
+				}
+				if strings.Contains(published[0].Error, "secret-token-method") {
+					t.Fatalf("status error leaked untrusted method name: %q", published[0].Error)
+				}
+				if tc.wantFail {
+					// Once failed, a subsequent valid response must not flip ready.
+					observe(tr, `{"jsonrpc":"2.0","id":2,"result":{}}`)
+					if tr.isPassthrough() || len(published) != 1 || !tr.status.Failed {
+						t.Fatalf("subsequent response mutated failed state: passthrough=%t status=%#v", tr.isPassthrough(), tr.status)
+					}
+				}
+			})
+		}
+	})
+
+	t.Run("canonical_ids_jsonrpc_version_and_invalid_ids", func(t *testing.T) {
+		for _, tc := range []struct {
+			name string
+			req  string
+			resp string
+		}{
+			{"escaped_string_id", `{"jsonrpc":"2.0","id":"a","method":"initialize"}`, `{"jsonrpc":"2.0","id":"\u0061","result":{}}`},
+			{"numeric_int_and_float_equal", `{"jsonrpc":"2.0","id":1,"method":"initialize"}`, `{"jsonrpc":"2.0","id":1.0,"result":{}}`},
+			{"numeric_scientific_equal", `{"jsonrpc":"2.0","id":1e0,"method":"initialize"}`, `{"jsonrpc":"2.0","id": 1 ,"result":{}}`},
+			{"numeric_zero", `{"jsonrpc":"2.0","id":0,"method":"ping"}`, `{"jsonrpc":"2.0","id":-0,"result":{}}`},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				var last sessionMCPHandshakeStatus
+				tr := newSessionMCPHandshakeTracker(sessionMCPHandshakeStatus{Server: "srv"}, func(s sessionMCPHandshakeStatus) { last = s })
+				tr.trackRequest([]byte(tc.req))
+				observe(tr, tc.resp)
+				if !tr.isPassthrough() || !last.Ready || last.Failed {
+					t.Fatalf("expected canonical id match to mark ready, got status=%#v", last)
+				}
+			})
+		}
+
+		// Non-2.0 requests, notifications, and invalid JSON-RPC ID types are ignored.
+		tr := newSessionMCPHandshakeTracker(sessionMCPHandshakeStatus{Server: "srv"}, nil)
+		for _, ignored := range []string{
+			`{"id":1,"method":"initialize"}`,
+			`{"jsonrpc":"1.0","id":1,"method":"initialize"}`,
+			`{"jsonrpc":"2.0","method":"notifications/initialized"}`,
+			`{"jsonrpc":"2.0","id":null,"method":"initialize"}`,
+			`{"jsonrpc":"2.0","id":true,"method":"initialize"}`,
+			`{"jsonrpc":"2.0","id":{},"method":"initialize"}`,
+			`{"jsonrpc":"2.0","id":[1],"method":"initialize"}`,
+			`{"jsonrpc":"2.0","id":1e99999999,"method":"initialize"}`,
+		} {
+			tr.trackRequest([]byte(ignored))
+		}
+		if len(tr.pending) != 0 {
+			t.Fatalf("invalid/non-2.0/notification requests should not populate pending: %d", len(tr.pending))
+		}
+		// String "1" must not match numeric 1, and non-2.0 response must be ignored.
+		tr.trackRequest([]byte(`{"jsonrpc":"2.0","id":"1","method":"initialize"}`))
+		observe(tr, `{"jsonrpc":"2.0","id":1,"result":{}}`)
+		observe(tr, `{"jsonrpc":"1.0","id":"1","result":{}}`)
+		observe(tr, `{"id":"1","result":{}}`)
+		if tr.isPassthrough() || tr.status.Failed || len(tr.pending) != 1 {
+			t.Fatalf("mismatched/non-2.0 responses mutated tracker: passthrough=%t status=%#v pending=%d", tr.isPassthrough(), tr.status, len(tr.pending))
+		}
+	})
+
+	t.Run("bounded_pending_requests_evicts_oldest", func(t *testing.T) {
+		var boundedStatus sessionMCPHandshakeStatus
+		bounded := newSessionMCPHandshakeTracker(sessionMCPHandshakeStatus{Server: "srv"}, func(s sessionMCPHandshakeStatus) {
+			boundedStatus = s
+		})
+		total := sessionMCPMaxPendingRequests + 32
+		for i := range total {
+			bounded.trackRequest([]byte(fmt.Sprintf(`{"jsonrpc":"2.0","id":%d,"method":"probe/%d"}`, i, i)))
+		}
+		if len(bounded.pending) != sessionMCPMaxPendingRequests || bounded.order.Len() != sessionMCPMaxPendingRequests {
+			t.Fatalf("pending size=(%d,%d), want %d", len(bounded.pending), bounded.order.Len(), sessionMCPMaxPendingRequests)
+		}
+		observe(bounded, `{"jsonrpc":"2.0","id":0,"result":{}}`)
+		if bounded.isPassthrough() {
+			t.Fatal("evicted request id 0 should not confirm readiness")
+		}
+		observe(bounded, fmt.Sprintf(`{"jsonrpc":"2.0","id":%d,"result":{}}`, total-1))
+		if !bounded.isPassthrough() || !boundedStatus.Ready {
+			t.Fatalf("latest request id %d did not confirm readiness: %#v", total-1, boundedStatus)
+		}
+	})
+}
+
+func waitSignal(t *testing.T, ch <-chan struct{}, desc string) {
+	t.Helper()
+	select {
+	case <-ch:
+	case <-time.After(10 * time.Second):
+		t.Fatalf("timed out waiting for %s", desc)
+	}
+}
+
+func waitErrChan(t *testing.T, ch <-chan error, desc string) error {
+	t.Helper()
+	select {
+	case err := <-ch:
+		return err
+	case <-time.After(10 * time.Second):
+		t.Fatalf("timed out waiting for %s", desc)
+		return nil
+	}
+}
+
+func readStringBounded(t *testing.T, r *bufio.Reader, closer io.Closer, desc string) string {
+	t.Helper()
+	type res struct {
+		s   string
+		err error
+	}
+	ch := make(chan res, 1)
+	go func() {
+		s, err := r.ReadString('\n')
+		ch <- res{s, err}
+	}()
+	select {
+	case got := <-ch:
+		if got.err != nil {
+			t.Fatalf("%s: %v", desc, got.err)
+		}
+		return got.s
+	case <-time.After(10 * time.Second):
+		_ = closer.Close()
+		t.Fatalf("timed out waiting for %s", desc)
+		return ""
+	}
+}
+
+func readAllBounded(t *testing.T, r io.Reader, closer io.Closer, desc string) []byte {
+	t.Helper()
+	type res struct {
+		data []byte
+		err  error
+	}
+	ch := make(chan res, 1)
+	go func() {
+		data, err := io.ReadAll(r)
+		ch <- res{data, err}
+	}()
+	select {
+	case got := <-ch:
+		if got.err != nil {
+			t.Fatalf("%s: %v", desc, got.err)
+		}
+		return got.data
+	case <-time.After(10 * time.Second):
+		_ = closer.Close()
+		t.Fatalf("timed out waiting for %s", desc)
+		return nil
+	}
+}
+
+func TestSessionMCPRelayRawPassthroughAndRaceSafety(t *testing.T) {
+	t.Run("fast_client_writes_above_acpMaxFrameBytes_immediately_before_publish_completes", func(t *testing.T) {
+		clientR, clientW := io.Pipe()
+		childInR, childInW := io.Pipe()
+		childOutR, childOutW := io.Pipe()
+		stdoutR, stdoutW := io.Pipe()
+		t.Cleanup(func() {
+			_ = clientR.Close()
+			_ = clientW.Close()
+			_ = childInR.Close()
+			_ = childInW.Close()
+			_ = childOutR.Close()
+			_ = childOutW.Close()
+			_ = stdoutR.Close()
+			_ = stdoutW.Close()
+		})
+
+		// Block publish until the client has ALREADY sent >16 MiB on stdin after
+		// reading the startup response, proving passthrough was armed BEFORE stdout.Write.
+		publishStarted := make(chan struct{}, 1)
+		releasePublish := make(chan struct{})
+		t.Cleanup(func() {
+			select {
+			case <-releasePublish:
+			default:
+				close(releasePublish)
+			}
+		})
+		var lastStatus sessionMCPHandshakeStatus
+		var statusMu sync.Mutex
+		tracker := newSessionMCPHandshakeTracker(sessionMCPHandshakeStatus{Server: "srv"}, func(s sessionMCPHandshakeStatus) {
+			if s.Ready {
+				select {
+				case publishStarted <- struct{}{}:
+				default:
+				}
+				<-releasePublish
+			}
+			statusMu.Lock()
+			lastStatus = s
+			statusMu.Unlock()
+		})
+		var terminateCalls atomic.Int32
+		terminate := func() { terminateCalls.Add(1) }
+
+		stdinDone := make(chan struct{})
+		stdoutDone := make(chan struct{})
+		go func() {
+			defer close(stdinDone)
+			relaySessionMCPStdin(clientR, childInW, acpMaxFrameBytes, tracker, terminate)
+		}()
+		go func() {
+			defer close(stdoutDone)
+			relaySessionMCPStdout(childOutR, stdoutW, acpMaxFrameBytes, tracker, terminate)
+			_ = stdoutW.Close()
+		}()
+
+		const largeSize = acpMaxFrameBytes + 1024*1024 // 17 MiB > 16 MiB acpMaxFrameBytes
+		largeReq := `{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"blob":"` + strings.Repeat("A", largeSize) + `"}}` + "\n"
+		largeResp := `{"jsonrpc":"2.0","id":2,"result":{"blob":"` + strings.Repeat("B", largeSize) + `"}}` + "\n"
+
+		serverReceivedLarge := make(chan struct{})
+		serverErr := make(chan error, 1)
+		go func() {
+			defer func() { _ = childOutW.Close() }()
+			srvReader := bufio.NewReaderSize(childInR, 64*1024)
+			firstLine, err := srvReader.ReadString('\n')
+			if err != nil {
+				serverErr <- fmt.Errorf("server read startup request: %w", err)
+				return
+			}
+			if firstLine != "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"server/discover\",\"params\":{}}\r\n" {
+				serverErr <- fmt.Errorf("startup line altered: %q", firstLine)
+				return
+			}
+			if _, err := io.WriteString(childOutW, "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"protocolVersion\":\"2026-07-28\"}}\n"); err != nil {
+				serverErr <- fmt.Errorf("server write startup response: %w", err)
+				return
+			}
+			gotLargeReq, err := io.ReadAll(srvReader)
+			if err != nil {
+				serverErr <- fmt.Errorf("server read large request: %w", err)
+				return
+			}
+			if string(gotLargeReq) != largeReq {
+				serverErr <- fmt.Errorf("large stdin request mismatch: got %d bytes, want %d bytes", len(gotLargeReq), len(largeReq))
+				return
+			}
+			close(serverReceivedLarge)
+			if _, err := io.WriteString(childOutW, largeResp); err != nil {
+				serverErr <- fmt.Errorf("server write large response: %w", err)
+				return
+			}
+			serverErr <- nil
+		}()
+
+		if _, err := io.WriteString(clientW, "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"server/discover\",\"params\":{}}\r\n"); err != nil {
+			t.Fatalf("client write startup: %v", err)
+		}
+		clientReader := bufio.NewReaderSize(stdoutR, 64*1024)
+		gotInitResp := readStringBounded(t, clientReader, stdoutR, "client read startup response")
+		if gotInitResp != "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"protocolVersion\":\"2026-07-28\"}}\n" {
+			t.Fatalf("unexpected startup response: %q", gotInitResp)
+		}
+
+		// Immediately blast >16 MiB request BEFORE status publish completes!
+		clientWriteErr := make(chan error, 1)
+		go func() {
+			_, wErr := io.WriteString(clientW, largeReq)
+			_ = clientW.Close()
+			clientWriteErr <- wErr
+		}()
+		waitSignal(t, serverReceivedLarge, "server receiving >16 MiB stdin payload while publish is blocked")
+		waitSignal(t, publishStarted, "stdout publish starting")
+		close(releasePublish)
+
+		gotLargeResp := readAllBounded(t, clientReader, stdoutR, "client read large response")
+		if err := waitErrChan(t, clientWriteErr, "client large write"); err != nil {
+			t.Fatalf("client write large request: %v", err)
+		}
+		if err := waitErrChan(t, serverErr, "server goroutine"); err != nil {
+			t.Fatalf("server error: %v", err)
+		}
+		waitSignal(t, stdinDone, "stdin relay exit")
+		waitSignal(t, stdoutDone, "stdout relay exit")
+
+		if string(gotLargeResp) != largeResp {
+			t.Fatalf("large stdout response mismatch: got %d bytes, want %d bytes", len(gotLargeResp), len(largeResp))
+		}
+		if terminateCalls.Load() != 0 {
+			t.Fatalf("unexpected terminateChild calls: %d", terminateCalls.Load())
+		}
+		statusMu.Lock()
+		defer statusMu.Unlock()
+		if !lastStatus.Ready || lastStatus.Failed {
+			t.Fatalf("unexpected final status: %#v", lastStatus)
+		}
+	})
+
+	t.Run("short_post_readiness_stdin_payload_without_newline_forwarded_promptly", func(t *testing.T) {
+		clientR, clientW := io.Pipe()
+		childInR, childInW := io.Pipe()
+		childOutR, childOutW := io.Pipe()
+		stdoutR, stdoutW := io.Pipe()
+		t.Cleanup(func() {
+			_ = clientR.Close()
+			_ = clientW.Close()
+			_ = childInR.Close()
+			_ = childInW.Close()
+			_ = childOutR.Close()
+			_ = childOutW.Close()
+			_ = stdoutR.Close()
+			_ = stdoutW.Close()
+		})
+
+		tracker := newSessionMCPHandshakeTracker(sessionMCPHandshakeStatus{Server: "srv"}, nil)
+		stdinDone := make(chan struct{})
+		stdoutDone := make(chan struct{})
+		go func() {
+			defer close(stdinDone)
+			relaySessionMCPStdin(clientR, childInW, acpMaxFrameBytes, tracker, func() {})
+		}()
+		go func() {
+			defer close(stdoutDone)
+			relaySessionMCPStdout(childOutR, stdoutW, acpMaxFrameBytes, tracker, func() {})
+			_ = stdoutW.Close()
+		}()
+
+		const wantRaw = "raw-no-nl"
+		gotRawCh := make(chan string, 1)
+		go func() {
+			defer func() { _ = childOutW.Close() }()
+			r := bufio.NewReader(childInR)
+			_, _ = r.ReadString('\n')
+			_, _ = io.WriteString(childOutW, "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{}}\n")
+			buf := make([]byte, len(wantRaw))
+			if _, err := io.ReadFull(r, buf); err == nil {
+				gotRawCh <- string(buf)
+			}
+		}()
+
+		if _, err := io.WriteString(clientW, "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\"}\n"); err != nil {
+			t.Fatal(err)
+		}
+		readStringBounded(t, bufio.NewReader(stdoutR), stdoutR, "short-payload startup response")
+		// Write a short chunk WITHOUT a trailing newline and keep stdin open.
+		if _, err := io.WriteString(clientW, wantRaw); err != nil {
+			t.Fatal(err)
+		}
+		select {
+		case got := <-gotRawCh:
+			if got != wantRaw {
+				t.Fatalf("got %q, want %q", got, wantRaw)
+			}
+		case <-time.After(3 * time.Second):
+			t.Fatal("short post-readiness non-newline stdin payload stalled")
+		}
+		_ = clientW.Close()
+		waitSignal(t, stdinDone, "stdin relay exit")
+		waitSignal(t, stdoutDone, "stdout relay exit")
+	})
+
+	t.Run("mid_frame_stdin_passthrough_when_ready_flips_after_buffered_prefix", func(t *testing.T) {
+		const smallLimit = 128 * 1024 // 128 KiB (> 64 KiB read chunk)
+		clientR, clientW := io.Pipe()
+		childInR, childInW := io.Pipe()
+		childOutR, childOutW := io.Pipe()
+		stdoutR, stdoutW := io.Pipe()
+		t.Cleanup(func() {
+			_ = clientR.Close()
+			_ = clientW.Close()
+			_ = childInR.Close()
+			_ = childInW.Close()
+			_ = childOutR.Close()
+			_ = childOutW.Close()
+			_ = stdoutR.Close()
+			_ = stdoutW.Close()
+		})
+
+		readyCh := make(chan struct{}, 1)
+		tracker := newSessionMCPHandshakeTracker(sessionMCPHandshakeStatus{Server: "srv"}, func(s sessionMCPHandshakeStatus) {
+			if s.Ready {
+				select {
+				case readyCh <- struct{}{}:
+				default:
+				}
+			}
+		})
+		var terminateCalls atomic.Int32
+		terminate := func() { terminateCalls.Add(1) }
+
+		stdinDone := make(chan struct{})
+		stdoutDone := make(chan struct{})
+		go func() {
+			defer close(stdinDone)
+			relaySessionMCPStdin(clientR, childInW, smallLimit, tracker, terminate)
+		}()
+		go func() {
+			defer close(stdoutDone)
+			relaySessionMCPStdout(childOutR, stdoutW, smallLimit, tracker, terminate)
+			_ = stdoutW.Close()
+		}()
+
+		prefix := bytes.Repeat([]byte("P"), 80*1024)
+		suffix := append(bytes.Repeat([]byte("S"), 120*1024), '\n')
+		wantSecondLine := append(slices.Clone(prefix), suffix...) // 200 KiB > 128 KiB smallLimit
+
+		serverReadFirst := make(chan struct{})
+		serverGot := make(chan []byte, 1)
+		go func() {
+			defer func() { _ = childOutW.Close() }()
+			r := bufio.NewReaderSize(childInR, 64*1024)
+			_, _ = r.ReadString('\n')
+			close(serverReadFirst)
+			rest, _ := io.ReadAll(r)
+			serverGot <- rest
+		}()
+
+		if _, err := io.WriteString(clientW, "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\"}\n"); err != nil {
+			t.Fatal(err)
+		}
+		waitSignal(t, serverReadFirst, "server reading first line")
+
+		// Write 80 KiB (no newline) BEFORE readiness flips. Because io.Pipe is unbuffered,
+		// Write returns only after stdin relay has buffered all 80 KiB in lineBuf while !passthrough.
+		if _, err := clientW.Write(prefix); err != nil {
+			t.Fatal(err)
+		}
+
+		stdoutDiscard := make(chan struct{})
+		go func() {
+			defer close(stdoutDiscard)
+			_, _ = io.Copy(io.Discard, stdoutR)
+		}()
+		if _, err := io.WriteString(childOutW, "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{}}\n"); err != nil {
+			t.Fatal(err)
+		}
+		waitSignal(t, readyCh, "ready publish")
+
+		if _, err := clientW.Write(suffix); err != nil {
+			t.Fatal(err)
+		}
+		_ = clientW.Close()
+
+		var gotSecondLine []byte
+		select {
+		case gotSecondLine = <-serverGot:
+		case <-time.After(10 * time.Second):
+			t.Fatal("timed out waiting for server to receive mid-frame passthrough payload")
+		}
+		waitSignal(t, stdinDone, "stdin relay exit")
+		waitSignal(t, stdoutDone, "stdout relay exit")
+		waitSignal(t, stdoutDiscard, "stdout drain")
+
+		if !bytes.Equal(gotSecondLine, wantSecondLine) {
+			t.Fatalf("mid-frame passthrough corrupted payload: got %d bytes, want %d bytes", len(gotSecondLine), len(wantSecondLine))
+		}
+		if terminateCalls.Load() != 0 {
+			t.Fatalf("unexpected terminateChild calls: %d", terminateCalls.Load())
+		}
+	})
+
+	t.Run("epipe_on_ready_response_does_not_publish_ready", func(t *testing.T) {
+		var published []sessionMCPHandshakeStatus
+		tracker := newSessionMCPHandshakeTracker(sessionMCPHandshakeStatus{Server: "srv"}, func(s sessionMCPHandshakeStatus) {
+			published = append(published, s)
+		})
+		tracker.trackRequest([]byte(`{"jsonrpc":"2.0","id":1,"method":"initialize"}`))
+		stdoutR, stdoutW := io.Pipe()
+		_ = stdoutR.Close() // Force write failure on the ready response line itself.
+		var termCalls atomic.Int32
+		relaySessionMCPStdout(strings.NewReader("{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{}}\n"), stdoutW, acpMaxFrameBytes, tracker, func() {
+			termCalls.Add(1)
+		})
+		if termCalls.Load() != 1 || len(published) != 0 || tracker.status.Ready {
+			t.Fatalf("EPIPE on ready response should terminate without publishing ready: term=%d published=%#v status=%#v", termCalls.Load(), published, tracker.status)
+		}
+		// Exit-path markFailedUnlessReady must still mark failure because Ready was never committed.
+		if tracker.markFailedUnlessReady("server exited before completing startup handshake") {
+			t.Fatal("markFailedUnlessReady treated uncommitted passthrough as Ready")
+		}
+		if len(published) != 1 || !published[0].Failed {
+			t.Fatalf("expected startup exit failure published after EPIPE, got %#v", published)
+		}
+	})
+
+	t.Run("pre_readiness_oversized_frames_fail_and_terminate", func(t *testing.T) {
+		const smallLimit = 1024
+
+		var outStatus sessionMCPHandshakeStatus
+		outTracker := newSessionMCPHandshakeTracker(sessionMCPHandshakeStatus{Server: "out"}, func(s sessionMCPHandshakeStatus) {
+			outStatus = s
+		})
+		var outTerm atomic.Int32
+		childOutR, childOutW := io.Pipe()
+		go func() {
+			_, _ = childOutW.Write(bytes.Repeat([]byte("x"), smallLimit+512))
+			_ = childOutW.Close()
+		}()
+		var outBuf bytes.Buffer
+		relaySessionMCPStdout(childOutR, &outBuf, smallLimit, outTracker, func() { outTerm.Add(1) })
+		if !outStatus.Failed || outStatus.Ready || outTerm.Load() != 1 {
+			t.Fatalf("pre-readiness oversized stdout: status=%#v term=%d", outStatus, outTerm.Load())
+		}
+
+		var inStatus sessionMCPHandshakeStatus
+		inTracker := newSessionMCPHandshakeTracker(sessionMCPHandshakeStatus{Server: "in"}, func(s sessionMCPHandshakeStatus) {
+			inStatus = s
+		})
+		var inTerm atomic.Int32
+		childInR, childInW := io.Pipe()
+		drainDone := make(chan struct{})
+		go func() {
+			defer close(drainDone)
+			_, _ = io.Copy(io.Discard, childInR)
+		}()
+		relaySessionMCPStdin(bytes.NewReader(bytes.Repeat([]byte("y"), smallLimit+512)), childInW, smallLimit, inTracker, func() { inTerm.Add(1) })
+		waitSignal(t, drainDone, "childIn drain")
+		if !inStatus.Failed || inStatus.Ready || inTerm.Load() != 1 {
+			t.Fatalf("pre-readiness oversized stdin: status=%#v term=%d", inStatus, inTerm.Load())
+		}
+	})
+
+	t.Run("post_readiness_stdout_epipe_terminates_and_drains", func(t *testing.T) {
+		childOutR, childOutW := io.Pipe()
+		stdoutR, stdoutW := io.Pipe()
+		t.Cleanup(func() {
+			_ = childOutR.Close()
+			_ = childOutW.Close()
+			_ = stdoutR.Close()
+			_ = stdoutW.Close()
+		})
+		readyCh := make(chan struct{}, 1)
+		var lastStatus sessionMCPHandshakeStatus
+		var statusMu sync.Mutex
+		tracker := newSessionMCPHandshakeTracker(sessionMCPHandshakeStatus{Server: "srv"}, func(s sessionMCPHandshakeStatus) {
+			statusMu.Lock()
+			lastStatus = s
+			statusMu.Unlock()
+			if s.Ready {
+				select {
+				case readyCh <- struct{}{}:
+				default:
+				}
+			}
+		})
+		tracker.trackRequest([]byte(`{"jsonrpc":"2.0","id":1,"method":"initialize"}`))
+
+		var termCalls atomic.Int32
+		termCalled := make(chan struct{}, 1)
+		terminate := func() {
+			termCalls.Add(1)
+			select {
+			case termCalled <- struct{}{}:
+			default:
+			}
+		}
+
+		relayDone := make(chan struct{})
+		go func() {
+			defer close(relayDone)
+			relaySessionMCPStdout(childOutR, stdoutW, acpMaxFrameBytes, tracker, terminate)
+		}()
+
+		go func() {
+			defer func() { _ = childOutW.Close() }()
+			_, _ = io.WriteString(childOutW, "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{}}\n")
+			payload := bytes.Repeat([]byte("noise\n"), 1024)
+			for {
+				select {
+				case <-termCalled:
+					_, _ = childOutW.Write(payload)
+					return
+				default:
+					if _, err := childOutW.Write(payload); err != nil {
+						return
+					}
+				}
+			}
+		}()
+
+		readStringBounded(t, bufio.NewReader(stdoutR), stdoutR, "read ready response")
+		waitSignal(t, readyCh, "ready publish")
+		_ = stdoutR.Close()
+
+		waitSignal(t, relayDone, "stdout relay exit after post-readiness EPIPE")
+		if termCalls.Load() != 1 {
+			t.Fatalf("expected terminateChild called once on post-readiness EPIPE, got %d", termCalls.Load())
+		}
+		statusMu.Lock()
+		defer statusMu.Unlock()
+		if !lastStatus.Ready || lastStatus.Failed {
+			t.Fatalf("post-readiness EPIPE should preserve ready=true without startup failure: %#v", lastStatus)
+		}
+	})
+
+	t.Run("pipelined_large_stdout_frame_buffered_with_ready_response", func(t *testing.T) {
+		const smallLimit = 1024
+		tracker := newSessionMCPHandshakeTracker(sessionMCPHandshakeStatus{Server: "srv"}, nil)
+		tracker.trackRequest([]byte(`{"jsonrpc":"2.0","id":1,"method":"server/discover"}`))
+
+		readyLine := "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"ok\":true}}\n"
+		largeLine := "{\"jsonrpc\":\"2.0\",\"id\":2,\"result\":{\"data\":\"" + strings.Repeat("Z", smallLimit*4) + "\"}}\n"
+		var outBuf bytes.Buffer
+		var termCalls atomic.Int32
+		relaySessionMCPStdout(strings.NewReader(readyLine+largeLine), &outBuf, smallLimit, tracker, func() { termCalls.Add(1) })
+		if termCalls.Load() != 0 || !tracker.isPassthrough() {
+			t.Fatalf("unexpected failure: passthrough=%t term=%d", tracker.isPassthrough(), termCalls.Load())
+		}
+		if outBuf.String() != readyLine+largeLine {
+			t.Fatalf("pipelined large stdout mismatch: got %d bytes, want %d bytes", outBuf.Len(), len(readyLine)+len(largeLine))
+		}
+	})
+
+	t.Run("unterminated_eof_stdout_response_does_not_publish_ready", func(t *testing.T) {
+		var published []sessionMCPHandshakeStatus
+		tr := newSessionMCPHandshakeTracker(sessionMCPHandshakeStatus{Server: "srv"}, func(s sessionMCPHandshakeStatus) {
+			published = append(published, s)
+		})
+		tr.trackRequest([]byte(`{"jsonrpc":"2.0","id":1,"method":"initialize"}`))
+		var outBuf bytes.Buffer
+		relaySessionMCPStdout(strings.NewReader(`{"jsonrpc":"2.0","id":1,"result":{}}`), &outBuf, acpMaxFrameBytes, tr, func() {})
+		if tr.isPassthrough() || len(published) != 0 || tr.status.Ready {
+			t.Fatalf("unterminated EOF response should not publish Ready: passthrough=%t published=%#v status=%#v", tr.isPassthrough(), published, tr.status)
+		}
+		if outBuf.String() != `{"jsonrpc":"2.0","id":1,"result":{}}` {
+			t.Fatalf("expected raw bytes still forwarded, got %q", outBuf.String())
+		}
+	})
+
+	t.Run("split_crlf_at_exact_startup_limit_and_trailing_cr_at_eof", func(t *testing.T) {
+		req := `{"jsonrpc":"2.0","id":1,"method":"initialize"}`
+		limit := len(req) // exact content length without CRLF
+
+		// Split CRLF across two Pipe writes: "<req>\r" then "\n" must succeed.
+		clientR, clientW := io.Pipe()
+		childInR, childInW := io.Pipe()
+		t.Cleanup(func() {
+			_ = clientR.Close()
+			_ = clientW.Close()
+			_ = childInR.Close()
+			_ = childInW.Close()
+		})
+		tr := newSessionMCPHandshakeTracker(sessionMCPHandshakeStatus{Server: "srv"}, nil)
+		var termCalls atomic.Int32
+		stdinDone := make(chan struct{})
+		go func() {
+			defer close(stdinDone)
+			relaySessionMCPStdin(clientR, childInW, limit, tr, func() { termCalls.Add(1) })
+		}()
+		gotCh := make(chan string, 1)
+		go func() {
+			data, _ := io.ReadAll(childInR)
+			gotCh <- string(data)
+		}()
+		if _, err := io.WriteString(clientW, req+"\r"); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := io.WriteString(clientW, "\n"); err != nil {
+			t.Fatal(err)
+		}
+		_ = clientW.Close()
+		waitSignal(t, stdinDone, "split-CRLF stdin relay exit")
+		if termCalls.Load() != 0 || tr.status.Failed {
+			t.Fatalf("exact-limit split CRLF was rejected: term=%d status=%#v", termCalls.Load(), tr.status)
+		}
+		if got := <-gotCh; got != req+"\r\n" {
+			t.Fatalf("got %q, want %q", got, req+"\r\n")
+		}
+
+		// Trailing CR at EOF without LF exceeds limit and must fail.
+		eofR, eofW := io.Pipe()
+		eofChildR, eofChildW := io.Pipe()
+		t.Cleanup(func() {
+			_ = eofR.Close()
+			_ = eofW.Close()
+			_ = eofChildR.Close()
+			_ = eofChildW.Close()
+		})
+		var eofStatus sessionMCPHandshakeStatus
+		eofTr := newSessionMCPHandshakeTracker(sessionMCPHandshakeStatus{Server: "srv"}, func(s sessionMCPHandshakeStatus) {
+			eofStatus = s
+		})
+		var eofTerm atomic.Int32
+		eofDone := make(chan struct{})
+		go func() {
+			defer close(eofDone)
+			relaySessionMCPStdin(eofR, eofChildW, limit, eofTr, func() { eofTerm.Add(1) })
+		}()
+		go func() { _, _ = io.Copy(io.Discard, eofChildR) }()
+		if _, err := io.WriteString(eofW, req+"\r"); err != nil {
+			t.Fatal(err)
+		}
+		_ = eofW.Close()
+		waitSignal(t, eofDone, "EOF trailing-CR stdin relay exit")
+		if !eofStatus.Failed || eofTerm.Load() != 1 {
+			t.Fatalf("trailing CR exceeding limit at EOF should fail: status=%#v term=%d", eofStatus, eofTerm.Load())
+		}
+	})
 }
