@@ -3,12 +3,14 @@ package agentdispatch
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/conn-castle/agent-layer/internal/config"
 )
@@ -865,4 +867,380 @@ func TestACPPermissionHardeningAndToolCallMetadataMerge(t *testing.T) {
 			t.Fatalf("expected trailing malformed JSON-RPC error, got %v", err)
 		}
 	})
+}
+
+type acpRecordingWriter struct {
+	bytes.Buffer
+}
+
+func (*acpRecordingWriter) Close() error { return nil }
+
+func TestACPAuthenticateNonInteractiveSelectionAndFailFast(t *testing.T) {
+	noResponses := make(chan acpIncomingFrame)
+	close(noResponses)
+
+	t.Run("empty_or_omitted_authMethods_skips_authenticate", func(t *testing.T) {
+		for _, tc := range []struct {
+			name string
+			raw  string
+		}{
+			{"omitted", `{"protocolVersion":1}`},
+			{"null", `{"protocolVersion":1,"authMethods":null}`},
+			{"empty", `{"protocolVersion":1,"authMethods":[]}`},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				stdin := new(acpRecordingWriter)
+				client := &acpClient{
+					stdin:    stdin,
+					frames:   noResponses,
+					provider: AgentGrok,
+				}
+				err := client.authenticate(json.RawMessage(tc.raw))
+				if stdin.Len() != 0 {
+					t.Fatalf("unexpected RPC for %s authMethods: %s", tc.name, stdin.String())
+				}
+				if err != nil {
+					t.Fatalf("authenticate(%s) returned error: %v", tc.name, err)
+				}
+			})
+		}
+	})
+
+	t.Run("selects_preferred_non_interactive_method", func(t *testing.T) {
+		for _, tc := range []struct {
+			name        string
+			authMethods []map[string]any
+			wantMethod  string
+		}{
+			{
+				name:        "cached_token_only",
+				authMethods: []map[string]any{{"id": "cached_token"}},
+				wantMethod:  "cached_token",
+			},
+			{
+				name:        "api_key_only",
+				authMethods: []map[string]any{{"id": "api_key"}},
+				wantMethod:  "api_key",
+			},
+			{
+				name:        "grok_api_key_only",
+				authMethods: []map[string]any{{"id": "xai.api_key"}},
+				wantMethod:  "xai.api_key",
+			},
+			{
+				name: "prefers_cached_token_over_api_key_and_interactive",
+				authMethods: []map[string]any{
+					{"id": "grok.com", "name": "Grok", "description": "Sign in with Grok"},
+					{"id": "api_key", "name": "API Key"},
+					{"id": "xai.api_key", "name": "API Key"},
+					{"id": "cached_token", "name": "Cached Token"},
+				},
+				wantMethod: "cached_token",
+			},
+			{
+				name: "selects_api_key_when_paired_with_interactive",
+				authMethods: []map[string]any{
+					{"id": "grok.com", "name": "Grok", "description": "Sign in with Grok"},
+					{"id": "api_key", "name": "API Key"},
+				},
+				wantMethod: "api_key",
+			},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				stdin := new(acpRecordingWriter)
+				frames := make(chan acpIncomingFrame, 1)
+				frames <- acpIncomingFrame{msg: acpJSONRPCMessage{
+					JSONRPC: "2.0",
+					ID:      json.RawMessage("1"),
+					Result:  json.RawMessage("{}"),
+				}}
+				close(frames)
+
+				initRaw, err := json.Marshal(map[string]any{
+					"protocolVersion": 1,
+					"authMethods":     tc.authMethods,
+				})
+				if err != nil {
+					t.Fatal(err)
+				}
+				client := &acpClient{
+					stdin:    stdin,
+					frames:   frames,
+					provider: AgentGrok,
+				}
+				if err := client.authenticate(initRaw); err != nil {
+					t.Fatalf("authenticate failed: %v", err)
+				}
+				var request struct {
+					Method string `json:"method"`
+					Params struct {
+						MethodID string `json:"methodId"`
+						Meta     struct {
+							Headless bool `json:"headless"`
+						} `json:"_meta"`
+					} `json:"params"`
+				}
+				if err := json.Unmarshal(stdin.Bytes(), &request); err != nil {
+					t.Fatalf("decode authenticate request: %v", err)
+				}
+				if request.Method != acpMethodAuthenticate {
+					t.Errorf("RPC method = %q, want %q", request.Method, acpMethodAuthenticate)
+				}
+				if request.Params.MethodID != tc.wantMethod {
+					t.Errorf("methodId = %q, want %q", request.Params.MethodID, tc.wantMethod)
+				}
+				if !request.Params.Meta.Headless {
+					t.Error("expected _meta.headless=true in authenticate params")
+				}
+			})
+		}
+	})
+
+	t.Run("fails_fast_without_sending_authenticate_when_only_interactive_methods_offered", func(t *testing.T) {
+		for _, tc := range []struct {
+			name        string
+			provider    string
+			authMethods []map[string]any
+			wantSubstrs []string
+		}{
+			{
+				name:     "grok_interactive_oauth_only",
+				provider: AgentGrok,
+				authMethods: []map[string]any{
+					{"id": "grok.com", "name": "Grok", "description": "Sign in with Grok"},
+				},
+				wantSubstrs: []string{"not authenticated", "grok.com", "cached_token, api_key, xai.api_key", "al grok"},
+			},
+			{
+				name:     "multiple_interactive_methods_deduplicated",
+				provider: AgentAntigravity,
+				authMethods: []map[string]any{
+					{"id": "oauth_browser"},
+					{"id": "device_code"},
+					{"id": "oauth_browser"},
+				},
+				wantSubstrs: []string{"not authenticated", `"oauth_browser", "device_code"`, "sign in to the provider CLI"},
+			},
+			{
+				name:        "padded_api_key_id_is_reported_exactly",
+				provider:    AgentGrok,
+				authMethods: []map[string]any{{"id": "api_key "}},
+				wantSubstrs: []string{`offered: "api_key "`},
+			},
+			{
+				name:     "empty_id_entry",
+				provider: AgentGrok,
+				authMethods: []map[string]any{
+					{"id": "   "},
+				},
+				wantSubstrs: []string{"not authenticated", "none with an id", "al grok"},
+			},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				stdin := new(acpRecordingWriter)
+				initRaw, err := json.Marshal(map[string]any{
+					"protocolVersion": 1,
+					"authMethods":     tc.authMethods,
+				})
+				if err != nil {
+					t.Fatal(err)
+				}
+				client := &acpClient{
+					stdin:    stdin,
+					frames:   noResponses,
+					provider: tc.provider,
+				}
+				err = client.authenticate(initRaw)
+				if stdin.Len() != 0 {
+					t.Fatalf("unexpected RPC for unsupported authMethods: %s", stdin.String())
+				}
+				requireDispatchExitCode(t, err, ExitConfig)
+				for _, substr := range tc.wantSubstrs {
+					if !strings.Contains(err.Error(), substr) {
+						t.Errorf("error %q missing expected substring %q", err.Error(), substr)
+					}
+				}
+			})
+		}
+	})
+}
+
+func TestACPGrokDispatchAuthenticationFailures(t *testing.T) {
+	for _, tc := range []struct {
+		name          string
+		authMethods   string
+		authResponse  string
+		wantCode      int
+		wantSignIn    bool
+		wantRPCs      []string
+		wantErrorText string
+	}{
+		{
+			name:          "interactive_only",
+			authMethods:   `[{"id":"grok.com"}]`,
+			wantCode:      ExitConfig,
+			wantSignIn:    true,
+			wantRPCs:      []string{acpMethodInitialize},
+			wantErrorText: `no supported non-interactive auth method offered (offered: "grok.com"`,
+		},
+		{
+			name:          "api_key_rejected",
+			authMethods:   `[{"id":"xai.api_key"},{"id":"grok.com"}]`,
+			authResponse:  `{"jsonrpc":"2.0","id":2,"error":{"code":-32000,"message":"Authentication required"}}`,
+			wantCode:      ExitConfig,
+			wantSignIn:    true,
+			wantRPCs:      []string{acpMethodInitialize, acpMethodAuthenticate},
+			wantErrorText: `authentication method "xai.api_key" rejected: ACP error -32000: Authentication required`,
+		},
+		{
+			name:          "rpc_internal_error",
+			authMethods:   `[{"id":"cached_token"}]`,
+			authResponse:  `{"jsonrpc":"2.0","id":2,"error":{"code":-32603,"message":"Internal error"}}`,
+			wantCode:      ExitTargetFailure,
+			wantRPCs:      []string{acpMethodInitialize, acpMethodAuthenticate},
+			wantErrorText: "ACP error -32603: Internal error",
+		},
+		{
+			name:          "transport_closed",
+			authMethods:   `[{"id":"cached_token"}]`,
+			wantCode:      ExitTargetFailure,
+			wantRPCs:      []string{acpMethodInitialize, acpMethodAuthenticate},
+			wantErrorText: "ACP stdout closed while awaiting authenticate response",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root := writeDispatchRepo(t, dispatchRepoConfig{})
+			replaceDispatchConfigText(t, root, "[agents.grok]\nenabled = false", "[agents.grok]\nenabled = true")
+			binDir := t.TempDir()
+			logDir := t.TempDir()
+			rpcLog := filepath.Join(logDir, "grok-rpc.log")
+			writeDispatchStub(t, binDir, "grok", `
+while IFS= read -r line; do
+  printf '%s\n' "$line" >> "$AL_TEST_RPC_LOG"
+  case "$line" in
+    *'"method":"initialize"'*)
+      printf '{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":1,"authMethods":%s}}\n' "$AL_TEST_AUTH_METHODS"
+      ;;
+    *'"method":"authenticate"'*)
+      [ -n "$AL_TEST_AUTH_RESPONSE" ] || exit 0
+      printf '%s\n' "$AL_TEST_AUTH_RESPONSE"
+      ;;
+    *) exit 1 ;;
+  esac
+done
+`)
+			err := executeFreshDispatch(dispatchExecRequest{
+				Root:   root,
+				Agent:  AgentGrok,
+				Prompt: "hi",
+				Env: []string{
+					"PATH=" + testPath(binDir),
+					"AL_TEST_LOG=" + filepath.Join(logDir, "grok.log"),
+					"AL_TEST_RPC_LOG=" + rpcLog,
+					"AL_TEST_AUTH_METHODS=" + tc.authMethods,
+					"AL_TEST_AUTH_RESPONSE=" + tc.authResponse,
+				},
+				LookPath: mockLookPath(binDir),
+			})
+			requireDispatchExitCode(t, err, tc.wantCode)
+			if message := err.Error(); !strings.Contains(message, "grok ACP authenticate failed") ||
+				!strings.Contains(message, tc.wantErrorText) || strings.Contains(message, "al grok") != tc.wantSignIn {
+				t.Errorf("unexpected authentication failure: %s", message)
+			}
+
+			observed, err := os.ReadFile(rpcLog) // #nosec G304 -- test-owned provider log path.
+			if err != nil {
+				t.Fatal(err)
+			}
+			decoder := json.NewDecoder(bytes.NewReader(observed))
+			for _, method := range tc.wantRPCs {
+				var request acpJSONRPCMessage
+				if err := decoder.Decode(&request); err != nil || request.Method != method {
+					t.Fatalf("expected RPC %q, got %q: %v", method, request.Method, err)
+				}
+			}
+			var extra acpJSONRPCMessage
+			if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
+				t.Fatalf("unexpected RPC after %v: %q, %v", tc.wantRPCs, extra.Method, err)
+			}
+
+			sessions, err := listSessions(root)
+			if err != nil || len(sessions) != 1 {
+				t.Fatalf("list sessions = %#v, %v", sessions, err)
+			}
+			requireDispatchExitCode(t, Wait(WaitRequest{
+				Root:    root,
+				Handle:  sessions[0].Name,
+				Timeout: time.Second,
+			}), tc.wantCode)
+		})
+	}
+}
+
+func TestACPDispatchConfigurationAndPersistenceExitCodes(t *testing.T) {
+	for _, tc := range []struct {
+		name          string
+		runMode       string
+		omitConfig    bool
+		wantCode      int
+		wantErrorText string
+	}{
+		{
+			name:          "missing_acp_configuration",
+			runMode:       dispatchModeFresh,
+			omitConfig:    true,
+			wantCode:      ExitConfig,
+			wantErrorText: "ACP dispatch command missing ACP configuration",
+		},
+		{
+			name:          "resume_without_session_id",
+			runMode:       dispatchModeResume,
+			wantCode:      ExitConfig,
+			wantErrorText: "grok ACP resume requires a provider session ID",
+		},
+		{
+			name:          "persistence_failure",
+			runMode:       dispatchModeFresh,
+			wantCode:      ExitTargetFailure,
+			wantErrorText: "dispatch run no longer owns the conversation",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root := t.TempDir()
+			run, err := newDispatchRun(root, AgentGrok, supportedProviderVersions[AgentGrok], tc.runMode)
+			if err != nil {
+				t.Fatal(err)
+			}
+			command := providerCommand{
+				Path: "/bin/sh",
+				Args: []string{"-c", `
+while IFS= read -r line; do
+  case "$line" in
+    *'"method":"initialize"'*)
+      printf '%s\n' '{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":1}}'
+      ;;
+    *'"method":"session/new"'*)
+      printf '%s\n' '{"jsonrpc":"2.0","id":2,"result":{"sessionId":"session-1"}}'
+      ;;
+    *) exit 1 ;;
+  esac
+done
+`},
+				Provider: AgentGrok,
+				RunMode:  tc.runMode,
+				UseACP:   true,
+				ACP:      &acpLaunchConfig{WorkDir: root, Authenticate: true},
+			}
+			if tc.omitConfig {
+				command.ACP = nil
+			}
+			_, err = executeProvider(command, nil, run, root, nil, func(string) error {
+				return exitError(ExitUnavailable, "dispatch run no longer owns the conversation")
+			})
+			requireDispatchExitCode(t, err, tc.wantCode)
+			if !strings.Contains(err.Error(), tc.wantErrorText) {
+				t.Fatalf("error %q missing expected substring %q", err, tc.wantErrorText)
+			}
+		})
+	}
 }
