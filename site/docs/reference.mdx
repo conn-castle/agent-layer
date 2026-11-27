@@ -562,7 +562,8 @@ The first interrupt (Ctrl-C) stops `al sync`, `al wizard`, `al upgrade rollback`
 | `al wizard` | Interactive configuration plus profile mode (`--profile`) and backup cleanup (`--cleanup-backups`). |
 | `al sync` | Regenerate client configs without launching a client. |
 | `al <client>` | Sync and launch a client (agy/claude/codex/copilot/grok/muse/vscode). |
-| `al dispatch options` | List dispatchable agents and their allowed overrides. |
+| `al dispatch options` | List dispatchable agents, allowed overrides, and subscription quota capability. |
+| `al dispatch quota` | Read current subscription utilization, reset timing, and lockout state as JSON. |
 | `al dispatch reserve [--continue <handle>]` | Create a reserved invocation that launches nothing until `start --reservation` or `continue --reservation` launches it once. |
 | `al dispatch start` | Start a headless conversation asynchronously and return its handle. |
 | `al dispatch wait <handle>` | Wait up to eight minutes; return `running` if work continues, otherwise return the terminal result. |
@@ -960,6 +961,7 @@ and Copilot CLI can call the MCP tools but are not dispatch targets.
 
 ```bash
 al dispatch options
+al dispatch quota --agent codex --agent grok
 al dispatch start --agent codex --prompt-file prompt.md
 al dispatch wait <handle-or-invocation-id>
 al dispatch inspect <handle-or-invocation-id>
@@ -968,8 +970,13 @@ al dispatch continue <handle> --prompt "Review the revision."
 al dispatch cancel <handle-or-invocation-id>
 ```
 
-`options` reports available agents, configured defaults, and supported model
-and reasoning-effort overrides. `start` requires an agent and either `--prompt`
+`options` reports available agents, configured defaults, supported model
+and reasoning-effort overrides, and subscription quota support.
+`quota` queries enabled project agents or detached subscription profiles.
+See [subscription quota](./agent-dispatch.mdx#subscription-quota) for flags,
+JSON fields, and exit codes.
+
+`start` requires an agent and either `--prompt`
 or `--prompt-file`; model and reasoning effort are optional overrides. It
 returns a conversation handle immediately. `continue` inherits that
 conversation's resolved target configuration and returns immediately.

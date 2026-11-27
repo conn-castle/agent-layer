@@ -36,7 +36,9 @@ type DiscoveryRequest struct {
 	Cleanup *DiscoveryCleanup
 	// Timeout bounds live discovery. Claude's graceful shutdown may exceed it
 	// so an in-flight credential refresh can finish. Zero uses the client default.
-	Timeout time.Duration
+	Timeout       time.Duration
+	workDir       string
+	shutdownGrace time.Duration
 }
 
 // OptionSet is the shared option metadata used by wizard and dispatch.

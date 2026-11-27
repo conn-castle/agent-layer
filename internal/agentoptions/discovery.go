@@ -46,6 +46,14 @@ func HasModelDiscovery(agent string) bool {
 	return slices.Contains([]string{agentAntigravity, agentClaude, agentCodex, agentCopilotCLI, agentGrok, agentMuse}, agent)
 }
 
+// RefreshClaudeCredentials initializes Claude's print protocol and waits for
+// its credential-safe shutdown. Env is the already resolved launch environment.
+func RefreshClaudeCredentials(ctx context.Context, dir string, env []string, grace time.Duration) error {
+	request := DiscoveryRequest{Context: ctx, Env: env, LookPath: exec.LookPath, workDir: dir, shutdownGrace: grace}
+	_, err := discoverCommandModels(agentClaude, request, nil, nil)
+	return err
+}
+
 // DiscoverModels queries the harness without sync or inference. It uses the same
 // project environment and provider configuration helpers as launch and dispatch.
 // A returned catalog describes selectable models, not guaranteed account access.
@@ -263,11 +271,13 @@ func discoveryCommand(agent string, req DiscoveryRequest) (*exec.Cmd, error) {
 	var cmd *exec.Cmd
 	if agent == agentClaude {
 		cmd = exec.CommandContext(req.Context, path, args...) // #nosec G204 -- PATH-resolved harness; fixed discovery arguments, no prompt.
+		cmd.WaitDelay = req.shutdownGrace
 	} else {
 		//nolint:noctx // ownedprocess.Start owns cancellation while retaining the leader until cleanup.
 		cmd = exec.Command(path, args...) // #nosec G204 -- PATH-resolved harness; fixed discovery arguments, no prompt.
 	}
 	cmd.Env = env
+	cmd.Dir = req.workDir
 	if req.Project != nil {
 		cmd.Dir = req.Project.Root
 	}
@@ -402,7 +412,8 @@ func discoverCommandModels(agent string, req DiscoveryRequest, observer *claudeP
 		}
 		// EOF enters Claude's graceful shutdown, which waits for a held OAuth
 		// refresh before exiting. SIGKILL can spend the refresh token before its
-		// replacement is saved. Use EOF on cancellation too, without a later kill.
+		// replacement is saved. Use EOF on cancellation too. Model discovery
+		// waits for native exit, while the quota probe supplies a bounded grace.
 		cmd.Cancel = func() error {
 			if err := stdin.Close(); errors.Is(err, os.ErrClosed) {
 				return os.ErrProcessDone

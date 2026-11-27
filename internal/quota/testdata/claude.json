@@ -1,0 +1,11 @@
+{
+  "five_hour": null,
+  "seven_day": {"utilization": 30.5, "resets_at": "2026-12-03T15:00:00Z"},
+  "seven_day_cowork": {"utilization": 12, "resets_at": null},
+  "seven_day_unrecognized": {"utilization": 42},
+  "limits": [
+    {"kind": "weekly_all", "group": "weekly", "percent": 31, "resets_at": "2026-12-03T15:00:00Z", "is_active": false, "severity": "normal"},
+    {"kind": "weekly_scoped", "group": "weekly", "percent": 100, "severity": "rejected", "scope": {"model": {"display_name": "Fable"}}}
+  ],
+  "extra_usage": {"is_enabled": false, "credits_can_pay": "no"}
+}

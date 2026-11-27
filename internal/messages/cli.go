@@ -293,7 +293,7 @@ const (
 
 	DispatchUse                          = "dispatch"
 	DispatchShort                        = "Run asynchronous headless agent conversations"
-	DispatchLong                         = "Discover targets, or start, wait for, inspect, read output from, continue, and cancel asynchronous agent conversations. Every successful command emits one JSON object; completed results are durable Markdown files."
+	DispatchLong                         = "Discover targets, read subscription quota, or start, wait for, inspect, read output from, continue, and cancel asynchronous agent conversations. Every successful command emits one JSON object; completed results are durable Markdown files."
 	DispatchAgentFlag                    = "Exact target agent"
 	DispatchModelFlag                    = "Exact provider model"
 	DispatchReasoningEffortFlag          = "Exact provider reasoning effort"

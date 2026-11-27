@@ -1,0 +1,15 @@
+{
+  "account_id": "workspace-fixture", "user_id": "user-fixture", "email": "codex@example.test", "plan_type": "plus",
+  "rate_limit": {
+    "allowed": true, "limit_reached": false,
+    "primary_window": {"used_percent": 100, "limit_window_seconds": 18000, "reset_at": 1795701600},
+    "secondary_window": {"used_percent": 40, "limit_window_seconds": 604800}
+  },
+  "code_review_rate_limit": {"allowed": false, "primary_window": {"used_percent": 100}},
+  "additional_rate_limits": [{
+    "limit_id": "reviewer-model-pool", "normal_model_slug": "special-model",
+    "rate_limit": {"allowed": false, "primary_window": {"used_percent": 100, "reset_at": 1795716000}}
+  }],
+  "model_usage": {"standard-model": {"available": true}},
+  "credits": {"has_credits": true, "unlimited": false, "overage_limit_reached": false}
+}

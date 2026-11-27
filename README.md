@@ -834,6 +834,7 @@ Other commands:
 - `al sync` — regenerate configs without launching a client
 - `al probe agy` — run the Antigravity capability probe and print JSON
 - `al probe grok` — run the Grok capability probe and print JSON
+- `al dispatch quota` — read subscription utilization, resets, and lockouts as JSON across dispatch agents and account profiles. Use `--format summary` for a compact response.
 - `al dispatch start` — start a supported headless target through Agent Dispatch (see the [Agent Dispatch](#agent-dispatch) section)
 - `al doctor` — check common setup issues and warn about available updates
 - `al wizard` — interactive setup wizard plus profile mode (`--profile`) and backup cleanup (`--cleanup-backups`)

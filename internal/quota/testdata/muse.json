@@ -1,0 +1,9 @@
+{
+  "api_key": "fixture-api-key-to-discard", "base_url": "https://api.meta.ai/v1",
+  "user_email": "muse@example.test", "is_subs_active": true, "require_payment": false,
+  "subs_tier_name": "power",
+  "subs_usage": {
+    "window": {"used_percent": 100, "window_duration_mins": 300, "resets_at": "2026-11-26T17:00:00Z"},
+    "weekly": {"used_percent": 100, "resets_at": "2026-12-03T12:00:00Z"}
+  }
+}

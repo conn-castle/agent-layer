@@ -30,7 +30,7 @@ func newDispatchCmd() *cobra.Command {
 			return cmd.Help()
 		},
 	}
-	cmd.AddCommand(newDispatchOptionsCmd(), newDispatchReserveCmd(), newDispatchStartCmd(), newDispatchWaitCmd(), newDispatchContinueCmd(), newDispatchCancelCmd(), newDispatchInspectCmd(), newDispatchOutputCmd(), newDispatchMCPServerCmd())
+	cmd.AddCommand(newDispatchOptionsCmd(), newDispatchQuotaCmd(), newDispatchReserveCmd(), newDispatchStartCmd(), newDispatchWaitCmd(), newDispatchContinueCmd(), newDispatchCancelCmd(), newDispatchInspectCmd(), newDispatchOutputCmd(), newDispatchMCPServerCmd())
 	return cmd
 }
 

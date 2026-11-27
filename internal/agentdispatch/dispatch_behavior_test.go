@@ -39,7 +39,7 @@ func TestOptionsCancellationStopsVersionProbes(t *testing.T) {
 	}
 }
 
-func TestOptionsExposeOnlyStartSelectionFacts(t *testing.T) {
+func TestOptionsExposeSelectionFactsAndQuotaCapability(t *testing.T) {
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	options, err := BuildOptions(OptionsRequest{
 		Root: root,
@@ -55,6 +55,11 @@ func TestOptionsExposeOnlyStartSelectionFacts(t *testing.T) {
 	if err != nil {
 		t.Fatalf("BuildOptions: %v", err)
 	}
+	for _, target := range options.Agents {
+		if !target.SubscriptionQuota.Supported {
+			t.Errorf("quota capability missing from %s", target.Agent)
+		}
+	}
 	raw, err := json.Marshal(options)
 	if err != nil {
 		t.Fatalf("marshal options: %v", err)
@@ -64,7 +69,7 @@ func TestOptionsExposeOnlyStartSelectionFacts(t *testing.T) {
 			t.Fatalf("v1 field %q leaked into options: %s", legacy, raw)
 		}
 	}
-	if !bytes.Contains(raw, []byte(`"available"`)) || !bytes.Contains(raw, []byte(`"reasoning_effort"`)) {
+	if !bytes.Contains(raw, []byte(`"available"`)) || !bytes.Contains(raw, []byte(`"reasoning_effort"`)) || !bytes.Contains(raw, []byte(`"subscription_quota":{"supported":true}`)) {
 		t.Fatalf("selection facts absent: %s", raw)
 	}
 }

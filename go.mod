@@ -8,6 +8,7 @@ require (
 	charm.land/bubbles/v2 v2.2.1
 	charm.land/bubbletea/v2 v2.1.1
 	charm.land/huh/v2 v2.0.3
+	filippo.io/age v1.3.2
 	github.com/aymanbagabas/go-udiff v0.4.1
 	github.com/fatih/color v1.19.0
 	github.com/google/jsonschema-go v0.4.3
@@ -29,6 +30,7 @@ require (
 
 require (
 	charm.land/lipgloss/v2 v2.0.6 // indirect
+	filippo.io/hpke v0.4.0 // indirect
 	github.com/atotto/clipboard v0.1.4 // indirect
 	github.com/bitfield/gotestdox v0.2.3 // indirect
 	github.com/catppuccin/go v0.3.0 // indirect
@@ -53,12 +55,12 @@ require (
 	github.com/mitchellh/hashstructure/v2 v2.0.2 // indirect
 	github.com/muesli/cancelreader v0.2.2 // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
-	github.com/rogpeppe/go-internal v1.16.0 // indirect
 	github.com/segmentio/asm v1.2.1 // indirect
 	github.com/segmentio/encoding v0.5.4 // indirect
 	github.com/spf13/pflag v1.0.10 // indirect
 	github.com/xo/terminfo v1.2.0 // indirect
 	github.com/yosida95/uritemplate/v3 v3.0.2 // indirect
+	golang.org/x/crypto v0.55.0 // indirect
 	golang.org/x/mod v0.42.0 // indirect
 	golang.org/x/oauth2 v0.37.0 // indirect
 	golang.org/x/sync v0.25.0 // indirect
