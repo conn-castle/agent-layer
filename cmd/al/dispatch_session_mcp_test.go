@@ -7,9 +7,12 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"flag"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"syscall"
@@ -23,6 +26,8 @@ import (
 func TestDispatchCLISessionMCPValidationAndOptions(t *testing.T) {
 	root := newReservationTestRepo(t, "")
 	mcpDir := t.TempDir()
+	t.Setenv("AL_NO_NETWORK", "1")
+	t.Cleanup(func() { cleanupSessionMCPInvocations(t, root, "") })
 
 	// 1. `al dispatch options` reports per-agent session_mcp_servers support.
 	cmd := newDispatchCmd()
@@ -30,7 +35,6 @@ func TestDispatchCLISessionMCPValidationAndOptions(t *testing.T) {
 	cmd.SetOut(&stdout)
 	cmd.SetErr(&stderr)
 	cmd.SetArgs([]string{"options"})
-	t.Setenv("AL_NO_NETWORK", "1")
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("al dispatch options: %v (stderr=%s)", err, stderr.String())
 	}
@@ -83,16 +87,24 @@ func TestDispatchCLISessionMCPValidationAndOptions(t *testing.T) {
 
 func sessionMCPRuntimeDirForTest(t *testing.T, runDir string) string {
 	t.Helper()
+	rtDir, err := sessionMCPRuntimeDirPathForTest(runDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return rtDir
+}
+
+func sessionMCPRuntimeDirPathForTest(runDir string) (string, error) {
 	canonicalTmp, err := filepath.EvalSymlinks("/tmp")
 	if err != nil || canonicalTmp == "" {
 		canonicalTmp = "/tmp"
 	}
 	canonicalRunDir, err := filepath.EvalSymlinks(runDir)
 	if err != nil {
-		t.Fatalf("resolve run dir %q: %v", runDir, err)
+		return "", fmt.Errorf("resolve run dir %q: %w", runDir, err)
 	}
 	runKeySum := sha256.Sum256([]byte(filepath.Clean(canonicalRunDir)))
-	return filepath.Join(canonicalTmp, "agent-layer-dispatch-"+strconv.Itoa(os.Getuid()), "runs", hex.EncodeToString(runKeySum[:16]))
+	return filepath.Join(canonicalTmp, "agent-layer-dispatch-"+strconv.Itoa(os.Getuid()), "runs", hex.EncodeToString(runKeySum[:16])), nil
 }
 
 func isolateSessionMCPCacheDir(t *testing.T, tmp string) {
@@ -111,7 +123,10 @@ func isolateSessionMCPCacheDir(t *testing.T, tmp string) {
 	t.Setenv("XDG_CACHE_HOME", testCache)
 }
 
-func cleanupSessionMCPInvocations(t *testing.T, root string) {
+// Match the lowercase UUID format accepted by agentdispatch.
+var sessionMCPInvocationID = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
+
+func cleanupSessionMCPInvocations(t *testing.T, root, alBin string) {
 	t.Helper()
 	runsDir := filepath.Join(root, projectpaths.Runs)
 	entries, err := os.ReadDir(runsDir)
@@ -123,41 +138,202 @@ func cleanupSessionMCPInvocations(t *testing.T, root string) {
 		return
 	}
 	for _, entry := range entries {
-		if entry.IsDir() {
-			cleanupSessionMCPInvocation(t, root, entry.Name())
+		if entry.IsDir() && sessionMCPInvocationID.MatchString(entry.Name()) {
+			cleanupSessionMCPInvocation(t, root, alBin, entry.Name())
 		}
 	}
 }
 
-func cleanupSessionMCPInvocation(t *testing.T, root, id string) {
+func cleanupSessionMCPInvocation(t *testing.T, root, alBin, id string) {
 	t.Helper()
 	runDir := reservationRunDir(root, id)
-	rtDir := sessionMCPRuntimeDirForTest(t, runDir)
-	var cancelErr error
-	if t.Failed() {
-		cancelErr = agentdispatch.Cancel(agentdispatch.CancelRequest{Root: root, InvocationID: id})
+	rtDir, err := sessionMCPRuntimeDirPathForTest(runDir)
+	if err != nil {
+		t.Error(err)
+		return
 	}
 
-	// Wait reconciles confirmed invocations and removes runtime state under the
-	// run lock. If the worker held the lock, Wait can return the confirmation
-	// before removal, so retry until the directory is gone.
+	record, err := readSessionMCPCleanupRecord(runDir)
+	if errors.Is(err, os.ErrNotExist) {
+		// A start can stop before publishing its record.
+		if err := os.RemoveAll(rtDir); err != nil {
+			t.Errorf("remove runtime dir %q for unpublished invocation: %v", rtDir, err)
+		}
+		return
+	}
+	if err != nil {
+		t.Errorf("read dispatch record for cleanup: %v", err)
+		return
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	for {
-		err := agentdispatch.Wait(agentdispatch.WaitRequest{
-			Context: ctx, Root: root, InvocationID: id, Condition: "termination_confirmed",
-		})
+	cleanupErr := reconcileSessionMCPInvocation(ctx, root, alBin, runDir, rtDir, record)
+	if _, err := os.Lstat(rtDir); err == nil {
+		entries, listErr := os.ReadDir(rtDir)
+		if ctx.Err() != nil {
+			cleanupErr = ctx.Err()
+		}
+		cleanupErr = errors.Join(fmt.Errorf("runtime dir %q still exists after cleanup (remaining entries: %v)", rtDir, entries), listErr, cleanupErr)
+	} else if !errors.Is(err, os.ErrNotExist) {
+		cleanupErr = errors.Join(err, cleanupErr)
+	}
+	if cleanupErr != nil {
+		t.Errorf("clean up session MCP invocation %s: %v", id, cleanupErr)
+	}
+}
+
+func readSessionMCPCleanupRecord(runDir string) (agentdispatch.RunRecord, error) {
+	var record agentdispatch.RunRecord
+	path := filepath.Join(runDir, "dispatch.json")
+	data, err := os.ReadFile(path) // #nosec G304 -- record in the test-owned repository.
+	if err != nil {
+		return record, err
+	}
+	if err := json.Unmarshal(data, &record); err != nil {
+		return record, fmt.Errorf("decode %q: %w", path, err)
+	}
+	if record.ID != filepath.Base(runDir) {
+		return record, fmt.Errorf("unexpected invocation ID %q in %q", record.ID, path)
+	}
+	return record, nil
+}
+
+func reconcileSessionMCPInvocation(ctx context.Context, root, alBin, runDir, rtDir string, record agentdispatch.RunRecord) error {
+	waitArgs := []string{"wait", "--condition", "termination_confirmed", record.ID}
+	if !record.TerminationConfirmed {
+		cancelErr := runSessionMCPCleanupCommand(ctx, root, alBin, "cancel", record.ID)
+		if err := runSessionMCPCleanupCommand(ctx, root, alBin, waitArgs...); err != nil {
+			return errors.Join(cancelErr, err)
+		}
+		var err error
+		record, err = readSessionMCPCleanupRecord(runDir)
 		if err != nil {
-			t.Errorf("clean up session MCP runtime dir %q: %v", rtDir, errors.Join(err, cancelErr))
-			return
+			return err
 		}
+		if !record.TerminationConfirmed {
+			return errors.Join(errors.New("invocation termination is still unconfirmed"), cancelErr)
+		}
+	}
+
+	// A pre-launch cancellation can be confirmed before the worker stops
+	// staging files. Let the worker exit before checking for leftover state.
+	if err := waitForSessionMCPWorker(ctx, record.SupervisorPID); err != nil {
+		return err
+	}
+	for {
 		if _, err := os.Lstat(rtDir); errors.Is(err, os.ErrNotExist) {
-			return
+			return nil
 		} else if err != nil {
-			t.Errorf("check session MCP runtime cleanup for %q: %v", rtDir, err)
-			return
+			return err
 		}
-		time.Sleep(20 * time.Millisecond)
+		// tryReconcileOrphan releases its lock before calling
+		// removeSessionMCPRuntimeDir, which takes the run lock separately.
+		// Wait can report confirmation without cleanup if the initial lock was busy.
+		if err := runSessionMCPCleanupCommand(ctx, root, alBin, waitArgs...); err != nil {
+			return err
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(20 * time.Millisecond):
+		}
+	}
+}
+
+func waitForSessionMCPWorker(ctx context.Context, pid int) error {
+	if pid <= 0 {
+		return nil
+	}
+	for {
+		// Reap a worker launched directly by the test binary. For workers
+		// launched by al, a zombie has exited even if its parent has yet to reap it.
+		reaped, err := syscall.Wait4(pid, nil, syscall.WNOHANG, nil)
+		if reaped == pid || errors.Is(syscall.Kill(pid, 0), syscall.ESRCH) {
+			return nil
+		}
+		if errors.Is(err, syscall.ECHILD) {
+			probe := exec.CommandContext(ctx, "/bin/ps", "-o", "stat=", "-p", strconv.Itoa(pid))
+			if output, err := probe.Output(); err == nil && strings.HasPrefix(strings.TrimSpace(string(output)), "Z") {
+				return nil
+			}
+		}
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("wait for detached worker %d to exit: %w", pid, ctx.Err())
+		case <-time.After(20 * time.Millisecond):
+		}
+	}
+}
+
+const sessionMCPCleanupCommandEnv = "AL_TEST_SESSION_MCP_CLEANUP_COMMAND"
+
+func runSessionMCPCleanupCommand(ctx context.Context, root, alBin string, args ...string) error {
+	// CommandContext bounds both operations even if dispatch blocks on a lock.
+	var cmd *exec.Cmd
+	if alBin == "" {
+		self, err := os.Executable()
+		if err != nil {
+			return err
+		}
+		cmd = exec.CommandContext(ctx, self, append([]string{"-test.run=^TestDispatchSessionMCPCleanupCommand$", "--"}, args...)...) // #nosec G204 -- re-exec this test binary.
+		cmd.Env = append(os.Environ(), sessionMCPCleanupCommandEnv+"=1")
+	} else {
+		cmd = exec.CommandContext(ctx, alBin, append([]string{"dispatch"}, args...)...)
+	}
+	cmd.Dir = root
+	cmd.WaitDelay = 100 * time.Millisecond
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("dispatch %v: %w (%s)", args, errors.Join(err, ctx.Err()), out)
+	}
+	return nil
+}
+
+func TestDispatchSessionMCPCleanupCommand(t *testing.T) {
+	if os.Getenv(sessionMCPCleanupCommandEnv) != "1" {
+		return
+	}
+	cmd := newDispatchCmd()
+	cmd.SetArgs(flag.Args())
+	cmd.SetOut(os.Stdout)
+	cmd.SetErr(os.Stderr)
+	if err := cmd.Execute(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestDispatchSessionMCPCleanupWithoutBuiltBinary(t *testing.T) {
+	root := newReservationTestRepo(t, "")
+	reserved := reserveForTest(t)
+	const incompleteID = "00000000-0000-4000-8000-000000000001"
+	const unrelated = "unrelated"
+	for _, id := range []string{reserved.InvocationID, incompleteID, unrelated} {
+		runDir := reservationRunDir(root, id)
+		if err := os.MkdirAll(runDir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		rtDir := sessionMCPRuntimeDirForTest(t, runDir)
+		if err := os.MkdirAll(rtDir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = os.RemoveAll(rtDir) })
+	}
+
+	cleanupSessionMCPInvocations(t, root, "")
+	result, stderr, code := runDispatchCLI(t, "inspect", reserved.InvocationID)
+	if code != 0 || result.State != "cancelled" || !result.TerminationConfirmed {
+		t.Errorf("expected confirmed cancellation, got %+v (exit %d, stderr %q)", result, code, stderr)
+	}
+	for _, id := range []string{reserved.InvocationID, incompleteID} {
+		rtDir := sessionMCPRuntimeDirForTest(t, reservationRunDir(root, id))
+		if _, err := os.Lstat(rtDir); !errors.Is(err, os.ErrNotExist) {
+			t.Errorf("runtime dir %q still exists after cleanup: %v", rtDir, err)
+		}
+	}
+	unrelatedRTDir := sessionMCPRuntimeDirForTest(t, reservationRunDir(root, unrelated))
+	if _, err := os.Lstat(unrelatedRTDir); err != nil {
+		t.Errorf("cleanup should leave unrelated runtime dir %q: %v", unrelatedRTDir, err)
 	}
 }
 
@@ -415,7 +591,7 @@ func TestDispatchSessionMCPFullLifecycleParallelAndCancel(t *testing.T) {
 	isolateSessionMCPCacheDir(t, tmp)
 
 	root := newReservationTestRepo(t, "")
-	t.Cleanup(func() { cleanupSessionMCPInvocations(t, root) })
+	t.Cleanup(func() { cleanupSessionMCPInvocations(t, root, alBin) })
 	fakeBin := filepath.Join(tmp, "fake-bin")
 	customBin := filepath.Join(tmp, "custom-bin")
 	logsDir := filepath.Join(tmp, "logs")

@@ -1230,8 +1230,8 @@ func TestSessionMCPTestsIsolateRuntimeAndCacheRoots(t *testing.T) {
 	// Production runtime root must remain anchored under canonical /tmp independent of TMPDIR.
 	t.Setenv("TMPDIR", t.TempDir())
 	canonicalTmp, err := filepath.EvalSymlinks("/tmp")
-	if err != nil {
-		t.Fatalf("resolve /tmp: %v", err)
+	if err != nil || canonicalTmp == "" {
+		canonicalTmp = "/tmp"
 	}
 	defaultRoot := filepath.Join(canonicalTmp, fmt.Sprintf("agent-layer-dispatch-%d", os.Getuid()))
 	if got := defaultSessionMCPRuntimeRoot(); got != defaultRoot {
