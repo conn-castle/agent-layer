@@ -21,6 +21,7 @@ const (
 	jsonContentKey            = "content"
 	jsonDataKey               = "data"
 	jsonMessageKey            = "message"
+	jsonNameKey               = "name"
 	jsonReasonKey             = "reason"
 	jsonResponseKey           = "response"
 	jsonResultKey             = "result"
@@ -30,6 +31,7 @@ const (
 	jsonEventKey              = "event"
 	jsonKindKey               = "kind"
 	claudeLineageContentLimit = 256
+	claudeMCPServersLimit     = 256
 )
 
 type structuredScalar struct {
@@ -44,6 +46,11 @@ type claudeToolUseBlock struct {
 	Name structuredScalar
 }
 
+type claudeMCPServerStatus struct {
+	Name   string
+	Status string
+}
+
 type claudeStructuredProjection struct {
 	ParentToolUseID structuredScalar
 	TaskID          structuredScalar
@@ -51,6 +58,7 @@ type claudeStructuredProjection struct {
 	Status          structuredScalar
 	TaskType        structuredScalar
 	Content         []claudeToolUseBlock
+	MCPServers      []claudeMCPServerStatus
 	InvalidReason   string
 }
 
@@ -67,6 +75,8 @@ type selectiveJSONReader struct {
 	retainedStringBytes int
 	record              *structuredRecord
 	block               *claudeToolUseBlock
+	mcpServer           *claudeMCPServerStatus
+	expectedMCPServers  map[string]struct{}
 }
 
 // structuredJSONLineReader exposes one JSONL record at a time without
@@ -220,6 +230,7 @@ func (p *selectiveJSONReader) readArray(result map[string]any, path []string, de
 		return err
 	}
 	content := len(path) == 2 && path[0] == jsonMessageKey && path[1] == jsonContentKey
+	mcpServers := len(path) == 1 && path[0] == "mcp_servers"
 	// Grok 1.0.5 emits one content element for tool updates. Generic arrays
 	// intentionally retain only the last scalar to keep parsing bounded; the
 	// provider-derived denial fixture locks the single-element contract used by
@@ -237,6 +248,20 @@ func (p *selectiveJSONReader) readArray(result map[string]any, path []string, de
 				p.record.Claude.Content = append(p.record.Claude.Content, block)
 			} else {
 				p.invalidateClaude(lineageReasonLimitExceeded)
+			}
+		} else if mcpServers {
+			entry := claudeMCPServerStatus{}
+			p.mcpServer = &entry
+			if err := p.readValue(result, path, depth+1); err != nil {
+				p.mcpServer = nil
+				return err
+			}
+			p.mcpServer = nil
+			if entry.Name != "" {
+				_, isExpected := p.expectedMCPServers[entry.Name]
+				if len(p.record.Claude.MCPServers) < claudeMCPServersLimit || isExpected {
+					p.record.Claude.MCPServers = append(p.record.Claude.MCPServers, entry)
+				}
 			}
 		} else if err := p.readValue(result, path, depth+1); err != nil {
 			return err
@@ -271,11 +296,12 @@ func (p *selectiveJSONReader) readValue(result map[string]any, path []string, de
 	case '"':
 		keep := retainedStructuredPath(path)
 		keepClaude := p.retainsClaudeScalar(path)
+		keepMCPServer := p.retainsClaudeMCPServerScalar(path, depth)
 		limit := 0
 		truncatable := false
 		if keep {
 			limit, truncatable = p.retainedStructuredStringLimit(path)
-		} else if keepClaude {
+		} else if keepClaude || keepMCPServer {
 			limit = structuredJSONKeyBytes
 		}
 		value, complete, err := p.readString(limit)
@@ -292,6 +318,7 @@ func (p *selectiveJSONReader) readValue(result map[string]any, path []string, de
 			setStructuredPath(result, path, value)
 		}
 		p.setClaudeScalar(path, value, complete)
+		p.setClaudeMCPServerScalar(path, depth, value, complete)
 		return nil
 	case 't':
 		if err := p.readLiteral("rue"); err != nil {
@@ -340,7 +367,23 @@ func (p *selectiveJSONReader) retainsClaudeScalar(path []string) bool {
 		}
 	}
 	return p.block != nil && len(path) == 3 && path[0] == jsonMessageKey && path[1] == jsonContentKey &&
-		(path[2] == jsonTypeKey || path[2] == "id" || path[2] == "name")
+		(path[2] == jsonTypeKey || path[2] == "id" || path[2] == jsonNameKey)
+}
+
+func (p *selectiveJSONReader) retainsClaudeMCPServerScalar(path []string, depth int) bool {
+	return p.mcpServer != nil && depth == 4 && len(path) == 2 && path[0] == "mcp_servers" &&
+		(path[1] == jsonNameKey || path[1] == jsonStatusKey)
+}
+
+func (p *selectiveJSONReader) setClaudeMCPServerScalar(path []string, depth int, value string, valid bool) {
+	if !valid || !p.retainsClaudeMCPServerScalar(path, depth) {
+		return
+	}
+	if path[1] == jsonNameKey {
+		p.mcpServer.Name = value
+	} else {
+		p.mcpServer.Status = value
+	}
 }
 
 func (p *selectiveJSONReader) setClaudeScalar(path []string, value string, valid bool) {

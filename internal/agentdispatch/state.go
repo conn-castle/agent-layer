@@ -21,6 +21,7 @@ import (
 
 	"github.com/conn-castle/agent-layer/internal/fsutil"
 	"github.com/conn-castle/agent-layer/internal/messages"
+	"github.com/conn-castle/agent-layer/internal/musepolicy"
 	"github.com/conn-castle/agent-layer/internal/projectpaths"
 )
 
@@ -57,19 +58,22 @@ var (
 // transcripts remain provider-owned; this record contains only the alias
 // needed for explicit continuation.
 type Session struct {
-	Name                      string    `json:"name"`
-	Agent                     string    `json:"agent"`
-	Model                     string    `json:"model,omitempty"`
-	ReasoningEffort           string    `json:"reasoning_effort,omitempty"`
-	TargetPinned              bool      `json:"target_pinned,omitempty"`
-	ProviderSessionID         string    `json:"provider_session_id,omitempty"`
-	CreatedAt                 time.Time `json:"created_at"`
-	LastUsedAt                time.Time `json:"last_used_at"`
-	State                     string    `json:"state,omitempty"`
-	RunID                     string    `json:"run_id,omitempty"`
-	ActiveRunID               string    `json:"active_run_id,omitempty"`
-	ActiveClaimKnown          bool      `json:"active_claim_known,omitempty"`
-	ContinuationReservationID string    `json:"continuation_reservation_id,omitempty"`
+	Name                      string             `json:"name"`
+	Agent                     string             `json:"agent"`
+	Model                     string             `json:"model,omitempty"`
+	ReasoningEffort           string             `json:"reasoning_effort,omitempty"`
+	TargetPinned              bool               `json:"target_pinned,omitempty"`
+	ProviderSessionID         string             `json:"provider_session_id,omitempty"`
+	SessionMCPID              string             `json:"session_mcp_id,omitempty"`
+	SessionMCPDigest          string             `json:"session_mcp_digest,omitempty"`
+	SessionMCPServers         []SessionMCPServer `json:"-"`
+	CreatedAt                 time.Time          `json:"created_at"`
+	LastUsedAt                time.Time          `json:"last_used_at"`
+	State                     string             `json:"state,omitempty"`
+	RunID                     string             `json:"run_id,omitempty"`
+	ActiveRunID               string             `json:"active_run_id,omitempty"`
+	ActiveClaimKnown          bool               `json:"active_claim_known,omitempty"`
+	ContinuationReservationID string             `json:"continuation_reservation_id,omitempty"`
 }
 
 // RunRecord is private, recoverable dispatch evidence. It never contains the
@@ -539,13 +543,55 @@ func classifyDispatchPoolOccupancy(root string) (retained int, active int, unrea
 	return retained, active, unreadable, nil
 }
 
+func hydrateSessionMCPServers(root string, session *Session) error {
+	if session == nil || session.SessionMCPDigest == "" {
+		return nil
+	}
+	if session.SessionMCPID == "" {
+		return exitError(ExitConfig, fmt.Sprintf("dispatch session %q is missing session MCP identifier", session.Name))
+	}
+	servers, err := loadPrivateSessionMCPServers(root, session.SessionMCPID, session.SessionMCPDigest)
+	if err != nil {
+		return err
+	}
+	session.SessionMCPServers = servers
+	return nil
+}
+
 func persistSession(root string, session Session) error {
 	path, err := sessionPath(root, session.Name)
 	if err != nil {
 		return err
 	}
 	return withSessionLock(root, session.Name, func() error {
-		return writeJSONAtomic(path, session)
+		allocatedNewID := false
+		if len(session.SessionMCPServers) > 0 {
+			if session.SessionMCPID == "" {
+				var existing Session
+				if readErr := readJSON(path, &existing); readErr == nil && existing.SessionMCPID != "" {
+					session.SessionMCPID = existing.SessionMCPID
+				} else {
+					id, idErr := newUUID()
+					if idErr != nil {
+						return wrapExitError(ExitTargetFailure, "allocate session MCP identifier", idErr)
+					}
+					session.SessionMCPID = id
+					allocatedNewID = true
+				}
+			}
+			digest, saveErr := persistPrivateSessionMCPServers(root, session.SessionMCPID, session.SessionMCPServers)
+			if saveErr != nil {
+				return saveErr
+			}
+			session.SessionMCPDigest = digest
+		}
+		if err := writeJSONAtomic(path, session); err != nil {
+			if allocatedNewID {
+				_ = removePrivateSessionMCPServers(root, session.SessionMCPID)
+			}
+			return err
+		}
+		return nil
 	})
 }
 
@@ -598,6 +644,9 @@ func claimConversation(root string, name string, runID string, expectedPreviousR
 		if hasPending {
 			return pendingContinuationReservationError(name, pending.ID)
 		}
+		if err := hydrateSessionMCPServers(root, &session); err != nil {
+			return err
+		}
 		ownerRunID := sessionOwnerRunID(session)
 		if ownerRunID != "" && ownerRunID != runID {
 			active, loadErr := loadRunRecord(root, ownerRunID)
@@ -641,11 +690,17 @@ func downgradeUnstartedSession(root string, name string, runID string) error {
 			}
 			return wrapExitError(ExitConfig, "read dispatch mapping for pre-start downgrade", err)
 		}
+		previousSessionID := session.ProviderSessionID
 		if !clearProvisionalSessionID(&session, runID) {
 			return nil
 		}
 		if err := writeJSONAtomic(path, session); err != nil {
 			return wrapExitError(ExitConfig, "downgrade unstarted dispatch mapping", err)
+		}
+		if session.Agent == AgentMuse && previousSessionID != "" {
+			if err := musepolicy.RemoveSessionMCPGrant(root, previousSessionID); err != nil {
+				return wrapExitError(ExitConfig, "remove unstarted Muse session MCP grant", err)
+			}
 		}
 		return nil
 	})
@@ -678,7 +733,17 @@ func releaseConversationLocked(root string, record RunRecord) error {
 		}
 		return wrapExitError(ExitConfig, "read dispatch mapping for claim release", err)
 	}
-	changed := cancelledUnstartedFreshContinuation(record) && clearProvisionalSessionID(&session, record.ID)
+	var retiredMuseSessionID string
+	changed := false
+	if cancelledUnstartedFreshContinuation(record) {
+		previousSessionID := session.ProviderSessionID
+		if clearProvisionalSessionID(&session, record.ID) {
+			changed = true
+			if session.Agent == AgentMuse && previousSessionID != "" {
+				retiredMuseSessionID = previousSessionID
+			}
+		}
+	}
 	if session.ActiveRunID == record.ID {
 		session.ActiveRunID = ""
 		session.ActiveClaimKnown = true
@@ -696,6 +761,11 @@ func releaseConversationLocked(root string, record RunRecord) error {
 	}
 	if !changed {
 		return nil
+	}
+	if retiredMuseSessionID != "" {
+		if err := musepolicy.RemoveSessionMCPGrant(root, retiredMuseSessionID); err != nil {
+			return wrapExitError(ExitConfig, "remove cancelled unstarted Muse session MCP grant", err)
+		}
 	}
 	return writeJSONAtomic(path, session)
 }
@@ -774,6 +844,7 @@ func pruneExpiredSessions(root string, now time.Time, retention time.Duration, p
 		return wrapExitError(ExitConfig, "list dispatch sessions for retention", err)
 	}
 	cutoff := now.UTC().Add(-retention)
+	var errs []error
 	for _, entry := range entries {
 		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
 			continue
@@ -783,10 +854,10 @@ func pruneExpiredSessions(root string, now time.Time, retention time.Duration, p
 			continue
 		}
 		if err := pruneExpiredSession(root, name, cutoff); err != nil {
-			return err
+			errs = append(errs, err)
 		}
 	}
-	return nil
+	return errors.Join(errs...)
 }
 
 func pruneDispatchEvidence(root string, now time.Time, retention time.Duration) error {
@@ -797,11 +868,13 @@ func pruneDispatchEvidenceExcept(root string, now time.Time, retention time.Dura
 	if err := pruneExpiredSessions(root, now, retention, preserveSession); err != nil {
 		return err
 	}
+	snapshotStart := time.Now()
 	sessions, err := listSessions(root)
 	if err != nil {
 		return err
 	}
 	current := make(map[string]bool, len(sessions))
+	activeMuseSessions := make(map[string]bool)
 	for _, session := range sessions {
 		if session.RunID != "" {
 			current[session.RunID] = true
@@ -812,6 +885,23 @@ func pruneDispatchEvidenceExcept(root string, now time.Time, retention time.Dura
 		if session.ContinuationReservationID != "" {
 			current[session.ContinuationReservationID] = true
 		}
+		if session.Agent == AgentMuse && session.ProviderSessionID != "" {
+			activeMuseSessions[session.ProviderSessionID] = true
+		}
+	}
+	if err := musepolicy.PruneSessionMCPGrants(root, activeMuseSessions, snapshotStart.Add(-2*time.Second), func(sessionID string) bool {
+		fresh, listErr := listSessions(root)
+		if listErr != nil {
+			return true
+		}
+		for _, session := range fresh {
+			if session.Agent == AgentMuse && session.ProviderSessionID == sessionID {
+				return true
+			}
+		}
+		return false
+	}); err != nil {
+		return wrapExitError(ExitConfig, "prune expired Muse session MCP grants", err)
 	}
 	cutoff := now.UTC().Add(-retention)
 	for _, runsDir := range []string{dispatchRunPath(root), filepath.Join(root, projectpaths.LegacyRuns)} {
@@ -838,6 +928,9 @@ func pruneDispatchEvidenceExcept(root string, now time.Time, retention time.Dura
 			}
 			if loadErr != nil || current[entry.Name()] || !record.TerminationConfirmed || !terminalDispatchState(record.State) || record.CompletedAt == nil || !record.CompletedAt.Before(cutoff) {
 				continue
+			}
+			if err := removeSessionMCPRuntimeDir(dir); err != nil {
+				return err
 			}
 			if err := os.RemoveAll(dir); err != nil {
 				return wrapExitError(ExitConfig, "prune expired dispatch evidence", err)
@@ -893,6 +986,14 @@ func pruneExpiredSession(root string, name string, cutoff time.Time) error {
 		}
 		if err := os.Remove(path); err != nil && !errors.Is(err, fs.ErrNotExist) {
 			return wrapExitError(ExitConfig, "prune expired dispatch mapping", err)
+		}
+		if session.SessionMCPID != "" && parseUUID(session.SessionMCPID) == nil {
+			_ = removePrivateSessionMCPServers(root, session.SessionMCPID)
+		}
+		if session.Agent == AgentMuse && session.ProviderSessionID != "" {
+			if err := musepolicy.RemoveSessionMCPGrant(root, session.ProviderSessionID); err != nil {
+				return wrapExitError(ExitConfig, "prune expired Muse session MCP grant", err)
+			}
 		}
 		return nil
 	})

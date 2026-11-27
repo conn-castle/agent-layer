@@ -16,6 +16,7 @@ import (
 	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/herdr"
 	"github.com/conn-castle/agent-layer/internal/messages"
+	"github.com/conn-castle/agent-layer/internal/musepolicy"
 	"github.com/conn-castle/agent-layer/internal/sync"
 )
 
@@ -25,7 +26,7 @@ import (
 func finishRejectedResume(run *dispatchRun, claimErr error, publish func(string, *RunRecord) error) error {
 	now := time.Now().UTC()
 	setDispatchFailure(&run.Record, claimErr, recoveryRetrySafe, now)
-	applyTerminationEvidence(&run.Record, nil, true, now)
+	applyTerminationEvidenceInDir(run.Dir, &run.Record, nil, true, now)
 	if err := publish(run.Dir, &run.Record); err != nil {
 		return wrapExitError(ExitConfig, "resume claim rejected; publish rejected resume terminal evidence", errors.Join(claimErr, err))
 	}
@@ -62,6 +63,7 @@ func executeDispatch(request dispatchExecution) error {
 		return finishDispatchCancellation(request)
 	}
 	session := request.Session
+	sessionMCP := session.SessionMCPServers
 	if request.Mode == dispatchModeFresh && callerAssignsSessionID(request.Target.Name) {
 		id, err := newUUID()
 		if err != nil {
@@ -74,6 +76,7 @@ func executeDispatch(request dispatchExecution) error {
 		if err != nil {
 			return finishDispatchFailure(request, &preStartFailure{err: err})
 		}
+		updated.SessionMCPServers = sessionMCP
 		session = updated
 	}
 	if err := writeIdentity(request.Stderr, session.Name, request.Target.Name, request.Mode, session.State == sessionStateDurable); err != nil {
@@ -109,6 +112,7 @@ func executeDispatch(request dispatchExecution) error {
 		if err != nil {
 			return err
 		}
+		updated.SessionMCPServers = sessionMCP
 		session = updated
 		return nil
 	}
@@ -121,6 +125,7 @@ func executeDispatch(request dispatchExecution) error {
 			return finishDispatchFailure(request, err)
 		}
 		if request.Mode == dispatchModeFresh && callerAssignsSessionID(request.Target.Name) && attempt == 2 {
+			previousSessionID := session.ProviderSessionID
 			id, err := newUUID()
 			if err != nil {
 				return wrapExitError(ExitTargetFailure, fmt.Sprintf("generate retry %s session ID", request.Target.Name), err)
@@ -131,10 +136,19 @@ func executeDispatch(request dispatchExecution) error {
 			if err != nil {
 				return finishDispatchFailure(request, &preStartFailure{err: err})
 			}
+			updated.SessionMCPServers = sessionMCP
 			session = updated
+			if request.Target.Name == AgentMuse && len(sessionMCP) > 0 && previousSessionID != "" {
+				_ = musepolicy.RemoveSessionMCPGrant(request.Root, previousSessionID)
+			}
+		}
+		if request.Target.Name == AgentMuse && len(sessionMCP) > 0 && session.ProviderSessionID != "" {
+			if err := musepolicy.WriteSessionMCPGrant(request.Root, session.ProviderSessionID, sessionMCPServerNames(sessionMCP)); err != nil {
+				return finishDispatchFailure(request, &preStartFailure{err: wrapExitError(ExitConfig, "write Muse session MCP grant", err)})
+			}
 		}
 		childEnv := dispatchEnvironment(request.Env, request.Project, request.Run, request.Depth)
-		command, err := buildProviderCommand(request.Target, request.Project, childEnv, request.Prompt, request.Model, request.Effort, request.TargetPinned, request.Mode, session.ProviderSessionID, request.Run, request.Stderr)
+		command, err := buildProviderCommandForSession(request.Target, request.Project, request.WorkDir, childEnv, request.Prompt, request.Model, request.Effort, request.TargetPinned, request.Mode, session.ProviderSessionID, sessionMCP, request.Run, request.Stderr)
 		if err != nil {
 			return finishDispatchFailure(request, &preStartFailure{err: err})
 		}
@@ -149,6 +163,7 @@ func executeDispatch(request dispatchExecution) error {
 			if err != nil {
 				return finishDispatchFailure(request, &preStartFailure{err: err})
 			}
+			updated.SessionMCPServers = sessionMCP
 			session = updated
 		}
 		command.WorkDir = request.WorkDir
@@ -178,29 +193,6 @@ func executeDispatch(request dispatchExecution) error {
 			}
 			return finishDispatchFailure(request, err)
 		}
-		if request.Target.Name == AgentAntigravity {
-			logID, logErr := antigravitySessionID(command.LogPath)
-			if logErr != nil {
-				return finishDispatchFailure(request, wrapExitError(ExitTargetFailure, "read Antigravity dispatch log", logErr))
-			}
-			id := result.SessionID
-			if logID != "" {
-				if id != "" && logID != id {
-					return finishDispatchFailure(request, exitError(ExitTargetFailure, "Antigravity stream and diagnostic log returned different provider conversation IDs"))
-				}
-				id = logID
-			}
-			if request.Mode == dispatchModeResume && id != session.ProviderSessionID {
-				return finishDispatchFailure(request, exitError(ExitTargetFailure, "Antigravity resume returned a different provider conversation ID"))
-			}
-			if err := persist(id); err != nil {
-				return finishDispatchFailure(request, err)
-			}
-			if err := os.Remove(command.LogPath); err != nil {
-				return finishDispatchFailure(request, wrapExitError(ExitConfig, "remove successful Antigravity dispatch log", err))
-			}
-			request.Run.Record.ProviderLogPath = ""
-		}
 		return completeDispatchSuccess(request, result, session)
 	}
 	return finishDispatchFailure(request, exitError(ExitTargetFailure, "dispatch retry exhausted"))
@@ -209,18 +201,23 @@ func executeDispatch(request dispatchExecution) error {
 // removeDispatchPrompt also covers command construction failing after staging,
 // before buildProviderCommand returns a usable command.
 func removeDispatchPrompt(request dispatchExecution) error {
-	if request.Target.Name != AgentGrok && request.Target.Name != AgentMuse {
-		return nil
+	var errs []error
+	if request.Run != nil {
+		if err := removeSessionMCPArtifacts(request.Run.Dir); err != nil {
+			errs = append(errs, err)
+		}
 	}
-	path := filepath.Join(request.Run.Dir, "prompt.txt")
-	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
-		return wrapExitError(ExitConfig, fmt.Sprintf("remove dispatch prompt file %s; private prompt may remain; remove it after correcting filesystem permissions", path), err)
+	if request.Target.Name == AgentMuse {
+		path := filepath.Join(request.Run.Dir, "prompt.txt")
+		if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+			errs = append(errs, wrapExitError(ExitConfig, fmt.Sprintf("remove dispatch prompt file %s; private prompt may remain; remove it after correcting filesystem permissions", path), err))
+		}
 	}
-	return nil
+	return errors.Join(errs...)
 }
 
 func callerAssignsSessionID(agent string) bool {
-	return agent == AgentClaude || agent == AgentGrok || agent == AgentMuse
+	return agent == AgentClaude || agent == AgentMuse
 }
 
 func completeDispatchSuccess(request dispatchExecution, result executionResult, session Session) error {
@@ -251,8 +248,13 @@ func completeDispatchSuccess(request dispatchExecution, result executionResult, 
 		return finishDispatchFailure(request, err)
 	}
 	request.Run.Record = updated
+	if updated.TerminationConfirmed {
+		if rmErr := removeSessionMCPRuntimeDir(request.Run.Dir); rmErr != nil {
+			_, _ = fmt.Fprintf(writerOrDiscard(request.Stderr), "warning: dispatch run %s completed but session MCP runtime cleanup failed: %v\n", request.Run.Record.ID, rmErr)
+		}
+	}
 	if err := releaseIfConfirmed(request.Root, updated); err != nil {
-		_, _ = fmt.Fprintf(request.Stderr, "warning: dispatch run %s completed but active claim cleanup failed: %v\n", request.Run.Record.ID, err)
+		_, _ = fmt.Fprintf(writerOrDiscard(request.Stderr), "warning: dispatch run %s completed but active claim cleanup failed: %v\n", request.Run.Record.ID, err)
 	}
 	return replayAnswer(request.Run.Record.AnswerPath, request.Stdout)
 }
@@ -294,6 +296,11 @@ func recordDispatchFailure(request dispatchExecution, cause error) error {
 			request.Run.Record = updated
 		}
 	}
+	if request.Run.Record.TerminationConfirmed {
+		if rmErr := removeSessionMCPRuntimeDir(request.Run.Dir); rmErr != nil {
+			_, _ = fmt.Fprintf(writerOrDiscard(request.Stderr), "warning: dispatch run %s failed and session MCP runtime cleanup failed: %v\n", request.Run.Record.ID, rmErr)
+		}
+	}
 	if err := releaseIfConfirmed(request.Root, request.Run.Record); err != nil {
 		return err
 	}
@@ -321,7 +328,7 @@ func persistUnprovenFailure(request dispatchExecution, cause error) error {
 	primary := primaryUnprovenError(cause)
 	_, err := updateRunEvidence(request.Run.Dir, func(current *RunRecord) error {
 		if current.State == dispatchStateCancelled {
-			applyTerminationEvidence(current, cause, false, now)
+			applyTerminationEvidenceInDir(request.Run.Dir, current, cause, false, now)
 			if current.TerminalReason == "" {
 				current.TerminalReason = cause.Error()
 			}
@@ -334,7 +341,7 @@ func persistUnprovenFailure(request dispatchExecution, cause error) error {
 			current.TerminalReason = cause.Error()
 			current.TerminalExitCode = terminalExitCode(primary)
 		}
-		applyTerminationEvidence(current, cause, false, now)
+		applyTerminationEvidenceInDir(request.Run.Dir, current, cause, false, now)
 		return nil
 	})
 	return err
@@ -389,6 +396,11 @@ func finishDispatchCancellation(request dispatchExecution) error {
 		return errors.Join(cleanupErr, err)
 	}
 	request.Run.Record = updated
+	if updated.TerminationConfirmed {
+		if rmErr := removeSessionMCPRuntimeDir(request.Run.Dir); rmErr != nil {
+			cleanupErr = errors.Join(cleanupErr, rmErr)
+		}
+	}
 	if err := releaseIfConfirmed(request.Root, updated); err != nil {
 		return errors.Join(cleanupErr, err)
 	}
@@ -480,6 +492,9 @@ func prepareFresh(project *config.ProjectConfig, target targetMeta, opts runOpti
 		if !antigravityEffortMatchesSlug(target.Name, opts.Model, effort) {
 			return targetMeta{}, "", nil, exitError(ExitUsage, fmt.Sprintf("%s does not support --reasoning-effort", target.Name))
 		}
+	}
+	if err := validateSessionMCPServersForProject(project, target, opts.SessionMCPServers); err != nil {
+		return targetMeta{}, "", nil, err
 	}
 	if !targetEnabled(project.Config, target.Name) {
 		return targetMeta{}, "", nil, exitError(ExitConfig, fmt.Sprintf("`al dispatch` target %s is disabled in config", target.Name))

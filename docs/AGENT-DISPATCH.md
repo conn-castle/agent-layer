@@ -130,7 +130,7 @@ al dispatch reserve [--continue <handle>]
 
 al dispatch start --agent <agent> [--model <model>] \
   [--reasoning-effort <effort>] [--role <role>] [--skill <skill>] \
-  [--reservation <handle>] \
+  [--reservation <handle>] [--mcp-config <path>]... \
   (--prompt <text> | --prompt-file <path>)
 
 al dispatch wait <handle-or-invocation-id> [--condition terminal|termination_confirmed]
@@ -212,9 +212,79 @@ conversation and starting its first invocation.
 `reserve` and `--reservation` are described in [Reservations](#reservations).
 Without `--reservation`, `start` is unchanged.
 
+### Session-scoped MCP servers
+
+CLI callers can attach one or more stdio MCP servers to a single conversation
+using repeatable `--mcp-config <path>` flags on `al dispatch start` (including
+with `--reservation`). The MCP dispatch tools do not expose `--mcp-config`.
+
+Each file must be a strict JSON object (`<= 1 MiB`) containing a non-empty
+`"mcpServers"` map of stdio server definitions:
+
+```json
+{
+  "mcpServers": {
+    "workflow": {
+      "type": "stdio",
+      "command": "/path/to/server",
+      "args": ["--session", "123"],
+      "env": {
+        "PATH": "/opt/venv/bin:/usr/bin:/bin",
+        "WORKFLOW_TOKEN": "value"
+      }
+    }
+  }
+}
+```
+
+`"type"` is optional and, when set, must be `"stdio"`. Server names must use
+ASCII letters, digits, hyphens, or underscores without leading, trailing, or
+adjacent hyphens/underscores. Invalid definitions, duplicate names, collisions
+with `agent-layer` or any project-configured MCP server (including normalized
+tool namespaces on Claude and Muse), explicit Claude `permissions.deny`
+conflicts, or supplying `--mcp-config` to an agent that does not support
+session-scoped MCP servers fail before launching the provider (and before
+claiming a reservation). All five dispatch providers (`codex`, `claude`, `muse`,
+`grok`, and `antigravity`) support session-scoped MCP servers (`grok` and
+`antigravity` run over ACP stdio so session servers stay isolated without
+mutating shared provider homes). Note that Antigravity CLI ACP currently marks
+`session/new` MCP tools eager against its shared 20k-token customization budget
+(upstream `google-antigravity/antigravity-cli#1530`), so very large toolsets or
+skill catalogs may be truncated by `agy`.
+
+Session servers are persisted in an owner-only store outside the repository
+checkout (keyed by a per-session UUID and integrity digest recorded on the
+conversation mapping) for as long as the conversation can be continued. This
+keeps caller environment secrets and launch commands out of the workspace while
+ensuring every `continue` (including after a failed or cancelled invocation)
+re-attaches identical names and definitions for prompt-cache stability alongside
+existing project-configured MCP servers. Per-invocation staged server specs,
+wrapper tracking files, and handshake proofs live in an owner-verified private
+temporary directory so workspace-sandboxed providers cannot tamper with them
+and read-only provider sandboxes remain compatible. Per-invocation staged specs
+are removed once the provider exits or fails, runtime tracking directories are
+removed once termination is confirmed (or during retention pruning), and
+per-session definitions are pruned when the conversation expires under
+`dispatch.session_retention_days`. Concurrent conversations in the same checkout
+are isolated from each other, interactive sessions, and nested dispatches; the
+repository working tree is never modified.
+
+Session servers run with the dispatch working directory (the repository root
+when launched from the root, or the caller's working directory otherwise) and
+receive all caller-specified environment variables (including `PATH`, which is
+also used to resolve bare commands). Tools exposed by session servers are
+permitted without interactive approval prompts in every `approvals.mode` without
+changing approvals for any other tool. Startup or tool-discovery failures fail
+the invocation with an actionable error instead of running without the server
+(Codex, Muse, Grok, and Antigravity fail before inference; Claude fails fast as
+soon as its `system/init` event reports any required session server missing or
+not connected, and rejects completion without startup confirmation). Session
+server processes are tracked in isolated process groups and terminated and
+proven dead before `termination_confirmed` becomes true.
+
 `continue` uses the conversation's existing agent, model, reasoning effort,
-and provider context. It requires exactly one new prompt source and returns
-immediately after starting the next invocation.
+session-scoped MCP servers, and provider context. It requires exactly one new
+prompt source and returns immediately after starting the next invocation.
 
 `--prompt-file` reads the named file as the prompt. It avoids shell escaping
 and command-length limits; `--prompt` remains convenient for short prompts.
@@ -298,6 +368,9 @@ values.
         "configured": "medium",
         "suggestions": ["low", "medium", "high"],
         "allow_custom": true
+      },
+      "session_mcp_servers": {
+        "supported": true
       }
     }
   ],
@@ -312,7 +385,9 @@ CLI `options` includes `reservations` advertising support for start and
 continuation reservations; MCP `dispatch_options` omits it because reservations
 are CLI only. Known but unavailable agents remain present with `available: false` and an
 `unavailable_reason`. Unsupported overrides have `supported: false`; callers
-must omit those flags.
+must omit those flags. `session_mcp_servers.supported` reports whether an agent
+accepts `--mcp-config` session-scoped MCP servers (all five dispatch agents —
+`codex`, `claude`, `muse`, `grok`, and `antigravity` — report `supported: true`).
 
 `start` and `continue` return:
 
@@ -390,10 +465,10 @@ edits or finishing external jobs the provider started.
 Continuation requires the recorded provider conversation ID. If a failed or
 cancelled invocation may have reached the provider but no ID was captured,
 `continue` fails rather than silently starting a fresh conversation. Inspect
-the previous run before explicitly choosing `start`. Only a proven pre-start
-failure permits a fresh retry through `continue`. Antigravity's `init` event
-persists its conversation ID before the terminal result, preserving identity
-when a later handoff fails.
+the previous run before explicitly choosing `start`. Only a proven pre-start failure permits a fresh retry through `continue`.
+Antigravity and Grok capture their provider conversation ID from the ACP
+`session/new` response before `session/prompt`, preserving identity when a later
+turn or handoff fails.
 
 Dispatch requires a structured terminal result, a final answer, a consistent
 conversation ID, successful provider exit, and proof that its process group

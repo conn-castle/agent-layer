@@ -67,6 +67,9 @@ def main() -> None:
                         "suggestions": efforts,
                         "allow_custom": False,
                     },
+                    "session_mcp_servers": {
+                        "supported": True,
+                    },
                 }
             )
         json.dump(

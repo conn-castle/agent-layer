@@ -684,6 +684,10 @@ func streamProviderAttemptCost(stage, provider, model string) (treatmentCost, er
 	if err != nil {
 		return treatmentCost{}, err
 	}
+	runToSession, err := dispatchRunToSessionMap(stage)
+	if err != nil {
+		return treatmentCost{}, err
+	}
 	var agentLog string
 	switch provider {
 	case adapterGrok:
@@ -707,9 +711,18 @@ func streamProviderAttemptCost(stage, provider, model string) (treatmentCost, er
 	}
 	result := treatmentCost{providerReported: provider == adapterGrok}
 	seen := map[string]string{}
+	seenDispatchRuns := map[string]string{}
+	seenDispatchRunIDs := map[string]map[string]bool{}
 	coordinatorSessions := 0
 	for _, path := range paths {
-		id, usage, reportedCost, parseErr := parseStreamProviderUsage(path, provider)
+		isDispatchStdout := parentDirIs(path, dispatchEvidenceDir) && filepath.Ext(path) == stdoutArtifactExtension
+		runID := ""
+		fallbackID := ""
+		if isDispatchStdout {
+			runID = strings.TrimSuffix(filepath.Base(path), stdoutArtifactExtension)
+			fallbackID = runToSession[runID]
+		}
+		id, usage, reportedCost, isACP, parseErr := parseStreamProviderUsageWithFallback(path, provider, fallbackID)
 		if parseErr != nil {
 			return treatmentCost{}, parseErr
 		}
@@ -720,26 +733,68 @@ func streamProviderAttemptCost(stage, provider, model string) (treatmentCost, er
 		if marshalErr != nil {
 			return treatmentCost{}, fmt.Errorf("encode %s provider usage %q: %w", provider, id, marshalErr)
 		}
-		if previous, found := seen[id]; found {
-			// Pier can preserve a coordinator stream in its native location and
-			// copy the same artifact as <run-id>.stdout. Identical bytes are one
-			// session, while divergent evidence is an attribution failure.
-			if previous == string(encoded) {
-				continue
-			}
-			return treatmentCost{}, fmt.Errorf("%s provider usage session %q is duplicated with different usage", provider, id)
-		}
-		seen[id] = string(encoded)
 		child := false
 		if records, dispatched := dispatch[id]; dispatched {
-			if len(records) != 1 {
-				return treatmentCost{}, fmt.Errorf("%s dispatch session %q has %d records; expected exactly one", provider, id, len(records))
+			if isACP && isDispatchStdout {
+				if runID == "" {
+					return treatmentCost{}, fmt.Errorf("%s ACP dispatch stream %s is missing a run ID", provider, filepath.Base(path))
+				}
+				expectedSessionID, knownRun := runToSession[runID]
+				if !knownRun {
+					return treatmentCost{}, fmt.Errorf("%s ACP dispatch stream %s has no matching dispatch run record", provider, filepath.Base(path))
+				}
+				if expectedSessionID != id {
+					return treatmentCost{}, fmt.Errorf("%s ACP dispatch stream %s belongs to session %q, but run record expects %q", provider, filepath.Base(path), id, expectedSessionID)
+				}
+				if previous, found := seenDispatchRuns[runID]; found {
+					if previous == string(encoded) {
+						continue
+					}
+					return treatmentCost{}, fmt.Errorf("%s ACP dispatch run %q is duplicated with different usage", provider, runID)
+				}
+				for _, rec := range records {
+					if rec.state != dispatchRunStateCompleted {
+						return treatmentCost{}, fmt.Errorf("%s dispatch session %q has record in state %q, not completed", provider, id, rec.state)
+					}
+				}
+				seenDispatchRuns[runID] = string(encoded)
+				if seenDispatchRunIDs[id] == nil {
+					seenDispatchRunIDs[id] = map[string]bool{}
+				}
+				seenDispatchRunIDs[id][runID] = true
+				child = true
+			} else {
+				if previous, found := seen[id]; found {
+					if previous == string(encoded) {
+						continue
+					}
+					return treatmentCost{}, fmt.Errorf("%s provider usage session %q is duplicated with different usage", provider, id)
+				}
+				seen[id] = string(encoded)
+				if len(records) != 1 {
+					return treatmentCost{}, fmt.Errorf("%s dispatch session %q has %d records; expected exactly one", provider, id, len(records))
+				}
+				if records[0].state != dispatchRunStateCompleted {
+					return treatmentCost{}, fmt.Errorf("%s dispatch session %q is %q, not completed", provider, id, records[0].state)
+				}
+				child = true
 			}
-			if records[0].state != dispatchRunStateCompleted {
-				return treatmentCost{}, fmt.Errorf("%s dispatch session %q is %q, not completed", provider, id, records[0].state)
-			}
-			child = true
 		} else {
+			if isACP && isDispatchStdout {
+				if expectedSessionID, knownRun := runToSession[runID]; knownRun && expectedSessionID != id {
+					return treatmentCost{}, fmt.Errorf("%s ACP dispatch stream %s belongs to session %q, but run record expects %q", provider, filepath.Base(path), id, expectedSessionID)
+				}
+			}
+			if previous, found := seen[id]; found {
+				// Pier can preserve a coordinator stream in its native location and
+				// copy the same artifact as <run-id>.stdout. Identical bytes are one
+				// session, while divergent evidence is an attribution failure.
+				if previous == string(encoded) {
+					continue
+				}
+				return treatmentCost{}, fmt.Errorf("%s provider usage session %q is duplicated with different usage", provider, id)
+			}
+			seen[id] = string(encoded)
 			coordinatorSessions++
 		}
 		if reportedCost != nil {
@@ -771,7 +826,18 @@ func streamProviderAttemptCost(stage, provider, model string) (treatmentCost, er
 			result.invocations++
 		}
 	}
-	for id := range dispatch {
+	for id, records := range dispatch {
+		if seenRuns := seenDispatchRunIDs[id]; len(seenRuns) > 0 {
+			for runID, sessionID := range runToSession {
+				if sessionID == id && !seenRuns[runID] {
+					return treatmentCost{}, fmt.Errorf("%s dispatch session %q is missing captured ACP stream for run %q", provider, id, runID)
+				}
+			}
+			if len(seenRuns) != len(records) {
+				return treatmentCost{}, fmt.Errorf("%s dispatch session %q has %d completed records for %d captured ACP streams", provider, id, len(records), len(seenRuns))
+			}
+			continue
+		}
 		if _, found := seen[id]; !found {
 			return treatmentCost{}, fmt.Errorf("%s dispatch session %q has no captured provider usage evidence", provider, id)
 		}
@@ -786,17 +852,23 @@ func streamProviderAttemptCost(stage, provider, model string) (treatmentCost, er
 }
 
 type streamTokenUsage struct {
-	InputTokens          *int `json:"input_tokens"`
-	OutputTokens         *int `json:"output_tokens"`
-	CacheReadInputTokens *int `json:"cache_read_input_tokens"`
-	CacheCreationTokens  *int `json:"cache_creation_input_tokens"`
-	ReasoningTokens      *int `json:"reasoning_tokens"`
+	InputTokens            *int `json:"input_tokens"`
+	OutputTokens           *int `json:"output_tokens"`
+	CacheReadInputTokens   *int `json:"cache_read_input_tokens"`
+	CacheCreationTokens    *int `json:"cache_creation_input_tokens"`
+	ReasoningTokens        *int `json:"reasoning_tokens"`
+	InputIncludesCacheRead bool `json:"-"`
 }
 
 func parseStreamProviderUsage(path, provider string) (string, []streamTokenUsage, *float64, error) {
+	id, usage, cost, _, err := parseStreamProviderUsageWithFallback(path, provider, "")
+	return id, usage, cost, err
+}
+
+func parseStreamProviderUsageWithFallback(path, provider, fallbackSessionID string) (string, []streamTokenUsage, *float64, bool, error) {
 	file, err := os.Open(path) // #nosec G304 -- path is discovered inside the restricted stage.
 	if err != nil {
-		return "", nil, nil, err
+		return "", nil, nil, false, err
 	}
 	defer func() { _ = file.Close() }()
 	scanner := bufio.NewScanner(file)
@@ -804,6 +876,7 @@ func parseStreamProviderUsage(path, provider string) (string, []streamTokenUsage
 	var id string
 	var usage []streamTokenUsage
 	var reportedCost *float64
+	isACP := false
 	terminals := 0
 	for scanner.Scan() {
 		line := bytes.TrimSpace(scanner.Bytes())
@@ -811,6 +884,7 @@ func parseStreamProviderUsage(path, provider string) (string, []streamTokenUsage
 			continue
 		}
 		var event struct {
+			JSONRPC        string           `json:"jsonrpc"`
 			Event          string           `json:"event"`
 			Type           string           `json:"type"`
 			SessionID      string           `json:"sessionId"`
@@ -819,23 +893,102 @@ func parseStreamProviderUsage(path, provider string) (string, []streamTokenUsage
 			TotalCostUSD   *float64         `json:"total_cost_usd"`
 			Usage          streamTokenUsage `json:"usage"`
 			Result         struct {
+				SessionID      string `json:"sessionId"`
 				ConversationID string `json:"conversation_id"`
 				Status         string `json:"status"`
+				StopReason     string `json:"stopReason"`
 				Usage          struct {
 					InputTokens     *int `json:"input_tokens"`
 					OutputTokens    *int `json:"output_tokens"`
 					ThinkingTokens  *int `json:"thinking_tokens"`
 					CacheReadTokens *int `json:"cache_read_tokens"`
+					// ACP camelCase token fields
+					InputTokensCamel      *int `json:"inputTokens"`
+					OutputTokensCamel     *int `json:"outputTokens"`
+					CachedReadTokensCamel *int `json:"cachedReadTokens"`
+					CachedWriteCamel      *int `json:"cachedWriteTokens"`
+					CacheCreationCamel    *int `json:"cacheCreationTokens"`
+					ThoughtTokensCamel    *int `json:"thoughtTokens"`
+					ReasoningTokensCamel  *int `json:"reasoningTokens"`
 				} `json:"usage"`
+				Meta struct {
+					SessionID string `json:"sessionId"`
+					Usage     struct {
+						InputTokens         *int   `json:"inputTokens"`
+						OutputTokens        *int   `json:"outputTokens"`
+						CachedReadTokens    *int   `json:"cachedReadTokens"`
+						CacheCreationTokens *int   `json:"cacheCreationTokens"`
+						CachedWriteTokens   *int   `json:"cachedWriteTokens"`
+						ReasoningTokens     *int   `json:"reasoningTokens"`
+						ThoughtTokens       *int   `json:"thoughtTokens"`
+						CostUSDTicks        *int64 `json:"costUsdTicks"`
+					} `json:"usage"`
+				} `json:"_meta"`
 			} `json:"result"`
 		}
 		if err := json.Unmarshal(line, &event); err != nil {
-			return "", nil, nil, fmt.Errorf("decode %s usage %s: %w", provider, filepath.Base(path), err)
+			return "", nil, nil, false, fmt.Errorf("decode %s usage %s: %w", provider, filepath.Base(path), err)
+		}
+		if event.JSONRPC == "2.0" {
+			isACP = true
+			if event.Result.SessionID != "" && id == "" {
+				id = event.Result.SessionID
+			}
+			if event.Result.Meta.SessionID != "" && id == "" {
+				id = event.Result.Meta.SessionID
+			}
+			if event.Result.StopReason != "" {
+				if event.Result.StopReason != "end_turn" {
+					return "", nil, nil, true, fmt.Errorf("%s usage %s ended with %q", provider, filepath.Base(path), event.Result.StopReason)
+				}
+				terminals++
+				switch {
+				case event.Result.Meta.Usage.InputTokens != nil:
+					cacheCreation := event.Result.Meta.Usage.CacheCreationTokens
+					if cacheCreation == nil {
+						cacheCreation = event.Result.Meta.Usage.CachedWriteTokens
+					}
+					reasoning := event.Result.Meta.Usage.ReasoningTokens
+					if reasoning == nil {
+						reasoning = event.Result.Meta.Usage.ThoughtTokens
+					}
+					usage = append(usage, streamTokenUsage{
+						InputTokens:            event.Result.Meta.Usage.InputTokens,
+						OutputTokens:           event.Result.Meta.Usage.OutputTokens,
+						CacheReadInputTokens:   event.Result.Meta.Usage.CachedReadTokens,
+						CacheCreationTokens:    cacheCreation,
+						ReasoningTokens:        reasoning,
+						InputIncludesCacheRead: true,
+					})
+					if event.Result.Meta.Usage.CostUSDTicks != nil {
+						cost := float64(*event.Result.Meta.Usage.CostUSDTicks) / 1e10
+						reportedCost = &cost
+					}
+				case event.Result.Usage.InputTokensCamel != nil:
+					cacheCreation := event.Result.Usage.CachedWriteCamel
+					if cacheCreation == nil {
+						cacheCreation = event.Result.Usage.CacheCreationCamel
+					}
+					reasoning := event.Result.Usage.ThoughtTokensCamel
+					if reasoning == nil {
+						reasoning = event.Result.Usage.ReasoningTokensCamel
+					}
+					usage = append(usage, streamTokenUsage{
+						InputTokens:            event.Result.Usage.InputTokensCamel,
+						OutputTokens:           event.Result.Usage.OutputTokensCamel,
+						CacheReadInputTokens:   event.Result.Usage.CachedReadTokensCamel,
+						CacheCreationTokens:    cacheCreation,
+						ReasoningTokens:        reasoning,
+						InputIncludesCacheRead: true,
+					})
+				}
+			}
+			continue
 		}
 		switch provider {
 		case adapterGrok:
 			if terminals > 0 {
-				return "", nil, nil, fmt.Errorf("grok usage %s has records after the terminal end event", filepath.Base(path))
+				return "", nil, nil, false, fmt.Errorf("grok usage %s has records after the terminal end event", filepath.Base(path))
 			}
 			if event.Type == "usage" {
 				usage = append(usage, event.Usage)
@@ -848,7 +1001,7 @@ func parseStreamProviderUsage(path, provider string) (string, []streamTokenUsage
 					id = event.SessionIDSnake
 				}
 				if event.StopReason != "end_turn" {
-					return "", nil, nil, fmt.Errorf("grok usage %s ended with %q", filepath.Base(path), event.StopReason)
+					return "", nil, nil, false, fmt.Errorf("grok usage %s ended with %q", filepath.Base(path), event.StopReason)
 				}
 			}
 		case adapterAntigravity:
@@ -856,7 +1009,7 @@ func parseStreamProviderUsage(path, provider string) (string, []streamTokenUsage
 				terminals++
 				id = event.Result.ConversationID
 				if event.Result.Status != "SUCCESS" {
-					return "", nil, nil, fmt.Errorf("antigravity usage %s ended with %q", filepath.Base(path), event.Result.Status)
+					return "", nil, nil, false, fmt.Errorf("antigravity usage %s ended with %q", filepath.Base(path), event.Result.Status)
 				}
 				zero := 0
 				usage = append(usage, streamTokenUsage{
@@ -868,16 +1021,19 @@ func parseStreamProviderUsage(path, provider string) (string, []streamTokenUsage
 				})
 			}
 		default:
-			return "", nil, nil, fmt.Errorf("unsupported stream cost provider %q", provider)
+			return "", nil, nil, false, fmt.Errorf("unsupported stream cost provider %q", provider)
 		}
 	}
 	if err := scanner.Err(); err != nil {
-		return "", nil, nil, err
+		return "", nil, nil, isACP, err
+	}
+	if id == "" {
+		id = fallbackSessionID
 	}
 	if terminals != 1 || id == "" || len(usage) == 0 {
-		return "", nil, nil, fmt.Errorf("%s usage %s has no single successful terminal event with usage", provider, filepath.Base(path))
+		return "", nil, nil, isACP, fmt.Errorf("%s usage %s has no single successful terminal event with usage", provider, filepath.Base(path))
 	}
-	return id, usage, reportedCost, nil
+	return id, usage, reportedCost, isACP, nil
 }
 
 func priceStreamRequest(label, provider, model string, usage streamTokenUsage, pricing benchmarkPricing) (costRange, error) {
@@ -906,17 +1062,21 @@ func priceStreamRequest(label, provider, model string, usage streamTokenUsage, p
 		return costRange{}, fmt.Errorf("%s usage %s has invalid reasoning tokens", provider, label)
 	}
 	ordinaryInput := *usage.InputTokens
-	if provider == adapterAntigravity {
+	if provider == adapterAntigravity || usage.InputIncludesCacheRead {
 		if cacheRead > ordinaryInput {
 			return costRange{}, fmt.Errorf("%s usage %s has more cached than total input tokens", provider, label)
 		}
 		ordinaryInput -= cacheRead
+		if creation > ordinaryInput {
+			return costRange{}, fmt.Errorf("%s usage %s has more cached than total input tokens", provider, label)
+		}
+		ordinaryInput -= creation
 	}
-	// Grok reports ordinary input and cache reads separately; Antigravity's
-	// input total includes its cache reads. Cache
-	// creation is charged at the ordinary-input rate; it is not subtracted from
-	// input and it is never double counted. Their documented reasoning usage is
-	// a subset of output, so it is validated but not priced separately.
+	// Legacy Grok CLI reports ordinary input and cache reads separately, while
+	// Antigravity and Grok ACP report input totals that include cache reads and
+	// cache creation tokens. Both are subtracted so cache creation is priced
+	// once at its configured rate and never double counted. Their documented
+	// reasoning usage is a subset of output, so it is validated but not priced separately.
 	return priceUsageBands(provider, label, entry, ordinaryInput, cacheRead, creation, *usage.OutputTokens, contextKnown, pricing.UnitTokens)
 }
 
@@ -1051,6 +1211,36 @@ func dispatchProviderSessions(stage string) (map[string][]dispatchProviderSessio
 		return nil
 	})
 	return sessions, err
+}
+
+func dispatchRunToSessionMap(stage string) (map[string]string, error) {
+	mapping := make(map[string]string)
+	err := walkStageJobFiles(stage, false, func(path string, entry fs.DirEntry) error {
+		if !isDispatchRecord(path, entry) {
+			return nil
+		}
+		data, err := os.ReadFile(path) // #nosec G122,G304 -- path was discovered below the restricted attempt stage.
+		if err != nil {
+			return err
+		}
+		var record struct {
+			ID                string `json:"id"`
+			ProviderSessionID string `json:"provider_session_id"`
+		}
+		if err := json.Unmarshal(data, &record); err != nil {
+			return err
+		}
+		if record.ProviderSessionID == "" {
+			return nil
+		}
+		runID := record.ID
+		if runID == "" {
+			runID = strings.TrimSuffix(entry.Name(), ".json")
+		}
+		mapping[runID] = record.ProviderSessionID
+		return nil
+	})
+	return mapping, err
 }
 
 func isDispatchPreflightEvidence(name string) bool {

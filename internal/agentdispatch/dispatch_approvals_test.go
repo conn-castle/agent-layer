@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/conn-castle/agent-layer/internal/clients"
 	"github.com/conn-castle/agent-layer/internal/clients/grok"
 	"github.com/conn-castle/agent-layer/internal/config"
 )
@@ -25,9 +26,8 @@ func loadApprovalsTestProject(t *testing.T, root string) *config.ProjectConfig {
 	return project
 }
 
-// dispatchArgsForMode builds one provider command for the given approvals mode
-// and returns its argv joined for substring assertions.
-func dispatchArgsForMode(t *testing.T, agent string, mode string, dispatchMode string) string {
+// dispatchCommandForMode builds one provider command for the given approvals mode.
+func dispatchCommandForMode(t *testing.T, agent string, mode string, dispatchMode string) providerCommand {
 	t.Helper()
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	project := loadApprovalsTestProject(t, root)
@@ -44,7 +44,14 @@ func dispatchArgsForMode(t *testing.T, agent string, mode string, dispatchMode s
 	if err != nil {
 		t.Fatalf("build %s command: %v", agent, err)
 	}
-	return strings.Join(command.Args, " ")
+	return command
+}
+
+// dispatchArgsForMode builds one provider command for the given approvals mode
+// and returns its argv joined for substring assertions.
+func dispatchArgsForMode(t *testing.T, agent string, mode string, dispatchMode string) string {
+	t.Helper()
+	return strings.Join(dispatchCommandForMode(t, agent, mode, dispatchMode).Args, " ")
 }
 
 // TestDispatchGrantsWriteCapabilityOnlyWhenCommandsAreApproved pins the headless
@@ -58,12 +65,12 @@ func TestDispatchGrantsWriteCapabilityOnlyWhenCommandsAreApproved(t *testing.T) 
 		codexSandbox   string
 		claudePermMode string
 		grokSandbox    string
-		grokPermMode   string
+		allowCommands  bool
 	}{
-		{config.ApprovalModeNone, config.CodexSandboxReadOnly, claudePermissionModeDontAsk, grok.SandboxReadOnly, "dontAsk"},
-		{config.ApprovalModeMCP, config.CodexSandboxReadOnly, claudePermissionModeDontAsk, grok.SandboxReadOnly, "dontAsk"},
-		{config.ApprovalModeCommands, config.CodexSandboxWorkspaceWrite, claudePermissionModeAcceptEdits, grok.SandboxWorkspace, "acceptEdits"},
-		{config.ApprovalModeAll, config.CodexSandboxWorkspaceWrite, claudePermissionModeAcceptEdits, grok.SandboxWorkspace, "acceptEdits"},
+		{config.ApprovalModeNone, config.CodexSandboxReadOnly, claudePermissionModeDontAsk, grok.SandboxReadOnly, false},
+		{config.ApprovalModeMCP, config.CodexSandboxReadOnly, claudePermissionModeDontAsk, grok.SandboxReadOnly, false},
+		{config.ApprovalModeCommands, config.CodexSandboxWorkspaceWrite, claudePermissionModeAcceptEdits, grok.SandboxWorkspace, true},
+		{config.ApprovalModeAll, config.CodexSandboxWorkspaceWrite, claudePermissionModeAcceptEdits, grok.SandboxWorkspace, true},
 	}
 	for _, testCase := range cases {
 		for _, dispatchMode := range []string{dispatchModeFresh, dispatchModeResume} {
@@ -85,14 +92,16 @@ func TestDispatchGrantsWriteCapabilityOnlyWhenCommandsAreApproved(t *testing.T) 
 				t.Errorf("Claude %s/%s args %q skipped permissions outside yolo", testCase.mode, dispatchMode, claudeArgs)
 			}
 
-			grokArgs := dispatchArgsForMode(t, AgentGrok, testCase.mode, dispatchMode)
-			wantGrokSandbox := "--sandbox " + testCase.grokSandbox
-			if !strings.Contains(grokArgs, wantGrokSandbox) {
-				t.Errorf("Grok %s/%s args %q omitted %q", testCase.mode, dispatchMode, grokArgs, wantGrokSandbox)
+			grokCmd := dispatchCommandForMode(t, AgentGrok, testCase.mode, dispatchMode)
+			gotSandbox, _ := clients.GetEnv(grokCmd.Env, grokSandboxEnv)
+			if gotSandbox != testCase.grokSandbox {
+				t.Errorf("Grok %s/%s GROK_SANDBOX=%q, want %q", testCase.mode, dispatchMode, gotSandbox, testCase.grokSandbox)
 			}
-			wantGrokMode := "--permission-mode " + testCase.grokPermMode
-			if !strings.Contains(grokArgs, wantGrokMode) {
-				t.Errorf("Grok %s/%s args %q omitted %q", testCase.mode, dispatchMode, grokArgs, wantGrokMode)
+			if !grokCmd.UseACP || grokCmd.ACP == nil || grokCmd.ACP.AllowCommands != testCase.allowCommands {
+				t.Errorf("Grok %s/%s ACP config = %#v, want AllowCommands=%t", testCase.mode, dispatchMode, grokCmd.ACP, testCase.allowCommands)
+			}
+			if slices.Contains(grokCmd.Args, "--always-approve") {
+				t.Errorf("Grok %s/%s passed --always-approve outside yolo: %v", testCase.mode, dispatchMode, grokCmd.Args)
 			}
 
 			museArgs := dispatchArgsForMode(t, AgentMuse, testCase.mode, dispatchMode)
@@ -135,12 +144,12 @@ func TestYOLODispatchKeepsFullBypassWithoutSandboxDowngrade(t *testing.T) {
 			t.Errorf("Claude yolo/%s args %q constrained a full bypass", dispatchMode, claudeArgs)
 		}
 
-		grokArgs := dispatchArgsForMode(t, AgentGrok, config.ApprovalModeYOLO, dispatchMode)
-		if !strings.Contains(grokArgs, "--permission-mode bypassPermissions --always-approve") {
-			t.Errorf("Grok yolo/%s args %q dropped the bypass flags", dispatchMode, grokArgs)
+		grokCmd := dispatchCommandForMode(t, AgentGrok, config.ApprovalModeYOLO, dispatchMode)
+		if !slices.Contains(grokCmd.Args, "--always-approve") {
+			t.Errorf("Grok yolo/%s args %v dropped --always-approve", dispatchMode, grokCmd.Args)
 		}
-		if strings.Contains(grokArgs, "--sandbox") {
-			t.Errorf("Grok yolo/%s args %q set a sandbox", dispatchMode, grokArgs)
+		if gotSandbox, present := clients.GetEnv(grokCmd.Env, grokSandboxEnv); present && gotSandbox != "" {
+			t.Errorf("Grok yolo/%s set GROK_SANDBOX=%q", dispatchMode, gotSandbox)
 		}
 
 		museArgs := dispatchArgsForMode(t, AgentMuse, config.ApprovalModeYOLO, dispatchMode)
@@ -238,8 +247,8 @@ func TestClaudeDispatchDeliversApprovalsOnCommandLine(t *testing.T) {
 	}
 }
 
-// TestGrokDispatchKeepsConfiguredMCPServerIDs keeps Grok's --allow rules on
-// the configured ID; Claude's server-name normalization is unconfirmed for Grok.
+// TestGrokDispatchKeepsConfiguredMCPServerIDs verifies Grok ACP retains
+// configured project MCP server IDs verbatim for permission matching.
 func TestGrokDispatchKeepsConfiguredMCPServerIDs(t *testing.T) {
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	project := loadApprovalsTestProject(t, root)
@@ -261,8 +270,8 @@ func TestGrokDispatchKeepsConfiguredMCPServerIDs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("build Grok command: %v", err)
 	}
-	if !argPairPresent(command.Args, "--allow", "mcp__docs.internal__*") {
-		t.Errorf("Grok args %v omitted --allow mcp__docs.internal__*", command.Args)
+	if !command.UseACP || command.ACP == nil || !command.ACP.AllowMCP || !slices.Contains(command.ACP.ProjectMCPServers, "docs.internal") {
+		t.Errorf("Grok ACP config %#v omitted AllowMCP/docs.internal", command.ACP)
 	}
 }
 

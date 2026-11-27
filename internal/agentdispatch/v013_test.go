@@ -2,6 +2,8 @@ package agentdispatch
 
 import (
 	"bytes"
+	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -210,13 +212,13 @@ func TestAntigravityPlainOutputIsRejected(t *testing.T) {
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	binDir := t.TempDir()
 	path := filepath.Join(binDir, "agy")
-	stub := `#!/bin/sh
+	stub := fmt.Sprintf(`#!/bin/sh
 if [ "${1:-}" = "--version" ]; then
-  printf '1.1.21\n'
+  printf '%s\n'
   exit 0
 fi
 printf 'answer without a provider id'
-`
+`, supportedProviderVersions[AgentAntigravity])
 	if err := os.WriteFile(path, []byte(stub), 0o700); err != nil { // #nosec G306 -- test-controlled provider stub.
 		t.Fatalf("write agy stub: %v", err)
 	}
@@ -263,13 +265,13 @@ func TestAntigravityResumePlainOutputFailsAndRetainsDurableMapping(t *testing.T)
 
 	binDir := t.TempDir()
 	path := filepath.Join(binDir, "agy")
-	stub := `#!/bin/sh
+	stub := fmt.Sprintf(`#!/bin/sh
 if [ "${1:-}" = "--version" ]; then
-  printf '1.1.21\n'
+  printf '%s\n'
   exit 0
 fi
 printf 'resumed answer without a provider id'
-`
+`, supportedProviderVersions[AgentAntigravity])
 	if err := os.WriteFile(path, []byte(stub), 0o700); err != nil { // #nosec G306 -- test-controlled provider stub.
 		t.Fatalf("write agy stub: %v", err)
 	}
@@ -335,10 +337,9 @@ func TestAntigravityStructuredResumeReturnsPlainAnswerAndRetainsDurableMapping(t
 	if resumeOut.String() != "agy ok" {
 		t.Fatalf("resume stdout = %q", resumeOut.String())
 	}
-	assertFileContains(t, logPath, "ARG_3=--conversation")
-	assertFileContains(t, logPath, "ARG_4=22222222-2222-4222-8222-222222222222")
-	assertFileContains(t, logPath, "ARG_5=--output-format")
-	assertFileContains(t, logPath, "ARG_6=stream-json")
+	assertFileContains(t, logPath, "ARG_0=acp")
+	assertFileContains(t, logPath, "ARG_1=--stdio")
+	assertFileHasACPSessionResume(t, logPath, "22222222-2222-4222-8222-222222222222")
 
 	retained, err := loadSession(root, name)
 	if err != nil {
@@ -347,6 +348,30 @@ func TestAntigravityStructuredResumeReturnsPlainAnswerAndRetainsDurableMapping(t
 	if retained.ProviderSessionID != "22222222-2222-4222-8222-222222222222" || retained.State != "durable" {
 		t.Fatalf("retained session = %#v", retained)
 	}
+}
+
+func assertFileHasACPSessionResume(t *testing.T, path string, wantSessionID string) {
+	t.Helper()
+	data, err := os.ReadFile(path) // #nosec G304 -- test-owned provider log path.
+	if err != nil {
+		t.Fatalf("read %s: %v", path, err)
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		trimmed := strings.TrimPrefix(strings.TrimSpace(line), "ACP=")
+		if !strings.HasPrefix(trimmed, "{") {
+			continue
+		}
+		var req struct {
+			Method string `json:"method"`
+			Params struct {
+				SessionID string `json:"sessionId"`
+			} `json:"params"`
+		}
+		if json.Unmarshal([]byte(trimmed), &req) == nil && req.Method == acpMethodSessionResume && req.Params.SessionID == wantSessionID {
+			return
+		}
+	}
+	t.Fatalf("%s missing JSON-RPC session/resume request with params.sessionId=%q:\n%s", path, wantSessionID, string(data))
 }
 
 func TestSupportedVersionFixturesReduceOnlyRequiredEvents(t *testing.T) {
@@ -380,14 +405,5 @@ func TestSupportedVersionFixturesReduceOnlyRequiredEvents(t *testing.T) {
 	}
 	if len(codexEvents) != 3 || codexEvents[0].SessionID != "22222222-2222-4222-8222-222222222222" || codexEvents[1].Answer != "Codex final answer." || codexEvents[2].Kind != eventComplete {
 		t.Fatalf("Codex events = %#v", codexEvents)
-	}
-
-	logPath := filepath.Join("testdata", "antigravity", "v0.13-1.1.1.log")
-	id, err := antigravitySessionID(logPath)
-	if err != nil {
-		t.Fatalf("extract Antigravity fixture ID: %v", err)
-	}
-	if id != "33333333-3333-4333-8333-333333333333" {
-		t.Fatalf("Antigravity ID = %q", id)
 	}
 }

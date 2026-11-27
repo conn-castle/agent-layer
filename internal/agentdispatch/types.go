@@ -112,16 +112,27 @@ func notFoundExitError(message string, sentinel error) *ExitError {
 	return &ExitError{Code: ExitUsage, Message: message, Err: sentinel, classifyOnly: true}
 }
 
+// SessionMCPServer defines one stdio MCP server scoped to a single dispatched
+// conversation. It is persisted on the conversation mapping so every subsequent
+// continuation receives the identical server names and definitions.
+type SessionMCPServer struct {
+	Name    string            `json:"name"`
+	Command string            `json:"command"`
+	Args    []string          `json:"args,omitempty"`
+	Env     map[string]string `json:"env,omitempty"`
+}
+
 // runOptions carries one prepared invocation's target and override inputs
 // between Start/Continue and the shared preparation helpers.
 type runOptions struct {
-	Root            string
-	WorkDir         string
-	Model           string
-	ReasoningEffort string
-	Skill           string
-	Prompt          string
-	LookPath        func(string) (string, error)
+	Root              string
+	WorkDir           string
+	Model             string
+	ReasoningEffort   string
+	Skill             string
+	Prompt            string
+	SessionMCPServers []SessionMCPServer
+	LookPath          func(string) (string, error)
 	// VersionLookup reads the installed provider version. Production uses the
 	// provider's --version output; tests may inject exact fixture evidence.
 	VersionLookup func(path string, agent string) (string, error)
@@ -145,6 +156,12 @@ type StartOptions struct {
 	Skill           string
 	Prompt          string
 	PromptFile      string
+	// MCPConfigs lists paths to JSON files defining session-scoped stdio MCP
+	// servers (`{"mcpServers": {...}}`). CLI-only; persisted on the conversation.
+	MCPConfigs []string
+	// SessionMCPServers supplies already-parsed session-scoped stdio MCP servers
+	// directly for programmatic callers and tests. Merged with MCPConfigs.
+	SessionMCPServers []SessionMCPServer
 	// Reservation, when set, launches an `al dispatch reserve` record (by
 	// its returned conversation name) instead of creating a new conversation. A set
 	// but empty selector names no reservation and launches nothing.

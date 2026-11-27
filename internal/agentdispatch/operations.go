@@ -1,6 +1,7 @@
 package agentdispatch
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -14,7 +15,7 @@ func tryReconcileOrphan(root string, record RunRecord) (RunRecord, error) {
 	var next RunRecord
 	acquired, err := tryWithRunLock(dir, func() error {
 		updated, applyErr := applyRunEvidenceLocked(dir, func(current *RunRecord) error {
-			reconcileOrphanLocked(current, time.Now().UTC())
+			reconcileOrphanLocked(dir, current, time.Now().UTC())
 			return nil
 		})
 		if applyErr != nil {
@@ -44,6 +45,12 @@ func tryReconcileOrphan(root string, record RunRecord) (RunRecord, error) {
 		}
 	}
 	if next.TerminationConfirmed {
+		if removeErr := removeSessionMCPArtifacts(dir); removeErr != nil {
+			return next, removeErr
+		}
+		if removeErr := removeSessionMCPRuntimeDir(dir); removeErr != nil {
+			return next, removeErr
+		}
 		if releaseErr := tryReleaseIfConfirmed(root, next); releaseErr != nil {
 			return next, releaseErr
 		}
@@ -53,7 +60,7 @@ func tryReconcileOrphan(root string, record RunRecord) (RunRecord, error) {
 
 // reconcileOrphanLocked transitions an expired reservation or provably dead
 // invocation to a terminal state under its run lock.
-func reconcileOrphanLocked(current *RunRecord, now time.Time) {
+func reconcileOrphanLocked(dir string, current *RunRecord, now time.Time) {
 	if current.State == dispatchStateReserved {
 		// A reservation has no worker or provider to reconcile; its
 		// recorded launcher is the reserve command, which exits at once.
@@ -61,26 +68,32 @@ func reconcileOrphanLocked(current *RunRecord, now time.Time) {
 		return
 	}
 	if terminalDispatchState(current.State) {
-		applyTerminationEvidence(current, nil, true, now)
+		applyTerminationEvidenceInDir(dir, current, nil, true, now)
 		return
 	}
 	if invocationOwnership(*current) != ownershipDead {
 		return
 	}
 	if current.ProviderLaunchIntent && current.PID == 0 && current.ProcessStartIdentity == "" {
-		applyTerminationEvidence(current, nil, false, now)
+		applyTerminationEvidenceInDir(dir, current, nil, false, now)
 		current.TerminationObservation = terminationObservationUncertainLaunch
 		return
 	}
 	if current.PID != 0 || current.ProcessGroupID != 0 {
 		if !providerProcessGroupDead(current.ProcessGroupID) && !providerProcessGroupReused(*current) {
 			liveGroupErr := exitError(ExitUnavailable, fmt.Sprintf("dispatch run %s lost its worker and provider leader but process group %d remains; cannot prove termination, so the active claim is retained; inspect surviving processes and verify their ownership before manual recovery (do not signal a group by ID alone)", current.ID, current.ProcessGroupID))
-			applyTerminationEvidence(current, liveGroupErr, false, now)
+			applyTerminationEvidenceInDir(dir, current, liveGroupErr, false, now)
 			current.TerminationObservation = terminationObservationGroupLive
 			return
 		}
 	} else if !usesLaunchIntentProtocol(*current) {
-		applyTerminationEvidence(current, nil, false, now)
+		applyTerminationEvidenceInDir(dir, current, nil, false, now)
+		return
+	}
+	if !trySessionMCPProcessesStoppedAndFenced(dir, true) {
+		liveMCPErr := exitError(ExitUnavailable, fmt.Sprintf("dispatch run %s lost its worker and provider leader but one or more session MCP server processes remain live; cannot prove termination, so the active claim is retained", current.ID))
+		applyTerminationEvidenceInDir(dir, current, liveMCPErr, false, now)
+		current.TerminationObservation = terminationObservationGroupLive
 		return
 	}
 	current.State = dispatchStateFailed
@@ -98,7 +111,7 @@ func reconcileOrphanLocked(current *RunRecord, now time.Time) {
 		current.RecoveryState = recoveryRetrySafe
 	}
 	current.TerminalExitCode = ExitTargetFailure
-	applyTerminationEvidence(current, nil, true, now)
+	applyTerminationEvidenceInDir(dir, current, nil, true, now)
 }
 
 func freshContinuationBeforeProviderLaunch(record RunRecord) bool {
@@ -198,10 +211,11 @@ func Cancel(request CancelRequest) error {
 		return err
 	}
 	if alreadyConfirmedCancelled {
-		if cancelledUnstartedFreshContinuation(record) {
-			if err := releaseIfConfirmed(request.Root, record); err != nil {
-				return err
-			}
+		runDir := filepathForRun(request.Root, record.ID)
+		_ = removeSessionMCPArtifacts(runDir)
+		_ = removeSessionMCPRuntimeDir(runDir)
+		if err := releaseIfConfirmed(request.Root, record); err != nil {
+			return err
 		}
 		result := publicResult(record)
 		result.Error = ""
@@ -211,20 +225,32 @@ func Cancel(request CancelRequest) error {
 	if ownedGroup != nil {
 		terminateErr = ownedGroup.terminateReverified(providerTerminationGrace)
 	}
+	runDir := filepathForRun(request.Root, record.ID)
+	if sessionMCPErr := closeAndTerminateSessionMCPProcesses(runDir, providerTerminationGrace); sessionMCPErr != nil {
+		terminateErr = errors.Join(terminateErr, sessionMCPErr)
+	}
 	confirm := terminateErr == nil
-	updated, persistErr := persistTerminationEvidence(filepathForRun(request.Root, record.ID), terminateErr, confirm)
+	updated, persistErr := persistTerminationEvidence(runDir, terminateErr, confirm)
 	if persistErr != nil {
 		return persistErr
 	}
 	record = updated
 	if terminateErr != nil {
-		if ownershipForIdentity(record.PID, record.ProcessStartIdentity) != ownershipDead || !providerProcessGroupDead(record.ProcessGroupID) {
+		if ownershipForIdentity(record.PID, record.ProcessStartIdentity) != ownershipDead || !providerProcessGroupDead(record.ProcessGroupID) || !sessionMCPProcessesStopped(runDir) {
 			_ = writeJSONResult(writerOrDiscard(request.Stdout), publicResult(record))
 			return wrapExitError(ExitTargetFailure, "cancel dispatch process group", terminateErr)
 		}
-		record, persistErr = persistTerminationEvidence(filepathForRun(request.Root, record.ID), terminateErr, true)
+		record, persistErr = persistTerminationEvidence(runDir, terminateErr, true)
 		if persistErr != nil {
 			return persistErr
+		}
+	}
+	if record.TerminationConfirmed {
+		if removeErr := removeSessionMCPArtifacts(runDir); removeErr != nil {
+			return removeErr
+		}
+		if removeErr := removeSessionMCPRuntimeDir(runDir); removeErr != nil {
+			return removeErr
 		}
 	}
 	if err := releaseIfConfirmed(request.Root, record); err != nil {
@@ -281,7 +307,7 @@ func beginCancellation(root string, id string) (RunRecord, *ownedProviderProcess
 			switch current.State {
 			case dispatchStateCancelled, dispatchStateFailed, dispatchStateInterrupted:
 				candidate := current
-				if applyTerminationConfirmation(&candidate, time.Now().UTC()) {
+				if applyTerminationConfirmationInDir(dir, &candidate, time.Now().UTC()) {
 					updated, updateErr := applyRunEvidenceLocked(dir, func(record *RunRecord) error {
 						*record = candidate
 						return nil
@@ -289,7 +315,14 @@ func beginCancellation(root string, id string) (RunRecord, *ownedProviderProcess
 					record = updated
 					return updateErr
 				}
-				group, groupErr := cancellationProcessGroup(current)
+				// If the provider already stopped and only tracked session MCP
+				// processes remain live, allow Cancel to terminate them.
+				if !sessionMCPProcessesStopped(dir) &&
+					(current.PID == 0 || ownershipForIdentity(current.PID, current.ProcessStartIdentity) == ownershipDead) &&
+					(providerProcessGroupDead(current.ProcessGroupID) || providerProcessGroupReused(current)) {
+					return nil
+				}
+				group, groupErr := cancellationProcessGroup(dir, current)
 				if groupErr != nil {
 					current.TerminationAttemptError = groupErr.Error()
 					current.Revision++
@@ -311,8 +344,16 @@ func beginCancellation(root string, id string) (RunRecord, *ownedProviderProcess
 		}
 		switch {
 		case current.State == dispatchStateRunning && current.PID != 0:
-			group, groupErr := cancellationProcessGroup(current)
+			group, groupErr := cancellationProcessGroup(dir, current)
 			if groupErr != nil {
+				// If the provider leader and its process group are already dead
+				// and only tracked session MCP processes remain live, allow Cancel
+				// to transition to cancelled and terminate those MCP groups.
+				if !sessionMCPProcessesStopped(dir) &&
+					ownershipForIdentity(current.PID, current.ProcessStartIdentity) == ownershipDead &&
+					(providerProcessGroupDead(current.ProcessGroupID) || providerProcessGroupReused(current)) {
+					break
+				}
 				return wrapExitError(ExitUnavailable, fmt.Sprintf("dispatch run %s has no live owned process to cancel", current.ID), groupErr)
 			}
 			ownedGroup = group
@@ -350,12 +391,12 @@ func beginCancellation(root string, id string) (RunRecord, *ownedProviderProcess
 	return record, ownedGroup, alreadyConfirmedCancelled, err
 }
 
-func cancellationProcessGroup(record RunRecord) (*ownedProviderProcessGroup, error) {
+func cancellationProcessGroup(dir string, record RunRecord) (*ownedProviderProcessGroup, error) {
 	// Prove the original group and provider stopped without obtaining a signal
 	// capability. A live submitter may still publish a valid result after provider
 	// exit. Fence only this copy until cancellation is accepted.
 	candidate := record
-	if submittersGone(record) && applyTerminationConfirmation(&candidate, time.Now().UTC()) {
+	if submittersGone(record) && applyTerminationConfirmationInDir(dir, &candidate, time.Now().UTC()) {
 		return nil, nil
 	}
 	group, err := verifiedProviderProcessGroup(record)

@@ -88,6 +88,14 @@ func observeTermination(record RunRecord) (confirmed bool, observation string, p
 	return true, "", terminationProofPrelaunchNoIntent
 }
 
+func observeTerminationInDir(dir string, record RunRecord) (confirmed bool, observation string, proof string) {
+	confirmed, observation, proof = observeTermination(record)
+	if confirmed && dir != "" && !trySessionMCPProcessesStoppedAndFenced(dir, true) {
+		return false, terminationObservationGroupLive, ""
+	}
+	return confirmed, observation, proof
+}
+
 func applyLaunchFence(record *RunRecord) {
 	record.LaunchFenced = true
 }
@@ -101,11 +109,11 @@ func applyTerminationObservation(record *RunRecord, observation string, attemptE
 	}
 }
 
-func applyTerminationConfirmation(record *RunRecord, now time.Time) bool {
+func applyTerminationConfirmationInDir(dir string, record *RunRecord, now time.Time) bool {
 	if usesLaunchIntentProtocol(*record) {
 		applyLaunchFence(record)
 	}
-	confirmed, observation, proof := observeTermination(*record)
+	confirmed, observation, proof := observeTerminationInDir(dir, *record)
 	if observation != "" {
 		record.TerminationObservation = observation
 	}
@@ -123,25 +131,25 @@ func applyTerminationConfirmation(record *RunRecord, now time.Time) bool {
 	return true
 }
 
-func applyTerminationEvidence(record *RunRecord, attemptErr error, confirm bool, now time.Time) {
+func applyTerminationEvidenceInDir(dir string, record *RunRecord, attemptErr error, confirm bool, now time.Time) {
 	if attemptErr != nil {
 		record.TerminationAttemptError = attemptErr.Error()
 	}
 	if confirm {
-		applyTerminationConfirmation(record, now)
+		applyTerminationConfirmationInDir(dir, record, now)
 		return
 	}
 	if usesLaunchIntentProtocol(*record) {
 		applyLaunchFence(record)
 	}
-	_, observation, _ := observeTermination(*record)
+	_, observation, _ := observeTerminationInDir(dir, *record)
 	applyTerminationObservation(record, observation, attemptErr)
 }
 
 func persistTerminationEvidence(dir string, attemptErr error, confirm bool) (RunRecord, error) {
 	now := time.Now().UTC()
 	return updateRunEvidence(dir, func(current *RunRecord) error {
-		applyTerminationEvidence(current, attemptErr, confirm, now)
+		applyTerminationEvidenceInDir(dir, current, attemptErr, confirm, now)
 		return nil
 	})
 }

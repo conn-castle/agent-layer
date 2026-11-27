@@ -11,6 +11,7 @@ import (
 
 	"github.com/conn-castle/agent-layer/internal/clients"
 	"github.com/conn-castle/agent-layer/internal/config"
+	"github.com/conn-castle/agent-layer/internal/musepolicy"
 	"github.com/conn-castle/agent-layer/internal/sync"
 )
 
@@ -162,6 +163,9 @@ func continueReservation(opts ContinueOptions) error {
 	if err != nil {
 		return reportReservationChangeOrErr(opts.Root, record.ID, err)
 	}
+	if err := hydrateSessionMCPServers(opts.Root, &session); err != nil {
+		return reportReservationChangeOrErr(opts.Root, record.ID, err)
+	}
 	if opts.beforeProvider != nil {
 		release, err := opts.beforeProvider(opts.Context, target.Name)
 		if err != nil {
@@ -170,7 +174,7 @@ func continueReservation(opts ContinueOptions) error {
 		defer release()
 	}
 	project, target, version, prompt, err := prepareStart(runOptions{
-		Root: opts.Root, WorkDir: opts.WorkDir, Prompt: promptText,
+		Root: opts.Root, WorkDir: opts.WorkDir, Prompt: promptText, SessionMCPServers: session.SessionMCPServers,
 		LookPath: opts.LookPath, VersionLookup: opts.VersionLookup,
 	}, target, stderr, depth)
 	if err != nil {
@@ -231,7 +235,11 @@ func startReservation(opts StartOptions, requested targetMeta, promptText string
 	if record.State != dispatchStateReserved {
 		return reportClaimedReservation(record)
 	}
-	project, target, version, prompt, err := prepareStart(opts.runOptions(promptText), requested, stderr, depth)
+	sessionMCP, err := resolveSessionMCPServers(opts.MCPConfigs, opts.SessionMCPServers)
+	if err != nil {
+		return err
+	}
+	project, target, version, prompt, err := prepareStart(opts.runOptions(promptText, sessionMCP), requested, stderr, depth)
 	if err != nil {
 		return err
 	}
@@ -260,7 +268,7 @@ func startReservation(opts StartOptions, requested targetMeta, promptText string
 		return reportClaimedReservation(record)
 	}
 	run := &dispatchRun{Record: record, Dir: filepathForRun(opts.Root, record.ID)}
-	session, err := claimReservedSession(opts.Root, record.Name, record.ID, target.Name, opts.Model, opts.ReasoningEffort)
+	session, err := claimReservedSession(opts.Root, record.Name, record.ID, target.Name, opts.Model, opts.ReasoningEffort, sessionMCP)
 	if err != nil {
 		return finishDispatchFailure(dispatchExecution{Root: opts.Root, Run: run, Session: Session{Name: record.Name}}, err)
 	}
@@ -475,7 +483,7 @@ func settlePendingContinuationReservationLocked(root string, session *Session, n
 		if record.State == dispatchStateReserved || !record.TerminationConfirmed {
 			var applyErr error
 			record, applyErr = applyRunEvidenceLocked(dir, func(current *RunRecord) error {
-				reconcileOrphanLocked(current, time.Now().UTC())
+				reconcileOrphanLocked(dir, current, time.Now().UTC())
 				return nil
 			})
 			if applyErr != nil {
@@ -520,11 +528,11 @@ func reconcileCurrentSessionRunLocked(root string, session *Session, now time.Ti
 	if !current.TerminationConfirmed {
 		current, err = updateRunEvidence(dir, func(r *RunRecord) error {
 			if !terminalDispatchState(r.State) {
-				reconcileOrphanLocked(r, now)
-			} else if confirmed, _, _ := observeTermination(*r); confirmed && !r.TerminationConfirmed {
+				reconcileOrphanLocked(dir, r, now)
+			} else if confirmed, _, _ := observeTerminationInDir(dir, *r); confirmed && !r.TerminationConfirmed {
 				// Use existing evidence for a terminal run. A continuation
 				// must not establish a launch fence to allow replacement.
-				applyTerminationConfirmation(r, now)
+				applyTerminationConfirmationInDir(dir, r, now)
 			}
 			return nil
 		})
@@ -538,10 +546,19 @@ func reconcileCurrentSessionRunLocked(root string, session *Session, now time.Ti
 		}
 	}
 	if current.TerminationConfirmed {
+		if removeErr := removeSessionMCPArtifacts(dir); removeErr != nil {
+			return RunRecord{}, removeErr
+		}
+		if removeErr := removeSessionMCPRuntimeDir(dir); removeErr != nil {
+			return RunRecord{}, removeErr
+		}
 		changed := false
+		previousSessionID := session.ProviderSessionID
+		clearedProvisional := false
 		if (current.State == dispatchStateFailed && current.Mode == dispatchModeFresh && current.RecoveryState == recoveryRetrySafe) ||
 			cancelledUnstartedFreshContinuation(current) {
-			changed = clearProvisionalSessionID(session, current.ID)
+			clearedProvisional = clearProvisionalSessionID(session, current.ID)
+			changed = clearedProvisional
 		}
 		if session.ActiveRunID == current.ID {
 			session.ActiveRunID = ""
@@ -555,6 +572,11 @@ func reconcileCurrentSessionRunLocked(root string, session *Session, now time.Ti
 			}
 			if err := writeJSONAtomic(path, *session); err != nil {
 				return RunRecord{}, wrapExitError(ExitConfig, "release reconciled dispatch mapping", err)
+			}
+			if clearedProvisional && session.Agent == AgentMuse && previousSessionID != "" {
+				if err := musepolicy.RemoveSessionMCPGrant(root, previousSessionID); err != nil {
+					return RunRecord{}, wrapExitError(ExitConfig, "remove unstarted Muse session MCP grant", err)
+				}
 			}
 		}
 	}
@@ -644,7 +666,7 @@ func claimContinuationReservation(root string, name string, id string, launch fu
 				failed, persistErr := applyRunEvidenceLocked(dir, func(r *RunRecord) error {
 					now := time.Now().UTC()
 					setDispatchFailure(r, claimErr, recoveryRetrySafe, now)
-					applyTerminationEvidence(r, nil, true, now)
+					applyTerminationEvidenceInDir("", r, nil, true, now)
 					return nil
 				})
 				if persistErr != nil {
@@ -674,7 +696,7 @@ func expireReservation(record *RunRecord, now time.Time) {
 	record.CompletedAt = &now
 	record.TerminalReason = terminalReasonReservationExpired
 	record.TerminalExitCode = ExitTargetFailure
-	applyTerminationEvidence(record, nil, true, now)
+	applyTerminationEvidenceInDir("", record, nil, true, now)
 }
 
 func retireExpiredReservation(root string, id string, now time.Time) (RunRecord, error) {
@@ -719,7 +741,7 @@ func claimReservation(root string, id string, launch func(*RunRecord)) (RunRecor
 // claimReservedSession keeps the run locked through the mapping update so a
 // cancelled or fenced reservation cannot reopen its conversation. Acquire the
 // session lock first, matching other session operations that reconcile runs.
-func claimReservedSession(root string, name string, runID string, agent string, model string, effort string) (Session, error) {
+func claimReservedSession(root string, name string, runID string, agent string, model string, effort string, sessionMCP []SessionMCPServer) (Session, error) {
 	var claimed Session
 	err := withSessionLock(root, name, func() error {
 		return withRunLock(filepathForRun(root, runID), func() error {
@@ -740,6 +762,21 @@ func claimReservedSession(root string, name string, runID string, agent string, 
 			session.Agent = agent
 			session.Model = model
 			session.ReasoningEffort = effort
+			session.SessionMCPServers = normalizeSessionMCPServers(sessionMCP)
+			if len(session.SessionMCPServers) > 0 {
+				if session.SessionMCPID == "" {
+					id, idErr := newUUID()
+					if idErr != nil {
+						return wrapExitError(ExitTargetFailure, "allocate session MCP identifier", idErr)
+					}
+					session.SessionMCPID = id
+				}
+				digest, saveErr := persistPrivateSessionMCPServers(root, session.SessionMCPID, session.SessionMCPServers)
+				if saveErr != nil {
+					return saveErr
+				}
+				session.SessionMCPDigest = digest
+			}
 			session.State = sessionStatePending
 			session.LastUsedAt = time.Now().UTC()
 			path, err := sessionPath(root, name)

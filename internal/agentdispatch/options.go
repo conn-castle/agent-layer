@@ -44,13 +44,20 @@ type DevelopmentCode struct {
 	Notice     string `json:"notice,omitempty"`
 }
 
+// CapabilityOption reports whether an agent supports an optional dispatch capability.
+type CapabilityOption struct {
+	Supported bool   `json:"supported"`
+	Reason    string `json:"reason,omitempty"`
+}
+
 // AgentOption describes one selectable provider and its optional overrides.
 type AgentOption struct {
-	Agent             string      `json:"agent"`
-	Available         bool        `json:"available"`
-	UnavailableReason string      `json:"unavailable_reason,omitempty"`
-	Model             FieldOption `json:"model"`
-	ReasoningEffort   FieldOption `json:"reasoning_effort"`
+	Agent             string           `json:"agent"`
+	Available         bool             `json:"available"`
+	UnavailableReason string           `json:"unavailable_reason,omitempty"`
+	Model             FieldOption      `json:"model"`
+	ReasoningEffort   FieldOption      `json:"reasoning_effort"`
+	SessionMCPServers CapabilityOption `json:"session_mcp_servers"`
 }
 
 // FieldOption describes an optional start override.
@@ -137,6 +144,7 @@ func buildTargetOptions(cfg config.Config, discovery agentoptions.DiscoveryReque
 				UnavailableReason: reason,
 				Model:             fieldOptionWithDiscovery(cfg, target, agentoptions.KindModel, fieldDiscovery),
 				ReasoningEffort:   fieldOptionWithDiscovery(cfg, target, agentoptions.KindReasoningEffort, fieldDiscovery),
+				SessionMCPServers: sessionMCPServersCapability(target),
 			}
 		})
 	}
@@ -177,4 +185,11 @@ func discoverTarget(ctx context.Context, target targetMeta, lookPath func(string
 func fieldOptionWithDiscovery(cfg config.Config, target targetMeta, kind agentoptions.Kind, discovery agentoptions.DiscoveryRequest) FieldOption {
 	resolved := agentoptions.Resolve(cfg, target.Name, kind, discovery)
 	return FieldOption{OverrideSupported: resolved.OverrideSupported, Configured: resolved.Configured, Suggestions: resolved.Suggestions, AllowCustom: resolved.AllowCustom, Source: resolved.Source, DiscoveryError: resolved.DiscoveryError}
+}
+
+func sessionMCPServersCapability(target targetMeta) CapabilityOption {
+	return CapabilityOption{
+		Supported: target.SessionMCPServersSupported,
+		Reason:    target.SessionMCPServersReason,
+	}
 }

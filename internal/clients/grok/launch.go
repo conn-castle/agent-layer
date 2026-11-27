@@ -28,7 +28,7 @@ const (
 	executableName = "grok"
 	homeDirName    = ".grok-config"
 	// SupportedVersion is the Grok CLI version Agent Layer tests against.
-	SupportedVersion = "1.0.5"
+	SupportedVersion = "1.0.25"
 	// EnvHome is the Grok home directory override.
 	EnvHome = "GROK_HOME"
 	// EnvAuth supplies an inline Grok session.

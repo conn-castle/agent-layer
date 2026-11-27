@@ -44,6 +44,7 @@ func newRootCmd() *cobra.Command {
 		newProbeMCPFixtureCmd(),
 		newDispatchCmd(),
 		newDispatchWorkerCmd(),
+		newDispatchSessionMCPCmd(),
 	)
 	root.AddCommand(newLaunchCmds()...)
 	root.AddCommand(

@@ -16,12 +16,24 @@ import (
 // failure before a final result. A reducer-only test cannot prove resumability.
 func TestAntigravityHandoffRetainsConversation(t *testing.T) {
 	const id = "22222222-2222-4222-8222-222222222222"
+	acpFailScript := func(promptAction string) string {
+		return `while IFS= read -r line; do
+  if [ -n "${AL_TEST_LOG:-}" ]; then printf 'ACP=%s\n' "$line" >> "$AL_TEST_LOG"; fi
+  id="$(printf '%s\n' "$line" | sed -n 's/.*"id":\([0-9][0-9]*\).*/\1/p')"
+  case "$line" in
+    *'"method":"initialize"'*) printf '{"jsonrpc":"2.0","id":%s,"result":{"protocolVersion":1}}\n' "$id" ;;
+    *'"method":"session/new"'*) printf '{"jsonrpc":"2.0","id":%s,"result":{"sessionId":"` + id + `"}}\n' "$id" ;;
+    *'"method":"session/set_model"'*) printf '{"jsonrpc":"2.0","id":%s,"result":{}}\n' "$id" ;;
+    *'"method":"session/prompt"'*) ` + promptAction + ` ;;
+  esac
+done`
+	}
 	for _, tc := range []struct {
 		name, script, reason string
 	}{
-		{"init then exit", `printf '{"event":"init","conversation_id":"` + id + `"}\n'; exit 1`, "exited"},
-		{"failed result identity", `printf '{"event":"result","result":{"status":"ERROR","conversation_id":"` + id + `","error":"handoff failed"}}\n'; exit 1`, "handoff failed"},
-		{"conflicting result", `printf '{"event":"init","conversation_id":"` + id + `"}\n{"event":"result","result":{"status":"SUCCESS","conversation_id":"wrong","response":"wrong answer","usage":{}}}\n'`, "conflicting session IDs"},
+		{"init then exit", acpFailScript("exit 1"), "ACP stdout closed"},
+		{"failed result identity", acpFailScript(`printf '{"jsonrpc":"2.0","id":%s,"error":{"code":-32000,"message":"handoff failed"}}\n' "$id"; exit 1`), "handoff failed"},
+		{"abnormal stop reason", acpFailScript(`printf '{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"max_tokens"}}\n' "$id"`), "abnormal stop reason"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			root := writeDispatchRepo(t, dispatchRepoConfig{})
@@ -67,9 +79,10 @@ func TestAntigravityHandoffRetainsConversation(t *testing.T) {
 			if err != nil || session.ProviderSessionID != id || session.ActiveRunID != "" {
 				t.Fatalf("lost conversation after failure: %#v, %v", session, err)
 			}
-			// Continuation must send the captured identity to the provider, not
+			// Continuation must send the captured identity via ACP session/resume, not
 			// merely keep the same Agent Layer handle around a fresh conversation.
-			writeDispatchStub(t, binDir, "agy", `printf '{"event":"init","conversation_id":"`+id+`"}\n{"event":"result","result":{"status":"SUCCESS","conversation_id":"`+id+`","response":"continued","usage":{"input_tokens":1}}}\n'`)
+			writeDispatchStub(t, binDir, "agy", antigravityStructuredOK)
+			t.Setenv("AL_TEST_AGY_ANSWER", "continued")
 			if err := Continue(ContinueOptions{
 				Root: root, WorkDir: root, Handle: session.Name, Prompt: "continue", Env: os.Environ(),
 				LookPath: mockLookPath(binDir), launchWorker: launcher,
@@ -84,8 +97,7 @@ func TestAntigravityHandoffRetainsConversation(t *testing.T) {
 			if err := RunWorker(root, session.RunID, gate); err != nil {
 				t.Fatal(err)
 			}
-			assertFileContains(t, filepath.Join(root, "provider-args"), "=--conversation\n")
-			assertFileContains(t, filepath.Join(root, "provider-args"), "="+id+"\n")
+			assertFileHasACPSessionResume(t, filepath.Join(root, "provider-args"), id)
 			out.Reset()
 			if err := Wait(WaitRequest{Root: root, ID: session.Name, Stdout: &out}); err != nil {
 				t.Fatal(err)
@@ -255,7 +267,11 @@ func TestAntigravityIdentityEvidenceSurvivesPersistenceFailure(t *testing.T) {
 	for _, expected := range []string{"", runtimeSessionID} {
 		t.Run("expected="+expected, func(t *testing.T) {
 			root := t.TempDir()
-			run, err := newDispatchRun(root, AgentAntigravity, supportedProviderVersions[AgentAntigravity], dispatchModeFresh)
+			mode := dispatchModeFresh
+			if expected != "" {
+				mode = dispatchModeResume
+			}
+			run, err := newDispatchRun(root, AgentAntigravity, supportedProviderVersions[AgentAntigravity], mode)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -265,15 +281,23 @@ func TestAntigravityIdentityEvidenceSurvivesPersistenceFailure(t *testing.T) {
 			}
 			const observed = "22222222-2222-4222-8222-222222222222"
 			persistCalled := false
+			script := `while IFS= read -r line; do
+  id="$(printf '%s\n' "$line" | sed -n 's/.*"id":\([0-9][0-9]*\).*/\1/p')"
+  case "$line" in
+    *'"method":"initialize"'*) printf '{"jsonrpc":"2.0","id":%s,"result":{"protocolVersion":1}}\n' "$id" ;;
+    *'"method":"session/new"'*|*'"method":"session/resume"'*) printf '{"jsonrpc":"2.0","id":%s,"result":{"sessionId":"` + observed + `"}}\n' "$id"; exit 0 ;;
+  esac
+done`
 			_, err = executeProvider(providerCommand{
-				Path: "/bin/sh", Args: []string{"-c", `printf '{"event":"init","conversation_id":"` + observed + `"}\n'`},
-				Env: os.Environ(), Provider: AgentAntigravity, SessionID: expected,
+				Path: "/bin/sh", Args: []string{"-c", script},
+				Env: os.Environ(), Provider: AgentAntigravity, RunMode: mode, SessionID: expected,
+				UseACP: true, ACP: &acpLaunchConfig{WorkDir: root},
 			}, nil, run, root, nil, func(string) error {
 				persistCalled = true
 				return errors.New("session store unavailable")
 			})
 			requireDispatchExitCode(t, err, ExitTargetFailure)
-			_ = finishDispatchFailure(dispatchExecution{Root: root, Run: run, Session: session, Mode: dispatchModeFresh}, err)
+			_ = finishDispatchFailure(dispatchExecution{Root: root, Run: run, Session: session, Mode: mode}, err)
 			record, loadErr := loadRunRecord(root, run.Record.ID)
 			if loadErr != nil {
 				t.Fatal(loadErr)
@@ -282,7 +306,7 @@ func TestAntigravityIdentityEvidenceSurvivesPersistenceFailure(t *testing.T) {
 				if !persistCalled || record.ProviderSessionID != observed || !strings.Contains(record.TerminalReason, "session store unavailable") {
 					t.Fatalf("lost observed identity on persistence failure: %#v", record)
 				}
-			} else if persistCalled || record.ProviderSessionID != "" || !strings.Contains(record.TerminalReason, "requested conversation") {
+			} else if persistCalled || record.ProviderSessionID != "" || !strings.Contains(record.TerminalReason, "different session ID") {
 				t.Fatalf("accepted mismatched resume identity: %#v", record)
 			}
 		})

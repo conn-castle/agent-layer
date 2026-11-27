@@ -109,10 +109,15 @@ func (p benchmarkPolicy) constrainOptions(options *OptionsResponse) {
 				efforts = append(efforts, target.Effort)
 			}
 		}
+		var sessionMCP CapabilityOption
+		if targetMeta, ok := lookupTarget(agent); ok {
+			sessionMCP = sessionMCPServersCapability(targetMeta)
+		}
 		options.Agents = append(options.Agents, AgentOption{
 			Agent: agent, Available: true,
-			Model:           FieldOption{OverrideSupported: true, Configured: models[0], Suggestions: models},
-			ReasoningEffort: FieldOption{OverrideSupported: true, Configured: efforts[0], Suggestions: efforts},
+			Model:             FieldOption{OverrideSupported: true, Configured: models[0], Suggestions: models},
+			ReasoningEffort:   FieldOption{OverrideSupported: true, Configured: efforts[0], Suggestions: efforts},
+			SessionMCPServers: sessionMCP,
 		})
 	}
 }
