@@ -14,10 +14,14 @@ import (
 )
 
 func claudeCredential(ctx context.Context, s credentialSource) (credential, failure) {
-	return claudeCredentialFrom(ctx, s, runtime.GOOS, readKeyring)
+	var read keyringReader
+	if runtime.GOOS == platformDarwin {
+		read = readKeyring
+	}
+	return claudeCredentialFrom(ctx, s, read)
 }
 
-func claudeCredentialFrom(ctx context.Context, s credentialSource, platform string, read keyringReader) (credential, failure) {
+func claudeCredentialFrom(ctx context.Context, s credentialSource, read keyringReader) (credential, failure) {
 	if s.file != "" {
 		return claudeFileCredential(s.file)
 	}
@@ -55,7 +59,7 @@ func claudeCredentialFrom(ctx context.Context, s credentialSource, platform stri
 		return credential{}, unsupportedAuth(reasonCustomAuth)
 	}
 	var keychainFailure failure
-	if platform == platformDarwin {
+	if read != nil {
 		service := "Claude Code-credentials"
 		selected, override := clients.GetEnv(s.env, "CLAUDE_SECURESTORAGE_CONFIG_DIR")
 		if !override {

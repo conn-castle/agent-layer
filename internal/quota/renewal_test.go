@@ -226,12 +226,16 @@ func TestQuotaClaudeKeychainFailureIsNotMissingLogin(t *testing.T) {
 	read := func(context.Context, string, string) ([]byte, failure) {
 		return nil, unsupportedAuth(keyringUnavailable)
 	}
-	_, fail := claudeCredentialFrom(t.Context(), s, platformDarwin, read)
+	_, fail := claudeCredentialFrom(t.Context(), s, read)
 	assert.Equal(t, keyringUnavailable, fail.reason)
 	writeFixture(t, filepath.Join(home, ".claude", claudeCredentials), `{"claudeAiOauth":{"accessToken":"fixture-token"}}`)
-	auth, fail := claudeCredentialFrom(t.Context(), s, platformDarwin, read)
+	auth, fail := claudeCredentialFrom(t.Context(), s, read)
 	assert.Empty(t, fail.status)
 	assert.Nil(t, auth.native)
+	fileOnly, fail := claudeCredentialFrom(t.Context(), s, nil)
+	assert.Empty(t, fail.status)
+	require.NotNil(t, fileOnly.native)
+	assert.Equal(t, filepath.Join(home, ".claude"), fileOnly.native.lockDir)
 
 	// Keychain login when ~/.claude does not exist yet must fall back to the
 	// common OS-user lock directory so locking succeeds without ENOENT.
@@ -240,7 +244,7 @@ func TestQuotaClaudeKeychainFailureIsNotMissingLogin(t *testing.T) {
 	keychainRead := func(context.Context, string, string) ([]byte, failure) {
 		return []byte(`{"claudeAiOauth":{"accessToken":"fixture-token","refreshToken":"fixture-refresh"}}`), failure{}
 	}
-	auth, fail = claudeCredentialFrom(t.Context(), keychainSource, platformDarwin, keychainRead)
+	auth, fail = claudeCredentialFrom(t.Context(), keychainSource, keychainRead)
 	require.Empty(t, fail.status)
 	require.NotNil(t, auth.native)
 	commonLockDir := osUserLockDir(missingHome)
@@ -254,11 +258,11 @@ func TestQuotaClaudeKeychainFailureIsNotMissingLogin(t *testing.T) {
 	alt := t.TempDir()
 	viaConfigDir, failA := claudeCredentialFrom(t.Context(), credentialSource{
 		root: missingHome, env: []string{"HOME=" + missingHome, claudeConfigEnv + "=" + alt},
-	}, platformDarwin, keychainRead)
+	}, keychainRead)
 	require.Empty(t, failA.status)
 	viaSecureStorage, failB := claudeCredentialFrom(t.Context(), credentialSource{
 		root: missingHome, env: []string{"HOME=" + missingHome, "CLAUDE_SECURESTORAGE_CONFIG_DIR=" + alt},
-	}, platformDarwin, keychainRead)
+	}, keychainRead)
 	require.Empty(t, failB.status)
 	assert.Equal(t, alt, viaConfigDir.native.lockDir)
 	assert.Equal(t, viaConfigDir.native.lockDir, viaSecureStorage.native.lockDir)
@@ -270,11 +274,11 @@ func TestQuotaClaudeKeychainFailureIsNotMissingLogin(t *testing.T) {
 	require.NoError(t, os.Mkdir(filepath.Join(dirB, ".claude-config"), 0o700))
 	relA, failRelA := claudeCredentialFrom(t.Context(), credentialSource{
 		root: dirA, workDir: dirA, env: []string{"HOME=" + dirA, "CLAUDE_SECURESTORAGE_CONFIG_DIR=.claude-config"},
-	}, platformDarwin, keychainRead)
+	}, keychainRead)
 	require.Empty(t, failRelA.status)
 	relB, failRelB := claudeCredentialFrom(t.Context(), credentialSource{
 		root: dirB, workDir: dirB, env: []string{"HOME=" + dirB, "CLAUDE_SECURESTORAGE_CONFIG_DIR=.claude-config"},
-	}, platformDarwin, keychainRead)
+	}, keychainRead)
 	require.Empty(t, failRelB.status)
 	assert.Equal(t, commonLockDir, relA.native.lockDir)
 	assert.Equal(t, relA.native.lockDir, relB.native.lockDir)
