@@ -89,12 +89,16 @@ func TestSessionMCPGrantPruningAndCleanup(t *testing.T) {
 	require.NoError(t, WriteSessionMCPGrant(root, keepID, []string{"wf"}))
 	require.NoError(t, WriteSessionMCPGrant(root, staleID, []string{"wf"}))
 
-	// Confirm grants are stored inside the isolated test home rather than the user's real cache dir.
-	resolvedHome, err := resolvePathThroughExistingAncestors(home)
+	// Confirm the written grant is inside the isolated test home.
+	resolvedHome, err := filepath.EvalSymlinks(home)
 	require.NoError(t, err)
 	initialKeepPath, err := sessionMCPGrantPath(root, keepID)
 	require.NoError(t, err)
-	require.True(t, grantPathWithinRoot(initialKeepPath, resolvedHome), "expected grant path %q inside isolated home %q", initialKeepPath, resolvedHome)
+	resolvedGrant, err := filepath.EvalSymlinks(initialKeepPath)
+	require.NoError(t, err)
+	rel, err := filepath.Rel(resolvedHome, resolvedGrant)
+	require.NoError(t, err)
+	require.True(t, filepath.IsLocal(rel), "expected grant path %q inside isolated home %q", resolvedGrant, resolvedHome)
 
 	// A freshly written grant after notAfter is preserved against concurrent start races.
 	require.NoError(t, PruneSessionMCPGrants(root, map[string]bool{keepID: true}, time.Now().Add(-time.Minute), nil))

@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -16,6 +17,7 @@ import (
 	"time"
 
 	"github.com/conn-castle/agent-layer/internal/agentdispatch"
+	"github.com/conn-castle/agent-layer/internal/projectpaths"
 )
 
 func TestDispatchCLISessionMCPValidationAndOptions(t *testing.T) {
@@ -93,14 +95,8 @@ func sessionMCPRuntimeDirForTest(t *testing.T, runDir string) string {
 	return filepath.Join(canonicalTmp, "agent-layer-dispatch-"+strconv.Itoa(os.Getuid()), "runs", hex.EncodeToString(runKeySum[:16]))
 }
 
-func TestDispatchSessionMCPWrapperEndToEndWithBuiltBinary(t *testing.T) {
-	tmp := t.TempDir()
-	alBin := filepath.Join(tmp, "al")
-	build := exec.Command("go", "build", "-o", alBin, ".")
-	if out, err := build.CombinedOutput(); err != nil {
-		t.Fatalf("build al binary: %v\n%s", err, out)
-	}
-
+func isolateSessionMCPCacheDir(t *testing.T, tmp string) {
+	t.Helper()
 	// Isolate os.UserCacheDir (XDG_CACHE_HOME on Linux, HOME/Library/Caches on
 	// macOS) after `go build` so durable session MCP specs are cleaned up with
 	// t.TempDir() instead of accumulating in the user's cache directory.
@@ -113,6 +109,66 @@ func TestDispatchSessionMCPWrapperEndToEndWithBuiltBinary(t *testing.T) {
 	}
 	t.Setenv("HOME", testHome)
 	t.Setenv("XDG_CACHE_HOME", testCache)
+}
+
+func cleanupSessionMCPInvocations(t *testing.T, root string) {
+	t.Helper()
+	runsDir := filepath.Join(root, projectpaths.Runs)
+	entries, err := os.ReadDir(runsDir)
+	if errors.Is(err, os.ErrNotExist) {
+		return
+	}
+	if err != nil {
+		t.Errorf("read dispatch runs for cleanup: %v", err)
+		return
+	}
+	for _, entry := range entries {
+		if entry.IsDir() {
+			cleanupSessionMCPInvocation(t, root, entry.Name())
+		}
+	}
+}
+
+func cleanupSessionMCPInvocation(t *testing.T, root, id string) {
+	t.Helper()
+	runDir := reservationRunDir(root, id)
+	rtDir := sessionMCPRuntimeDirForTest(t, runDir)
+	var cancelErr error
+	if t.Failed() {
+		cancelErr = agentdispatch.Cancel(agentdispatch.CancelRequest{Root: root, InvocationID: id})
+	}
+
+	// Wait reconciles confirmed invocations and removes runtime state under the
+	// run lock. If the worker held the lock, Wait can return the confirmation
+	// before removal, so retry until the directory is gone.
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	for {
+		err := agentdispatch.Wait(agentdispatch.WaitRequest{
+			Context: ctx, Root: root, InvocationID: id, Condition: "termination_confirmed",
+		})
+		if err != nil {
+			t.Errorf("clean up session MCP runtime dir %q: %v", rtDir, errors.Join(err, cancelErr))
+			return
+		}
+		if _, err := os.Lstat(rtDir); errors.Is(err, os.ErrNotExist) {
+			return
+		} else if err != nil {
+			t.Errorf("check session MCP runtime cleanup for %q: %v", rtDir, err)
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+}
+
+func TestDispatchSessionMCPWrapperEndToEndWithBuiltBinary(t *testing.T) {
+	tmp := t.TempDir()
+	alBin := filepath.Join(tmp, "al")
+	build := exec.Command("go", "build", "-o", alBin, ".")
+	if out, err := build.CombinedOutput(); err != nil {
+		t.Fatalf("build al binary: %v\n%s", err, out)
+	}
+	isolateSessionMCPCacheDir(t, tmp)
 
 	// Create a fake stdio MCP server inside customBin (not on PATH) that records
 	// cwd, env, and argv then exits 0.
@@ -356,20 +412,10 @@ func TestDispatchSessionMCPFullLifecycleParallelAndCancel(t *testing.T) {
 		t.Fatalf("build al binary: %v\n%s", err, out)
 	}
 
-	// Isolate os.UserCacheDir (XDG_CACHE_HOME on Linux, HOME/Library/Caches on
-	// macOS) after `go build` so durable session MCP specs are cleaned up with
-	// t.TempDir() instead of accumulating in the user's cache directory.
-	testHome := filepath.Join(tmp, "home")
-	testCache := filepath.Join(tmp, "cache")
-	for _, dir := range []string{testHome, testCache} {
-		if err := os.MkdirAll(dir, 0o700); err != nil {
-			t.Fatal(err)
-		}
-	}
-	t.Setenv("HOME", testHome)
-	t.Setenv("XDG_CACHE_HOME", testCache)
+	isolateSessionMCPCacheDir(t, tmp)
 
 	root := newReservationTestRepo(t, "")
+	t.Cleanup(func() { cleanupSessionMCPInvocations(t, root) })
 	fakeBin := filepath.Join(tmp, "fake-bin")
 	customBin := filepath.Join(tmp, "custom-bin")
 	logsDir := filepath.Join(tmp, "logs")

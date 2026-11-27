@@ -1227,14 +1227,18 @@ func TestCancelTerminatesSurvivingSessionMCPFromRunningState(t *testing.T) {
 
 func TestSessionMCPTestsIsolateRuntimeAndCacheRoots(t *testing.T) {
 	home := isolateSessionMCPCacheDir(t)
-	defaultRoot := defaultSessionMCPRuntimeRoot()
-	if got := sessionMCPRuntimeRoot(); got == defaultRoot {
-		t.Fatalf("TestMain did not isolate sessionMCPRuntimeRoot() away from %q", defaultRoot)
-	}
 	// Production runtime root must remain anchored under canonical /tmp independent of TMPDIR.
 	t.Setenv("TMPDIR", t.TempDir())
+	canonicalTmp, err := filepath.EvalSymlinks("/tmp")
+	if err != nil {
+		t.Fatalf("resolve /tmp: %v", err)
+	}
+	defaultRoot := filepath.Join(canonicalTmp, fmt.Sprintf("agent-layer-dispatch-%d", os.Getuid()))
 	if got := defaultSessionMCPRuntimeRoot(); got != defaultRoot {
-		t.Fatalf("defaultSessionMCPRuntimeRoot() changed under TMPDIR override: got %q, want %q", got, defaultRoot)
+		t.Fatalf("defaultSessionMCPRuntimeRoot() with TMPDIR set = %q, want %q", got, defaultRoot)
+	}
+	if got := sessionMCPRuntimeRoot(); got == defaultRoot {
+		t.Fatalf("TestMain did not isolate sessionMCPRuntimeRoot() away from %q", defaultRoot)
 	}
 
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
@@ -1242,7 +1246,7 @@ func TestSessionMCPTestsIsolateRuntimeAndCacheRoots(t *testing.T) {
 	if err != nil {
 		t.Fatalf("sessionMCPDurableStoreDir: %v", err)
 	}
-	if !pathWithinDir(storeDir, home) {
+	if !sessionMCPTestPathWithinDir(t, storeDir, home) {
 		t.Fatalf("durable store dir %q was not isolated inside test home %q", storeDir, home)
 	}
 
@@ -1260,7 +1264,7 @@ func TestSessionMCPTestsIsolateRuntimeAndCacheRoots(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if pathWithinDir(rtDir, defaultRoot) {
+	if sessionMCPTestPathWithinDir(t, rtDir, defaultRoot) {
 		t.Fatalf("test runtime dir %q resolved inside production root %q", rtDir, defaultRoot)
 	}
 	if _, err := buildProviderCommandForSession(codexTarget, project, root, nil, []byte("hi"), "", "", false, dispatchModeFresh, runtimeSessionID, []SessionMCPServer{{Name: "wf", Command: "/bin/wf"}}, run, io.Discard); err != nil {
@@ -1275,4 +1279,21 @@ func TestSessionMCPTestsIsolateRuntimeAndCacheRoots(t *testing.T) {
 	if _, err := os.Stat(rtDir); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("runtime dir %q still exists after cleanup: %v", rtDir, err)
 	}
+}
+
+func sessionMCPTestPathWithinDir(t *testing.T, path, dir string) bool {
+	t.Helper()
+	resolvedPath, err := resolvePathThroughExistingAncestors(path)
+	if err != nil {
+		t.Fatalf("resolve %q: %v", path, err)
+	}
+	resolvedDir, err := resolvePathThroughExistingAncestors(dir)
+	if err != nil {
+		t.Fatalf("resolve %q: %v", dir, err)
+	}
+	rel, err := filepath.Rel(resolvedDir, resolvedPath)
+	if err != nil {
+		t.Fatalf("relate %q to %q: %v", resolvedPath, resolvedDir, err)
+	}
+	return filepath.IsLocal(rel)
 }
