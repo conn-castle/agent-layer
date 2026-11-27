@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/conn-castle/agent-layer/internal/config"
 )
@@ -867,7 +868,16 @@ func TestACPPermissionHardeningAndToolCallMetadataMerge(t *testing.T) {
 	})
 }
 
+type acpRecordingWriter struct {
+	bytes.Buffer
+}
+
+func (*acpRecordingWriter) Close() error { return nil }
+
 func TestACPAuthenticateNonInteractiveSelectionAndFailFast(t *testing.T) {
+	noResponses := make(chan acpIncomingFrame)
+	close(noResponses)
+
 	t.Run("empty_or_omitted_authMethods_skips_authenticate", func(t *testing.T) {
 		for _, tc := range []struct {
 			name string
@@ -878,29 +888,18 @@ func TestACPAuthenticateNonInteractiveSelectionAndFailFast(t *testing.T) {
 			{"empty", `{"protocolVersion":1,"authMethods":[]}`},
 		} {
 			t.Run(tc.name, func(t *testing.T) {
-				clientInR, clientInW := io.Pipe()
-				t.Cleanup(func() {
-					_ = clientInW.Close()
-					_ = clientInR.Close()
-				})
-				writeCalled := make(chan struct{}, 1)
-				go func() {
-					buf := make([]byte, 1)
-					if n, _ := clientInR.Read(buf); n > 0 {
-						writeCalled <- struct{}{}
-					}
-				}()
+				stdin := new(acpRecordingWriter)
 				client := &acpClient{
-					stdin:    clientInW,
+					stdin:    stdin,
+					frames:   noResponses,
 					provider: AgentGrok,
 				}
-				if err := client.authenticate(json.RawMessage(tc.raw)); err != nil {
-					t.Fatalf("authenticate(%s) returned error: %v", tc.name, err)
+				err := client.authenticate(json.RawMessage(tc.raw))
+				if stdin.Len() != 0 {
+					t.Fatalf("unexpected RPC for %s authMethods: %s", tc.name, stdin.String())
 				}
-				select {
-				case <-writeCalled:
-					t.Fatalf("authenticate(%s) unexpectedly wrote an RPC frame", tc.name)
-				default:
+				if err != nil {
+					t.Fatalf("authenticate(%s) returned error: %v", tc.name, err)
 				}
 			})
 		}
@@ -923,10 +922,16 @@ func TestACPAuthenticateNonInteractiveSelectionAndFailFast(t *testing.T) {
 				wantMethod:  "api_key",
 			},
 			{
+				name:        "grok_api_key_only",
+				authMethods: []map[string]any{{"id": "xai.api_key"}},
+				wantMethod:  "xai.api_key",
+			},
+			{
 				name: "prefers_cached_token_over_api_key_and_interactive",
 				authMethods: []map[string]any{
 					{"id": "grok.com", "name": "Grok", "description": "Sign in with Grok"},
 					{"id": "api_key", "name": "API Key"},
+					{"id": "xai.api_key", "name": "API Key"},
 					{"id": "cached_token", "name": "Cached Token"},
 				},
 				wantMethod: "cached_token",
@@ -941,39 +946,14 @@ func TestACPAuthenticateNonInteractiveSelectionAndFailFast(t *testing.T) {
 			},
 		} {
 			t.Run(tc.name, func(t *testing.T) {
-				clientInR, clientInW := io.Pipe()
-				serverOutR, serverOutW := io.Pipe()
-				frames := make(chan acpIncomingFrame, 8)
-				stopReader := make(chan struct{})
-				readerDone := make(chan struct{})
-				go readACPFrames(serverOutR, io.Discard, frames, stopReader, readerDone)
-				t.Cleanup(func() {
-					_ = clientInW.Close()
-					_ = serverOutW.Close()
-					close(stopReader)
-					<-readerDone
-				})
-
-				gotMethodCh := make(chan string, 1)
-				gotHeadlessCh := make(chan bool, 1)
-				go func() {
-					defer func() { _ = serverOutW.Close() }()
-					dec := json.NewDecoder(clientInR)
-					enc := json.NewEncoder(serverOutW)
-					var msg acpJSONRPCMessage
-					if err := dec.Decode(&msg); err != nil {
-						return
-					}
-					var params struct {
-						MethodID string         `json:"methodId"`
-						Meta     map[string]any `json:"_meta"`
-					}
-					_ = json.Unmarshal(msg.Params, &params)
-					gotMethodCh <- params.MethodID
-					headless, _ := params.Meta["headless"].(bool)
-					gotHeadlessCh <- headless
-					_ = enc.Encode(map[string]any{"jsonrpc": "2.0", "id": msg.ID, "result": map[string]any{}})
-				}()
+				stdin := new(acpRecordingWriter)
+				frames := make(chan acpIncomingFrame, 1)
+				frames <- acpIncomingFrame{msg: acpJSONRPCMessage{
+					JSONRPC: "2.0",
+					ID:      json.RawMessage("1"),
+					Result:  json.RawMessage("{}"),
+				}}
+				close(frames)
 
 				initRaw, err := json.Marshal(map[string]any{
 					"protocolVersion": 1,
@@ -983,18 +963,33 @@ func TestACPAuthenticateNonInteractiveSelectionAndFailFast(t *testing.T) {
 					t.Fatal(err)
 				}
 				client := &acpClient{
-					stdin:    clientInW,
+					stdin:    stdin,
 					frames:   frames,
 					provider: AgentGrok,
 				}
 				if err := client.authenticate(initRaw); err != nil {
 					t.Fatalf("authenticate failed: %v", err)
 				}
-				if got := <-gotMethodCh; got != tc.wantMethod {
-					t.Fatalf("methodId = %q, want %q", got, tc.wantMethod)
+				var request struct {
+					Method string `json:"method"`
+					Params struct {
+						MethodID string `json:"methodId"`
+						Meta     struct {
+							Headless bool `json:"headless"`
+						} `json:"_meta"`
+					} `json:"params"`
 				}
-				if headless := <-gotHeadlessCh; !headless {
-					t.Fatal("expected _meta.headless=true in authenticate params")
+				if err := json.Unmarshal(stdin.Bytes(), &request); err != nil {
+					t.Fatalf("decode authenticate request: %v", err)
+				}
+				if request.Method != acpMethodAuthenticate {
+					t.Errorf("RPC method = %q, want %q", request.Method, acpMethodAuthenticate)
+				}
+				if request.Params.MethodID != tc.wantMethod {
+					t.Errorf("methodId = %q, want %q", request.Params.MethodID, tc.wantMethod)
+				}
+				if !request.Params.Meta.Headless {
+					t.Error("expected _meta.headless=true in authenticate params")
 				}
 			})
 		}
@@ -1013,7 +1008,7 @@ func TestACPAuthenticateNonInteractiveSelectionAndFailFast(t *testing.T) {
 				authMethods: []map[string]any{
 					{"id": "grok.com", "name": "Grok", "description": "Sign in with Grok"},
 				},
-				wantSubstrs: []string{"not authenticated", "grok.com", "cached_token, api_key", "al grok"},
+				wantSubstrs: []string{"not authenticated", "grok.com", "cached_token, api_key, xai.api_key", "al grok"},
 			},
 			{
 				name:     "multiple_interactive_methods_deduplicated",
@@ -1023,7 +1018,13 @@ func TestACPAuthenticateNonInteractiveSelectionAndFailFast(t *testing.T) {
 					{"id": "device_code"},
 					{"id": "oauth_browser"},
 				},
-				wantSubstrs: []string{"not authenticated", "oauth_browser, device_code", "sign in to the provider CLI"},
+				wantSubstrs: []string{"not authenticated", `"oauth_browser", "device_code"`, "sign in to the provider CLI"},
+			},
+			{
+				name:        "padded_api_key_id_is_reported_exactly",
+				provider:    AgentGrok,
+				authMethods: []map[string]any{{"id": "api_key "}},
+				wantSubstrs: []string{`offered: "api_key "`},
 			},
 			{
 				name:     "empty_id_entry",
@@ -1035,19 +1036,7 @@ func TestACPAuthenticateNonInteractiveSelectionAndFailFast(t *testing.T) {
 			},
 		} {
 			t.Run(tc.name, func(t *testing.T) {
-				clientInR, clientInW := io.Pipe()
-				t.Cleanup(func() {
-					_ = clientInW.Close()
-					_ = clientInR.Close()
-				})
-				rpcSent := make(chan string, 1)
-				go func() {
-					var msg acpJSONRPCMessage
-					if err := json.NewDecoder(clientInR).Decode(&msg); err == nil {
-						rpcSent <- msg.Method
-					}
-				}()
-
+				stdin := new(acpRecordingWriter)
 				initRaw, err := json.Marshal(map[string]any{
 					"protocolVersion": 1,
 					"authMethods":     tc.authMethods,
@@ -1056,87 +1045,80 @@ func TestACPAuthenticateNonInteractiveSelectionAndFailFast(t *testing.T) {
 					t.Fatal(err)
 				}
 				client := &acpClient{
-					stdin:    clientInW,
+					stdin:    stdin,
+					frames:   noResponses,
 					provider: tc.provider,
 				}
 				err = client.authenticate(initRaw)
-				if err == nil {
-					t.Fatal("expected authentication error, got nil")
+				if stdin.Len() != 0 {
+					t.Fatalf("unexpected RPC for unsupported authMethods: %s", stdin.String())
 				}
+				requireDispatchExitCode(t, err, ExitConfig)
 				for _, substr := range tc.wantSubstrs {
 					if !strings.Contains(err.Error(), substr) {
 						t.Errorf("error %q missing expected substring %q", err.Error(), substr)
 					}
 				}
-				select {
-				case method := <-rpcSent:
-					t.Fatalf("unexpected RPC %q sent for interactive-only authMethods", method)
-				default:
-				}
 			})
 		}
 	})
 
-	t.Run("runACPDispatch_fails_fast_on_grok_interactive_only_authMethods", func(t *testing.T) {
-		root := t.TempDir()
-		run, err := newDispatchRun(root, AgentGrok, supportedProviderVersions[AgentGrok], dispatchModeFresh)
-		if err != nil {
-			t.Fatal(err)
-		}
-		clientInR, clientInW := io.Pipe()
-		serverOutR, serverOutW := io.Pipe()
-		var observedMethods []string
-		done := make(chan struct{})
-		go func() {
-			defer close(done)
-			defer func() { _ = serverOutW.Close() }()
-			dec := json.NewDecoder(clientInR)
-			enc := json.NewEncoder(serverOutW)
-			for {
-				var msg acpJSONRPCMessage
-				if decErr := dec.Decode(&msg); decErr != nil {
-					return
-				}
-				if msg.Method == "" {
-					continue
-				}
-				observedMethods = append(observedMethods, msg.Method)
-				if msg.Method == acpMethodInitialize {
-					_ = enc.Encode(map[string]any{
-						"jsonrpc": "2.0",
-						"id":      msg.ID,
-						"result": map[string]any{
-							"protocolVersion": 1,
-							"authMethods": []map[string]any{
-								{"id": "grok.com", "name": "Grok", "description": "Sign in with Grok"},
-							},
-						},
-					})
-				}
-			}
-		}()
+}
 
-		err = runACPDispatch(clientInW, serverOutR, io.Discard, providerCommand{
-			Provider: AgentGrok,
-			RunMode:  dispatchModeFresh,
-			UseACP:   true,
-			ACP: &acpLaunchConfig{
-				WorkDir:       root,
-				ApprovalsMode: config.ApprovalModeNone,
-				Authenticate:  true,
-			},
-		}, []byte("hi"), root, run, func(providerEvent) error { return nil })
-		<-done
-		if err == nil {
-			t.Fatal("expected runACPDispatch to fail when only grok.com auth is offered")
-		}
-		for _, substr := range []string{"grok ACP authenticate failed", "not authenticated", "grok.com", "al grok"} {
-			if !strings.Contains(err.Error(), substr) {
-				t.Errorf("error %q missing expected substring %q", err.Error(), substr)
-			}
-		}
-		if strings.Join(observedMethods, ",") != acpMethodInitialize {
-			t.Fatalf("observed RPC methods = %v, want only [%s]", observedMethods, acpMethodInitialize)
-		}
+func TestACPGrokDispatchFailsFastWhenSignInRequired(t *testing.T) {
+	root := writeDispatchRepo(t, dispatchRepoConfig{})
+	replaceDispatchConfigText(t, root, "[agents.grok]\nenabled = false", "[agents.grok]\nenabled = true")
+	binDir := t.TempDir()
+	logDir := t.TempDir()
+	rpcLog := filepath.Join(logDir, "grok-rpc.log")
+	writeDispatchStub(t, binDir, "grok", `
+while IFS= read -r line; do
+  printf '%s\n' "$line" >> "$AL_TEST_RPC_LOG"
+  case "$line" in
+    *'"method":"initialize"'*)
+      printf '%s\n' '{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":1,"authMethods":[{"id":"grok.com"}]}}'
+      ;;
+    *) exit 1 ;;
+  esac
+done
+`)
+	err := executeFreshDispatch(dispatchExecRequest{
+		Root:   root,
+		Agent:  AgentGrok,
+		Prompt: "hi",
+		Env: []string{
+			"PATH=" + testPath(binDir),
+			"AL_TEST_LOG=" + filepath.Join(logDir, "grok.log"),
+			"AL_TEST_RPC_LOG=" + rpcLog,
+		},
+		LookPath: mockLookPath(binDir),
 	})
+	requireDispatchExitCode(t, err, ExitConfig)
+	for _, substr := range []string{"grok ACP authenticate failed", "not authenticated", "grok.com", "al grok"} {
+		if !strings.Contains(err.Error(), substr) {
+			t.Errorf("error %q missing expected substring %q", err.Error(), substr)
+		}
+	}
+
+	observed, err := os.ReadFile(rpcLog) // #nosec G304 -- test-owned provider log path.
+	if err != nil {
+		t.Fatal(err)
+	}
+	var request acpJSONRPCMessage
+	if err := json.Unmarshal(observed, &request); err != nil {
+		t.Fatalf("expected one initialize request, got %q: %v", observed, err)
+	}
+	if request.Method != acpMethodInitialize {
+		t.Fatalf("observed RPC method = %q, want %q", request.Method, acpMethodInitialize)
+	}
+
+	sessions, err := listSessions(root)
+	if err != nil || len(sessions) != 1 {
+		t.Fatalf("list sessions = %#v, %v", sessions, err)
+	}
+	requireDispatchExitCode(t, Wait(WaitRequest{
+		Root:    root,
+		Handle:  sessions[0].Name,
+		Timeout: time.Second,
+	}), ExitConfig)
 }

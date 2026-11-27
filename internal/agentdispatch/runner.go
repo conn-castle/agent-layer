@@ -619,7 +619,13 @@ func executeProvider(
 			primaryErr = exitError(ExitSigterm, fmt.Sprintf("%s interrupted by signal SIGTERM", command.Provider))
 		}
 	case currentSemanticErr != nil:
-		primaryErr = exitError(ExitTargetFailure, fmt.Sprintf("%s dispatch did not complete: %v", command.Provider, currentSemanticErr))
+		message := fmt.Sprintf("%s dispatch did not complete: %v", command.Provider, currentSemanticErr)
+		var dispatchErr *ExitError
+		if command.UseACP && errors.As(currentSemanticErr, &dispatchErr) {
+			primaryErr = wrapExitError(dispatchErr.Code, message, currentSemanticErr)
+		} else {
+			primaryErr = exitError(ExitTargetFailure, message)
+		}
 	case streamResult != nil:
 		primaryErr = wrapExitError(ExitTargetFailure, fmt.Sprintf("capture dispatch provider output: %v", streamResult), streamResult)
 	case stderrResult != nil:
