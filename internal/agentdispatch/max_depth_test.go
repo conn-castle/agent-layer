@@ -660,7 +660,8 @@ func TestMaxDepthPersistsAcrossContinueAndReservations(t *testing.T) {
 			Env: []string{clients.EnvDispatchActive + "=1"},
 		}), ExitNested)
 
-		// Depth 0 still succeeds and clamps the persisted explicit cap (2) to the lowered repo limit (1).
+		// Depth 0 still succeeds: workerRequest.MaxDepth is clamped to lowered repo cap (1)
+		// without permanently overwriting the conversation's stored explicit cap (2).
 		var contOut bytes.Buffer
 		if err := Continue(ContinueOptions{
 			Root: root, WorkDir: root, Handle: startRes.Handle, Prompt: "Turn 2",
@@ -675,6 +676,13 @@ func TestMaxDepthPersistsAcrossContinueAndReservations(t *testing.T) {
 		}
 		if req := readReq(contRes.InvocationID); req.MaxDepth != 1 {
 			t.Fatalf("continue MaxDepth = %d, want clamped repo cap 1", req.MaxDepth)
+		}
+		persisted, err := loadSession(root, startRes.Handle)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if persisted.MaxDepth != 2 {
+			t.Fatalf("session.MaxDepth = %d, want preserved explicit cap 2", persisted.MaxDepth)
 		}
 	})
 
@@ -805,6 +813,77 @@ func TestMaxDepthPersistsAcrossContinueAndReservations(t *testing.T) {
 			t.Fatalf("session.MaxDepth = %d, want creator cap 2", session.MaxDepth)
 		}
 		if req := readReq(started.InvocationID); req.MaxDepth != 2 {
+			t.Fatalf("workerRequest.MaxDepth = %d, want creator cap 2", req.MaxDepth)
+		}
+
+		// A depth-2 caller trying start --reservation on a cap-2 reservation fails with ExitNested before reading a missing prompt file.
+		var res2Out bytes.Buffer
+		if err := Reserve(ReserveOptions{
+			Root: root, Stdout: &res2Out,
+			Env: []string{clients.EnvDispatchActive + "=1", clients.EnvDispatchMaxDepth + "=2"},
+		}); err != nil {
+			t.Fatal(err)
+		}
+		var res2 Result
+		if err := json.Unmarshal(res2Out.Bytes(), &res2); err != nil {
+			t.Fatal(err)
+		}
+		requireDispatchExitCode(t, Start(StartOptions{
+			Root: root, WorkDir: root, Agent: AgentCodex, Reservation: &res2.Handle,
+			PromptFile: filepath.Join(root, "missing-prompt.txt"),
+			Env:        []string{clients.EnvDispatchActive + "=2"},
+		}), ExitNested)
+	})
+
+	t.Run("reserve --continue under inherited cap preserves cap on uncapped continue --reservation", func(t *testing.T) {
+		root := writeDispatchRepo(t, dispatchRepoConfig{DispatchMaxDepth: 4})
+		launcher, readReq := stubWorkerCapture(t, root)
+		var out bytes.Buffer
+		if err := Start(StartOptions{
+			Root: root, WorkDir: root, Agent: AgentCodex, Prompt: "Uncapped start",
+			Stdout: &out, Env: []string{},
+			LookPath: alwaysFound, VersionLookup: fixedCodexVersion, launchWorker: launcher,
+		}); err != nil {
+			t.Fatal(err)
+		}
+		var startRes Result
+		if err := json.Unmarshal(out.Bytes(), &startRes); err != nil {
+			t.Fatal(err)
+		}
+		markInvocationTerminalConfirmed(t, root, startRes.InvocationID, startRes.Handle, dispatchStateCompleted, "provider-session-cont-res-cap")
+
+		var resOut bytes.Buffer
+		if err := Reserve(ReserveOptions{
+			Root: root, ContinueHandle: &startRes.Handle, Stdout: &resOut,
+			Env: []string{clients.EnvDispatchActive + "=1", clients.EnvDispatchMaxDepth + "=2"},
+		}); err != nil {
+			t.Fatalf("Reserve --continue under cap: %v", err)
+		}
+		var reserved Result
+		if err := json.Unmarshal(resOut.Bytes(), &reserved); err != nil {
+			t.Fatal(err)
+		}
+
+		var contOut bytes.Buffer
+		if err := Continue(ContinueOptions{
+			Root: root, WorkDir: root, Handle: startRes.Handle, Reservation: &reserved.InvocationID,
+			Prompt: "Uncapped continue launcher", Stdout: &contOut, Env: []string{},
+			LookPath: alwaysFound, VersionLookup: fixedCodexVersion, launchWorker: launcher,
+		}); err != nil {
+			t.Fatalf("Continue --reservation: %v", err)
+		}
+		var continued Result
+		if err := json.Unmarshal(contOut.Bytes(), &continued); err != nil {
+			t.Fatal(err)
+		}
+		session, err := loadSession(root, startRes.Handle)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if session.MaxDepth != 2 {
+			t.Fatalf("session.MaxDepth = %d, want creator cap 2", session.MaxDepth)
+		}
+		if req := readReq(continued.InvocationID); req.MaxDepth != 2 {
 			t.Fatalf("workerRequest.MaxDepth = %d, want creator cap 2", req.MaxDepth)
 		}
 	})

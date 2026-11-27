@@ -210,7 +210,7 @@ func Cancel(request CancelRequest) error {
 	if err != nil {
 		return err
 	}
-	if record.Name != "" {
+	if depthState.Depth > 0 && record.Name != "" {
 		if session, loadErr := loadSession(request.Root, record.Name); loadErr == nil {
 			if err := checkDispatchStateAllowed(request.Root, depthState, session.MaxDepth); err != nil {
 				return err

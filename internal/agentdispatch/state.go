@@ -338,6 +338,10 @@ func randomDispatchName() (string, error) {
 func bigInt(value int) *big.Int { return big.NewInt(int64(value)) }
 
 func reserveSession(root string, run *dispatchRun, retention time.Duration) (Session, error) {
+	return reserveSessionWithMaxDepth(root, run, retention, 0)
+}
+
+func reserveSessionWithMaxDepth(root string, run *dispatchRun, retention time.Duration, maxDepth int) (Session, error) {
 	if err := os.MkdirAll(dispatchStatePath(root), 0o700); err != nil {
 		return Session{}, wrapExitError(ExitConfig, "create dispatch state directory", err)
 	}
@@ -346,7 +350,7 @@ func reserveSession(root string, run *dispatchRun, retention time.Duration) (Ses
 		if err != nil {
 			return Session{}, wrapExitError(ExitTargetFailure, "generate dispatch name", err)
 		}
-		session, reserved, err := createExclusiveSession(root, name, run)
+		session, reserved, err := createExclusiveSession(root, name, run, maxDepth)
 		if err != nil {
 			return Session{}, err
 		}
@@ -362,7 +366,7 @@ func reserveSession(root string, run *dispatchRun, retention time.Duration) (Ses
 		return Session{}, wrapExitError(ExitTargetFailure, "shuffle unused dispatch names", err)
 	}
 	for _, name := range unused {
-		session, reserved, err := createExclusiveSession(root, name, run)
+		session, reserved, err := createExclusiveSession(root, name, run, maxDepth)
 		if err != nil {
 			return Session{}, err
 		}
@@ -373,7 +377,7 @@ func reserveSession(root string, run *dispatchRun, retention time.Duration) (Ses
 	return Session{}, dispatchNamePoolExhaustedError(root, retention)
 }
 
-func createExclusiveSession(root string, name string, run *dispatchRun) (Session, bool, error) {
+func createExclusiveSession(root string, name string, run *dispatchRun, maxDepth int) (Session, bool, error) {
 	path, err := sessionPath(root, name)
 	if err != nil {
 		return Session{}, false, err
@@ -383,7 +387,7 @@ func createExclusiveSession(root string, name string, run *dispatchRun) (Session
 	if run.Record.State == dispatchStateReserved {
 		state = sessionStateReserved
 	}
-	session := Session{Name: name, Agent: run.Record.Agent, CreatedAt: now, LastUsedAt: now, State: state, RunID: run.Record.ID, ActiveRunID: run.Record.ID, ActiveClaimKnown: true}
+	session := Session{Name: name, Agent: run.Record.Agent, MaxDepth: maxDepth, CreatedAt: now, LastUsedAt: now, State: state, RunID: run.Record.ID, ActiveRunID: run.Record.ID, ActiveClaimKnown: true}
 	reserved, err := createJSONExclusive(path, session)
 	if err != nil {
 		return Session{}, false, wrapExitError(ExitConfig, "reserve dispatch name", err)

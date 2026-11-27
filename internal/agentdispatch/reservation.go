@@ -47,15 +47,9 @@ func Reserve(opts ReserveOptions) error {
 	if err != nil {
 		return err
 	}
-	session, err := reserveSession(opts.Root, run, retention)
+	session, err := reserveSessionWithMaxDepth(opts.Root, run, retention, clampExplicitCap(project.Config, depthState.MaxDepth))
 	if err != nil {
 		return abandonUnpublishedDispatchRun(run.Dir, err)
-	}
-	if reservedCap := clampExplicitCap(project.Config, depthState.MaxDepth); reservedCap > 0 {
-		session.MaxDepth = reservedCap
-		if err := persistSession(opts.Root, session); err != nil {
-			return abandonUnpublishedDispatchRun(run.Dir, err)
-		}
 	}
 	result := publicResult(run.Record)
 	result.Handle = session.Name
@@ -105,11 +99,23 @@ func reserveContinuation(opts ReserveOptions, depthState dispatchDepthState) err
 		if err != nil {
 			return err
 		}
+		inheritedCap := clampExplicitCap(project.Config, depthState.MaxDepth)
 		if hasPending {
 			// Return an existing unexpired pending continuation reservation
 			// before checking eligibility so a retry after a lost response
 			// always recovers the ID rather than stranding the conversation.
-			// Launch re-checks eligibility before claiming.
+			// Still tighten the session cap if the retrying caller carries a
+			// tighter inherited cap.
+			if tightened := minPositive(session.MaxDepth, inheritedCap); tightened > 0 && tightened != session.MaxDepth {
+				path, pathErr := sessionPath(opts.Root, session.Name)
+				if pathErr != nil {
+					return pathErr
+				}
+				session.MaxDepth = tightened
+				if err := writeJSONAtomic(path, session); err != nil {
+					return wrapExitError(ExitConfig, "update continuation reservation depth cap", err)
+				}
+			}
 			reserved = pending
 			return nil
 		}
@@ -130,6 +136,9 @@ func reserveContinuation(opts ReserveOptions, depthState dispatchDepthState) err
 			return abandonUnpublishedDispatchRun(run.Dir, err)
 		}
 		session.ContinuationReservationID = run.Record.ID
+		if tightened := minPositive(session.MaxDepth, inheritedCap); tightened > 0 {
+			session.MaxDepth = tightened
+		}
 		session.LastUsedAt = now
 		if err := writeJSONAtomic(path, session); err != nil {
 			return abandonUnpublishedDispatchRun(run.Dir, wrapExitError(ExitConfig, "record continuation dispatch reservation", err))
@@ -218,7 +227,8 @@ func continueReservation(opts ContinueOptions) error {
 	if err != nil {
 		return reportReservationChangeOrErr(opts.Root, record.ID, err)
 	}
-	persistedCap := clampExplicitCap(project.Config, explicitCap)
+	claimCap := minPositive(session.MaxDepth, clampExplicitCap(project.Config, depthState.MaxDepth))
+	workerCap := clampExplicitCap(project.Config, explicitCap)
 	if err := pruneDispatchEvidence(opts.Root, time.Now(), config.DispatchSessionRetention(project.Config)); err != nil {
 		return err
 	}
@@ -227,7 +237,7 @@ func continueReservation(opts ContinueOptions) error {
 		return err
 	}
 	parent, _ := clients.GetEnv(env, "AL_RUN_ID")
-	record, session, claimed, err := claimContinuationReservationWithMaxDepth(opts.Root, record.Name, record.ID, persistedCap, func(current *RunRecord, s Session, prev RunRecord) {
+	record, session, claimed, err := claimContinuationReservationWithMaxDepth(opts.Root, record.Name, record.ID, claimCap, func(current *RunRecord, s Session, prev RunRecord) {
 		current.Agent = target.Name
 		current.ProviderVersion = version
 		current.Mode = continuationMode(s)
@@ -245,7 +255,7 @@ func continueReservation(opts ContinueOptions) error {
 		return reportClaimedContinuationReservation(record)
 	}
 	run := &dispatchRun{Record: record, Dir: filepathForRun(opts.Root, record.ID)}
-	request := continuationWorkerRequest(opts, record.ID, session, prompt, depthState.Depth, minPositive(persistedCap, session.MaxDepth))
+	request := continuationWorkerRequest(opts, record.ID, session, prompt, depthState.Depth, minPositive(workerCap, session.MaxDepth))
 	return publishInvocation(opts.Context, opts.Root, run, session, request, stdout, opts.launchWorker)
 }
 

@@ -417,7 +417,7 @@ func TestCreateExclusiveSessionKeepsExistingMapping(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new run: %v", err)
 	}
-	if _, reserved, err := createExclusiveSession(root, existing.Name, run); err != nil || reserved {
+	if _, reserved, err := createExclusiveSession(root, existing.Name, run, 0); err != nil || reserved {
 		t.Fatalf("createExclusiveSession over an existing name = reserved %v, err %v", reserved, err)
 	}
 	after, err := os.ReadFile(path) // #nosec G304 -- path is inside the test-owned temporary state directory.
@@ -489,7 +489,7 @@ func TestDanglingDispatchMappingRemainsCorruptAndOccupied(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new run: %v", err)
 	}
-	if _, reserved, err := createExclusiveSession(root, name, run); err != nil || reserved {
+	if _, reserved, err := createExclusiveSession(root, name, run, 0); err != nil || reserved {
 		t.Fatalf("createExclusiveSession over a dangling mapping = reserved %v, err %v", reserved, err)
 	}
 	if got, err := os.Readlink(path); err != nil || got != target {

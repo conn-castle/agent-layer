@@ -70,6 +70,20 @@ func Start(opts StartOptions) error {
 	if err := checkDispatchStateAllowed(opts.Root, depthState, requestedMaxDepth); err != nil {
 		return err
 	}
+	// If launching a reservation at nonzero depth, enforce any cap stored on
+	// the reservation before reading the prompt or waiting on beforeProvider.
+	if opts.Reservation != nil && depthState.Depth > 0 {
+		selector := strings.TrimSpace(*opts.Reservation)
+		if validDispatchName(selector) {
+			if reservedSession, loadErr := loadSession(opts.Root, selector); loadErr == nil {
+				if err := checkDispatchStateAllowed(opts.Root, depthState, reservedSession.MaxDepth, requestedMaxDepth); err != nil {
+					return err
+				}
+			} else if !errors.Is(loadErr, errDispatchSessionNotFound) {
+				return loadErr
+			}
+		}
+	}
 	promptText, err := resolvePromptSource(opts.Context, opts.Prompt, opts.PromptFile)
 	if err != nil {
 		return err
@@ -247,7 +261,8 @@ func Continue(opts ContinueOptions) error {
 	if err != nil {
 		return err
 	}
-	persistedCap := clampExplicitCap(project.Config, explicitCap)
+	claimCap := minPositive(session.MaxDepth, clampExplicitCap(project.Config, depthState.MaxDepth))
+	workerCap := clampExplicitCap(project.Config, explicitCap)
 	run, err := newDispatchRun(opts.Root, target.Name, version, continuationMode(session))
 	if err != nil {
 		return err
@@ -260,11 +275,11 @@ func Continue(opts ContinueOptions) error {
 	if err := writeRunRecord(run.Dir, &run.Record); err != nil {
 		return err
 	}
-	session, err = claimConversationWithMaxDepth(opts.Root, session.Name, run.Record.ID, current.ID, persistedCap)
+	session, err = claimConversationWithMaxDepth(opts.Root, session.Name, run.Record.ID, current.ID, claimCap)
 	if err != nil {
 		return finishRejectedResume(run, err, writeRunRecord)
 	}
-	request := continuationWorkerRequest(opts, run.Record.ID, session, prompt, depthState.Depth, minPositive(persistedCap, session.MaxDepth))
+	request := continuationWorkerRequest(opts, run.Record.ID, session, prompt, depthState.Depth, minPositive(workerCap, session.MaxDepth))
 	return publishInvocation(opts.Context, opts.Root, run, session, request, writerOrDiscard(opts.Stdout), opts.launchWorker)
 }
 
