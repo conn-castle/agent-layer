@@ -200,7 +200,9 @@ for cls, expected_version, expected_digest_len, model, domains in [
     install = agent.install_spec()
     assert install.agent_name == cls.name() and install.version == cls.PINNED_VERSION
     assert cls.PINNED_VERSION in install.metadata["linux_amd64_artifact"], install.metadata
-    assert len(install.metadata["checksum"]) == expected_digest_len, install.metadata
+    checksum = install.metadata["checksum"]
+    assert len(checksum) == expected_digest_len, install.metadata
+    assert all(digit in "0123456789abcdef" for digit in checksum), install.metadata
     assert install.verification_command == f"{cls.BINARY} --version"
     assert install.metadata["network_allowlist"] == ["storage.googleapis.com"]
     assert set(agent.network_allowlist().domains) == domains

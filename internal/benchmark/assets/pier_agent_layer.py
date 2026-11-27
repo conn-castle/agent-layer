@@ -67,6 +67,8 @@ PROJECTED_PATHS = (
 # digest is published in the vendor manifest for 1.5.18.  xAI's installer
 # publishes the immutable Grok artifact URL but no SHA-256 sidecar; the pinned
 # digest below is the SHA-256 recorded from that vendor object on 2026-11-27.
+# The Antigravity archive contains one top-level antigravity binary. The Grok
+# artifact is a raw Linux/amd64 executable. Both report their pinned versions.
 # Do not replace either with a channel/latest installer.
 ANTIGRAVITY_LINUX_AMD64_URL = (
     "https://storage.googleapis.com/antigravity-public/antigravity-cli/"
@@ -836,10 +838,10 @@ class _AgentLayerTreatment:
                     ),
                 )
             elif self._treatment_agent == "antigravity":
-                # agy 1.5.18's `mcp list` ignores --gemini_dir and therefore
-                # cannot inspect the contained home. Validate the exact file
-                # that agy migrates on first launch; the protocol preflight
-                # below separately starts the configured server.
+                # With --gemini_dir set to the contained home, agy 1.5.18's
+                # `mcp list` reports no servers even when this file exists.
+                # Check the config that agy migrates on first launch. The
+                # protocol preflight below starts the configured server.
                 await self.exec_as_agent(
                     environment,
                     command=(

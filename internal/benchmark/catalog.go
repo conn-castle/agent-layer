@@ -14,9 +14,8 @@ const (
 	CodexClientVersion         = "0.146.0"
 	ExplicitCodexClientVersion = "0.171.0"
 	ClaudeClientVersion        = "2.1.207"
-	// These are the Linux client releases the benchmark adapters are written
-	// and fixture-tested against.  They are part of a new-provider identity;
-	// do not change the legacy Codex or Claude identity fields above.
+	// Pinned Linux/amd64 releases for the Antigravity and Grok benchmark
+	// adapters. These versions contribute to benchmark arm identity.
 	AntigravityClientVersion = "1.5.18"
 	GrokClientVersion        = "1.0.25"
 	ReportSchemaVersion      = "benchmark-report-v5"

@@ -3,6 +3,9 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+### Changed
+- Benchmarks pin Antigravity 1.5.18 and Grok 1.0.25. A normal `al benchmark run` uses new arm identities for studies with earlier pins and can run cells again and incur provider charges. Use `--recover-only` to regenerate compatible completed reports or finalize evidence-backed terminal test timeouts without paid calls (#567).
+
 ## v1.4.0 - 2026-11-25
 
 ### Changed
