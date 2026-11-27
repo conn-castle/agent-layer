@@ -1,0 +1,7 @@
+{
+  "buckets": [
+    {"modelId": "claude-opus-5-5-high", "tokenType": "WTUS", "remainingFraction": 1, "resetTime": "2026-11-26T17:00:00Z"},
+    {"modelId": "gemini-flash", "tokenType": "WTUS", "remainingFraction": 0.5, "resetTime": "2026-11-26T17:00:00Z"},
+    {"modelId": "gemini-other", "tokenType": "WTUS", "remainingFraction": 0.5, "resetTime": "2026-11-26T17:00:00Z"}
+  ]
+}

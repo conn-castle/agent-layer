@@ -1,0 +1,10 @@
+{
+  "groups": [{
+    "displayName": "Claude and GPT models",
+    "description": "Models within this group: Claude Opus 5.5, GPT-OSS 120B",
+    "buckets": [
+      {"bucketId": "3p-weekly", "window": "weekly", "remainingFraction": 0.75, "resetTime": "2026-12-03T12:00:00Z"},
+      {"bucketId": "3p-5h", "window": "5h", "remainingFraction": 1, "notStarted": true}
+    ]
+  }]
+}

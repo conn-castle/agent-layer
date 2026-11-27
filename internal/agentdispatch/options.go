@@ -11,6 +11,7 @@ import (
 
 	"github.com/conn-castle/agent-layer/internal/agentoptions"
 	"github.com/conn-castle/agent-layer/internal/config"
+	"github.com/conn-castle/agent-layer/internal/quota"
 )
 
 // OptionsResponse describes the agents that may be selected by dispatch start.
@@ -58,6 +59,7 @@ type AgentOption struct {
 	Model             FieldOption      `json:"model"`
 	ReasoningEffort   FieldOption      `json:"reasoning_effort"`
 	SessionMCPServers CapabilityOption `json:"session_mcp_servers"`
+	SubscriptionQuota CapabilityOption `json:"subscription_quota"`
 }
 
 // FieldOption describes an optional start override.
@@ -145,6 +147,7 @@ func buildTargetOptions(cfg config.Config, discovery agentoptions.DiscoveryReque
 				Model:             fieldOptionWithDiscovery(cfg, target, agentoptions.KindModel, fieldDiscovery),
 				ReasoningEffort:   fieldOptionWithDiscovery(cfg, target, agentoptions.KindReasoningEffort, fieldDiscovery),
 				SessionMCPServers: sessionMCPServersCapability(target),
+				SubscriptionQuota: subscriptionQuotaCapability(target.Name),
 			}
 		})
 	}
@@ -192,4 +195,11 @@ func sessionMCPServersCapability(target targetMeta) CapabilityOption {
 		Supported: target.SessionMCPServersSupported,
 		Reason:    target.SessionMCPServersReason,
 	}
+}
+
+func subscriptionQuotaCapability(agent string) CapabilityOption {
+	if quota.Supported(agent) {
+		return CapabilityOption{Supported: true}
+	}
+	return CapabilityOption{Reason: "subscription quota is unavailable for this provider"}
 }

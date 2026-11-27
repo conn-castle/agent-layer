@@ -118,6 +118,7 @@ func (p benchmarkPolicy) constrainOptions(options *OptionsResponse) {
 			Model:             FieldOption{OverrideSupported: true, Configured: models[0], Suggestions: models},
 			ReasoningEffort:   FieldOption{OverrideSupported: true, Configured: efforts[0], Suggestions: efforts},
 			SessionMCPServers: sessionMCP,
+			SubscriptionQuota: subscriptionQuotaCapability(agent),
 		})
 	}
 }

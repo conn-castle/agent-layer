@@ -1,0 +1,18 @@
+{
+  "buckets": [
+    {"bucketId": "3p-5h", "window": "5h", "remainingFraction": 1, "disabled": false},
+    {"bucketId": "flat-weekly", "displayName": "Weekly allowance", "window": "weekly", "remainingFraction": 1, "disabled": true},
+    {"bucketId": "unmapped-5h", "displayName": "Five-hour allowance", "window": "5h", "remainingFraction": 1},
+    {"bucketId": "unmapped-weekly", "displayName": "Weekly allowance", "window": "weekly", "remainingFraction": 1},
+    {"bucketId": "unknown-5h", "window": "5h", "remainingFraction": 0.5}
+  ],
+  "groups": [{
+    "displayName": "Claude and GPT models",
+    "description": "Models within this group: Claude Opus 5.5, GPT-OSS 120B",
+    "buckets": [
+      {"bucketId": "3p-weekly", "window": "weekly", "remainingFraction": 0.75, "resetTime": "2026-12-03T12:00:00Z"},
+      {"bucketId": "3p-5h", "window": "5h", "remainingFraction": 1}
+    ]
+  }],
+  "modelAvailabilities": {"gemini-flash": {"state": "MODEL_AVAILABILITY_STATE_CONGESTED"}}
+}

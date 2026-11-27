@@ -66,6 +66,7 @@ Start independent conversations for parallel work. When a completed specialist n
 - [How dispatch works](#how-dispatch-works)
 - [MCP tools](#mcp-tools)
 - [CLI commands](#cli-commands)
+- [Subscription quota](#subscription-quota)
 - [Conversation lifecycle](#conversation-lifecycle)
 - [Results and errors](#results-and-errors)
 - [Waiting and cancellation](#waiting-and-cancellation)
@@ -159,6 +160,7 @@ The CLI exposes the same backend for people and scripts:
 
 ```bash
 al dispatch options
+al dispatch quota --agent codex --agent grok
 
 al dispatch start --agent codex \
   [--model <model>] \
@@ -196,6 +198,83 @@ al dispatch start --agent codex --prompt "Summarize docs/AGENT-DISPATCH.md"
 al dispatch wait abc123
 # If the state is still running, wait again with the same handle.
 ```
+
+### Subscription quota
+
+`al dispatch quota` returns current subscription usage for Codex, Claude, Grok, Antigravity, and Muse. Run it from the target project to query the subscriptions its enabled dispatch agents would use. Use repeatable `--agent` flags to select project agents. The `subscription_quota.supported` field in `al dispatch options` describes reader availability independently of the selected login.
+
+```bash
+al dispatch quota --format summary
+al dispatch quota --format full
+al dispatch quota --format summary --agent codex --agent claude --timeout 8s --retries 1
+al dispatch quota \
+  --profile work=codex:/private/work/auth.json \
+  --profile personal=codex:/private/personal/auth.json \
+  --expect-account work=KNOWN_WORKSPACE_ID \
+  --model personal=gpt-5.5
+```
+
+The repeatable `--profile LABEL=AGENT:FILE` flag opens a caller-owned native credential file for a detached account. A profile-only query works outside an Agent Layer project. Combine `--agent` and `--profile` to query project agents alongside detached accounts. Labels are unique, case-sensitive, and at most 64 characters. Relative profile paths are resolved from the caller’s working directory.
+
+| Agent | Native credential file for `--profile` |
+| --- | --- |
+| Codex | `auth.json` or `secrets/codex_auth.age` in the intended Codex home. The vault requires the corresponding key in the current user's OS credential store. |
+| Claude | `.credentials.json` containing a `claudeAiOauth` subscription login. |
+| Grok | `auth.json` with a single first-party OAuth login. |
+| Antigravity | `antigravity-oauth-token` containing the consumer OAuth profile. |
+| Muse | A file-backed `muse/auth.json` from the native XDG configuration directory. Query the project agent for a macOS Keychain-backed login. |
+
+Use repeatable `--expect-account SELECTOR=ID` to require an account for each named agent or profile. A verified `subscription.id` works across projects and profile labels. You can also match these verified identifiers.
+
+| Agent | Other identifiers accepted by `--expect-account` |
+| --- | --- |
+| Codex | For personal subscriptions, ChatGPT account ID, user ID, or email. For shared workspaces, use `workspace ID/user ID` or `subscription.id`. |
+| Claude | `organization UUID/account UUID`. For a verified personal organization, the account UUID or email also works. |
+| Grok | Personal user or principal ID, or email when available. For a team subscription use `team ID/principal ID` or `subscription.id`. |
+| Antigravity | Google user ID or verified email. |
+| Muse | The email returned by the authenticated subscription endpoint. |
+
+Use repeatable `--model SELECTOR=MODEL` for a model from `al dispatch options` or a custom override. Configured and provider-reported models appear automatically. `models[].pools` names applicable pools and `coverage` indicates whether that mapping is `complete`, `partial`, or `unknown`. A pool with scope `all` covers the subscription's dispatch models. Scope `models` identifies specific model IDs or a documented family, `other_surface` covers a separate feature, and `unknown` indicates an unresolved association. A model-specific alternate credential can appear as `models[].auth_status`.
+
+The command emits one JSON object. `--format full` is the default and returns the complete telemetry fields below. `--format summary` uses the same provider reads and exit codes and returns a smaller JSON response for agent calls. Either format accepts `--json`.
+
+- `schema_version` is `1`. Consumers can ignore additional fields and use the result status to classify unfamiliar reasons.
+- `status` is `complete`, `partial`, or `no_readings`, based on the number of `ok` readings.
+- `results` has one result per selected account in selection order. `missing_readings` lists the `selector`, `agent`, `status`, and `reason` of each result whose status is other than `ok`. It is an empty array on a complete response.
+
+The summary adds `"format": "summary"` to the response. Each row includes its status, observation time, and known sign-in, retry, account check, and admission information. `highest_usage`, when available, identifies the window with the highest reported utilization across the account's quota pools, excluding disabled windows and pools for separate features. It includes the pool, scope, window, percent used, and reset time. Use the scope and the admission fields to interpret that reading. Summary model entries cover the configured model and models requested with `--model` and show their coverage and admission. Use full output for subscription identifiers, all pools and windows, the full model list, and supplemental diagnostics.
+
+Each full result contains:
+
+- `selector`, `agent`, `status`, and a machine-readable `reason` for a missing reading. Result statuses are `ok`, `non_subscription`, `unsupported`, `credentials_unavailable`, `login_expired`, `account_mismatch`, and `unavailable`. `account_check` reports whether an optional account expectation was met.
+- `reauth_required` is true when the login needs user action, false when a sign-in is unnecessary or a renewal credential has a known future expiration, and null when the need to sign in is unknown. `login_expired` indicates that a new sign-in is required, with reason `expired_credentials` or `revoked_credentials`. `credentials_unavailable` with reason `access_token_expired` means the access token has expired and the query has insufficient evidence to require a new sign-in. A generic authentication rejection has reason `credentials_rejected`.
+- `retryable` is true for a known transient reason a later identical invocation might recover from. `retries` counts additional attempts started by the quota retry policy for this selector, including supplemental reads. A reread after credential rotation does not itself increment `retries`. `retry_at` is an optional UTC timestamp from the governing HTTP `Retry-After` header when its future delay is within 24 hours.
+- `attempted_at` and nullable `observed_at` are absolute UTC timestamps. `observed_at` is the earliest successful primary quota read in that result. A successful response that omits utilization can still establish an observation and reports `no_usage`. `missing` lists unavailable supplemental components on results with utilization. Every invocation reads current provider state and retains no quota cache.
+- A nullable `subscription` with an opaque ID, verification flag, and provider tier when known. Use verified IDs to aggregate shared subscriptions. An unverified reading cannot satisfy an account expectation.
+- `pools` with a provider ID and an optional display `label`. `pools[].windows` contains nullable `used_percent`, `duration_seconds`, `resets_at`, and `starts_at`. A `fixed` window starts at its reset minus its duration when both are known. `rolling`, `not_started`, and `unknown` describe windows for which that formula does not apply or the provider does not establish the window type. A provider can explicitly mark a quota window `disabled`.
+- Nullable `blocked` and `lockout_clears_at` at agent, model, pool, and window level. The agent-level fields describe common subscription gates. Use the model fields for additional model-specific gates. The clear time is the latest reset of the known blockers and is null when any blocker has an unknown clear time. Providers can allow overage or credits even when included utilization reaches 100 percent. Codex can also supply a `block_reason` for ordinary exhaustion or a workspace billing restriction.
+
+| Exit | Status |
+| --- | --- |
+| `0` | `complete`. Every selected account has a valid utilization reading and satisfies any account expectation. |
+| `84` | `partial`. At least one valid reading and at least one missing reading. |
+| `85` | `no_readings`. No valid readings. |
+| `64`, `65` | Invalid arguments or invalid project configuration, respectively. |
+| `130`, `143` | Interrupted by SIGINT or SIGTERM, respectively. The JSON retains completed reads when possible. |
+
+The overall timeout defaults to 15 seconds and accepts durations up to one minute. A timed-out query can return partial results. Setting `AL_NO_NETWORK` in the effective launch environment disables quota network requests. Project queries include the project's `.agent-layer/.env` with the same precedence as dispatch. The query runs in the invoking Agent Layer binary so it can complete without fetching a pinned release.
+
+Use `--retries N` to allow up to `N` additional attempts per HTTP read. The default is three, and values from zero through five are accepted. Transient network failures, timeouts, and HTTP 408, 429, 500, 502, 503, and 504 can trigger retries. Retries use jittered backoff, respect `Retry-After` on HTTP 429 and 503, and share the overall timeout. A successful read, a response without usage, an authentication failure, or a malformed response does not trigger a network retry.
+
+Quota queries use first-party subscription endpoints and read credentials from the native stores. For a project login with a usable refresh grant and an expired or rejected access token, the query can run the installed provider's account or discovery command once. This sends no model prompt. The provider owns the refresh and can update its credential store. The query rereads the selected store and uses the replacement for quota calls. Allow at least 10 seconds of the timeout to remain when renewal starts so the provider can save its new credential. Quota processes sharing that store serialize their renewal attempts. Detached `--profile` files are read-only.
+
+Providers expose different levels of detail. Claude can report a counter without confirming turn admission, and Antigravity can report per-model utilization without a window duration or an admission decision. Grok reports included weekly usage for unified accounts and preserves uncertainty about paid admission when its billing response omits the necessary credit or spending controls. Explicit API billing returns `non_subscription`. Custom auth helpers, enterprise endpoints, and credential stores the reader cannot safely resolve return `unsupported`.
+
+On macOS, run the query as the desktop user who signed in to the native clients, with the login Keychain unlocked. If macOS asks whether to give the system `security` utility access to the item, choose **Allow** for that read. Use `--timeout 45s` if authorization prompts consume the time needed for renewal. Claude can read its Keychain entry. Codex can read `auth.json`, the direct Keychain login, or the encrypted `secrets/codex_auth.age` vault selected by `cli_auth_credentials_store` and `features.secret_auth_storage`. The vault's decryption key stays in the OS credential store and the query decrypts the login in memory. On Linux, Codex reads its Secret Service entry over D-Bus (matching `target=default` or a unique entry in the default collection). If a vault exists but its key cannot be read, the result reports `codex_vault_key_unavailable`. A vault whose encryption requires more than the query's scrypt work limit reports `codex_vault_work_factor_unsupported`.
+
+Muse reads its native `auth.json` to select the Meta login and resolves a Keychain reference on macOS. A file-backed login works with `TBH_CREDENTIAL_BACKEND=file`. Grok uses its native OAuth file and Antigravity uses its native credential file or Keychain entry. `muse_keychain_entry_unavailable` means the file references a Keychain login the query could not find in the current session.
+
+For the supported Codex release, an active `CODEX_API_KEY` conflicts with a forced ChatGPT login and reports `codex_login_method_conflict`.
 
 ### Reserve before starting or continuing
 

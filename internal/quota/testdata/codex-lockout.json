@@ -1,0 +1,17 @@
+{
+  "account_id": "workspace-fixture",
+  "plan_type": "plus",
+  "rate_limit": {
+    "allowed": false,
+    "limit_reached": true,
+    "primary_window": {"used_percent": 100, "limit_window_seconds": 18000, "reset_at": 1795701600},
+    "secondary_window": {"used_percent": 100, "limit_window_seconds": 604800, "reset_at": 1795716000}
+  },
+  "rate_limit_reached_type": {"type": "workspace_owner_credits_depleted"},
+  "additional_rate_limits": [{
+    "metered_feature": "codex_special",
+    "limit_name": "Special model",
+    "normal_model_slug": "special-model",
+    "rate_limit": {"allowed": true, "primary_window": {"used_percent": 20}}
+  }]
+}

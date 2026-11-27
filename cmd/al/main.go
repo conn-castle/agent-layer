@@ -89,6 +89,10 @@ func runMain(ctx context.Context, args []string, stdout io.Writer, stderr io.Wri
 		spawnDetachedRefreshFunc()
 		return
 	}
+	if len(args) > 1 && isDispatchQuota(args[1:]) {
+		handleRunError(executeFunc(ctx, args, stdout, stderr), stderr, exit, false)
+		return
+	}
 	cwd, err := getwd()
 	if err != nil {
 		_, _ = fmt.Fprintln(stderr, err)
@@ -154,6 +158,25 @@ func shouldBypassDispatch(args []string) bool {
 	}
 	command := firstCommandArg(args[1:])
 	return command == commandInit || command == commandUpdate || command == commandUpgrade || command == "__dispatch-worker" || command == "__dispatch-session-mcp"
+}
+
+// isDispatchQuota keeps the quota query on the invoking binary, so it
+// cannot fetch an older pinned CLI or write to a configured version cache.
+func isDispatchQuota(args []string) bool {
+	dispatch := false
+	for _, arg := range args {
+		if isQuietFlagArg(arg) {
+			continue
+		}
+		if dispatch {
+			return arg == dispatchQuotaCommand
+		}
+		if arg != commandDispatch {
+			return false
+		}
+		dispatch = true
+	}
+	return false
 }
 
 // isDispatchMCPServer reports whether args run the hidden MCP server command,

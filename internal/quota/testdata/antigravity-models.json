@@ -1,0 +1,12 @@
+{
+  "models": {
+    "claude-opus-5-5-medium": {"model": "MODEL_CLAUDE_MEDIUM", "displayName": "Claude Opus 5.5 (Medium)"},
+    "claude-opus-5-5-high": {"model": "MODEL_CLAUDE_HIGH", "displayName": "Claude Opus 5.5 (High)"},
+    "gemini-flash": {"model": "MODEL_GEMINI", "quotaInfo": {"remainingFraction": 0, "resetTime": "2026-11-26T17:00:00Z"}, "capacity": "unavailable"},
+    "gpt-oss-120b-medium": {"model": "MODEL_GPT", "displayName": "GPT-OSS 120B (Medium)"}
+  },
+  "groupedModels": {
+    "claude-opus-5-5": {"displayName": "Claude Opus 5.5", "supportedThinkingLevels": [{"thinkingSuffix": "medium"}, {"thinkingSuffix": "high"}]}
+  },
+  "deprecatedModelIds": {"former-flash": "gemini-flash"}
+}
