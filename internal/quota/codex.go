@@ -85,7 +85,7 @@ func readCodex(ctx context.Context, h *httpReader, auth credential, r *Result) f
 	r.Subscription = codexSubscription(data, auth.identity)
 	if data.AccountID != "" && auth.account != "" && data.AccountID != auth.account {
 		// The service reached a different workspace than the selected launch.
-		return failure{status: statusMismatch, reason: "credential_scope_mismatch", reauth: ptr(false)}
+		return failure{status: statusMismatch, reason: reasonScopeMismatch, reauth: ptr(false)}
 	}
 	r.ModelCoverage = coverageComplete
 	if !data.Additional.reported {

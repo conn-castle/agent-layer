@@ -29,7 +29,7 @@ type nativeCredential struct {
 const nativeRenewalGrace = time.Second
 
 func (s credentialSource) native(lockDir, envKey, envValue string) *nativeCredential {
-	if s.file != "" {
+	if s.file != "" || lockDir == "" {
 		return nil
 	}
 	env := s.env
@@ -86,7 +86,10 @@ func updatedCredential(ctx context.Context, req Request, source Source, prior cr
 	}
 	if prior.identity != nil && next.identity != nil && prior.identity.ID != "" &&
 		next.identity.ID != "" && prior.identity.ID != next.identity.ID {
-		return credential{}, failure{status: statusMismatch, reason: "credential_scope_mismatch", reauth: ptr(false)}
+		return credential{}, failure{status: statusMismatch, reason: reasonScopeMismatch, reauth: ptr(false)}
+	}
+	if prior.account != "" && next.account != "" && prior.account != next.account {
+		return credential{}, failure{status: statusMismatch, reason: reasonScopeMismatch, reauth: ptr(false)}
 	}
 	if next.token == prior.token || next.expired(now()) {
 		return credential{}, failure{}

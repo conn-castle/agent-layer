@@ -452,10 +452,18 @@ func TestQuotaClaudeSubdirectoryUsesProjectSettings(t *testing.T) {
 		Env:     []string{claudeConfigEnv + "=" + home},
 	}
 	source := Source{Agent: agentClaude}
-	// Stale generated <root>/.claude/settings.json must be ignored when removed from config.
+	// Stale generated <root>/.claude/settings.json must be ignored for read-only
+	// inspection when removed from config, but must disable native renewal.
 	writeFixture(t, filepath.Join(root, ".claude", "settings.json"), `{"env":{"ANTHROPIC_API_KEY":"stale-api"}}`)
-	_, fail := loadCredential(t.Context(), req, source)
+	auth, fail := loadCredential(t.Context(), req, source)
 	assert.Empty(t, fail.status)
+	assert.Nil(t, auth.native)
+
+	// Removing stale settings restores native renewal.
+	require.NoError(t, os.Remove(filepath.Join(root, ".claude", "settings.json")))
+	auth, fail = loadCredential(t.Context(), req, source)
+	assert.Empty(t, fail.status)
+	assert.NotNil(t, auth.native)
 
 	req.Project.Config.Agents.Claude.AgentSpecific = map[string]any{
 		"env": map[string]any{"ANTHROPIC_BASE_URL": "https://fixture.example"},
@@ -463,6 +471,8 @@ func TestQuotaClaudeSubdirectoryUsesProjectSettings(t *testing.T) {
 	_, fail = loadCredential(t.Context(), req, source)
 	assert.Equal(t, reasonCustomEndpoint, fail.reason)
 
+	// Subdirectory settings.json is applied before repo-root settings.local.json.
+	writeFixture(t, filepath.Join(root, "subdir", ".claude", "settings.json"), `{"env":{"ANTHROPIC_BASE_URL":"https://subdir.example"}}`)
 	writeFixture(t, filepath.Join(root, ".claude", "settings.local.json"), `{"env":{"ANTHROPIC_BASE_URL":"","CLAUDE_CONFIG_DIR":"other"}}`)
 	_, fail = loadCredential(t.Context(), req, source)
 	assert.Equal(t, reasonCustomAuth, fail.reason)
@@ -482,8 +492,11 @@ func TestQuotaClaudeBooleanProviderFlags(t *testing.T) {
 		reason string
 	}{
 		{"falsey flags ignored", []string{"CLAUDE_CODE_USE_BEDROCK=0", "CLAUDE_CODE_USE_VERTEX=false", "CLAUDE_CODE_USE_FOUNDRY= FALSE "}, ""},
+		{"off and no flags ignored", []string{"CLAUDE_CODE_USE_BEDROCK=off", "CLAUDE_CODE_USE_VERTEX=no"}, ""},
 		{"truthy bedrock flag rejected", []string{"CLAUDE_CODE_USE_BEDROCK=1"}, reasonCustomEndpoint},
 		{"truthy vertex flag rejected", []string{"CLAUDE_CODE_USE_VERTEX=true"}, reasonCustomEndpoint},
+		{"truthy yes flag rejected", []string{"CLAUDE_CODE_USE_BEDROCK=yes"}, reasonCustomEndpoint},
+		{"truthy on flag rejected", []string{"CLAUDE_CODE_USE_FOUNDRY= ON "}, reasonCustomEndpoint},
 		{"custom oauth url rejected", []string{"CLAUDE_CODE_CUSTOM_OAUTH_URL=https://oauth.example"}, reasonCustomEndpoint},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -797,6 +810,7 @@ func TestQuotaAntigravityAgentSpecificOverridesSettingsFile(t *testing.T) {
 	auth, fail := loadCredential(t.Context(), req, Source{Agent: agentAntigravity})
 	require.Empty(t, fail.status)
 	assert.Equal(t, ptr(false), auth.useCredits)
+	assert.NotNil(t, auth.native)
 
 	routes := allFixtureRoutes(t)
 	routes[agyBase+"retrieveUserQuotaSummary"] = `{"groups":[{"displayName":"Gemini Models","modelIds":["gemini-4-neon-high"],"buckets":[
@@ -822,8 +836,9 @@ func TestQuotaAntigravityAgentSpecificOverridesSettingsFile(t *testing.T) {
 
 	writeFixture(t, filepath.Join(agy, "settings.json"), `{"modelProvider":"gemini"}`)
 	project.Config.Agents.Antigravity.AgentSpecific = map[string]any{"modelProvider": "antigravity"}
-	_, fail = loadCredential(t.Context(), req, Source{Agent: agentAntigravity})
+	auth, fail = loadCredential(t.Context(), req, Source{Agent: agentAntigravity})
 	assert.Empty(t, fail.status)
+	assert.Nil(t, auth.native)
 
 	writeFixture(t, filepath.Join(agy, "settings.json"), `{"security":{"auth":{"selectedType":"oauth-personal"}}}`)
 	project.Config.Agents.Antigravity.AgentSpecific = map[string]any{"security": map[string]any{"auth": map[string]any{"selectedType": "gemini-api-key"}}}
@@ -876,15 +891,76 @@ func TestQuotaClaudeUnverifiedAccountOnlyIdentityUnset(t *testing.T) {
 
 func TestQuotaCappedWriterEnforcesLimitUnderIOCopy(t *testing.T) {
 	var w cappedWriter
-	_, err := io.Copy(&w, strings.NewReader(strings.Repeat("a", maxPayloadSize+1)))
+	_, err := io.Copy(&w, io.LimitReader(strings.NewReader(strings.Repeat("a", maxPayloadSize+1)), int64(maxPayloadSize)+1))
 	require.Error(t, err)
 	assert.LessOrEqual(t, w.Len(), maxPayloadSize)
 
 	var ok cappedWriter
-	n, err := io.Copy(&ok, strings.NewReader("fixture"))
+	n, err := io.Copy(&ok, io.LimitReader(strings.NewReader("fixture"), 7))
 	require.NoError(t, err)
 	assert.Equal(t, int64(7), n)
 	assert.Equal(t, "fixture", string(ok.Bytes()))
+}
+
+func TestQuotaAntigravityLegacyFallbackAndPoolIDUniqueness(t *testing.T) {
+	t.Run("explicit structured allowed is not overridden by exhausted legacy fallback", func(t *testing.T) {
+		var summary agySummary
+		require.NoError(t, json.Unmarshal([]byte(`{"groups":[
+			{"groupId":"explicit-allowed","modelIds":["gemini-flash"],"buckets":[
+				{"bucketId":"flash-5h","window":"5h","allowed":true},
+				{"bucketId":"flash-weekly","window":"weekly","allowed":true}
+			]}
+		]}`), &summary))
+		var legacy agyLegacy
+		require.NoError(t, json.Unmarshal([]byte(`{"buckets":[
+			{"modelId":"gemini-flash","tokenType":"REQUESTS","remainingFraction":0,"resetTime":"2026-12-03T12:00:00Z"}
+		]}`), &legacy))
+		r := Result{Agent: agentAntigravity}
+		normalizeAntigravity(summary, legacy, agyCatalog{}, agyCredits{CanUse: ptr(false)}, credential{}, &r)
+		r.evaluateModels([]string{"gemini-flash"})
+		m := findModel(t, r, "gemini-flash")
+		assert.Equal(t, coverageComplete, m.Coverage)
+		assert.Equal(t, ptr(false), m.Blocked)
+		require.Len(t, r.Pools, 2)
+		assert.Equal(t, ptr(false), r.Pools[1].Blocked)
+		assert.Equal(t, ptr(float64(100)), r.Pools[1].Windows[0].UsedPercent)
+	})
+
+	t.Run("named model meter fills missing utilization in place and stays complete", func(t *testing.T) {
+		var summary agySummary
+		require.NoError(t, json.Unmarshal([]byte(`{"groups":[{"displayName":"All Models","buckets":[
+			{"bucketId":"gemini-4-hydrogen-xhigh","displayName":"Gemini 4 Hydrogen (XHigh)"}
+		]}]}`), &summary))
+		var catalog agyCatalog
+		require.NoError(t, json.Unmarshal([]byte(`{"models":{"gemini-4-hydrogen-xhigh":{"displayName":"Gemini 4 Hydrogen (XHigh)"}}}`), &catalog))
+		var legacy agyLegacy
+		require.NoError(t, json.Unmarshal([]byte(`{"buckets":[
+			{"modelId":"gemini-4-hydrogen-xhigh","tokenType":"REQUESTS","remainingFraction":0.4}
+		]}`), &legacy))
+		r := Result{Agent: agentAntigravity}
+		normalizeAntigravity(summary, legacy, catalog, agyCredits{}, credential{}, &r)
+		r.evaluateModels([]string{"gemini-4-hydrogen-xhigh"})
+		require.Len(t, r.Pools, 1)
+		assert.Equal(t, "gemini-4-hydrogen-xhigh", r.Pools[0].ID)
+		require.Len(t, r.Pools[0].Windows, 1)
+		assert.InDelta(t, 60.0, *r.Pools[0].Windows[0].UsedPercent, 0.0001)
+		m := findModel(t, r, "gemini-4-hydrogen-xhigh")
+		assert.Equal(t, coverageComplete, m.Coverage)
+		assert.Equal(t, ptr(false), m.Blocked)
+	})
+
+	t.Run("three colliding pool IDs stay unique", func(t *testing.T) {
+		var summary agySummary
+		require.NoError(t, json.Unmarshal([]byte(`{"groups":[{"groupId":"G","buckets":[
+			{"bucketId":"w","window":"5h","modelIds":["m1"],"remainingFraction":0.5},
+			{"bucketId":"w","window":"5h","modelIds":["m2"],"remainingFraction":0.5},
+			{"bucketId":"w","window":"5h","modelIds":["m3"],"remainingFraction":0.5}
+		]}]}`), &summary))
+		r := Result{Agent: agentAntigravity}
+		normalizeAntigravity(summary, agyLegacy{}, agyCatalog{}, agyCredits{}, credential{}, &r)
+		require.Len(t, r.Pools, 3)
+		assert.Equal(t, []string{"G", "G:w", "G:w:2"}, []string{r.Pools[0].ID, r.Pools[1].ID, r.Pools[2].ID})
+	})
 }
 
 func TestQuotaUnmarshalCleanLeavesOutputUnchangedOnTypeError(t *testing.T) {

@@ -237,8 +237,15 @@ func TestQuotaClaudeKeychainFailureIsNotMissingLogin(t *testing.T) {
 	require.NotNil(t, fileOnly.native)
 	assert.Equal(t, filepath.Join(home, ".claude"), fileOnly.native.lockDir)
 
-	// Keychain login when ~/.claude does not exist yet must fall back to the
-	// common OS-user lock directory so locking succeeds without ENOENT.
+	// Override OS user home so Keychain locking tests do not depend on host account paths.
+	realOSUserHome := osUserHome
+	t.Cleanup(func() { osUserHome = realOSUserHome })
+	fakeUserHome := t.TempDir()
+	osUserHome = func() string { return fakeUserHome }
+
+	// All macOS Keychain renewals serialize on one stable per-OS-user lock directory
+	// regardless of whether ~/.claude exists, an absolute config dir is set, or a
+	// relative CLAUDE_SECURESTORAGE_CONFIG_DIR is used across different directories.
 	missingHome := t.TempDir()
 	keychainSource := credentialSource{root: missingHome, env: []string{"HOME=" + missingHome}}
 	keychainRead := func(context.Context, string, string) ([]byte, failure) {
@@ -247,14 +254,11 @@ func TestQuotaClaudeKeychainFailureIsNotMissingLogin(t *testing.T) {
 	auth, fail = claudeCredentialFrom(t.Context(), keychainSource, keychainRead)
 	require.Empty(t, fail.status)
 	require.NotNil(t, auth.native)
-	commonLockDir := osUserLockDir(missingHome)
-	assert.Equal(t, commonLockDir, auth.native.lockDir)
+	assert.Equal(t, fakeUserHome, auth.native.lockDir)
 	unlock, err := auth.native.lock(t.Context())
 	require.NoError(t, err)
 	unlock()
 
-	// Processes sharing the same Keychain service via an existing absolute
-	// CLAUDE_CONFIG_DIR vs CLAUDE_SECURESTORAGE_CONFIG_DIR lock that directory.
 	alt := t.TempDir()
 	viaConfigDir, failA := claudeCredentialFrom(t.Context(), credentialSource{
 		root: missingHome, env: []string{"HOME=" + missingHome, claudeConfigEnv + "=" + alt},
@@ -264,11 +268,9 @@ func TestQuotaClaudeKeychainFailureIsNotMissingLogin(t *testing.T) {
 		root: missingHome, env: []string{"HOME=" + missingHome, "CLAUDE_SECURESTORAGE_CONFIG_DIR=" + alt},
 	}, keychainRead)
 	require.Empty(t, failB.status)
-	assert.Equal(t, alt, viaConfigDir.native.lockDir)
-	assert.Equal(t, viaConfigDir.native.lockDir, viaSecureStorage.native.lockDir)
+	assert.Equal(t, fakeUserHome, viaConfigDir.native.lockDir)
+	assert.Equal(t, fakeUserHome, viaSecureStorage.native.lockDir)
 
-	// Relative CLAUDE_SECURESTORAGE_CONFIG_DIR hashes the raw value, so two
-	// different working directories and HOME overrides must share one OS-user lock.
 	dirA, dirB := t.TempDir(), t.TempDir()
 	require.NoError(t, os.Mkdir(filepath.Join(dirA, ".claude-config"), 0o700))
 	require.NoError(t, os.Mkdir(filepath.Join(dirB, ".claude-config"), 0o700))
@@ -280,8 +282,48 @@ func TestQuotaClaudeKeychainFailureIsNotMissingLogin(t *testing.T) {
 		root: dirB, workDir: dirB, env: []string{"HOME=" + dirB, "CLAUDE_SECURESTORAGE_CONFIG_DIR=.claude-config"},
 	}, keychainRead)
 	require.Empty(t, failRelB.status)
-	assert.Equal(t, commonLockDir, relA.native.lockDir)
+	assert.Equal(t, fakeUserHome, relA.native.lockDir)
 	assert.Equal(t, relA.native.lockDir, relB.native.lockDir)
+
+	// When the OS-user home directory does not exist, skip native renewal rather
+	// than falling back to a request-local HOME directory.
+	osUserHome = func() string { return filepath.Join(fakeUserHome, "nonexistent") }
+	noLockAuth, failNoLock := claudeCredentialFrom(t.Context(), keychainSource, keychainRead)
+	require.Empty(t, failNoLock.status)
+	assert.Nil(t, noLockAuth.native)
+}
+
+func TestQuotaClaudeRenewalRejectsAccountRotationWithoutOrg(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, claudeCredentials)
+	writeFixture(t, path, `{"claudeAiOauth":{"accessToken":"tok-1","accountUuid":"acct-1"}}`)
+	req := Request{WorkDir: dir}
+	source := Source{Agent: agentClaude, File: path}
+	prior, fail := loadCredential(t.Context(), req, source)
+	require.Empty(t, fail.status)
+
+	writeFixture(t, path, `{"claudeAiOauth":{"accessToken":"tok-2","accountUuid":"acct-2"}}`)
+	_, errFail := updatedCredential(t.Context(), req, source, prior, fixedTime, true)
+	assert.Equal(t, statusMismatch, errFail.status)
+	assert.Equal(t, "credential_scope_mismatch", errFail.reason)
+}
+
+func TestQuotaCodexKeyringLockFallbackUsesOSUserHome(t *testing.T) {
+	realOSUserHome := osUserHome
+	t.Cleanup(func() { osUserHome = realOSUserHome })
+	fakeUserHome := t.TempDir()
+	osUserHome = func() string { return fakeUserHome }
+
+	requestHome := t.TempDir()
+	missingCodexHome := filepath.Join(requestHome, "missing-codex")
+	s := credentialSource{root: requestHome, env: []string{"HOME=" + requestHome}}
+	lockDir := existingDirOrFallback(missingCodexHome, osUserLockDir())
+	native := s.native(lockDir, codexHomeEnv, missingCodexHome)
+	require.NotNil(t, native)
+	assert.Equal(t, fakeUserHome, native.lockDir)
+
+	osUserHome = func() string { return filepath.Join(fakeUserHome, "nonexistent") }
+	assert.Nil(t, s.native(existingDirOrFallback(missingCodexHome, osUserLockDir()), codexHomeEnv, missingCodexHome))
 }
 
 func TestQuotaGrokExternalAuthRenewalEnsuresPrivateHome(t *testing.T) {

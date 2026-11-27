@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"slices"
 	"strings"
@@ -151,6 +152,7 @@ func normalizeAntigravity(summary agySummary, legacy agyLegacy, catalog agyCatal
 	r.ModelCoverage = coveragePartial
 	creditBypass := agyCreditBypass(credits, auth.useCredits)
 	covered := make(map[string]bool)
+	explicitAllowed := make(map[string]bool)
 	addSummary := func(group, description string, modelIDs []string, bucket agyQuota) {
 		ids := agyBucketModels(description, modelIDs, bucket, catalog)
 		if slices.Contains(ids, bucket.ID) {
@@ -164,6 +166,10 @@ func normalizeAntigravity(summary agySummary, legacy agyLegacy, catalog agyCatal
 		if window.UsedPercent != nil || window.Disabled != nil && *window.Disabled {
 			for _, id := range ids {
 				covered[id] = true
+			}
+		} else if bucket.Allowed != nil && *bucket.Allowed || bucket.Blocked != nil && !*bucket.Blocked {
+			for _, id := range ids {
+				explicitAllowed[id] = true
 			}
 		}
 		addAgyBucket(r, group, ids, window)
@@ -198,9 +204,38 @@ func normalizeAntigravity(summary agySummary, legacy agyLegacy, catalog agyCatal
 		}
 		ids := agyAliases(catalog, []string{bucket.Model})
 		window := agyWindow(textFrom(bucket.TokenType, "provider_window"), bucket, 0, windowUnknown, creditBypass)
-		addAgyBucket(r, bucket.Model, ids, window)
+		if explicitAllowed[bucket.Model] && bucket.Blocked == nil && bucket.Allowed == nil {
+			window.Admission = knownAllowed()
+		}
+		if fillAgyNamedModelMeter(r, bucket.Model, ids, window) {
+			continue
+		}
+		addAgyBucketWithGroup(r, "legacy:"+bucket.Model, bucket.Model, ids, window)
 	}
 	addAgyModels(r, catalog)
+}
+
+func fillAgyNamedModelMeter(r *Result, model string, ids []string, legacy Window) bool {
+	for i := range r.Pools {
+		pool := &r.Pools[i]
+		if pool.ID != model || len(pool.Windows) != 1 || pool.Windows[0].ID != pool.ID || !slices.Equal(pool.Models, ids) {
+			continue
+		}
+		w := &pool.Windows[0]
+		if w.UsedPercent != nil || legacy.UsedPercent == nil {
+			continue
+		}
+		w.UsedPercent = legacy.UsedPercent
+		if w.ResetsAt == nil {
+			w.ResetsAt = legacy.ResetsAt
+		}
+		if w.Blocked == nil {
+			w.Admission = legacy.Admission
+		}
+		pool.Admission = windowAdmission(pool.Windows)
+		return true
+	}
+	return false
 }
 
 func addAgyModels(r *Result, catalog agyCatalog) {
@@ -283,23 +318,35 @@ func agySummaryWindowPending(bucket agyQuota) bool {
 }
 
 func addAgyBucket(r *Result, group string, ids []string, window Window) {
+	addAgyBucketWithGroup(r, group, group, ids, window)
+}
+
+func addAgyBucketWithGroup(r *Result, nativeGroup, displayGroup string, ids []string, window Window) {
 	for i := range r.Pools {
 		pool := &r.Pools[i]
-		if pool.nativeGroup == group && slices.Equal(pool.Models, ids) {
+		if pool.nativeGroup == nativeGroup && slices.Equal(pool.Models, ids) {
 			pool.Windows = append(pool.Windows, window)
 			pool.Admission = windowAdmission(pool.Windows)
 			return
 		}
 	}
-	poolID := group
-	if slices.ContainsFunc(r.Pools, func(pool Pool) bool { return pool.ID == poolID }) {
-		poolID = group + ":" + window.ID
+	poolID := displayGroup
+	if agyHasPoolID(r.Pools, poolID) {
+		base := displayGroup + ":" + window.ID
+		poolID = base
+		for n := 2; agyHasPoolID(r.Pools, poolID); n++ {
+			poolID = fmt.Sprintf("%s:%d", base, n)
+		}
 	}
 	scope := scopeUnknown
 	if len(ids) > 0 {
 		scope = scopeModels
 	}
-	r.Pools = append(r.Pools, Pool{ID: poolID, Scope: scope, Models: ids, Windows: []Window{window}, Admission: window.Admission, nativeGroup: group})
+	r.Pools = append(r.Pools, Pool{ID: poolID, Scope: scope, Models: ids, Windows: []Window{window}, Admission: window.Admission, nativeGroup: nativeGroup})
+}
+
+func agyHasPoolID(pools []Pool, id string) bool {
+	return slices.ContainsFunc(pools, func(pool Pool) bool { return pool.ID == id })
 }
 
 func agyBucketModels(description string, groupIDs []string, bucket agyQuota, catalog agyCatalog) []string {

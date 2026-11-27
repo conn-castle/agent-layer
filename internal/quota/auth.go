@@ -41,8 +41,10 @@ const (
 	credentialStoreAuto      = "auto"
 	keyringServiceAttr       = "service"
 	keyringUsernameAttr      = "username"
-	reasonExpiredCredentials = "expired_credentials"  // #nosec G101 -- public result reason.
-	reasonAccessExpired      = "access_token_expired" // #nosec G101 -- public result reason.
+	flagYes                  = "yes"
+	reasonExpiredCredentials = "expired_credentials"       // #nosec G101 -- public result reason.
+	reasonAccessExpired      = "access_token_expired"      // #nosec G101 -- public result reason.
+	reasonScopeMismatch      = "credential_scope_mismatch" // #nosec G101 -- public result reason.
 )
 
 type credential struct {
@@ -170,8 +172,7 @@ func (s credentialSource) has(names ...string) bool {
 func (s credentialSource) enabledFlag(names ...string) bool {
 	for _, name := range names {
 		switch strings.ToLower(strings.TrimSpace(s.value(name))) {
-		case "", "0", "false":
-		default:
+		case "1", "true", flagYes, "on":
 			return true
 		}
 	}
@@ -392,7 +393,7 @@ func codexCredential(ctx context.Context, s credentialSource) (credential, failu
 	}
 	lockDir := settings.home
 	if settings.store == "keyring" || settings.store == credentialStoreAuto {
-		lockDir = existingDirOrFallback(lockDir, s.home("", ""))
+		lockDir = existingDirOrFallback(lockDir, osUserLockDir())
 	}
 	auth.native = s.native(lockDir, codexHomeEnv, settings.home)
 	return auth, failure{}

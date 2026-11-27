@@ -238,7 +238,7 @@ func makeClaudeWindow(id string, used *float64, length time.Duration, reset *tim
 	}
 	w := newWindow(id, used, length, reset, state)
 	enforced := extra != nil && (extra.Enabled != nil && !*extra.Enabled || extra.UserDisabled || extra.SpendLimit || extra.CreditsCanPay == "no")
-	canPay := !scoped && extra != nil && extra.Enabled != nil && *extra.Enabled && !extra.UserDisabled && !extra.SpendLimit && extra.CreditsCanPay == "yes"
+	canPay := !scoped && extra != nil && extra.Enabled != nil && *extra.Enabled && !extra.UserDisabled && !extra.SpendLimit && extra.CreditsCanPay == flagYes
 	rejected := claudeWindowRejected(locked, severity)
 	switch {
 	case state == windowPending, canPay:

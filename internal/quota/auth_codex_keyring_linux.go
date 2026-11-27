@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -69,12 +71,9 @@ func readCodexKeyring(ctx context.Context, service, account string) ([]byte, fai
 // Only connect to existing local Unix session buses. The generic connector
 // can launch a D-Bus daemon or dial TCP before applying its context.
 func connectCodexSessionBus(ctx context.Context) (*dbus.Conn, error) {
-	address := os.Getenv("DBUS_SESSION_BUS_ADDRESS")
-	if address == "" || address == "autolaunch:" {
-		address = fmt.Sprintf("unix:path=/run/user/%d/bus", os.Getuid())
-	}
+	sockets := codexSessionBusSockets(os.Getenv("DBUS_SESSION_BUS_ADDRESS"), os.Getenv("XDG_RUNTIME_DIR"), os.Getuid())
 	var dialer net.Dialer
-	for _, socket := range codexSessionBusSockets(address) {
+	for _, socket := range sockets {
 		raw, err := dialer.DialContext(ctx, "unix", socket)
 		if err != nil {
 			continue
@@ -86,6 +85,10 @@ func connectCodexSessionBus(ctx context.Context) (*dbus.Conn, error) {
 		}
 		conn, err := dbus.ConnectUnix(raw.(*net.UnixConn), dbus.WithContext(ctx))
 		if err == nil {
+			if err := raw.SetDeadline(time.Time{}); err != nil {
+				_ = conn.Close()
+				continue
+			}
 			return conn, nil
 		}
 		_ = raw.Close()
@@ -93,7 +96,22 @@ func connectCodexSessionBus(ctx context.Context) (*dbus.Conn, error) {
 	return nil, errors.New("local Secret Service bus unavailable")
 }
 
-func codexSessionBusSockets(address string) []string {
+func codexDefaultSessionBusSockets(xdgRuntimeDir string, uid int) []string {
+	var sockets []string
+	if filepath.IsAbs(xdgRuntimeDir) {
+		sockets = append(sockets, filepath.Join(xdgRuntimeDir, "bus"))
+	}
+	fallback := fmt.Sprintf("/run/user/%d/bus", uid)
+	if !slices.Contains(sockets, fallback) {
+		sockets = append(sockets, fallback)
+	}
+	return sockets
+}
+
+func codexSessionBusSockets(address, xdgRuntimeDir string, uid int) []string {
+	if address == "" || strings.HasPrefix(address, "autolaunch:") {
+		return codexDefaultSessionBusSockets(xdgRuntimeDir, uid)
+	}
 	var sockets []string
 	for _, entry := range strings.Split(address, ";") {
 		params, ok := strings.CutPrefix(entry, "unix:")
@@ -102,17 +120,28 @@ func codexSessionBusSockets(address string) []string {
 		}
 		for _, parameter := range strings.Split(params, ",") {
 			key, value, _ := strings.Cut(parameter, "=")
-			if key != "path" && key != "abstract" {
+			switch key {
+			case "runtime":
+				if value != flagYes {
+					continue
+				}
+				for _, sock := range codexDefaultSessionBusSockets(xdgRuntimeDir, uid) {
+					if !slices.Contains(sockets, sock) {
+						sockets = append(sockets, sock)
+					}
+				}
+			case "path", "abstract":
+				value, err := dbus.UnescapeBusAddressValue(value)
+				if err != nil || value == "" {
+					continue
+				}
+				if key == "abstract" {
+					value = "@" + value
+				}
+				sockets = append(sockets, value)
+			default:
 				continue
 			}
-			value, err := dbus.UnescapeBusAddressValue(value)
-			if err != nil || value == "" {
-				continue
-			}
-			if key == "abstract" {
-				value = "@" + value
-			}
-			sockets = append(sockets, value)
 			break
 		}
 	}
@@ -151,21 +180,6 @@ func (s *dbusSecretService) collectionSearchItems(ctx context.Context, collectio
 		return nil, err
 	}
 	return objectPathStrings(items), nil
-}
-
-func (s *dbusSecretService) itemAttributes(ctx context.Context, item string) (map[string]string, error) {
-	var raw dbus.Variant
-	err := s.conn.Object(secretServiceBus, dbus.ObjectPath(item)).
-		CallWithContext(ctx, dbusPropertiesGetMethod, dbus.FlagNoAutoStart, secretItemIface, "Attributes").
-		Store(&raw)
-	if err != nil {
-		return nil, err
-	}
-	attrs, ok := raw.Value().(map[string]string)
-	if !ok {
-		return nil, errors.New("unexpected Secret Service attributes type")
-	}
-	return attrs, nil
 }
 
 func (s *dbusSecretService) itemLocked(ctx context.Context, item string) (bool, error) {

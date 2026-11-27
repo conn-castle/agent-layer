@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"maps"
 	"os"
 	"path/filepath"
 	"testing"
@@ -140,12 +139,16 @@ func TestQuotaMuseMacOSKeychainSelection(t *testing.T) {
 				s.file = path
 			}
 			called := false
-			auth, fail := museCredentialFrom(t.Context(), s, tc.platform, func(_ context.Context, service, account string) ([]byte, failure) {
-				called = true
-				assert.Equal(t, "ai.meta.dev.credentials", service)
-				assert.Equal(t, "meta", account)
-				return []byte(tc.raw), tc.keyringFail
-			})
+			var reader keyringReader
+			if tc.platform == platformDarwin {
+				reader = func(_ context.Context, service, account string) ([]byte, failure) {
+					called = true
+					assert.Equal(t, "ai.meta.dev.credentials", service)
+					assert.Equal(t, "meta", account)
+					return []byte(tc.raw), tc.keyringFail
+				}
+			}
+			auth, fail := museCredentialFrom(t.Context(), s, reader)
 			assert.Equal(t, tc.lookup, called)
 			assert.Equal(t, tc.reason, fail.reason)
 			assert.Equal(t, tc.token, auth.token)
@@ -216,17 +219,6 @@ func (s *syntheticSecretService) collectionSearchItems(_ context.Context, collec
 		}
 	}
 	return out, nil
-}
-
-func (s *syntheticSecretService) itemAttributes(_ context.Context, item string) (map[string]string, error) {
-	if s.err != nil {
-		return nil, s.err
-	}
-	entry, ok := s.items[item]
-	if !ok {
-		return nil, errors.New("synthetic item missing")
-	}
-	return maps.Clone(entry.attrs), nil
 }
 
 func (s *syntheticSecretService) itemLocked(_ context.Context, item string) (bool, error) {
@@ -310,16 +302,27 @@ func TestQuotaCodexSecretServiceSelection(t *testing.T) {
 			reason: keyringUnavailable,
 		},
 		{
-			name: "unique targetless item in default collection selected and other targets ignored",
+			name: "unique legacy item in default collection selected and other collections ignored",
 			store: syntheticSecretService{
 				defaultCollection: defCol,
 				items: map[string]syntheticSecretItem{
-					"/item/other-target":     {collection: defCol, attrs: map[string]string{"service": service, "username": account, "target": "custom"}, secret: []byte("wrong")},
 					"/item/other-collection": {collection: other, attrs: map[string]string{"service": service, "username": account}, secret: []byte("wrong-collection")},
 					"/item/legacy":           {collection: defCol, attrs: map[string]string{"service": service, "username": account}, secret: []byte("legacy-secret")},
 				},
 			},
 			want: "legacy-secret",
+		},
+		{
+			name: "legacy targetless plus non-default target in default collection fails closed as ambiguous",
+			store: syntheticSecretService{
+				defaultCollection: defCol,
+				items: map[string]syntheticSecretItem{
+					"/item/other-target": {collection: defCol, attrs: map[string]string{"service": service, "username": account, "target": "custom"}, secret: []byte("custom-secret")},
+					"/item/legacy":       {collection: defCol, attrs: map[string]string{"service": service, "username": account}, secret: []byte("legacy-secret")},
+				},
+			},
+			status: statusUnsupported,
+			reason: reasonAmbiguousSlot,
 		},
 		{
 			name: "ambiguous targetless items in default collection fail closed",
@@ -345,11 +348,21 @@ func TestQuotaCodexSecretServiceSelection(t *testing.T) {
 			reason: keyringUnavailable,
 		},
 		{
-			name: "only non-default target in unlocked default collection proves absence",
+			name: "unique non-default target in default collection selected by legacy fallback",
 			store: syntheticSecretService{
 				defaultCollection: defCol,
 				items: map[string]syntheticSecretItem{
-					"/item/custom": {collection: defCol, attrs: map[string]string{"service": service, "username": account, "target": "custom"}, secret: []byte("wrong")},
+					"/item/custom": {collection: defCol, attrs: map[string]string{"service": service, "username": account, "target": "custom"}, secret: []byte("custom-secret")},
+				},
+			},
+			want: "custom-secret",
+		},
+		{
+			name: "unlocked empty default collection proves absence",
+			store: syntheticSecretService{
+				defaultCollection: defCol,
+				items: map[string]syntheticSecretItem{
+					"/item/other-collection": {collection: other, attrs: map[string]string{"service": service, "username": account}, secret: []byte("wrong-collection")},
 				},
 			},
 			status: statusCredentials,

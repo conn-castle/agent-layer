@@ -9,15 +9,15 @@ type codexSecretService interface {
 	readDefaultCollection(ctx context.Context) (string, error)
 	collectionLocked(ctx context.Context, collection string) (bool, error)
 	collectionSearchItems(ctx context.Context, collection string, attrs map[string]string) ([]string, error)
-	itemAttributes(ctx context.Context, item string) (map[string]string, error)
 	itemLocked(ctx context.Context, item string) (bool, error)
 	itemSecret(ctx context.Context, item string) ([]byte, error)
 }
 
 // readCodexSecretService mirrors keyring 3.6.3's SsCredential lookup on Linux:
 // first select a unique service+username+target=default match across Secret
-// Service, then fall back to a unique targetless legacy item in the default
-// collection. Ambiguous or locked stores fail closed; only an unlocked default
+// Service, then fall back via map_matching_legacy_items to searching the
+// default collection by service+username and requiring uniqueness across all
+// matches. Ambiguous or locked stores fail closed; only an unlocked default
 // collection (or absent default alias) with no matching item proves absence.
 func readCodexSecretService(ctx, callCtx context.Context, store codexSecretService, service, account string) ([]byte, failure) {
 	unlocked, locked, err := store.searchItems(callCtx, map[string]string{
@@ -52,28 +52,18 @@ func readCodexSecretService(ctx, callCtx context.Context, store codexSecretServi
 	if err != nil {
 		return nil, secretServiceFailure(ctx, callCtx)
 	}
-	var matches []string
-	for _, item := range items {
-		attrs, err := store.itemAttributes(callCtx, item)
-		if err != nil {
-			return nil, secretServiceFailure(ctx, callCtx)
-		}
-		if _, hasTarget := attrs["target"]; !hasTarget {
-			matches = append(matches, item)
-		}
-	}
-	if len(matches) > 1 {
+	if len(items) > 1 {
 		return nil, unsupportedAuth(reasonAmbiguousSlot)
 	}
-	if len(matches) == 1 {
-		isLocked, err := store.itemLocked(callCtx, matches[0])
+	if len(items) == 1 {
+		isLocked, err := store.itemLocked(callCtx, items[0])
 		if err != nil {
 			return nil, secretServiceFailure(ctx, callCtx)
 		}
 		if isLocked {
 			return nil, unsupportedAuth(keyringUnavailable)
 		}
-		return readCodexSecretItem(ctx, callCtx, store, matches[0])
+		return readCodexSecretItem(ctx, callCtx, store, items[0])
 	}
 	colLocked, err := store.collectionLocked(callCtx, collection)
 	if err != nil {

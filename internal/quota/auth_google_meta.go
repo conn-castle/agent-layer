@@ -16,6 +16,7 @@ const (
 
 func antigravityCredential(ctx context.Context, s credentialSource) (credential, failure) {
 	var useCredits *bool
+	canRenew := true
 	path := s.file
 	if path == "" {
 		if s.has("CLOUD_CODE_PA_ENDPOINT", "CLOUD_CODE_PA_BASE_URL") {
@@ -26,34 +27,13 @@ func antigravityCredential(ctx context.Context, s credentialSource) (credential,
 		if fail := settingsFile(filepath.Join(profile, "settings.json"), &rawSettings); fail.status != "" {
 			return credential{}, fail
 		}
+		if _, diskFail := decodeAntigravitySettings(rawSettings); diskFail.status != "" {
+			canRenew = false
+		}
 		rawSettings = mergeSettings(rawSettings, s.config)
-		var settings struct {
-			UseCredits    *bool  `json:"useG1Credits"`
-			ModelProvider string `json:"modelProvider"`
-			Auth          struct {
-				Type string `json:"type"`
-			} `json:"auth"`
-			Security struct {
-				Auth struct {
-					Selected string `json:"selectedType"`
-				} `json:"auth"`
-			} `json:"security"`
-		}
-		if len(rawSettings) > 0 {
-			encoded, err := json.Marshal(rawSettings)
-			if err != nil || json.Unmarshal(encoded, &settings) != nil {
-				return credential{}, unsupportedAuth("provider_settings_unreadable")
-			}
-		}
-		if settings.ModelProvider == "gemini" {
-			return credential{}, nonSubscription(reasonAPIKey)
-		}
-		switch textFrom(settings.Auth.Type, settings.Security.Auth.Selected) {
-		case "gemini-api-key":
-			return credential{}, nonSubscription(reasonAPIKey)
-		case "", "oauth-personal", "consumer", "google-account":
-		default:
-			return credential{}, unsupportedAuth(reasonCustomAuth)
+		settings, fail := decodeAntigravitySettings(rawSettings)
+		if fail.status != "" {
+			return credential{}, fail
 		}
 		path = filepath.Join(profile, "antigravity-oauth-token")
 		useCredits = settings.UseCredits
@@ -85,18 +65,63 @@ func antigravityCredential(ctx context.Context, s credentialSource) (credential,
 	if data.Token.Access == "" {
 		return credential{}, invalidCredentials()
 	}
+	var native *nativeCredential
+	if canRenew {
+		native = s.native(lockDir, "", "")
+	}
 	return credential{
 		token: data.Token.Access, expires: optionalTime(data.Token.Expires), refreshable: data.Token.Refresh != "",
 		identity: subscription(agentAntigravity, data.Email, "", false), useCredits: useCredits,
-		native: s.native(lockDir, "", ""),
+		native: native,
 	}, failure{}
 }
 
-func museCredential(ctx context.Context, s credentialSource) (credential, failure) {
-	return museCredentialFrom(ctx, s, runtime.GOOS, readKeyring)
+type antigravitySettings struct {
+	UseCredits    *bool  `json:"useG1Credits"`
+	ModelProvider string `json:"modelProvider"`
+	Auth          struct {
+		Type string `json:"type"`
+	} `json:"auth"`
+	Security struct {
+		Auth struct {
+			Selected string `json:"selectedType"`
+		} `json:"auth"`
+	} `json:"security"`
 }
 
-func museCredentialFrom(ctx context.Context, s credentialSource, platform string, read keyringReader) (credential, failure) {
+func decodeAntigravitySettings(raw map[string]any) (antigravitySettings, failure) {
+	var settings antigravitySettings
+	if len(raw) == 0 {
+		return settings, failure{}
+	}
+	encoded, err := json.Marshal(raw)
+	if err != nil || json.Unmarshal(encoded, &settings) != nil {
+		return antigravitySettings{}, unsupportedAuth("provider_settings_unreadable")
+	}
+	if settings.ModelProvider == "gemini" {
+		return antigravitySettings{}, nonSubscription(reasonAPIKey)
+	}
+	switch textFrom(settings.Auth.Type, settings.Security.Auth.Selected) {
+	case "gemini-api-key":
+		return antigravitySettings{}, nonSubscription(reasonAPIKey)
+	case "", "oauth-personal", "consumer", "google-account":
+		return settings, failure{}
+	default:
+		return antigravitySettings{}, unsupportedAuth(reasonCustomAuth)
+	}
+}
+
+func museCredential(ctx context.Context, s credentialSource) (credential, failure) {
+	var read keyringReader
+	if runtime.GOOS == platformDarwin {
+		read = readKeyring
+	}
+	return museCredentialFrom(ctx, s, read)
+}
+
+// museCredentialFrom loads Muse credentials for s. A nil read indicates
+// platform Keychain storage is unavailable (non-Darwin).
+func museCredentialFrom(ctx context.Context, s credentialSource, read keyringReader) (credential, failure) {
 	path := s.file
 	allowKeychain := false
 	if path == "" {
@@ -109,9 +134,9 @@ func museCredentialFrom(ctx context.Context, s credentialSource, platform string
 		}
 		switch backend := s.value("TBH_CREDENTIAL_BACKEND"); backend {
 		case "", credentialStoreFile:
-			allowKeychain = platform == platformDarwin && backend == ""
+			allowKeychain = read != nil && backend == ""
 		case "keychain":
-			if platform != platformDarwin {
+			if read == nil {
 				return credential{}, unsupportedAuth(keyringUnavailable)
 			}
 			allowKeychain = true
