@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"crypto/sha256"
@@ -9,6 +10,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -418,8 +420,10 @@ func TestDispatchSessionMCPWrapperEndToEndWithBuiltBinary(t *testing.T) {
 		}
 	}
 
-	// Verify --verify-handshake records initialized+tools_listed for a valid MCP
-	// server and failed=true when a server exits before completing handshake.
+	// Verify --verify-handshake records protocol-agnostic ready=true for MCP
+	// 2025-11-25, MCP 2026-07-28 (server/discover), and -32601 version fallback,
+	// streams >16 MiB frames intact after readiness, and records failed=true on
+	// startup errors or premature exit.
 	hsRunDir := filepath.Join(tmp, "hs-run")
 	if err := os.MkdirAll(hsRunDir, 0o700); err != nil {
 		t.Fatal(err)
@@ -433,6 +437,48 @@ func TestDispatchSessionMCPWrapperEndToEndWithBuiltBinary(t *testing.T) {
 		"  esac\n" +
 		"done\n"
 	if err := os.WriteFile(mcpOK, []byte(mcpOKScript), 0o700); err != nil { // #nosec G306 -- synthetic executable test fixture.
+		t.Fatal(err)
+	}
+	// MCP 2026-07-28 server: answers server/discover (no initialize at all),
+	// then switches to raw cat so post-readiness >16 MiB stdin+stdout passthrough
+	// is exercised at full speed through the real wrapper binary.
+	mcpDiscover := filepath.Join(customBin, "mcp-discover")
+	mcpDiscoverScript := "#!/bin/sh\nIFS= read -r line\n" +
+		"id=\"$(printf '%s\\n' \"$line\" | sed -n 's/.*\"id\":\\([0-9][0-9]*\\).*/\\1/p')\"\n" +
+		"printf '{\"jsonrpc\":\"2.0\",\"id\":%s,\"result\":{\"protocolVersion\":\"2026-07-28\",\"capabilities\":{}}}\\n' \"$id\"\n" +
+		"exec cat\n"
+	if err := os.WriteFile(mcpDiscover, []byte(mcpDiscoverScript), 0o700); err != nil { // #nosec G306 -- synthetic executable test fixture.
+		t.Fatal(err)
+	}
+	// Legacy server probed with server/discover (-32601) before falling back to initialize.
+	mcpFallback := filepath.Join(customBin, "mcp-fallback")
+	mcpFallbackScript := "#!/bin/sh\nwhile IFS= read -r line; do\n" +
+		"  id=\"$(printf '%s\\n' \"$line\" | sed -n 's/.*\"id\":\\([0-9][0-9]*\\).*/\\1/p')\"\n" +
+		"  case \"$line\" in\n" +
+		"    *'\"method\":\"server/discover\"'*) printf '{\"jsonrpc\":\"2.0\",\"id\":%s,\"error\":{\"code\":-32601,\"message\":\"Method not found\"}}\\n' \"$id\" ;;\n" +
+		"    *'\"method\":\"initialize\"'*) printf '{\"jsonrpc\":\"2.0\",\"id\":%s,\"result\":{\"protocolVersion\":\"2025-11-25\",\"capabilities\":{},\"serverInfo\":{\"name\":\"mcp-fallback\",\"version\":\"1.0\"}}}\\n' \"$id\" ;;\n" +
+		"  esac\n" +
+		"done\n"
+	if err := os.WriteFile(mcpFallback, []byte(mcpFallbackScript), 0o700); err != nil { // #nosec G306 -- synthetic executable test fixture.
+		t.Fatal(err)
+	}
+	// Server returning a non--32601 startup JSON-RPC error.
+	mcpErr := filepath.Join(customBin, "mcp-err")
+	mcpErrScript := "#!/bin/sh\nIFS= read -r line\n" +
+		"id=\"$(printf '%s\\n' \"$line\" | sed -n 's/.*\"id\":\\([0-9][0-9]*\\).*/\\1/p')\"\n" +
+		"printf '{\"jsonrpc\":\"2.0\",\"id\":%s,\"error\":{\"code\":-32603,\"message\":\"boom\"}}\\n' \"$id\"\n"
+	if err := os.WriteFile(mcpErr, []byte(mcpErrScript), 0o700); err != nil { // #nosec G306 -- synthetic executable test fixture.
+		t.Fatal(err)
+	}
+	// Server that completes startup handshake then floods stdout to exercise post-readiness EPIPE.
+	postReadyNoisyPIDFile := filepath.Join(tmp, "post-ready-noisy.pid")
+	mcpPostReadyNoisy := filepath.Join(customBin, "mcp-post-ready-noisy")
+	mcpPostReadyNoisyScript := "#!/bin/sh\nprintf '%s\\n' \"$$\" > " + postReadyNoisyPIDFile + "\n" +
+		"IFS= read -r line\n" +
+		"id=\"$(printf '%s\\n' \"$line\" | sed -n 's/.*\"id\":\\([0-9][0-9]*\\).*/\\1/p')\"\n" +
+		"printf '{\"jsonrpc\":\"2.0\",\"id\":%s,\"result\":{\"ok\":true}}\\n' \"$id\"\n" +
+		"while :; do\n  printf '{\"jsonrpc\":\"2.0\",\"method\":\"noise\",\"params\":{\"pad\":\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"}}\\n'\ndone\n"
+	if err := os.WriteFile(mcpPostReadyNoisy, []byte(mcpPostReadyNoisyScript), 0o700); err != nil { // #nosec G306 -- synthetic executable test fixture.
 		t.Fatal(err)
 	}
 	noisyPIDFile := filepath.Join(tmp, "noisy.pid")
@@ -452,6 +498,10 @@ func TestDispatchSessionMCPWrapperEndToEndWithBuiltBinary(t *testing.T) {
 		"work_dir": workDir,
 		"servers": []map[string]any{
 			{"name": "ok-srv", "command": mcpOK},
+			{"name": "discover-srv", "command": mcpDiscover},
+			{"name": "fallback-srv", "command": mcpFallback},
+			{"name": "err-srv", "command": mcpErr},
+			{"name": "post-ready-noisy-srv", "command": mcpPostReadyNoisy},
 			{"name": "bad-srv", "command": "/bin/false"},
 			{"name": "noisy-srv", "command": mcpNoisy},
 			{"name": "stubborn-srv", "command": mcpStubborn},
@@ -492,8 +542,253 @@ func TestDispatchSessionMCPWrapperEndToEndWithBuiltBinary(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read ok-srv handshake status: %v", err)
 	}
-	if !strings.Contains(string(okStatusBytes), `"initialized":true`) || !strings.Contains(string(okStatusBytes), `"tools_listed":true`) {
+	if !strings.Contains(string(okStatusBytes), `"ready":true`) || strings.Contains(string(okStatusBytes), `"failed":true`) {
 		t.Fatalf("ok-srv handshake status unexpected: %s", okStatusBytes)
+	}
+
+	// Verify MCP 2026-07-28 (server/discover without initialize) marks ready=true
+	// and switches both stdin and stdout to raw passthrough for >16 MiB frames
+	// immediately upon receiving the handshake response (without waiting for status file).
+	discoverCmd := exec.Command(alBin, "__dispatch-session-mcp", "--run-dir", hsRunDir, "--server", "discover-srv", "--spec", hsSpecPath, "--digest", hsDigest, "--verify-handshake")
+	discoverCmd.Env = append(os.Environ(), "TMPDIR="+hsTmp)
+	discoverIn, err := discoverCmd.StdinPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	discoverOut, err := discoverCmd.StdoutPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := discoverCmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	var discoverWaitErr error
+	discoverWaitStarted := false
+	discoverWaitDone := make(chan struct{})
+	startDiscoverWait := func() {
+		discoverWaitStarted = true
+		go func() {
+			defer close(discoverWaitDone)
+			discoverWaitErr = discoverCmd.Wait()
+		}()
+	}
+	t.Cleanup(func() {
+		_ = discoverIn.Close()
+		_ = discoverOut.Close()
+		if !discoverWaitStarted {
+			if discoverCmd.Process != nil {
+				_ = syscall.Kill(-discoverCmd.Process.Pid, syscall.SIGKILL)
+				_ = discoverCmd.Process.Kill()
+				_ = discoverCmd.Wait()
+			}
+			return
+		}
+		select {
+		case <-discoverWaitDone:
+		default:
+			if discoverCmd.Process != nil {
+				_ = syscall.Kill(-discoverCmd.Process.Pid, syscall.SIGKILL)
+				_ = discoverCmd.Process.Kill()
+			}
+			<-discoverWaitDone
+		}
+	})
+	if _, err := io.WriteString(discoverIn, "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"server/discover\",\"params\":{}}\n"); err != nil {
+		t.Fatalf("write server/discover: %v", err)
+	}
+	readLineBounded := func(r *bufio.Reader, closer io.Closer, desc string) string {
+		t.Helper()
+		type res struct {
+			s   string
+			err error
+		}
+		ch := make(chan res, 1)
+		go func() {
+			s, err := r.ReadString('\n')
+			ch <- res{s, err}
+		}()
+		select {
+		case got := <-ch:
+			if got.err != nil {
+				t.Fatalf("%s: %v", desc, got.err)
+			}
+			return got.s
+		case <-time.After(10 * time.Second):
+			_ = closer.Close()
+			t.Fatalf("timed out waiting for %s", desc)
+			return ""
+		}
+	}
+	readAllBounded := func(r io.Reader, closer io.Closer, desc string) []byte {
+		t.Helper()
+		type res struct {
+			data []byte
+			err  error
+		}
+		ch := make(chan res, 1)
+		go func() {
+			data, err := io.ReadAll(r)
+			ch <- res{data, err}
+		}()
+		select {
+		case got := <-ch:
+			if got.err != nil {
+				t.Fatalf("%s: %v", desc, got.err)
+			}
+			return got.data
+		case <-time.After(10 * time.Second):
+			_ = closer.Close()
+			t.Fatalf("timed out waiting for %s", desc)
+			return nil
+		}
+	}
+
+	discoverReader := bufio.NewReaderSize(discoverOut, 64*1024)
+	discoverInitLine := readLineBounded(discoverReader, discoverOut, "read server/discover response")
+	if !strings.Contains(discoverInitLine, `"protocolVersion":"2026-07-28"`) {
+		t.Fatalf("unexpected server/discover response: %q", discoverInitLine)
+	}
+	// Blast >16 MiB payload immediately upon reading the startup response (without
+	// polling discover-srv.json first) to exercise the passthrough-arming race.
+	largePayload := `{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"blob":"` + strings.Repeat("Q", 17*1024*1024) + `"}}` + "\n"
+	writeErrCh := make(chan error, 1)
+	go func() {
+		_, wErr := io.WriteString(discoverIn, largePayload)
+		_ = discoverIn.Close()
+		writeErrCh <- wErr
+	}()
+	echoedLarge := readAllBounded(discoverReader, discoverOut, "read post-readiness >16 MiB stdout payload")
+	select {
+	case wErr := <-writeErrCh:
+		if wErr != nil {
+			t.Fatalf("write post-readiness >16 MiB stdin payload: %v", wErr)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("timed out writing post-readiness >16 MiB stdin payload")
+	}
+	startDiscoverWait()
+	select {
+	case <-discoverWaitDone:
+		if discoverWaitErr != nil {
+			t.Fatalf("discover-srv wait failed: %v", discoverWaitErr)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("timed out waiting for discover-srv exit")
+	}
+	if string(echoedLarge) != largePayload {
+		t.Fatalf("post-readiness >16 MiB passthrough mismatch: got %d bytes, want %d bytes", len(echoedLarge), len(largePayload))
+	}
+	discoverStatusPath := filepath.Join(hsRTDir, "session-mcp-handshake", "discover-srv.json")
+	discoverStatusBytes, err := os.ReadFile(discoverStatusPath) // #nosec G304 -- test handshake status file in canonical private runtime dir.
+	if err != nil {
+		t.Fatalf("read discover-srv handshake status: %v", err)
+	}
+	if !strings.Contains(string(discoverStatusBytes), `"ready":true`) || strings.Contains(string(discoverStatusBytes), `"failed":true`) {
+		t.Fatalf("discover-srv handshake status unexpected: %s", discoverStatusBytes)
+	}
+
+	// Verify -32601 version-negotiation fallback (server/discover -> -32601, then initialize -> result).
+	fallbackCmd := exec.Command(alBin, "__dispatch-session-mcp", "--run-dir", hsRunDir, "--server", "fallback-srv", "--spec", hsSpecPath, "--digest", hsDigest, "--verify-handshake")
+	fallbackCmd.Env = append(os.Environ(), "TMPDIR="+hsTmp)
+	fallbackCmd.Stdin = strings.NewReader("{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"server/discover\",\"params\":{}}\n{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"initialize\",\"params\":{}}\n")
+	if out, err := fallbackCmd.CombinedOutput(); err != nil {
+		t.Fatalf("--verify-handshake fallback-srv failed: %v\n%s", err, out)
+	}
+	fallbackStatusBytes, err := os.ReadFile(filepath.Join(hsRTDir, "session-mcp-handshake", "fallback-srv.json")) // #nosec G304 -- test handshake status file in canonical private runtime dir.
+	if err != nil {
+		t.Fatalf("read fallback-srv handshake status: %v", err)
+	}
+	if !strings.Contains(string(fallbackStatusBytes), `"ready":true`) || strings.Contains(string(fallbackStatusBytes), `"failed":true`) {
+		t.Fatalf("fallback-srv handshake status unexpected: %s", fallbackStatusBytes)
+	}
+
+	// Verify non--32601 startup JSON-RPC error records failed=true with generic sanitized diagnostic.
+	errCmd := exec.Command(alBin, "__dispatch-session-mcp", "--run-dir", hsRunDir, "--server", "err-srv", "--spec", hsSpecPath, "--digest", hsDigest, "--verify-handshake")
+	errCmd.Env = append(os.Environ(), "TMPDIR="+hsTmp)
+	errCmd.Stdin = strings.NewReader("{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{}}\n")
+	_ = errCmd.Run()
+	errStatusBytes, err := os.ReadFile(filepath.Join(hsRTDir, "session-mcp-handshake", "err-srv.json")) // #nosec G304 -- test handshake status file in canonical private runtime dir.
+	if err != nil {
+		t.Fatalf("read err-srv handshake status: %v", err)
+	}
+	if !strings.Contains(string(errStatusBytes), `"failed":true`) || !strings.Contains(string(errStatusBytes), `startup request returned JSON-RPC error -32603`) {
+		t.Fatalf("err-srv handshake status unexpected: %s", errStatusBytes)
+	}
+
+	// Verify post-readiness stdout close (EPIPE in raw passthrough mode) still
+	// terminates and reaps the child without deadlocking Wait.
+	postNoisyCmd := exec.Command(alBin, "__dispatch-session-mcp", "--run-dir", hsRunDir, "--server", "post-ready-noisy-srv", "--spec", hsSpecPath, "--digest", hsDigest, "--verify-handshake")
+	postNoisyCmd.Env = append(os.Environ(), "TMPDIR="+hsTmp)
+	postNoisyIn, err := postNoisyCmd.StdinPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	postNoisyOut, err := postNoisyCmd.StdoutPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := postNoisyCmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	postNoisyWaitStarted := false
+	postNoisyDone := make(chan struct{})
+	t.Cleanup(func() {
+		_ = postNoisyIn.Close()
+		_ = postNoisyOut.Close()
+		if !postNoisyWaitStarted {
+			if postNoisyCmd.Process != nil {
+				_ = syscall.Kill(-postNoisyCmd.Process.Pid, syscall.SIGKILL)
+				_ = postNoisyCmd.Process.Kill()
+				_ = postNoisyCmd.Wait()
+			}
+			return
+		}
+		select {
+		case <-postNoisyDone:
+		default:
+			if postNoisyCmd.Process != nil {
+				_ = syscall.Kill(-postNoisyCmd.Process.Pid, syscall.SIGKILL)
+				_ = postNoisyCmd.Process.Kill()
+			}
+			<-postNoisyDone
+		}
+	})
+	if _, err := io.WriteString(postNoisyIn, "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{}}\n"); err != nil {
+		t.Fatal(err)
+	}
+	postNoisyReader := bufio.NewReader(postNoisyOut)
+	readLineBounded(postNoisyReader, postNoisyOut, "read post-ready-noisy-srv handshake response")
+	var postNoisyPID int
+	postNoisyStatusPath := filepath.Join(hsRTDir, "session-mcp-handshake", "post-ready-noisy-srv.json")
+	postDeadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(postDeadline) {
+		rawStatus, statusErr := os.ReadFile(postNoisyStatusPath) // #nosec G304 -- test handshake status file in canonical private runtime dir.
+		rawPID, pidErr := os.ReadFile(postReadyNoisyPIDFile)     // #nosec G304 -- test PID file.
+		if statusErr == nil && strings.Contains(string(rawStatus), `"ready":true`) && pidErr == nil {
+			if parsed, convErr := strconv.Atoi(strings.TrimSpace(string(rawPID))); convErr == nil && parsed > 0 {
+				postNoisyPID = parsed
+				break
+			}
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if postNoisyPID <= 0 {
+		t.Fatal("post-ready-noisy-srv did not reach ready=true with valid PID within deadline")
+	}
+	_ = postNoisyOut.Close()
+	_ = postNoisyIn.Close()
+	postNoisyWaitStarted = true
+	go func() {
+		defer close(postNoisyDone)
+		_ = postNoisyCmd.Wait()
+	}()
+	select {
+	case <-postNoisyDone:
+	case <-time.After(10 * time.Second):
+		t.Fatal("handshake wrapper deadlocked in Wait after post-readiness stdout closed (EPIPE)")
+	}
+	if err := syscall.Kill(postNoisyPID, 0); !errors.Is(err, syscall.ESRCH) {
+		t.Fatalf("post-readiness noisy child process %d still alive after wrapper exit on EPIPE: %v", postNoisyPID, err)
 	}
 
 	badCmd := exec.Command(alBin, "__dispatch-session-mcp", "--run-dir", hsRunDir, "--server", "bad-srv", "--spec", hsSpecPath, "--digest", hsDigest, "--verify-handshake")

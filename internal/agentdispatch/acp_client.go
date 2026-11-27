@@ -705,13 +705,22 @@ func (c *acpClient) verifySessionMCPReady(sessionID string) error {
 				}
 				continue
 			}
+			// Re-verify handshake status and live process ownership after draining
+			// queued ACP frames so a server that crashed during drain cannot slip through.
+			recheckReady, _, err := checkSessionMCPHandshakesReady(c.runDir, c.cfg.SessionMCPServers, c.cfg.HandshakeNonce)
+			if err != nil {
+				return err
+			}
+			if !recheckReady {
+				continue
+			}
 			return nil
 		}
 		if time.Now().After(deadline) {
 			if c.provider == AgentGrok && !grokReady {
 				return fmt.Errorf("timed out waiting for Grok ACP session %s to initialize session MCP servers (%s)", sessionID, strings.Join(c.cfg.SessionMCPServers, ", "))
 			}
-			return fmt.Errorf("session MCP servers did not complete initialize/tools/list handshake before inference: %s", strings.Join(pending, ", "))
+			return fmt.Errorf("session MCP servers did not complete startup handshake before inference: %s", strings.Join(pending, ", "))
 		}
 		select {
 		case frame, ok := <-c.frames:

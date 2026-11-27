@@ -216,8 +216,9 @@ func writeTestHandshakeReady(t *testing.T, runDir string, server string, nonce s
 		Nonce:                nonce,
 		PID:                  pid,
 		ProcessStartIdentity: startID,
-		Initialized:          true,
-		ToolsListed:          true,
+		ChildPID:             pid,
+		ChildStartIdentity:   startID,
+		Ready:                true,
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -372,7 +373,7 @@ func TestACPDispatchGrokAndAntigravityLifecyclePermissionsAndFailClosed(t *testi
 		}
 		t.Cleanup(func() { _ = removeSessionMCPRuntimeDir(run.Dir) })
 		if err := writeSessionMCPHandshakeStatus(rtDir, sessionMCPHandshakeStatus{
-			Server: "broken", Failed: true, Error: "server exited before completing initialize/tools/list",
+			Server: "broken", Failed: true, Error: "server exited before completing startup handshake",
 		}); err != nil {
 			t.Fatal(err)
 		}
@@ -500,13 +501,34 @@ func TestSessionMCPHandshakeRelayRecordsSuccessAndFailure(t *testing.T) {
 	}
 	// Missing PID/start identity must fail closed.
 	if err := writeSessionMCPHandshakeStatus(rtDir, sessionMCPHandshakeStatus{
-		Server: "nopid", Nonce: nonce, Initialized: true, ToolsListed: true,
+		Server: "nopid", Nonce: nonce, Ready: true,
 	}); err != nil {
 		t.Fatal(err)
 	}
 	if _, _, err := checkSessionMCPHandshakesReady(runDir, []string{"nopid"}, nonce); err == nil {
 		t.Fatal("expected error for handshake status missing process identity")
 	}
+	// Ready=false remains pending until startup handshake succeeds.
+	pid := os.Getpid()
+	startID := processStartIdentity(pid)
+	if err := writeSessionMCPHandshakeStatus(rtDir, sessionMCPHandshakeStatus{
+		Server: "ok", Nonce: nonce, PID: pid, ProcessStartIdentity: startID, Ready: false,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if ready, pending, err := checkSessionMCPHandshakesReady(runDir, []string{"ok"}, nonce); err != nil || ready || len(pending) != 1 || pending[0] != "ok" {
+		t.Fatalf("checkSessionMCPHandshakesReady pending: ready=%t pending=%v err=%v", ready, pending, err)
+	}
+	// Ready=true with ChildPID==0 must fail closed instead of bypassing child liveness verification.
+	if err := writeSessionMCPHandshakeStatus(rtDir, sessionMCPHandshakeStatus{
+		Server: "ok", Nonce: nonce, PID: pid, ProcessStartIdentity: startID, Ready: true,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := checkSessionMCPHandshakesReady(runDir, []string{"ok"}, nonce); err == nil || !strings.Contains(err.Error(), "missing child process identity") {
+		t.Fatalf("expected missing child process identity error for Ready=true without ChildPID, got %v", err)
+	}
+	writeTestHandshakeReady(t, runDir, "ok", nonce)
 	if err := writeSessionMCPHandshakeStatus(rtDir, sessionMCPHandshakeStatus{
 		Server: "bad", Failed: true, Error: "boom",
 	}); err != nil {
@@ -514,31 +536,6 @@ func TestSessionMCPHandshakeRelayRecordsSuccessAndFailure(t *testing.T) {
 	}
 	if _, _, err := checkSessionMCPHandshakesReady(runDir, []string{"ok", "bad"}, nonce); err == nil || !strings.Contains(err.Error(), "boom") {
 		t.Fatalf("expected failure for bad server, got %v", err)
-	}
-	// Validate strict MCP handshake result envelopes (including tools: null).
-	for _, tc := range []struct {
-		method  string
-		raw     string
-		wantErr bool
-	}{
-		{acpMethodInitialize, `{"protocolVersion":"2024-11-05","capabilities":{},"serverInfo":{"name":"srv","version":"1.0"}}`, false},
-		{acpMethodInitialize, `{"protocolVersion":"2024-11-05"}`, true},
-		{acpMethodInitialize, `{"protocolVersion":"2024-11-05","capabilities":null,"serverInfo":{"name":"srv"}}`, true},
-		{acpMethodInitialize, `{"protocolVersion":"2024-11-05","capabilities":{},"serverInfo":{}}`, true},
-		{acpMethodInitialize, `{}`, true},
-		{acpMethodInitialize, `null`, true},
-		{"tools/list", `{"tools":[]}`, false},
-		{"tools/list", `{"tools":[{"name":"ping"}]}`, false},
-		{"tools/list", `{"tools":[null]}`, true},
-		{"tools/list", `{"tools":[{}]}`, true},
-		{"tools/list", `{}`, true},
-		{"tools/list", `{"tools":null}`, true},
-		{"tools/list", `{"tools":"not-an-array"}`, true},
-	} {
-		err := validateMCPHandshakeResult(tc.method, json.RawMessage(tc.raw))
-		if (err != nil) != tc.wantErr {
-			t.Errorf("validateMCPHandshakeResult(%s, %s) err=%v, wantErr=%t", tc.method, tc.raw, err, tc.wantErr)
-		}
 	}
 }
 

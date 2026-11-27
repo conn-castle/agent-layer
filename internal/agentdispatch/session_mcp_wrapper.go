@@ -3,20 +3,25 @@ package agentdispatch
 import (
 	"bufio"
 	"bytes"
+	"container/list"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"io/fs"
 	"maps"
+	"math/big"
 	"os"
 	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -27,12 +32,14 @@ import (
 )
 
 const (
-	sessionMCPProcsFile      = "session-mcp-procs.json"
-	sessionMCPProcsLockFile  = ".session-mcp-procs.lock"
-	sessionMCPClosedFile     = "session-mcp.closed"
-	sessionMCPHandshakeDir   = "session-mcp-handshake"
-	sessionMCPEnvStripPrefix = "AL_SESSION_MCP_"
-	mcpMethodToolsList       = "tools/list"
+	sessionMCPProcsFile          = "session-mcp-procs.json"
+	sessionMCPProcsLockFile      = ".session-mcp-procs.lock"
+	sessionMCPClosedFile         = "session-mcp.closed"
+	sessionMCPHandshakeDir       = "session-mcp-handshake"
+	sessionMCPEnvStripPrefix     = "AL_SESSION_MCP_"
+	sessionMCPMaxPendingRequests = 256
+	sessionMCPMaxIDNumLen        = 128
+	sessionMCPMaxIDNumExp        = 100
 )
 
 // sessionMCPExec is a narrow seam around syscall.Exec for unit testing.
@@ -56,8 +63,7 @@ type sessionMCPHandshakeStatus struct {
 	ProcessStartIdentity string `json:"process_start_identity,omitempty"`
 	ChildPID             int    `json:"child_pid,omitempty"`
 	ChildStartIdentity   string `json:"child_start_identity,omitempty"`
-	Initialized          bool   `json:"initialized"`
-	ToolsListed          bool   `json:"tools_listed"`
+	Ready                bool   `json:"ready"`
 	Failed               bool   `json:"failed,omitempty"`
 	Error                string `json:"error,omitempty"`
 }
@@ -215,40 +221,57 @@ func checkSessionMCPHandshakesReady(runDir string, servers []string, expectedNon
 		if status.PID <= 0 || status.ProcessStartIdentity == "" {
 			return false, nil, fmt.Errorf("session MCP server %q handshake status missing process identity", name)
 		}
-		switch ownershipForIdentity(status.PID, status.ProcessStartIdentity) {
-		case ownershipOwned:
-			if processIsZombie(status.PID) {
-				return false, nil, fmt.Errorf("session MCP server %q exited before inference started", name)
-			}
-		case ownershipDead:
-			return false, nil, fmt.Errorf("session MCP server %q exited before inference started", name)
-		default:
-			return false, nil, fmt.Errorf("cannot verify live ownership of session MCP server %q before inference", name)
+		if err := verifySessionMCPProcessLive(status.PID, status.ProcessStartIdentity, name, ""); err != nil {
+			return false, nil, err
 		}
-		if status.ChildPID > 0 {
-			if status.ChildStartIdentity == "" {
+		if status.ChildPID > 0 || status.Ready {
+			if status.ChildPID <= 0 || status.ChildStartIdentity == "" {
 				return false, nil, fmt.Errorf("session MCP server %q handshake status missing child process identity", name)
 			}
-			switch ownershipForIdentity(status.ChildPID, status.ChildStartIdentity) {
-			case ownershipOwned:
-				if processIsZombie(status.ChildPID) {
-					return false, nil, fmt.Errorf("session MCP server %q child process exited before inference started", name)
-				}
-			case ownershipDead:
-				return false, nil, fmt.Errorf("session MCP server %q child process exited before inference started", name)
-			default:
-				return false, nil, fmt.Errorf("cannot verify live ownership of session MCP server %q child process before inference", name)
+			if err := verifySessionMCPProcessLive(status.ChildPID, status.ChildStartIdentity, name, "child process"); err != nil {
+				return false, nil, err
 			}
 		}
 		if !sessionMCPProcessRegistered(registered.Processes, name, status.PID, status.ProcessStartIdentity) {
 			pending = append(pending, name)
 			continue
 		}
-		if !status.Initialized || !status.ToolsListed {
+		if !status.Ready {
 			pending = append(pending, name)
 		}
 	}
 	return len(pending) == 0, pending, nil
+}
+
+func verifySessionMCPProcessLive(pid int, startIdentity, serverName, role string) error {
+	checkOwned := func() error {
+		switch ownershipForIdentity(pid, startIdentity) {
+		case ownershipOwned:
+			return nil
+		case ownershipDead:
+			if role != "" {
+				return fmt.Errorf("session MCP server %q %s exited before inference started", serverName, role)
+			}
+			return fmt.Errorf("session MCP server %q exited before inference started", serverName)
+		default:
+			if role != "" {
+				return fmt.Errorf("cannot verify live ownership of session MCP server %q %s before inference", serverName, role)
+			}
+			return fmt.Errorf("cannot verify live ownership of session MCP server %q before inference", serverName)
+		}
+	}
+	if err := checkOwned(); err != nil {
+		return err
+	}
+	if processIsZombie(pid) {
+		if role != "" {
+			return fmt.Errorf("session MCP server %q %s exited before inference started", serverName, role)
+		}
+		return fmt.Errorf("session MCP server %q exited before inference started", serverName)
+	}
+	// Recheck ownership after the zombie probe so a process that died and was
+	// reaped between the two checks cannot slip past as live.
+	return checkOwned()
 }
 
 func sessionMCPProcessRegistered(procs []sessionMCPProcess, server string, pid int, startIdentity string) bool {
@@ -260,94 +283,510 @@ func sessionMCPProcessRegistered(procs []sessionMCPProcess, server string, pid i
 	return false
 }
 
-func validateMCPHandshakeResult(method string, raw json.RawMessage) error {
+type sessionMCPResponseOutcome uint8
+
+const (
+	sessionMCPResponseIgnore sessionMCPResponseOutcome = iota
+	sessionMCPResponseReady
+	sessionMCPResponseFailed
+)
+
+type sessionMCPResponseDecision struct {
+	outcome sessionMCPResponseOutcome
+	errMsg  string
+}
+
+type sessionMCPHandshakeTracker struct {
+	mu          sync.Mutex
+	pending     map[[32]byte]*list.Element
+	order       *list.List
+	passthrough atomic.Bool
+	status      sessionMCPHandshakeStatus
+	publish     func(sessionMCPHandshakeStatus)
+}
+
+func newSessionMCPHandshakeTracker(initial sessionMCPHandshakeStatus, publish func(sessionMCPHandshakeStatus)) *sessionMCPHandshakeTracker {
+	t := &sessionMCPHandshakeTracker{
+		pending: make(map[[32]byte]*list.Element),
+		order:   list.New(),
+		status:  initial,
+		publish: publish,
+	}
+	if initial.Ready {
+		t.passthrough.Store(true)
+	}
+	return t
+}
+
+func (t *sessionMCPHandshakeTracker) isPassthrough() bool {
+	return t.passthrough.Load()
+}
+
+func (t *sessionMCPHandshakeTracker) clearPendingLocked() {
+	t.pending = nil
+	t.order = nil
+}
+
+func (t *sessionMCPHandshakeTracker) publishLocked() {
+	if t.publish != nil {
+		t.publish(t.status)
+	}
+}
+
+// trackRequest records any startup JSON-RPC 2.0 request carrying a non-empty
+// method and valid non-null string/number id (hashed into a fixed 32-byte key)
+// so the corresponding server response can be matched.
+func (t *sessionMCPHandshakeTracker) trackRequest(line []byte) {
+	var req struct {
+		JSONRPC string          `json:"jsonrpc"`
+		ID      json.RawMessage `json:"id"`
+		Method  string          `json:"method"`
+	}
+	if json.Unmarshal(bytes.TrimSpace(line), &req) != nil || req.JSONRPC != jsonRPCVersion || strings.TrimSpace(req.Method) == "" {
+		return
+	}
+	key, ok := canonicalJSONRPCIDKey(req.ID)
+	if !ok {
+		return
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.passthrough.Load() || t.status.Ready || t.status.Failed {
+		return
+	}
+	if t.pending == nil {
+		t.pending = make(map[[32]byte]*list.Element)
+	}
+	if t.order == nil {
+		t.order = list.New()
+	}
+	if elem, exists := t.pending[key]; exists {
+		t.order.MoveToBack(elem)
+		return
+	}
+	for len(t.pending) >= sessionMCPMaxPendingRequests {
+		front := t.order.Front()
+		if front == nil {
+			break
+		}
+		t.order.Remove(front)
+		if oldestKey, ok := front.Value.([32]byte); ok {
+			delete(t.pending, oldestKey)
+		}
+	}
+	elem := t.order.PushBack(key)
+	t.pending[key] = elem
+}
+
+// prepareResponse classifies a server stdout line BEFORE it is forwarded to the
+// client. When a matching JSON-RPC 2.0 success response is observed, it arms
+// raw passthrough immediately so the client cannot race stdin's startup frame
+// limit upon receiving the response; Ready is only published after stdout.Write
+// succeeds via commitResponse.
+func (t *sessionMCPHandshakeTracker) prepareResponse(line []byte) sessionMCPResponseDecision {
+	var resp struct {
+		JSONRPC string          `json:"jsonrpc"`
+		ID      json.RawMessage `json:"id"`
+		Method  string          `json:"method"`
+		Result  json.RawMessage `json:"result"`
+		Error   json.RawMessage `json:"error"`
+	}
+	if json.Unmarshal(bytes.TrimSpace(line), &resp) != nil || resp.JSONRPC != jsonRPCVersion || resp.Method != "" {
+		return sessionMCPResponseDecision{outcome: sessionMCPResponseIgnore}
+	}
+	key, ok := canonicalJSONRPCIDKey(resp.ID)
+	if !ok {
+		return sessionMCPResponseDecision{outcome: sessionMCPResponseIgnore}
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.passthrough.Load() || t.status.Ready || t.status.Failed {
+		return sessionMCPResponseDecision{outcome: sessionMCPResponseIgnore}
+	}
+	elem, tracked := t.pending[key]
+	if !tracked {
+		return sessionMCPResponseDecision{outcome: sessionMCPResponseIgnore}
+	}
+	delete(t.pending, key)
+	if t.order != nil {
+		t.order.Remove(elem)
+	}
+	trimmedErr := bytes.TrimSpace(resp.Error)
+	hasNonNullError := hasNonNullJSONValue(trimmedErr)
+	hasResultField := resp.Result != nil
+	if hasNonNullError && hasResultField {
+		return sessionMCPResponseDecision{
+			outcome: sessionMCPResponseFailed,
+			errMsg:  "startup request returned invalid JSON-RPC response",
+		}
+	}
+	if hasNonNullError {
+		code, valid := parseJSONRPCErrorObject(trimmedErr)
+		if !valid {
+			return sessionMCPResponseDecision{
+				outcome: sessionMCPResponseFailed,
+				errMsg:  "startup request returned malformed JSON-RPC error",
+			}
+		}
+		if code == acpRPCMethodNotFound {
+			return sessionMCPResponseDecision{outcome: sessionMCPResponseIgnore}
+		}
+		return sessionMCPResponseDecision{
+			outcome: sessionMCPResponseFailed,
+			errMsg:  fmt.Sprintf("startup request returned JSON-RPC error %d", code),
+		}
+	}
+	if !hasResultField {
+		return sessionMCPResponseDecision{
+			outcome: sessionMCPResponseFailed,
+			errMsg:  "startup request returned invalid JSON-RPC response",
+		}
+	}
+	// Valid JSON-RPC 2.0 success response (including explicit `"result": null`):
+	// arm raw passthrough before exposing the response to the client.
+	t.passthrough.Store(true)
+	t.clearPendingLocked()
+	return sessionMCPResponseDecision{outcome: sessionMCPResponseReady}
+}
+
+// commitResponse publishes the startup status transition after the classified
+// response line has been successfully written to stdout.
+func (t *sessionMCPHandshakeTracker) commitResponse(decision sessionMCPResponseDecision) {
+	switch decision.outcome {
+	case sessionMCPResponseReady:
+		t.mu.Lock()
+		if !t.status.Failed && !t.status.Ready {
+			t.status.Ready = true
+			t.publishLocked()
+		}
+		t.mu.Unlock()
+	case sessionMCPResponseFailed:
+		t.mu.Lock()
+		if !t.status.Ready && !t.status.Failed {
+			t.status.Failed = true
+			t.status.Error = decision.errMsg
+			t.clearPendingLocked()
+			t.publishLocked()
+		}
+		t.mu.Unlock()
+	}
+}
+
+// markFailedUnlessPassthrough records a startup failure when raw passthrough
+// has not yet been armed. It returns true when passthrough is already active.
+func (t *sessionMCPHandshakeTracker) markFailedUnlessPassthrough(reason string) bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.passthrough.Load() || t.status.Ready {
+		return true
+	}
+	if !t.status.Failed {
+		t.status.Failed = true
+		t.status.Error = reason
+		t.clearPendingLocked()
+		t.publishLocked()
+	}
+	return false
+}
+
+// markFailedUnlessReady records a startup failure when readiness has not yet
+// been published. It returns true when the session is already ready.
+func (t *sessionMCPHandshakeTracker) markFailedUnlessReady(reason string) bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.status.Ready {
+		return true
+	}
+	if !t.status.Failed {
+		t.status.Failed = true
+		t.status.Error = reason
+		t.clearPendingLocked()
+		t.publishLocked()
+	}
+	return false
+}
+
+func hasNonNullJSONValue(trimmed []byte) bool {
+	return len(trimmed) > 0 && !bytes.Equal(trimmed, []byte("null"))
+}
+
+func parseJSONRPCErrorObject(raw []byte) (int, bool) {
+	var fields map[string]json.RawMessage
+	if json.Unmarshal(raw, &fields) != nil || fields == nil {
+		return 0, false
+	}
+	rawCode, hasCode := fields["code"]
+	rawMessage, hasMessage := fields["message"]
+	if !hasCode || !hasMessage {
+		return 0, false
+	}
+	var msg string
+	if !hasNonNullJSONValue(bytes.TrimSpace(rawMessage)) || json.Unmarshal(rawMessage, &msg) != nil {
+		return 0, false
+	}
+	codeTrimmed := bytes.TrimSpace(rawCode)
+	if len(codeTrimmed) == 0 {
+		return 0, false
+	}
+	code, err := strconv.Atoi(string(codeTrimmed))
+	if err != nil {
+		return 0, false
+	}
+	return code, true
+}
+
+func canonicalJSONRPCNumber(numStr string) (string, bool) {
+	if len(numStr) == 0 || len(numStr) > sessionMCPMaxIDNumLen {
+		return "", false
+	}
+	if expIdx := strings.IndexAny(numStr, "eE"); expIdx >= 0 {
+		exp, err := strconv.Atoi(numStr[expIdx+1:])
+		if err != nil || exp < -sessionMCPMaxIDNumExp || exp > sessionMCPMaxIDNumExp {
+			return "", false
+		}
+	}
+	rat, ok := new(big.Rat).SetString(numStr)
+	if !ok {
+		return "", false
+	}
+	return rat.RatString(), true
+}
+
+func canonicalJSONRPCIDKey(raw json.RawMessage) ([32]byte, bool) {
 	trimmed := bytes.TrimSpace(raw)
-	if len(trimmed) == 0 || bytes.Equal(trimmed, []byte("null")) {
-		return fmt.Errorf("%s returned empty result", method)
+	if len(trimmed) == 0 {
+		return [32]byte{}, false
 	}
-	switch method {
-	case acpMethodInitialize:
-		var initRes struct {
-			ProtocolVersion string          `json:"protocolVersion"`
-			Capabilities    json.RawMessage `json:"capabilities"`
-			ServerInfo      json.RawMessage `json:"serverInfo"`
-		}
-		if err := json.Unmarshal(trimmed, &initRes); err != nil {
-			return fmt.Errorf("%s returned malformed result object", method)
-		}
-		if strings.TrimSpace(initRes.ProtocolVersion) == "" {
-			return fmt.Errorf("%s result missing protocolVersion", method)
-		}
-		var capabilities map[string]any
-		if len(bytes.TrimSpace(initRes.Capabilities)) == 0 || bytes.Equal(bytes.TrimSpace(initRes.Capabilities), []byte("null")) || json.Unmarshal(initRes.Capabilities, &capabilities) != nil || capabilities == nil {
-			return fmt.Errorf("%s result missing capabilities object", method)
-		}
-		var serverInfo struct {
-			Name string `json:"name"`
-		}
-		if len(bytes.TrimSpace(initRes.ServerInfo)) == 0 || bytes.Equal(bytes.TrimSpace(initRes.ServerInfo), []byte("null")) || json.Unmarshal(initRes.ServerInfo, &serverInfo) != nil || strings.TrimSpace(serverInfo.Name) == "" {
-			return fmt.Errorf("%s result missing serverInfo.name", method)
-		}
-		return nil
-	case mcpMethodToolsList:
-		var listRes struct {
-			Tools json.RawMessage `json:"tools"`
-		}
-		if err := json.Unmarshal(trimmed, &listRes); err != nil {
-			return fmt.Errorf("%s returned malformed result object", method)
-		}
-		toolsTrimmed := bytes.TrimSpace(listRes.Tools)
-		if len(toolsTrimmed) == 0 || bytes.Equal(toolsTrimmed, []byte("null")) {
-			return fmt.Errorf("%s result missing tools array", method)
-		}
-		var tools []json.RawMessage
-		if json.Unmarshal(toolsTrimmed, &tools) != nil {
-			return fmt.Errorf("%s result missing tools array", method)
-		}
-		for i, rawTool := range tools {
-			toolTrimmed := bytes.TrimSpace(rawTool)
-			if len(toolTrimmed) == 0 || bytes.Equal(toolTrimmed, []byte("null")) {
-				return fmt.Errorf("%s result tools[%d] must be a tool object", method, i)
-			}
-			var toolObj struct {
-				Name string `json:"name"`
-			}
-			if json.Unmarshal(toolTrimmed, &toolObj) != nil || strings.TrimSpace(toolObj.Name) == "" {
-				return fmt.Errorf("%s result tools[%d] missing valid tool name", method, i)
-			}
-		}
-		return nil
+	first := trimmed[0]
+	if first != '"' && first != '-' && (first < '0' || first > '9') {
+		return [32]byte{}, false
 	}
-	return nil
+	dec := json.NewDecoder(bytes.NewReader(trimmed))
+	dec.UseNumber()
+	var val any
+	if err := dec.Decode(&val); err != nil {
+		return [32]byte{}, false
+	}
+	var extra any
+	if err := dec.Decode(&extra); !errors.Is(err, io.EOF) {
+		return [32]byte{}, false
+	}
+	h := sha256.New()
+	switch v := val.(type) {
+	case string:
+		_, _ = h.Write([]byte("s:"))
+		_, _ = h.Write([]byte(v))
+	case json.Number:
+		canonical, ok := canonicalJSONRPCNumber(v.String())
+		if !ok {
+			return [32]byte{}, false
+		}
+		_, _ = h.Write([]byte("n:"))
+		_, _ = h.Write([]byte(canonical))
+	default:
+		// Reject null (nil), bool, array, and object IDs per JSON-RPC 2.0.
+		return [32]byte{}, false
+	}
+	var sum [32]byte
+	h.Sum(sum[:0])
+	return sum, true
+}
+
+func lineContentLen(chunk []byte, readErr error) int {
+	n := len(chunk)
+	if readErr == nil && n > 0 && chunk[n-1] == '\n' {
+		n--
+		if n > 0 && chunk[n-1] == '\r' {
+			n--
+		}
+	}
+	return n
 }
 
 func readBoundedLine(reader *bufio.Reader, maxBytes int) ([]byte, error) {
 	var buf bytes.Buffer
 	for {
-		chunk, isPrefix, err := reader.ReadLine()
+		chunk, err := reader.ReadSlice('\n')
 		if len(chunk) > 0 {
-			if buf.Len()+len(chunk) > maxBytes {
+			if buf.Len()+lineContentLen(chunk, err) > maxBytes {
 				return nil, fmt.Errorf("MCP stdio JSON-RPC line exceeded %d byte limit", maxBytes)
 			}
 			buf.Write(chunk)
 		}
-		if isPrefix {
-			if err != nil {
-				return buf.Bytes(), err
-			}
+		if errors.Is(err, bufio.ErrBufferFull) {
 			continue
-		}
-		if err == nil {
-			buf.WriteByte('\n')
-			return buf.Bytes(), nil
 		}
 		return buf.Bytes(), err
 	}
 }
 
+func flushStartupLineAndChunks(w io.Writer, lineBuf *bytes.Buffer, chunks ...[]byte) bool {
+	if lineBuf.Len() > 0 {
+		if _, err := w.Write(lineBuf.Bytes()); err != nil {
+			return false
+		}
+		lineBuf.Reset()
+	}
+	for _, chunk := range chunks {
+		if len(chunk) > 0 {
+			if _, err := w.Write(chunk); err != nil {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+func relaySessionMCPStdin(
+	stdin io.Reader,
+	childStdin io.WriteCloser,
+	maxFrameBytes int,
+	tracker *sessionMCPHandshakeTracker,
+	terminateChild func(),
+) {
+	defer func() { _ = childStdin.Close() }()
+	readBuf := make([]byte, 64*1024)
+	var lineBuf bytes.Buffer
+
+	for !tracker.isPassthrough() {
+		n, readErr := stdin.Read(readBuf)
+		if n > 0 {
+			chunk := readBuf[:n]
+			if tracker.isPassthrough() {
+				if !flushStartupLineAndChunks(childStdin, &lineBuf, chunk) {
+					return
+				}
+				if readErr != nil {
+					return
+				}
+				break
+			}
+			switched := false
+			for len(chunk) > 0 {
+				if tracker.isPassthrough() {
+					if !flushStartupLineAndChunks(childStdin, &lineBuf, chunk) {
+						return
+					}
+					switched = true
+					break
+				}
+				nlIdx := bytes.IndexByte(chunk, '\n')
+				if nlIdx < 0 {
+					if lineBuf.Len()+len(chunk) > maxFrameBytes {
+						if !tracker.markFailedUnlessPassthrough(fmt.Sprintf("MCP stdio JSON-RPC line exceeded %d byte limit", maxFrameBytes)) {
+							terminateChild()
+							return
+						}
+						if !flushStartupLineAndChunks(childStdin, &lineBuf, chunk) {
+							return
+						}
+						switched = true
+						break
+					}
+					lineBuf.Write(chunk)
+					chunk = nil
+					break
+				}
+				part := chunk[:nlIdx+1]
+				chunk = chunk[nlIdx+1:]
+				contentLen := lineContentLen(part, nil)
+				if nlIdx == 0 && lineBuf.Len() > 0 && lineBuf.Bytes()[lineBuf.Len()-1] == '\r' {
+					contentLen = -1
+				}
+				if lineBuf.Len()+contentLen > maxFrameBytes {
+					if !tracker.markFailedUnlessPassthrough(fmt.Sprintf("MCP stdio JSON-RPC line exceeded %d byte limit", maxFrameBytes)) {
+						terminateChild()
+						return
+					}
+					if !flushStartupLineAndChunks(childStdin, &lineBuf, part, chunk) {
+						return
+					}
+					switched = true
+					break
+				}
+				lineBuf.Write(part)
+				tracker.trackRequest(lineBuf.Bytes())
+				if _, writeErr := childStdin.Write(lineBuf.Bytes()); writeErr != nil {
+					return
+				}
+				lineBuf.Reset()
+			}
+			if switched {
+				if readErr != nil {
+					return
+				}
+				break
+			}
+		}
+		if readErr != nil {
+			if errors.Is(readErr, io.EOF) {
+				if lineBuf.Len() > 0 {
+					if !tracker.isPassthrough() {
+						tracker.trackRequest(lineBuf.Bytes())
+					}
+					_, _ = childStdin.Write(lineBuf.Bytes())
+				}
+				return
+			}
+			if !tracker.markFailedUnlessPassthrough(readErr.Error()) {
+				terminateChild()
+			}
+			return
+		}
+	}
+
+	// Flush any buffered partial startup line if passthrough flipped between
+	// reads, release startup buffers, and stream the rest of stdin verbatim.
+	if lineBuf.Len() > 0 {
+		if _, writeErr := childStdin.Write(lineBuf.Bytes()); writeErr != nil {
+			return
+		}
+	}
+	lineBuf = bytes.Buffer{}
+	readBuf = nil
+	_, _ = io.Copy(childStdin, stdin)
+}
+
+func relaySessionMCPStdout(
+	childStdout io.Reader,
+	stdout io.Writer,
+	maxFrameBytes int,
+	tracker *sessionMCPHandshakeTracker,
+	terminateChild func(),
+) {
+	reader := bufio.NewReaderSize(childStdout, 64*1024)
+	for !tracker.isPassthrough() {
+		line, readErr := readBoundedLine(reader, maxFrameBytes)
+		if len(line) > 0 {
+			decision := tracker.prepareResponse(line)
+			if _, writeErr := stdout.Write(line); writeErr != nil {
+				terminateChild()
+				_, _ = io.Copy(io.Discard, reader)
+				return
+			}
+			tracker.commitResponse(decision)
+		}
+		if readErr != nil {
+			if !errors.Is(readErr, io.EOF) {
+				tracker.markFailedUnlessReady(readErr.Error())
+				terminateChild()
+				_, _ = io.Copy(io.Discard, reader)
+			}
+			return
+		}
+	}
+
+	// Readiness confirmed: stream remaining output verbatim with no frame-size limit.
+	if _, copyErr := io.Copy(stdout, reader); copyErr != nil {
+		terminateChild()
+		_, _ = io.Copy(io.Discard, reader)
+	}
+}
+
 // runSessionMCPServerWithHandshake spawns the target stdio MCP server as a
 // child in this wrapper's already-isolated process group and transparently
-// relays stdin/stdout while recording validated initialize and tools/list completion.
+// relays stdin/stdout, recording the first successful startup JSON-RPC
+// request/response exchange before switching both streams to raw passthrough.
 func runSessionMCPServerWithHandshake(rtDir, serverName, nonce, resolvedBinary string, args []string, workDir string, env []string) error {
 	// Ignore SIGPIPE so writing to a closed stdout pipe returns EPIPE instead
 	// of killing the wrapper before it signals and reaps the child server.
@@ -444,133 +883,35 @@ func runSessionMCPServerWithHandshake(rtDir, serverName, nonce, resolvedBinary s
 		}
 	}()
 
-	var mu sync.Mutex
-	pending := make(map[string]string) // canonical JSON-RPC ID -> method ("initialize" or "tools/list")
-	publish := func() {
-		_ = writeSessionMCPHandshakeStatus(rtDir, status)
-	}
+	tracker := newSessionMCPHandshakeTracker(status, func(s sessionMCPHandshakeStatus) {
+		_ = writeSessionMCPHandshakeStatus(rtDir, s)
+	})
 
-	// Relay os.Stdin -> childStdin, tracking initialize & tools/list requests.
-	go func() {
-		defer func() { _ = childStdin.Close() }()
-		reader := bufio.NewReaderSize(os.Stdin, 64*1024)
-		for {
-			line, readErr := readBoundedLine(reader, acpMaxFrameBytes)
-			if len(line) > 0 {
-				var req struct {
-					ID     json.RawMessage `json:"id"`
-					Method string          `json:"method"`
-				}
-				if json.Unmarshal(bytes.TrimSpace(line), &req) == nil && len(req.ID) > 0 {
-					if req.Method == acpMethodInitialize || req.Method == mcpMethodToolsList {
-						mu.Lock()
-						pending[string(bytes.TrimSpace(req.ID))] = req.Method
-						mu.Unlock()
-					}
-				}
-				if _, writeErr := childStdin.Write(line); writeErr != nil {
-					return
-				}
-			}
-			if readErr != nil {
-				if !errors.Is(readErr, io.EOF) {
-					mu.Lock()
-					if !status.Failed {
-						status.Failed = true
-						status.Error = readErr.Error()
-						publish()
-					}
-					mu.Unlock()
-					terminateChildBounded()
-				}
-				return
-			}
-		}
-	}()
+	// Relay os.Stdin -> childStdin, tracking startup requests until readiness
+	// is confirmed and then switching to raw passthrough.
+	go relaySessionMCPStdin(os.Stdin, childStdin, acpMaxFrameBytes, tracker, terminateChildBounded)
 
-	// Relay childStdoutR -> os.Stdout, recording validated initialize & tools/list
-	// outcomes AFTER forwarding the line. On os.Stdout write failure (EPIPE) or
+	// Relay childStdoutR -> os.Stdout, recording startup readiness AFTER
+	// forwarding the matching response line and then switching to raw
+	// passthrough. On os.Stdout write failure (EPIPE) or pre-readiness
 	// oversized frame, terminate the child with bounded SIGKILL escalation and
 	// pipe closure so a SIGTERM-ignoring server or descendant can never hang Wait.
 	stdoutDone := make(chan struct{})
 	go func() {
 		defer close(stdoutDone)
-		reader := bufio.NewReaderSize(childStdoutR, 64*1024)
-		for {
-			line, readErr := readBoundedLine(reader, acpMaxFrameBytes)
-			if len(line) > 0 {
-				if _, writeErr := os.Stdout.Write(line); writeErr != nil {
-					terminateChildBounded()
-					_, _ = io.Copy(io.Discard, reader)
-					return
-				}
-				observeMCPHandshakeResponse(line, &mu, pending, &status, publish)
-			}
-			if readErr != nil {
-				if !errors.Is(readErr, io.EOF) {
-					mu.Lock()
-					if !status.Failed {
-						status.Failed = true
-						status.Error = readErr.Error()
-						publish()
-					}
-					mu.Unlock()
-					terminateChildBounded()
-					_, _ = io.Copy(io.Discard, reader)
-				}
-				return
-			}
-		}
+		relaySessionMCPStdout(childStdoutR, os.Stdout, acpMaxFrameBytes, tracker, terminateChildBounded)
 	}()
 
 	<-stdoutDone
 	waitErr := cmd.Wait()
 	stopKillTimer()
 
-	mu.Lock()
-	if (!status.Initialized || !status.ToolsListed) && !status.Failed {
-		status.Failed = true
-		if waitErr != nil {
-			status.Error = fmt.Sprintf("server exited before completing initialize/tools/list: %v", waitErr)
-		} else {
-			status.Error = "server exited before completing initialize/tools/list"
-		}
-		publish()
+	exitReason := "server exited before completing startup handshake"
+	if waitErr != nil {
+		exitReason = fmt.Sprintf("server exited before completing startup handshake: %v", waitErr)
 	}
-	mu.Unlock()
+	tracker.markFailedUnlessReady(exitReason)
 	return waitErr
-}
-
-func observeMCPHandshakeResponse(line []byte, mu *sync.Mutex, pending map[string]string, status *sessionMCPHandshakeStatus, publish func()) {
-	var resp struct {
-		ID     json.RawMessage `json:"id"`
-		Method string          `json:"method"`
-		Result json.RawMessage `json:"result"`
-		Error  *acpRPCError    `json:"error"`
-	}
-	if json.Unmarshal(bytes.TrimSpace(line), &resp) != nil || len(resp.ID) == 0 || resp.Method != "" {
-		return
-	}
-	key := string(bytes.TrimSpace(resp.ID))
-	mu.Lock()
-	defer mu.Unlock()
-	method, tracked := pending[key]
-	if !tracked {
-		return
-	}
-	delete(pending, key)
-	if resp.Error != nil {
-		status.Failed = true
-		status.Error = fmt.Sprintf("%s returned JSON-RPC error %d", method, resp.Error.Code)
-	} else if valErr := validateMCPHandshakeResult(method, resp.Result); valErr != nil {
-		status.Failed = true
-		status.Error = valErr.Error()
-	} else if method == acpMethodInitialize {
-		status.Initialized = true
-	} else if method == mcpMethodToolsList {
-		status.ToolsListed = true
-	}
-	publish()
 }
 
 func buildSessionMCPProcessEnv(base []string, overrides map[string]string) []string {
