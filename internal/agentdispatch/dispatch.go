@@ -489,7 +489,7 @@ func dispatchDepthStateFromEnv(env []string) (dispatchDepthState, error) {
 	if err != nil {
 		return dispatchDepthState{}, err
 	}
-	maxDepth, _, err := dispatchMaxDepthFromEnv(env)
+	maxDepth, err := dispatchMaxDepthFromEnv(env)
 	if err != nil {
 		return dispatchDepthState{}, err
 	}
@@ -521,6 +521,27 @@ func effectiveDispatchMaxDepth(cfg config.Config, caps ...int) int {
 	return effective
 }
 
+// clampExplicitCap combines explicit, inherited, and persisted depth caps and,
+// when any cap is present, clamps it to cfg's dispatch.max_depth so an explicit
+// cap never exceeds the launch repository's ceiling. When no explicit cap is
+// present, it returns 0 (uncapped).
+func clampExplicitCap(cfg config.Config, caps ...int) int {
+	explicit := minPositive(caps...)
+	if explicit == 0 {
+		return 0
+	}
+	return effectiveDispatchMaxDepth(cfg, explicit)
+}
+
+func loadDispatchConfig(root string) (*config.Config, error) {
+	cfgPath := config.DefaultPaths(root).ConfigPath
+	cfg, err := config.LoadConfigFS(os.DirFS(root), root, cfgPath)
+	if err != nil {
+		return nil, wrapExitError(ExitConfig, err.Error(), err)
+	}
+	return cfg, nil
+}
+
 func checkDispatchDepthCap(cfg config.Config, depth int, caps ...int) error {
 	repoMaxDepth := config.DispatchMaxDepth(cfg)
 	effective := effectiveDispatchMaxDepth(cfg, caps...)
@@ -545,11 +566,11 @@ func checkDispatchStateAllowed(root string, state dispatchDepthState, extraCaps 
 		// Every valid dispatch.max_depth is positive (>= 1), so depth 0 is never blocked.
 		return nil
 	}
-	project, err := config.LoadProjectConfig(root)
+	cfg, err := loadDispatchConfig(root)
 	if err != nil {
-		return wrapExitError(ExitConfig, err.Error(), err)
+		return err
 	}
-	return checkDispatchDepthCap(project.Config, state.Depth, minCap)
+	return checkDispatchDepthCap(*cfg, state.Depth, minCap)
 }
 
 // checkDispatchOperationAllowed validates the caller's dispatch depth and cap
@@ -686,14 +707,14 @@ func dispatchDepthFromEnv(env []string) (int, error) {
 // optional launch-time variables via "${AL_DISPATCH_MAX_DEPTH:-}", which expands to
 // "" in top-level sessions. Any non-empty malformed or non-positive value fails
 // closed with ExitNested.
-func dispatchMaxDepthFromEnv(env []string) (int, bool, error) {
+func dispatchMaxDepthFromEnv(env []string) (int, error) {
 	value, ok := clients.GetEnv(env, clients.EnvDispatchMaxDepth)
 	if !ok || value == "" {
-		return 0, false, nil
+		return 0, nil
 	}
 	maxDepth, err := strconv.Atoi(strings.TrimSpace(value))
 	if err != nil || maxDepth <= 0 {
-		return 0, false, exitError(ExitNested, fmt.Sprintf("invalid %s value %q; expected a positive integer max depth", clients.EnvDispatchMaxDepth, value))
+		return 0, exitError(ExitNested, fmt.Sprintf("invalid %s value %q; expected a positive integer max depth", clients.EnvDispatchMaxDepth, value))
 	}
-	return maxDepth, true, nil
+	return maxDepth, nil
 }

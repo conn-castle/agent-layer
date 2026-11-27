@@ -134,7 +134,7 @@ the original shell before removing that directory:
   printf 'Release probe executable: %s\n' "$probe_bin_dir/al"
   probe_status=0
   (
-    unset AL_RUN_DIR AL_RUN_ID AL_DISPATCH_CALLER_AGENT AL_DISPATCH_ACTIVE AL_SHIM_ACTIVE
+    unset AL_RUN_DIR AL_RUN_ID AL_DISPATCH_CALLER_AGENT AL_DISPATCH_ACTIVE AL_DISPATCH_MAX_DEPTH AL_SHIM_ACTIVE
     unset AL_INSTALLED_EXECUTABLE
     unset CODEX_HOME CLAUDE_CONFIG_DIR AGY_CLI_DISABLE_AUTO_UPDATE GROK_HOME
     export PATH="$probe_bin_dir:$PATH"

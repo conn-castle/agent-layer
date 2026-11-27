@@ -97,6 +97,7 @@ func Start(opts StartOptions) error {
 	if err != nil {
 		return err
 	}
+	persistedCap := clampExplicitCap(project.Config, explicitCap)
 	retention := config.DispatchSessionRetention(project.Config)
 	if err := pruneDispatchEvidence(opts.Root, time.Now(), retention); err != nil {
 		return err
@@ -119,12 +120,12 @@ func Start(opts StartOptions) error {
 	}
 	session.Model = opts.Model
 	session.ReasoningEffort = opts.ReasoningEffort
-	session.MaxDepth = explicitCap
+	session.MaxDepth = persistedCap
 	session.SessionMCPServers = sessionMCP
 	if err := persistSession(opts.Root, session); err != nil {
 		return finishDispatchFailure(dispatchExecution{Root: opts.Root, Run: run, Session: session}, err)
 	}
-	request := workerRequest{Root: opts.Root, WorkDir: opts.WorkDir, RunID: run.Record.ID, Mode: dispatchModeFresh, Prompt: prompt, Depth: depthState.Depth + 1, MaxDepth: explicitCap, Model: opts.Model, Effort: opts.ReasoningEffort, Skill: opts.Skill}
+	request := workerRequest{Root: opts.Root, WorkDir: opts.WorkDir, RunID: run.Record.ID, Mode: dispatchModeFresh, Prompt: prompt, Depth: depthState.Depth + 1, MaxDepth: persistedCap, Model: opts.Model, Effort: opts.ReasoningEffort, Skill: opts.Skill}
 	return publishInvocation(opts.Context, opts.Root, run, session, request, writerOrDiscard(opts.Stdout), opts.launchWorker)
 }
 
@@ -176,19 +177,26 @@ func Continue(opts ContinueOptions) error {
 	if err := checkDispatchStateAllowed(opts.Root, depthState); err != nil {
 		return err
 	}
-	promptText, err := resolvePromptSource(opts.Context, opts.Prompt, opts.PromptFile)
-	if err != nil {
-		return err
-	}
 	handle := strings.TrimSpace(opts.Handle)
 	if handle == "" {
 		return exitError(ExitUsage, "dispatch continue requires a conversation handle")
 	}
-	initialSession, err := loadSession(opts.Root, handle)
+	// Check any persisted session cap before reading the prompt (so a caller
+	// blocked by session.MaxDepth fails immediately without waiting on a FIFO)
+	// while still letting unknown handles keep their prompt-validation order
+	// when depth is 0.
+	if initialSession, loadErr := loadSession(opts.Root, handle); loadErr == nil {
+		if err := checkDispatchStateAllowed(opts.Root, depthState, initialSession.MaxDepth); err != nil {
+			return err
+		}
+	} else if !errors.Is(loadErr, errDispatchSessionNotFound) {
+		return loadErr
+	}
+	promptText, err := resolvePromptSource(opts.Context, opts.Prompt, opts.PromptFile)
 	if err != nil {
 		return err
 	}
-	if err := checkDispatchStateAllowed(opts.Root, depthState, initialSession.MaxDepth); err != nil {
+	if _, err := loadSession(opts.Root, handle); err != nil {
 		return err
 	}
 	var session Session
@@ -232,13 +240,14 @@ func Continue(opts ContinueOptions) error {
 		defer release()
 	}
 	explicitCap := minPositive(depthState.MaxDepth, session.MaxDepth)
-	_, target, version, prompt, err := prepareStart(runOptions{
+	project, target, version, prompt, err := prepareStart(runOptions{
 		Root: opts.Root, WorkDir: opts.WorkDir, Prompt: promptText, SessionMCPServers: session.SessionMCPServers,
 		LookPath: opts.LookPath, VersionLookup: opts.VersionLookup,
 	}, target, stderr, depthState.Depth, explicitCap)
 	if err != nil {
 		return err
 	}
+	persistedCap := clampExplicitCap(project.Config, explicitCap)
 	run, err := newDispatchRun(opts.Root, target.Name, version, continuationMode(session))
 	if err != nil {
 		return err
@@ -251,11 +260,11 @@ func Continue(opts ContinueOptions) error {
 	if err := writeRunRecord(run.Dir, &run.Record); err != nil {
 		return err
 	}
-	session, err = claimConversation(opts.Root, session.Name, run.Record.ID, current.ID)
+	session, err = claimConversationWithMaxDepth(opts.Root, session.Name, run.Record.ID, current.ID, persistedCap)
 	if err != nil {
 		return finishRejectedResume(run, err, writeRunRecord)
 	}
-	request := continuationWorkerRequest(opts, run.Record.ID, session, prompt, depthState.Depth, explicitCap)
+	request := continuationWorkerRequest(opts, run.Record.ID, session, prompt, depthState.Depth, minPositive(persistedCap, session.MaxDepth))
 	return publishInvocation(opts.Context, opts.Root, run, session, request, writerOrDiscard(opts.Stdout), opts.launchWorker)
 }
 

@@ -202,12 +202,22 @@ const (
 
 // Cancel terminates only the exact Agent Layer-owned process group.
 func Cancel(request CancelRequest) error {
-	if _, err := checkDispatchOperationAllowed(request.Root, request.Env); err != nil {
+	depthState, err := checkDispatchOperationAllowed(request.Root, request.Env)
+	if err != nil {
 		return err
 	}
 	record, err := resolveInvocationSelector(request.Root, request.ID, request.Handle, request.InvocationID)
 	if err != nil {
 		return err
+	}
+	if record.Name != "" {
+		if session, loadErr := loadSession(request.Root, record.Name); loadErr == nil {
+			if err := checkDispatchStateAllowed(request.Root, depthState, session.MaxDepth); err != nil {
+				return err
+			}
+		} else if !errors.Is(loadErr, errDispatchSessionNotFound) {
+			return loadErr
+		}
 	}
 	record, ownedGroup, alreadyConfirmedCancelled, err := beginCancellation(request.Root, record.ID)
 	if err != nil {

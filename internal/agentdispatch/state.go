@@ -623,12 +623,12 @@ func persistOwnedSession(root string, name string, runID string, update func(*Se
 	return updated, err
 }
 
-func claimConversation(root string, name string, runID string, expectedPreviousRunID ...string) (Session, error) {
+func claimConversation(root string, name string, runID string) (Session, error) {
+	return claimConversationWithMaxDepth(root, name, runID, "", 0)
+}
+
+func claimConversationWithMaxDepth(root string, name string, runID string, expectedPrev string, maxDepth int) (Session, error) {
 	var claimed Session
-	expectedPrev := ""
-	if len(expectedPreviousRunID) > 0 {
-		expectedPrev = expectedPreviousRunID[0]
-	}
 	err := withSessionLock(root, name, func() error {
 		path, err := sessionPath(root, name)
 		if err != nil {
@@ -664,6 +664,9 @@ func claimConversation(root string, name string, runID string, expectedPreviousR
 		session.ActiveRunID = runID
 		session.ActiveClaimKnown = true
 		session.RunID = runID
+		if tightened := minPositive(session.MaxDepth, maxDepth); tightened > 0 {
+			session.MaxDepth = tightened
+		}
 		session.LastUsedAt = time.Now().UTC()
 		if err := writeJSONAtomic(path, session); err != nil {
 			return wrapExitError(ExitConfig, "publish dispatch active claim", err)

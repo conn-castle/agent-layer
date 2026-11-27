@@ -216,19 +216,25 @@ can only tighten, never relax, repository config or an inherited parent cap.
 Non-positive or invalid values fail validation (exit 64). If the caller's
 current depth is already at or above the effective cap, `start` fails before
 launch with exit 75 (`ExitNested`). When an explicit cap is requested or
-inherited, it is persisted on the conversation record (including reserved
-starts) so every later `continue` enforces the same cap without re-supplying
-`--max-depth`, and is forwarded to dispatched workers via
-`AL_DISPATCH_MAX_DEPTH` so it propagates across children and repositories.
-Omitting `--max-depth` with no inherited cap leaves the conversation uncapped
-(`max_depth` is omitted from the session record and `AL_DISPATCH_MAX_DEPTH` is
-not set), preserving repo-local `dispatch.max_depth` behavior. Interactive
-launches strip leaked `AL_DISPATCH_ACTIVE` and `AL_DISPATCH_MAX_DEPTH` markers;
-malformed or non-positive inherited values fail closed with exit 75. Tools and
-skills stay fixed for prompt-cache stability; once a worker is at or above its
-effective cap, all state-changing operations (`reserve`, `start`, `continue`,
-and `cancel` via CLI or MCP) fail immediately with exit 75 while read-only
-operations (`options`, `wait`, `inspect`, `output`, `quota`) remain allowed.
+inherited, the clamped effective cap (`min(dispatch.max_depth, inherited cap,
+session cap, requested max_depth)`) is persisted on the conversation record
+(including reserved starts and continuations) so every later `continue`
+enforces the same cap without re-supplying `--max-depth`, and is forwarded to
+dispatched workers via `AL_DISPATCH_MAX_DEPTH` so it propagates across children
+and repositories. Conversation records that persist `max_depth` are not
+readable by older binaries that reject unknown fields. Omitting `--max-depth`
+with no inherited cap leaves the conversation uncapped (`max_depth` is omitted
+from the session record and `AL_DISPATCH_MAX_DEPTH` is not set), preserving
+repo-local `dispatch.max_depth` behavior. Interactive launches strip leaked
+`AL_DISPATCH_ACTIVE` and `AL_DISPATCH_MAX_DEPTH` markers (from both the shell
+and project `.env`); malformed or non-positive inherited values fail closed
+with exit 75. Tools and skills stay fixed for prompt-cache stability; once a
+worker is at or above its effective cap, all state-changing CLI operations
+(`reserve`, `start`, `continue`, and `cancel`) fail immediately with exit 75,
+and the MCP tools `dispatch_start`, `dispatch_continue`, and `dispatch_cancel`
+return a tool error with the depth-cap message (MCP has no exit codes), while
+read-only operations (`options`, `wait`, `inspect`, `output`, `quota`) remain
+allowed.
 `start` returns immediately after durably creating the
 conversation and starting its first invocation.
 

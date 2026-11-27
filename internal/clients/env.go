@@ -29,9 +29,9 @@ const (
 func BuildEnv(base []string, projectEnv map[string]string, runInfo *run.Info) []string {
 	env := UnsetEnv(base, versiondispatch.EnvShimActive)
 	env = UnsetEnv(env, versiondispatch.EnvInstalledExecutable)
+	env = mergeEnvFillMissing(env, projectEnv)
 	env = UnsetEnv(env, EnvDispatchActive)
 	env = UnsetEnv(env, EnvDispatchMaxDepth)
-	env = mergeEnvFillMissing(env, projectEnv)
 	if runInfo != nil {
 		env = mergeEnv(env, map[string]string{
 			"AL_RUN_DIR": runInfo.Dir,

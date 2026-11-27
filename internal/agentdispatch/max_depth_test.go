@@ -213,13 +213,29 @@ func TestStartMaxDepthTightenOnlyAndChildEnv(t *testing.T) {
 		if err := json.Unmarshal(out.Bytes(), &res); err != nil {
 			t.Fatal(err)
 		}
+		session, err := loadSession(root, res.Handle)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if session.MaxDepth != 2 {
+			t.Fatalf("session.MaxDepth = %d, want clamped repo cap 2", session.MaxDepth)
+		}
 		req := readReq(res.InvocationID)
+		if req.MaxDepth != 2 {
+			t.Fatalf("workerRequest.MaxDepth = %d, want clamped repo cap 2", req.MaxDepth)
+		}
 		childEnv := []string{
 			clients.EnvDispatchActive + "=" + strconv.Itoa(req.Depth),
 			clients.EnvDispatchMaxDepth + "=" + strconv.Itoa(req.MaxDepth),
 		}
 		requireDispatchExitCode(t, Start(StartOptions{
 			Root: root, WorkDir: root, Agent: AgentCodex, Prompt: "Too deep",
+			Env: childEnv,
+		}), ExitNested)
+		// Even in another repo with a higher limit, the clamped cap 2 still blocks depth 2.
+		higherRepo := writeDispatchRepo(t, dispatchRepoConfig{DispatchMaxDepth: 5})
+		requireDispatchExitCode(t, Start(StartOptions{
+			Root: higherRepo, WorkDir: higherRepo, Agent: AgentCodex, Prompt: "Too deep in higher repo",
 			Env: childEnv,
 		}), ExitNested)
 	})
@@ -644,7 +660,7 @@ func TestMaxDepthPersistsAcrossContinueAndReservations(t *testing.T) {
 			Env: []string{clients.EnvDispatchActive + "=1"},
 		}), ExitNested)
 
-		// Depth 0 still succeeds and keeps the conversation's persisted explicit cap (2).
+		// Depth 0 still succeeds and clamps the persisted explicit cap (2) to the lowered repo limit (1).
 		var contOut bytes.Buffer
 		if err := Continue(ContinueOptions{
 			Root: root, WorkDir: root, Handle: startRes.Handle, Prompt: "Turn 2",
@@ -657,8 +673,139 @@ func TestMaxDepthPersistsAcrossContinueAndReservations(t *testing.T) {
 		if err := json.Unmarshal(contOut.Bytes(), &contRes); err != nil {
 			t.Fatal(err)
 		}
-		if req := readReq(contRes.InvocationID); req.MaxDepth != 2 {
-			t.Fatalf("continue MaxDepth = %d, want persisted explicit cap 2", req.MaxDepth)
+		if req := readReq(contRes.InvocationID); req.MaxDepth != 1 {
+			t.Fatalf("continue MaxDepth = %d, want clamped repo cap 1", req.MaxDepth)
+		}
+	})
+
+	t.Run("continue persists tighter inherited cap across later uncapped turns", func(t *testing.T) {
+		root := writeDispatchRepo(t, dispatchRepoConfig{DispatchMaxDepth: 4})
+		launcher, readReq := stubWorkerCapture(t, root)
+		var out bytes.Buffer
+		if err := Start(StartOptions{
+			Root: root, WorkDir: root, Agent: AgentCodex, Prompt: "Turn 1",
+			Stdout: &out, Env: []string{},
+			LookPath: alwaysFound, VersionLookup: fixedCodexVersion, launchWorker: launcher,
+		}); err != nil {
+			t.Fatal(err)
+		}
+		var startRes Result
+		if err := json.Unmarshal(out.Bytes(), &startRes); err != nil {
+			t.Fatal(err)
+		}
+		markInvocationTerminalConfirmed(t, root, startRes.InvocationID, startRes.Handle, dispatchStateCompleted, "provider-session-inherit-cont")
+
+		// Turn 2: ordinary Continue with inherited AL_DISPATCH_MAX_DEPTH=2 tightens and persists cap=2.
+		var cont2Out bytes.Buffer
+		if err := Continue(ContinueOptions{
+			Root: root, WorkDir: root, Handle: startRes.Handle, Prompt: "Turn 2",
+			Stdout: &cont2Out, Env: []string{clients.EnvDispatchMaxDepth + "=2"},
+			LookPath: alwaysFound, VersionLookup: fixedCodexVersion, launchWorker: launcher,
+		}); err != nil {
+			t.Fatalf("Continue turn 2: %v", err)
+		}
+		var cont2Res Result
+		if err := json.Unmarshal(cont2Out.Bytes(), &cont2Res); err != nil {
+			t.Fatal(err)
+		}
+		session, err := loadSession(root, startRes.Handle)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if session.MaxDepth != 2 {
+			t.Fatalf("session.MaxDepth after turn 2 = %d, want 2", session.MaxDepth)
+		}
+		if req := readReq(cont2Res.InvocationID); req.MaxDepth != 2 {
+			t.Fatalf("turn 2 MaxDepth = %d, want 2", req.MaxDepth)
+		}
+
+		// Turn 3: uncapped Continue still preserves persisted cap=2.
+		markInvocationTerminalConfirmed(t, root, cont2Res.InvocationID, startRes.Handle, dispatchStateCompleted, "provider-session-inherit-cont")
+		var cont3Out bytes.Buffer
+		if err := Continue(ContinueOptions{
+			Root: root, WorkDir: root, Handle: startRes.Handle, Prompt: "Turn 3",
+			Stdout: &cont3Out, Env: []string{},
+			LookPath: alwaysFound, VersionLookup: fixedCodexVersion, launchWorker: launcher,
+		}); err != nil {
+			t.Fatalf("Continue turn 3: %v", err)
+		}
+		var cont3Res Result
+		if err := json.Unmarshal(cont3Out.Bytes(), &cont3Res); err != nil {
+			t.Fatal(err)
+		}
+		if req := readReq(cont3Res.InvocationID); req.MaxDepth != 2 {
+			t.Fatalf("turn 3 MaxDepth = %d, want persisted 2", req.MaxDepth)
+		}
+
+		// Turn 4: reserved continuation with tighter inherited cap=1 persists cap=1.
+		markInvocationTerminalConfirmed(t, root, cont3Res.InvocationID, startRes.Handle, dispatchStateCompleted, "provider-session-inherit-cont")
+		var res4Out bytes.Buffer
+		if err := Reserve(ReserveOptions{Root: root, ContinueHandle: &startRes.Handle, Stdout: &res4Out, Env: []string{}}); err != nil {
+			t.Fatal(err)
+		}
+		var res4 Result
+		if err := json.Unmarshal(res4Out.Bytes(), &res4); err != nil {
+			t.Fatal(err)
+		}
+		var cont4Out bytes.Buffer
+		if err := Continue(ContinueOptions{
+			Root: root, WorkDir: root, Handle: startRes.Handle, Reservation: &res4.InvocationID,
+			Prompt: "Turn 4", Stdout: &cont4Out, Env: []string{clients.EnvDispatchMaxDepth + "=1"},
+			LookPath: alwaysFound, VersionLookup: fixedCodexVersion, launchWorker: launcher,
+		}); err != nil {
+			t.Fatalf("Continue --reservation turn 4: %v", err)
+		}
+		var cont4Res Result
+		if err := json.Unmarshal(cont4Out.Bytes(), &cont4Res); err != nil {
+			t.Fatal(err)
+		}
+		session, err = loadSession(root, startRes.Handle)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if session.MaxDepth != 1 {
+			t.Fatalf("session.MaxDepth after turn 4 = %d, want 1", session.MaxDepth)
+		}
+		if req := readReq(cont4Res.InvocationID); req.MaxDepth != 1 {
+			t.Fatalf("turn 4 MaxDepth = %d, want 1", req.MaxDepth)
+		}
+	})
+
+	t.Run("reserve under inherited cap preserves cap on uncapped start --reservation", func(t *testing.T) {
+		root := writeDispatchRepo(t, dispatchRepoConfig{DispatchMaxDepth: 4})
+		launcher, readReq := stubWorkerCapture(t, root)
+		var resOut bytes.Buffer
+		if err := Reserve(ReserveOptions{
+			Root: root, Stdout: &resOut,
+			Env: []string{clients.EnvDispatchActive + "=1", clients.EnvDispatchMaxDepth + "=2"},
+		}); err != nil {
+			t.Fatalf("Reserve under cap: %v", err)
+		}
+		var reserved Result
+		if err := json.Unmarshal(resOut.Bytes(), &reserved); err != nil {
+			t.Fatal(err)
+		}
+		var startOut bytes.Buffer
+		if err := Start(StartOptions{
+			Root: root, WorkDir: root, Agent: AgentCodex, Reservation: &reserved.Handle,
+			Prompt: "Uncapped launcher", Stdout: &startOut, Env: []string{},
+			LookPath: alwaysFound, VersionLookup: fixedCodexVersion, launchWorker: launcher,
+		}); err != nil {
+			t.Fatalf("Start --reservation: %v", err)
+		}
+		var started Result
+		if err := json.Unmarshal(startOut.Bytes(), &started); err != nil {
+			t.Fatal(err)
+		}
+		session, err := loadSession(root, started.Handle)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if session.MaxDepth != 2 {
+			t.Fatalf("session.MaxDepth = %d, want creator cap 2", session.MaxDepth)
+		}
+		if req := readReq(started.InvocationID); req.MaxDepth != 2 {
+			t.Fatalf("workerRequest.MaxDepth = %d, want creator cap 2", req.MaxDepth)
 		}
 	})
 }
@@ -704,10 +851,22 @@ func TestContinueRejectsAtSessionCapBeforeHousekeepingWrites(t *testing.T) {
 		Root: root, WorkDir: root, Handle: startRes.Handle, Prompt: "Blocked by session cap",
 		Env: []string{clients.EnvDispatchActive + "=1"},
 	}), ExitNested)
+	// Also fails immediately before opening a missing --prompt-file.
+	requireDispatchExitCode(t, Continue(ContinueOptions{
+		Root: root, WorkDir: root, Handle: startRes.Handle, PromptFile: filepath.Join(root, "does-not-exist.txt"),
+		Env: []string{clients.EnvDispatchActive + "=1"},
+	}), ExitNested)
 	requireDispatchExitCode(t, Continue(ContinueOptions{
 		Root: root, WorkDir: root, Handle: startRes.Handle, Reservation: &reserved.InvocationID,
 		Prompt: "Blocked reservation by session cap",
 		Env:    []string{clients.EnvDispatchActive + "=1"},
+	}), ExitNested)
+	// Cancel also respects the conversation's stored session.MaxDepth for both handle and invocation ID.
+	requireDispatchExitCode(t, Cancel(CancelRequest{
+		Root: root, Handle: startRes.Handle, Env: []string{clients.EnvDispatchActive + "=1"},
+	}), ExitNested)
+	requireDispatchExitCode(t, Cancel(CancelRequest{
+		Root: root, InvocationID: reserved.InvocationID, Env: []string{clients.EnvDispatchActive + "=1"},
 	}), ExitNested)
 
 	rec, err := loadRunRecord(root, reserved.InvocationID)
