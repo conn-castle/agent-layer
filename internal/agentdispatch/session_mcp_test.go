@@ -1360,8 +1360,14 @@ func TestSessionMCPHandshakeTrackerProtocolAgnostic(t *testing.T) {
 		if tr.isPassthrough() || len(published) != 0 || tr.status.Failed || len(tr.pending) != 0 {
 			t.Fatalf("-32601 fallback should neither fail nor mark ready: passthrough=%t status=%#v pending=%d", tr.isPassthrough(), tr.status, len(tr.pending))
 		}
-		tr.trackRequest([]byte(`{"jsonrpc":"2.0","id":2,"method":"initialize","params":{}}`))
-		observe(tr, `{"jsonrpc":"2.0","id":2,"result":{"protocolVersion":"2025-11-25","capabilities":{},"serverInfo":{"name":"srv"}}}`)
+		// Serializers that include explicit `"result": null` alongside `-32601` error are also tolerated.
+		tr.trackRequest([]byte(`{"jsonrpc":"2.0","id":2,"method":"server/discover","params":{}}`))
+		observe(tr, `{"jsonrpc":"2.0","id":2,"result":null,"error":{"code":-32601,"message":"Method not found"}}`)
+		if tr.isPassthrough() || len(published) != 0 || tr.status.Failed || len(tr.pending) != 0 {
+			t.Fatalf("-32601 with explicit null result should neither fail nor mark ready: passthrough=%t status=%#v", tr.isPassthrough(), tr.status)
+		}
+		tr.trackRequest([]byte(`{"jsonrpc":"2.0","id":3,"method":"initialize","params":{}}`))
+		observe(tr, `{"jsonrpc":"2.0","id":3,"result":{"protocolVersion":"2025-11-25","capabilities":{},"serverInfo":{"name":"srv"}}}`)
 		if !tr.isPassthrough() || len(published) != 1 || !published[0].Ready || published[0].Failed {
 			t.Fatalf("fallback initialize did not confirm ready: passthrough=%t published=%#v", tr.isPassthrough(), published)
 		}
@@ -1383,6 +1389,7 @@ func TestSessionMCPHandshakeTrackerProtocolAgnostic(t *testing.T) {
 			{"empty_error_object", `{"jsonrpc":"2.0","id":1,"error":{}}`, false, true, "startup request returned malformed JSON-RPC error"},
 			{"malformed_error_string", `{"jsonrpc":"2.0","id":1,"error":"not-an-object"}`, false, true, "startup request returned malformed JSON-RPC error"},
 			{"both_result_and_error", `{"jsonrpc":"2.0","id":1,"result":{},"error":{"code":-32601,"message":"Method not found"}}`, false, true, "startup request returned invalid JSON-RPC response"},
+			{"wrong_case_result_rejected", `{"jsonrpc":"2.0","id":1,"Result":{}}`, false, true, "startup request returned invalid JSON-RPC response"},
 			{"neither_result_nor_error", `{"jsonrpc":"2.0","id":1}`, false, true, "startup request returned invalid JSON-RPC response"},
 			{"explicit_null_error_without_result", `{"jsonrpc":"2.0","id":1,"error":null}`, false, true, "startup request returned invalid JSON-RPC response"},
 			{"explicit_null_result_accepted", `{"jsonrpc":"2.0","id":1,"result":null}`, true, false, ""},
@@ -2008,6 +2015,92 @@ func TestSessionMCPRelayRawPassthroughAndRaceSafety(t *testing.T) {
 		}
 		if outBuf.String() != readyLine+largeLine {
 			t.Fatalf("pipelined large stdout mismatch: got %d bytes, want %d bytes", outBuf.Len(), len(readyLine)+len(largeLine))
+		}
+	})
+
+	t.Run("unterminated_eof_stdout_response_does_not_publish_ready", func(t *testing.T) {
+		var published []sessionMCPHandshakeStatus
+		tr := newSessionMCPHandshakeTracker(sessionMCPHandshakeStatus{Server: "srv"}, func(s sessionMCPHandshakeStatus) {
+			published = append(published, s)
+		})
+		tr.trackRequest([]byte(`{"jsonrpc":"2.0","id":1,"method":"initialize"}`))
+		var outBuf bytes.Buffer
+		relaySessionMCPStdout(strings.NewReader(`{"jsonrpc":"2.0","id":1,"result":{}}`), &outBuf, acpMaxFrameBytes, tr, func() {})
+		if tr.isPassthrough() || len(published) != 0 || tr.status.Ready {
+			t.Fatalf("unterminated EOF response should not publish Ready: passthrough=%t published=%#v status=%#v", tr.isPassthrough(), published, tr.status)
+		}
+		if outBuf.String() != `{"jsonrpc":"2.0","id":1,"result":{}}` {
+			t.Fatalf("expected raw bytes still forwarded, got %q", outBuf.String())
+		}
+	})
+
+	t.Run("split_crlf_at_exact_startup_limit_and_trailing_cr_at_eof", func(t *testing.T) {
+		req := `{"jsonrpc":"2.0","id":1,"method":"initialize"}`
+		limit := len(req) // exact content length without CRLF
+
+		// Split CRLF across two Pipe writes: "<req>\r" then "\n" must succeed.
+		clientR, clientW := io.Pipe()
+		childInR, childInW := io.Pipe()
+		t.Cleanup(func() {
+			_ = clientR.Close()
+			_ = clientW.Close()
+			_ = childInR.Close()
+			_ = childInW.Close()
+		})
+		tr := newSessionMCPHandshakeTracker(sessionMCPHandshakeStatus{Server: "srv"}, nil)
+		var termCalls atomic.Int32
+		stdinDone := make(chan struct{})
+		go func() {
+			defer close(stdinDone)
+			relaySessionMCPStdin(clientR, childInW, limit, tr, func() { termCalls.Add(1) })
+		}()
+		gotCh := make(chan string, 1)
+		go func() {
+			data, _ := io.ReadAll(childInR)
+			gotCh <- string(data)
+		}()
+		if _, err := io.WriteString(clientW, req+"\r"); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := io.WriteString(clientW, "\n"); err != nil {
+			t.Fatal(err)
+		}
+		_ = clientW.Close()
+		waitSignal(t, stdinDone, "split-CRLF stdin relay exit")
+		if termCalls.Load() != 0 || tr.status.Failed {
+			t.Fatalf("exact-limit split CRLF was rejected: term=%d status=%#v", termCalls.Load(), tr.status)
+		}
+		if got := <-gotCh; got != req+"\r\n" {
+			t.Fatalf("got %q, want %q", got, req+"\r\n")
+		}
+
+		// Trailing CR at EOF without LF exceeds limit and must fail.
+		eofR, eofW := io.Pipe()
+		eofChildR, eofChildW := io.Pipe()
+		t.Cleanup(func() {
+			_ = eofR.Close()
+			_ = eofW.Close()
+			_ = eofChildR.Close()
+			_ = eofChildW.Close()
+		})
+		var eofStatus sessionMCPHandshakeStatus
+		eofTr := newSessionMCPHandshakeTracker(sessionMCPHandshakeStatus{Server: "srv"}, func(s sessionMCPHandshakeStatus) {
+			eofStatus = s
+		})
+		var eofTerm atomic.Int32
+		eofDone := make(chan struct{})
+		go func() {
+			defer close(eofDone)
+			relaySessionMCPStdin(eofR, eofChildW, limit, eofTr, func() { eofTerm.Add(1) })
+		}()
+		go func() { _, _ = io.Copy(io.Discard, eofChildR) }()
+		if _, err := io.WriteString(eofW, req+"\r"); err != nil {
+			t.Fatal(err)
+		}
+		_ = eofW.Close()
+		waitSignal(t, eofDone, "EOF trailing-CR stdin relay exit")
+		if !eofStatus.Failed || eofTerm.Load() != 1 {
+			t.Fatalf("trailing CR exceeding limit at EOF should fail: status=%#v term=%d", eofStatus, eofTerm.Load())
 		}
 	})
 }

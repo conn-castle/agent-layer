@@ -333,19 +333,49 @@ func (t *sessionMCPHandshakeTracker) publishLocked() {
 	}
 }
 
-// trackRequest records any startup JSON-RPC 2.0 request carrying a non-empty
-// method and valid non-null string/number id (hashed into a fixed 32-byte key)
-// so the corresponding server response can be matched.
-func (t *sessionMCPHandshakeTracker) trackRequest(line []byte) {
-	var req struct {
-		JSONRPC string          `json:"jsonrpc"`
-		ID      json.RawMessage `json:"id"`
-		Method  string          `json:"method"`
+// decodeJSONRPCObject decodes a single JSON-RPC 2.0 object line using exact
+// case-sensitive member names. JSON-RPC array batches are not tracked during startup.
+func decodeJSONRPCObject(line []byte) (map[string]json.RawMessage, bool) {
+	trimmed := bytes.TrimSpace(line)
+	if len(trimmed) == 0 || trimmed[0] != '{' {
+		return nil, false
 	}
-	if json.Unmarshal(bytes.TrimSpace(line), &req) != nil || req.JSONRPC != jsonRPCVersion || strings.TrimSpace(req.Method) == "" {
+	var fields map[string]json.RawMessage
+	if json.Unmarshal(trimmed, &fields) != nil || fields == nil {
+		return nil, false
+	}
+	rawVersion, ok := fields["jsonrpc"]
+	if !ok {
+		return nil, false
+	}
+	var version string
+	if json.Unmarshal(rawVersion, &version) != nil || version != jsonRPCVersion {
+		return nil, false
+	}
+	return fields, true
+}
+
+// trackRequest records any startup JSON-RPC 2.0 request object carrying a
+// non-empty method and valid non-null string/number id (hashed into a fixed
+// 32-byte key) so the corresponding server response can be matched.
+func (t *sessionMCPHandshakeTracker) trackRequest(line []byte) {
+	fields, ok := decodeJSONRPCObject(line)
+	if !ok {
 		return
 	}
-	key, ok := canonicalJSONRPCIDKey(req.ID)
+	rawMethod, hasMethod := fields["method"]
+	if !hasMethod {
+		return
+	}
+	var method string
+	if json.Unmarshal(rawMethod, &method) != nil || strings.TrimSpace(method) == "" {
+		return
+	}
+	rawID, hasID := fields["id"]
+	if !hasID {
+		return
+	}
+	key, ok := canonicalJSONRPCIDKey(rawID)
 	if !ok {
 		return
 	}
@@ -378,23 +408,27 @@ func (t *sessionMCPHandshakeTracker) trackRequest(line []byte) {
 	t.pending[key] = elem
 }
 
-// prepareResponse classifies a server stdout line BEFORE it is forwarded to the
-// client. When a matching JSON-RPC 2.0 success response is observed, it arms
-// raw passthrough immediately so the client cannot race stdin's startup frame
-// limit upon receiving the response; Ready is only published after stdout.Write
-// succeeds via commitResponse.
+// prepareResponse classifies a newline-terminated server stdout line BEFORE it
+// is forwarded to the client. When a matching JSON-RPC 2.0 success response is
+// observed, it arms raw passthrough immediately so the client cannot race
+// stdin's startup frame limit upon receiving the response; Ready is only
+// published after stdout.Write succeeds via commitResponse.
 func (t *sessionMCPHandshakeTracker) prepareResponse(line []byte) sessionMCPResponseDecision {
-	var resp struct {
-		JSONRPC string          `json:"jsonrpc"`
-		ID      json.RawMessage `json:"id"`
-		Method  string          `json:"method"`
-		Result  json.RawMessage `json:"result"`
-		Error   json.RawMessage `json:"error"`
-	}
-	if json.Unmarshal(bytes.TrimSpace(line), &resp) != nil || resp.JSONRPC != jsonRPCVersion || resp.Method != "" {
+	fields, ok := decodeJSONRPCObject(line)
+	if !ok {
 		return sessionMCPResponseDecision{outcome: sessionMCPResponseIgnore}
 	}
-	key, ok := canonicalJSONRPCIDKey(resp.ID)
+	if rawMethod, hasMethod := fields["method"]; hasMethod {
+		var method string
+		if json.Unmarshal(rawMethod, &method) != nil || method != "" {
+			return sessionMCPResponseDecision{outcome: sessionMCPResponseIgnore}
+		}
+	}
+	rawID, hasID := fields["id"]
+	if !hasID {
+		return sessionMCPResponseDecision{outcome: sessionMCPResponseIgnore}
+	}
+	key, ok := canonicalJSONRPCIDKey(rawID)
 	if !ok {
 		return sessionMCPResponseDecision{outcome: sessionMCPResponseIgnore}
 	}
@@ -411,10 +445,12 @@ func (t *sessionMCPHandshakeTracker) prepareResponse(line []byte) sessionMCPResp
 	if t.order != nil {
 		t.order.Remove(elem)
 	}
-	trimmedErr := bytes.TrimSpace(resp.Error)
+	rawErr := fields["error"]
+	rawResult, hasResultField := fields["result"]
+	trimmedErr := bytes.TrimSpace(rawErr)
 	hasNonNullError := hasNonNullJSONValue(trimmedErr)
-	hasResultField := resp.Result != nil
-	if hasNonNullError && hasResultField {
+	hasNonNullResult := hasResultField && hasNonNullJSONValue(bytes.TrimSpace(rawResult))
+	if hasNonNullError && hasNonNullResult {
 		return sessionMCPResponseDecision{
 			outcome: sessionMCPResponseFailed,
 			errMsg:  "startup request returned invalid JSON-RPC response",
@@ -608,13 +644,23 @@ func readBoundedLine(reader *bufio.Reader, maxBytes int) ([]byte, error) {
 	for {
 		chunk, err := reader.ReadSlice('\n')
 		if len(chunk) > 0 {
-			if buf.Len()+lineContentLen(chunk, err) > maxBytes {
+			contentLen := lineContentLen(chunk, err)
+			if errors.Is(err, bufio.ErrBufferFull) && chunk[len(chunk)-1] == '\r' {
+				// Keep one trailing CR provisional in case LF starts the next chunk.
+				contentLen--
+			} else if err == nil && len(chunk) == 1 && chunk[0] == '\n' && buf.Len() > 0 && buf.Bytes()[buf.Len()-1] == '\r' {
+				contentLen = -1
+			}
+			if buf.Len()+contentLen > maxBytes {
 				return nil, fmt.Errorf("MCP stdio JSON-RPC line exceeded %d byte limit", maxBytes)
 			}
 			buf.Write(chunk)
 		}
 		if errors.Is(err, bufio.ErrBufferFull) {
 			continue
+		}
+		if err != nil && buf.Len() > maxBytes {
+			return nil, fmt.Errorf("MCP stdio JSON-RPC line exceeded %d byte limit", maxBytes)
 		}
 		return buf.Bytes(), err
 	}
@@ -672,7 +718,12 @@ func relaySessionMCPStdin(
 				}
 				nlIdx := bytes.IndexByte(chunk, '\n')
 				if nlIdx < 0 {
-					if lineBuf.Len()+len(chunk) > maxFrameBytes {
+					effectiveLen := lineBuf.Len() + len(chunk)
+					if chunk[len(chunk)-1] == '\r' {
+						// Keep one trailing CR provisional in case LF starts the next read.
+						effectiveLen--
+					}
+					if effectiveLen > maxFrameBytes {
 						if !tracker.markFailedUnlessPassthrough(fmt.Sprintf("MCP stdio JSON-RPC line exceeded %d byte limit", maxFrameBytes)) {
 							terminateChild()
 							return
@@ -721,6 +772,10 @@ func relaySessionMCPStdin(
 		if readErr != nil {
 			if errors.Is(readErr, io.EOF) {
 				if lineBuf.Len() > 0 {
+					if lineBuf.Len() > maxFrameBytes && !tracker.markFailedUnlessPassthrough(fmt.Sprintf("MCP stdio JSON-RPC line exceeded %d byte limit", maxFrameBytes)) {
+						terminateChild()
+						return
+					}
 					if !tracker.isPassthrough() {
 						tracker.trackRequest(lineBuf.Bytes())
 					}
@@ -758,7 +813,10 @@ func relaySessionMCPStdout(
 	for !tracker.isPassthrough() {
 		line, readErr := readBoundedLine(reader, maxFrameBytes)
 		if len(line) > 0 {
-			decision := tracker.prepareResponse(line)
+			var decision sessionMCPResponseDecision
+			if line[len(line)-1] == '\n' {
+				decision = tracker.prepareResponse(line)
+			}
 			if _, writeErr := stdout.Write(line); writeErr != nil {
 				terminateChild()
 				_, _ = io.Copy(io.Discard, reader)
