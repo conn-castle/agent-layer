@@ -47,6 +47,7 @@ type dispatchExecution struct {
 	Stderr        io.Writer
 	Env           []string
 	Depth         int
+	MaxDepth      int
 	Model         string
 	Effort        string
 	TargetPinned  bool
@@ -147,7 +148,8 @@ func executeDispatch(request dispatchExecution) error {
 				return finishDispatchFailure(request, &preStartFailure{err: wrapExitError(ExitConfig, "write Muse session MCP grant", err)})
 			}
 		}
-		childEnv := dispatchEnvironment(request.Env, request.Project, request.Run, request.Depth)
+		maxDepth := minPositive(request.MaxDepth, session.MaxDepth)
+		childEnv := dispatchEnvironment(request.Env, request.Project, request.Run, request.Depth, maxDepth)
 		command, err := buildProviderCommandForSession(request.Target, request.Project, request.WorkDir, childEnv, request.Prompt, request.Model, request.Effort, request.TargetPinned, request.Mode, session.ProviderSessionID, sessionMCP, request.Run, request.Stderr)
 		if err != nil {
 			return finishDispatchFailure(request, &preStartFailure{err: err})
@@ -460,26 +462,108 @@ func writeIdentity(stderr io.Writer, name string, agent string, mode string, dur
 	return err
 }
 
-func dispatchRuntimeInputs(stderr io.Writer, env []string) (io.Writer, []string, int, error) {
+type dispatchDepthState struct {
+	Depth    int
+	MaxDepth int
+}
+
+func dispatchRuntimeInputs(stderr io.Writer, env []string) (io.Writer, []string, dispatchDepthState, error) {
 	if stderr == nil {
 		stderr = io.Discard
 	}
 	if env == nil {
 		env = os.Environ()
 	}
-	depth, err := dispatchDepthFromEnv(env)
+	state, err := dispatchDepthStateFromEnv(env)
 	if err != nil {
-		return nil, nil, 0, err
+		return nil, nil, dispatchDepthState{}, err
 	}
-	return stderr, env, depth, nil
+	return stderr, env, state, nil
 }
 
-func checkDispatchDepth(cfg config.Config, depth int) error {
-	maxDepth := config.DispatchMaxDepth(cfg)
-	if depth >= maxDepth {
-		return exitError(ExitNested, fmt.Sprintf("nested dispatch is blocked at depth %d by dispatch.max_depth = %d; this agent is already running inside `al dispatch`, use the built-in subagent tool instead", depth, maxDepth))
+func dispatchDepthStateFromEnv(env []string) (dispatchDepthState, error) {
+	if env == nil {
+		env = os.Environ()
+	}
+	depth, err := dispatchDepthFromEnv(env)
+	if err != nil {
+		return dispatchDepthState{}, err
+	}
+	maxDepth, _, err := dispatchMaxDepthFromEnv(env)
+	if err != nil {
+		return dispatchDepthState{}, err
+	}
+	return dispatchDepthState{Depth: depth, MaxDepth: maxDepth}, nil
+}
+
+func validateRequestedMaxDepth(maxDepth *int) error {
+	if maxDepth != nil && *maxDepth <= 0 {
+		return exitError(ExitUsage, fmt.Sprintf("--max-depth must be a positive integer, got %d", *maxDepth))
 	}
 	return nil
+}
+
+func minPositive(values ...int) int {
+	minVal := 0
+	for _, value := range values {
+		if value > 0 && (minVal == 0 || value < minVal) {
+			minVal = value
+		}
+	}
+	return minVal
+}
+
+func effectiveDispatchMaxDepth(cfg config.Config, caps ...int) int {
+	effective := config.DispatchMaxDepth(cfg)
+	if capDepth := minPositive(caps...); capDepth > 0 && capDepth < effective {
+		effective = capDepth
+	}
+	return effective
+}
+
+func checkDispatchDepthCap(cfg config.Config, depth int, caps ...int) error {
+	repoMaxDepth := config.DispatchMaxDepth(cfg)
+	effective := effectiveDispatchMaxDepth(cfg, caps...)
+	if depth >= effective {
+		if effective < repoMaxDepth {
+			return exitError(ExitNested, fmt.Sprintf("nested dispatch is blocked at depth %d by max_depth cap = %d; this agent is already running inside `al dispatch`, use the built-in subagent tool instead", depth, effective))
+		}
+		return exitError(ExitNested, fmt.Sprintf("nested dispatch is blocked at depth %d by dispatch.max_depth = %d; this agent is already running inside `al dispatch`, use the built-in subagent tool instead", depth, effective))
+	}
+	return nil
+}
+
+// checkDispatchStateAllowed rejects state-changing dispatch operations at or
+// above the effective depth cap (the tighter of repo dispatch.max_depth and any
+// inherited, persisted, or requested cap) with ExitNested.
+func checkDispatchStateAllowed(root string, state dispatchDepthState, extraCaps ...int) error {
+	minCap := minPositive(append([]int{state.MaxDepth}, extraCaps...)...)
+	if minCap > 0 && state.Depth >= minCap {
+		return exitError(ExitNested, fmt.Sprintf("nested dispatch is blocked at depth %d by max_depth cap = %d; this agent is already running inside `al dispatch`, use the built-in subagent tool instead", state.Depth, minCap))
+	}
+	if state.Depth == 0 {
+		// Every valid dispatch.max_depth is positive (>= 1), so depth 0 is never blocked.
+		return nil
+	}
+	project, err := config.LoadProjectConfig(root)
+	if err != nil {
+		return wrapExitError(ExitConfig, err.Error(), err)
+	}
+	return checkDispatchDepthCap(project.Config, state.Depth, minCap)
+}
+
+// checkDispatchOperationAllowed validates the caller's dispatch depth and cap
+// environment and rejects state-changing dispatch operations at or above the
+// effective depth cap with ExitNested.
+func checkDispatchOperationAllowed(root string, env []string, extraCaps ...int) (dispatchDepthState, error) {
+	state, err := dispatchDepthStateFromEnv(env)
+	if err != nil {
+		return dispatchDepthState{}, err
+	}
+	if err := checkDispatchStateAllowed(root, state, extraCaps...); err != nil {
+		return dispatchDepthState{}, err
+	}
+	return state, nil
 }
 
 func prepareFresh(project *config.ProjectConfig, target targetMeta, opts runOptions) (targetMeta, string, []byte, error) {
@@ -595,4 +679,21 @@ func dispatchDepthFromEnv(env []string) (int, error) {
 		return 0, exitError(ExitNested, fmt.Sprintf("invalid %s value %q; expected a non-negative integer dispatch depth", clients.EnvDispatchActive, value))
 	}
 	return depth, nil
+}
+
+// dispatchMaxDepthFromEnv reads an inherited per-conversation depth cap from env.
+// An absent or empty value means no inherited cap because shared .mcp.json forwards
+// optional launch-time variables via "${AL_DISPATCH_MAX_DEPTH:-}", which expands to
+// "" in top-level sessions. Any non-empty malformed or non-positive value fails
+// closed with ExitNested.
+func dispatchMaxDepthFromEnv(env []string) (int, bool, error) {
+	value, ok := clients.GetEnv(env, clients.EnvDispatchMaxDepth)
+	if !ok || value == "" {
+		return 0, false, nil
+	}
+	maxDepth, err := strconv.Atoi(strings.TrimSpace(value))
+	if err != nil || maxDepth <= 0 {
+		return 0, false, exitError(ExitNested, fmt.Sprintf("invalid %s value %q; expected a positive integer max depth", clients.EnvDispatchMaxDepth, value))
+	}
+	return maxDepth, true, nil
 }

@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/conn-castle/agent-layer/internal/agentdispatch"
+	"github.com/conn-castle/agent-layer/internal/clients"
 	"github.com/conn-castle/agent-layer/internal/messages"
 )
 
@@ -116,5 +117,85 @@ func TestDispatchCommandErrorBranches(t *testing.T) {
 	err := dispatchCommandError(cmd, &agentdispatch.ExitError{Code: 64, Message: "dispatch failed"})
 	if err == nil || !strings.Contains(err.Error(), "write failed") {
 		t.Fatalf("expected stderr write failure, got %v", err)
+	}
+}
+
+func TestDispatchStartMaxDepthFlagValidation(t *testing.T) {
+	newReservationTestRepo(t, "")
+	t.Setenv(clients.EnvDispatchActive, "0")
+	t.Setenv(clients.EnvDispatchMaxDepth, "")
+
+	cmd := newDispatchCmd()
+	startCmd, _, err := cmd.Find([]string{"start"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if startCmd.Flags().Lookup("max-depth") == nil {
+		t.Fatal("start --max-depth flag missing")
+	}
+
+	for _, arg := range []string{"0", "-1", "bogus", ""} {
+		t.Run("max_depth="+arg, func(t *testing.T) {
+			_, stderr, code := runDispatchCLI(t, "start", "--agent", "codex", "--max-depth="+arg, "--prompt", "Review")
+			if code != agentdispatch.ExitUsage {
+				t.Fatalf("exit code = %d, want %d (stderr: %q)", code, agentdispatch.ExitUsage, stderr)
+			}
+		})
+	}
+}
+
+func TestDispatchCLIBlocksMutatingOpsAtCapAndAllowsReadOnly(t *testing.T) {
+	newReservationTestRepo(t, "")
+	t.Setenv(clients.EnvDispatchActive, "0")
+	t.Setenv(clients.EnvDispatchMaxDepth, "")
+	t.Setenv("AL_NO_NETWORK", "1")
+
+	// Reserve one unstarted handle at depth 0 so inspect/wait/cancel/start --reservation have a real target.
+	reserved, stderr, code := runDispatchCLI(t, "reserve")
+	if code != 0 || reserved.Handle == "" || reserved.InvocationID == "" {
+		t.Fatalf("setup reserve failed: code=%d res=%+v stderr=%q", code, reserved, stderr)
+	}
+
+	// Switch to at-cap worker environment.
+	t.Setenv(clients.EnvDispatchActive, "1")
+	t.Setenv(clients.EnvDispatchMaxDepth, "1")
+
+	mutating := [][]string{
+		{"reserve"},
+		{"reserve", "--continue", reserved.Handle},
+		{"start", "--agent", "codex", "--prompt", "Blocked"},
+		{"start", "--agent", "codex", "--reservation", reserved.Handle, "--prompt", "Blocked"},
+		{"continue", reserved.Handle, "--prompt", "Blocked"},
+		{"continue", "--reservation", reserved.InvocationID, "--prompt", "Blocked"},
+		{"cancel", reserved.Handle},
+	}
+	for _, args := range mutating {
+		t.Run("blocked_"+strings.Join(args[:min(2, len(args))], "_"), func(t *testing.T) {
+			_, stderr, code := runDispatchCLI(t, args...)
+			if code != agentdispatch.ExitNested {
+				t.Fatalf("al dispatch %v: exit code = %d, want %d (stderr: %q)", args, code, agentdispatch.ExitNested, stderr)
+			}
+			if !strings.Contains(stderr, "nested dispatch is blocked") {
+				t.Fatalf("al dispatch %v: stderr = %q, want depth-cap message", args, stderr)
+			}
+		})
+	}
+
+	// Read-only operations remain allowed at cap (never ExitNested).
+	inspected, stderr, code := runDispatchCLI(t, "inspect", reserved.Handle)
+	if code != 0 || inspected.State != "reserved" {
+		t.Fatalf("inspect at cap failed: code=%d state=%q stderr=%q", code, inspected.State, stderr)
+	}
+	_, stderr, code = runDispatchCLI(t, "options")
+	if code != 0 {
+		t.Fatalf("options at cap failed: code=%d stderr=%q", code, stderr)
+	}
+	_, stderr, code = runDispatchCLI(t, "output", reserved.InvocationID, "--artifact", "events")
+	if code == agentdispatch.ExitNested {
+		t.Fatalf("output at cap was unexpectedly blocked with ExitNested: stderr=%q", stderr)
+	}
+	_, stderr, code = runDispatchCLI(t, "quota")
+	if code == agentdispatch.ExitNested {
+		t.Fatalf("quota at cap was unexpectedly blocked with ExitNested: stderr=%q", stderr)
 	}
 }

@@ -12,10 +12,13 @@ import (
 	"time"
 
 	"github.com/conn-castle/agent-layer/internal/agentdispatch"
+	"github.com/conn-castle/agent-layer/internal/clients"
 	"github.com/conn-castle/agent-layer/internal/testutil"
 )
 
 func TestDispatchPromptFileCancellationCLI(t *testing.T) {
+	t.Setenv(clients.EnvDispatchActive, "0")
+	t.Setenv(clients.EnvDispatchMaxDepth, "")
 	for _, command := range []string{"start", "continue"} {
 		t.Run(command, func(t *testing.T) {
 			root := t.TempDir()

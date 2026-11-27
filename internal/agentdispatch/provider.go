@@ -1100,7 +1100,7 @@ func compatibleTargetVersion(path string, target targetMeta, lookup func(string,
 	return target, installed, nil
 }
 
-func dispatchEnvironment(base []string, project *config.ProjectConfig, dispatchRun *dispatchRun, depth int) []string {
+func dispatchEnvironment(base []string, project *config.ProjectConfig, dispatchRun *dispatchRun, depth int, maxDepth int) []string {
 	info := &run.Info{ID: dispatchRun.Record.ID, Dir: dispatchRun.Dir}
 	env := clients.BuildEnv(base, project.Env, info)
 	// A dispatched worker belongs to its own conversation, never the caller's
@@ -1109,6 +1109,9 @@ func dispatchEnvironment(base []string, project *config.ProjectConfig, dispatchR
 	env = withoutHerdREnvironment(env)
 	env = withoutSessionMCPEnvironment(env)
 	env = clients.SetEnv(env, clients.EnvDispatchActive, fmt.Sprintf("%d", depth))
+	if maxDepth > 0 {
+		env = clients.SetEnv(env, clients.EnvDispatchMaxDepth, fmt.Sprintf("%d", maxDepth))
+	}
 	return clients.SetEnv(env, updatewarn.EnvSuppress, "1")
 }
 

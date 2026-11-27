@@ -3,6 +3,9 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+### Added
+- `al dispatch start` accepts an optional positive integer `--max-depth <N>` flag (and MCP `dispatch_start` accepts optional `max_depth`) to apply a tighten-only nested dispatch depth cap for a conversation and its descendants. When set or inherited, the explicit cap persists on the conversation record across continuations and reservations and propagates across children and repositories via `AL_DISPATCH_MAX_DEPTH`; omitting it preserves existing repo-local `dispatch.max_depth` behavior without writing `max_depth` to `session.json`. Once a worker reaches its effective depth cap (from `--max-depth`, `AL_DISPATCH_MAX_DEPTH`, or the repository's `dispatch.max_depth`), all state-changing dispatch operations—including `reserve` and `cancel` in addition to `start` and `continue`—fail immediately with exit `75` (`ExitNested`) without mutating state, while read-only operations (`options`, `wait`, `inspect`, `output`, `quota`) and tool definitions remain unchanged (#576).
+
 ### Changed
 - Benchmarks pin Antigravity 1.5.18 and Grok 1.0.25. The shared Pier adapter update changes the identity of every existing benchmark study and arm, including Codex and Claude. A normal `al benchmark run` can execute those cells again and incur provider charges. Use `--recover-only` to regenerate compatible completed reports or finalize evidence-backed terminal test timeouts without paid calls (#567).
 

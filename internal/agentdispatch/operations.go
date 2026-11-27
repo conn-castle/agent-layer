@@ -202,6 +202,9 @@ const (
 
 // Cancel terminates only the exact Agent Layer-owned process group.
 func Cancel(request CancelRequest) error {
+	if _, err := checkDispatchOperationAllowed(request.Root, request.Env); err != nil {
+		return err
+	}
 	record, err := resolveInvocationSelector(request.Root, request.ID, request.Handle, request.InvocationID)
 	if err != nil {
 		return err

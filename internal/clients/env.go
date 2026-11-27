@@ -9,8 +9,10 @@ import (
 )
 
 const (
-	// EnvDispatchActive blocks nested Agent Dispatch calls inside dispatched children.
+	// EnvDispatchActive tracks the current Agent Dispatch nesting depth inside dispatched children.
 	EnvDispatchActive = "AL_DISPATCH_ACTIVE"
+	// EnvDispatchMaxDepth forwards the effective per-conversation maximum dispatch depth cap to dispatched children.
+	EnvDispatchMaxDepth = "AL_DISPATCH_MAX_DEPTH"
 )
 
 // BuildEnv merges base env with project env and run metadata.
@@ -21,13 +23,14 @@ const (
 // guard is only meaningful for the exec replacement chain. It strips
 // AL_INSTALLED_EXECUTABLE for the same reason: a child may run another al
 // installation for another project, which must record its own entry. It also
-// strips AL_DISPATCH_ACTIVE so a leaked marker from the parent shell does not
-// poison normal (non-dispatch) launches; the dispatch flow re-sets the
-// marker explicitly on the dispatched child.
+// strips AL_DISPATCH_ACTIVE and AL_DISPATCH_MAX_DEPTH so leaked markers from
+// the parent shell do not poison normal (non-dispatch) launches; the dispatch
+// flow re-sets both markers explicitly on the dispatched child.
 func BuildEnv(base []string, projectEnv map[string]string, runInfo *run.Info) []string {
 	env := UnsetEnv(base, versiondispatch.EnvShimActive)
 	env = UnsetEnv(env, versiondispatch.EnvInstalledExecutable)
 	env = UnsetEnv(env, EnvDispatchActive)
+	env = UnsetEnv(env, EnvDispatchMaxDepth)
 	env = mergeEnvFillMissing(env, projectEnv)
 	if runInfo != nil {
 		env = mergeEnv(env, map[string]string{

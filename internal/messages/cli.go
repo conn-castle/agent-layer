@@ -299,6 +299,7 @@ const (
 	DispatchReasoningEffortFlag          = "Exact provider reasoning effort"
 	DispatchSkillFlag                    = "Portable Agent Layer skill name to invoke in the target"
 	DispatchRoleFlag                     = "Caller-defined workflow role retained as dispatch evidence"
+	DispatchMaxDepthFlag                 = "Maximum nested dispatch depth cap for this conversation (positive integer; tighten-only)"
 	DispatchReservationFlag              = "Reservation handle from al dispatch reserve to launch at most once"
 	DispatchContinueReservationFlag      = "Reservation invocation ID from al dispatch reserve --continue to launch at most once"
 	DispatchReserveContinueFlag          = "Existing conversation handle to reserve the next continuation invocation for"

@@ -150,7 +150,7 @@ The server exposes seven Agent Dispatch tools:
 | `dispatch_inspect` | Observe invocation state and termination confirmation. |
 | `dispatch_output` | Read bounded final-answer or event text. |
 
-`dispatch_start` accepts an `agent`, optional `model`, `reasoning_effort`, `role`, and `skill`, plus exactly one of `prompt` or `prompt_file`. `role` is caller-defined workflow evidence retained on the run record; it does not change provider selection or prompt text. `dispatch_continue` accepts a handle and exactly one prompt source. Wait, cancel, inspect, and output accept exactly one of `handle` or `invocation_id`. An old invocation ID never follows a later continuation. Inspect does not return prompt text.
+`dispatch_start` accepts an `agent`, optional `model`, `reasoning_effort`, `role`, `skill`, and `max_depth`, plus exactly one of `prompt` or `prompt_file`. `role` is caller-defined workflow evidence retained on the run record; it does not change provider selection or prompt text. `max_depth` is an optional positive integer that tightens the nested dispatch depth cap for the conversation and its descendants. `dispatch_continue` accepts a handle and exactly one prompt source. Wait, cancel, inspect, and output accept exactly one of `handle` or `invocation_id`. An old invocation ID never follows a later continuation. Inspect does not return prompt text.
 
 The MCP server returns structured results and a serialized text fallback for clients that do not yet consume structured MCP output.
 
@@ -167,6 +167,7 @@ al dispatch start --agent codex \
   [--reasoning-effort <effort>] \
   [--role <role>] \
   [--skill <skill>] \
+  [--max-depth <N>] \
   (--prompt <text> | --prompt-file <path>)
 
 al dispatch wait <handle-or-invocation-id>
@@ -185,7 +186,7 @@ al dispatch cancel <handle-or-invocation-id>
 
 `--prompt-file` avoids shell escaping and command-length limits for substantial prompts. Prompt sources are limited to 10 MiB, a named pipe is read until its writer closes, and interrupting the command (or ending the MCP request) before the prompt is read cancels the start or continuation without contacting the provider. `--skill` names a known user-managed or imported Agent Layer skill. Dispatch prepends the target's native skill invocation to the prompt—for example `$review` for Codex or `/review` for another target. The skill must already be projected for that target; run `al sync` if start reports it missing. `dispatch_continue` does not accept a skill.
 
-`continue` retains the conversation's provider, model, reasoning effort, and provider context. It accepts a new prompt only after the current invocation reaches a terminal state.
+`continue` retains the conversation's provider, model, reasoning effort, effective `max_depth` cap, and provider context. It accepts a new prompt only after the current invocation reaches a terminal state.
 
 Every successful CLI command writes exactly one JSON object to standard output. Diagnostics go to standard error.
 
@@ -409,7 +410,9 @@ mcp_tool_timeout_minutes = 40
 
 Records written by this version are not readable by older binaries that reject unknown run-record fields.
 
-Inside an already-dispatched conversation, prefer the client's built-in subagent for further delegation. A blocked nested start fails rather than queuing. `max_depth` counts the initial start, so the default of 3 permits that start and two nested starts.
+Inside an already-dispatched conversation, prefer the client's built-in subagent for further delegation. A blocked nested call fails rather than queuing. `max_depth` counts the initial start, so the default of 3 permits that start and two nested starts.
+
+Callers can tighten that ceiling per conversation with `--max-depth <N>` on `al dispatch start` (including `--reservation`) or `max_depth` on `dispatch_start`. The effective cap enforced on each operation is the minimum of the repository's `dispatch.max_depth`, any inherited parent cap, any persisted conversation cap, and the requested `max_depth`, so it can only tighten—never relax—configured or inherited limits. When an explicit cap is requested or inherited, it persists on the conversation record across every `continue` and propagates to descendants across repositories via `AL_DISPATCH_MAX_DEPTH`; omitting `--max-depth` with no inherited cap preserves existing repo-local `dispatch.max_depth` behavior. Tool and skill definitions remain fixed; once a worker is at or above its effective cap, all state-changing operations (`reserve`, `start`, `continue`, and `cancel` via CLI or MCP) fail immediately with exit 75 while read-only operations (`options`, `wait`, `inspect`, `output`, `quota`) remain allowed.
 
 Codex and Grok also receive the hard tool timeout as per-server `tool_timeout_sec`. Agent Layer does not set Claude Code's client-wide `MCP_TOOL_TIMEOUT`, because doing so would affect unrelated MCP servers. Antigravity has no per-server timeout key, so the Agent Layer server-side bound remains its recovery limit.
 

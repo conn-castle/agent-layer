@@ -24,12 +24,19 @@ const reservationLaunchClaim = "claimed"
 // existing conversation for `continue --reservation`, returning any unexpired
 // pending continuation reservation idempotently.
 func Reserve(opts ReserveOptions) error {
+	depthState, err := checkDispatchOperationAllowed(opts.Root, opts.Env)
+	if err != nil {
+		return err
+	}
 	if opts.ContinueHandle != nil {
-		return reserveContinuation(opts)
+		return reserveContinuation(opts, depthState)
 	}
 	project, err := sync.LoadLockedSources(sync.RealSystem{}, opts.Root)
 	if err != nil {
 		return wrapExitError(ExitConfig, err.Error(), err)
+	}
+	if err := checkDispatchDepthCap(project.Config, depthState.Depth, depthState.MaxDepth); err != nil {
+		return err
 	}
 	now := time.Now()
 	retention := config.DispatchSessionRetention(project.Config)
@@ -49,7 +56,7 @@ func Reserve(opts ReserveOptions) error {
 	return writeJSONResult(writerOrDiscard(opts.Stdout), result)
 }
 
-func reserveContinuation(opts ReserveOptions) error {
+func reserveContinuation(opts ReserveOptions, depthState dispatchDepthState) error {
 	handle := strings.TrimSpace(*opts.ContinueHandle)
 	if handle == "" {
 		return exitError(ExitUsage, "dispatch reserve --continue requires a conversation handle")
@@ -58,9 +65,16 @@ func reserveContinuation(opts ReserveOptions) error {
 	if err != nil {
 		return wrapExitError(ExitConfig, err.Error(), err)
 	}
+	if err := checkDispatchDepthCap(project.Config, depthState.Depth, depthState.MaxDepth); err != nil {
+		return err
+	}
 	// Verify the session exists before opening its lock file so invalid or
 	// unknown handles never create stray lock files.
-	if _, err := loadSession(opts.Root, handle); err != nil {
+	initialSession, err := loadSession(opts.Root, handle)
+	if err != nil {
+		return err
+	}
+	if err := checkDispatchDepthCap(project.Config, depthState.Depth, depthState.MaxDepth, initialSession.MaxDepth); err != nil {
 		return err
 	}
 	// Like ordinary continue, allow the caller to use the named conversation
@@ -75,6 +89,9 @@ func reserveContinuation(opts ReserveOptions) error {
 		now := time.Now().UTC()
 		session, err := loadSession(opts.Root, handle)
 		if err != nil {
+			return err
+		}
+		if err := checkDispatchDepthCap(project.Config, depthState.Depth, depthState.MaxDepth, session.MaxDepth); err != nil {
 			return err
 		}
 		pending, hasPending, err := settlePendingContinuationReservationLocked(opts.Root, &session, now)
@@ -122,10 +139,24 @@ func reserveContinuation(opts ReserveOptions) error {
 // continueReservation launches a continuation reservation at most once. Every
 // later continue of that reservation fails without launching.
 func continueReservation(opts ContinueOptions) error {
+	stderr, env, depthState, err := dispatchRuntimeInputs(opts.Stderr, opts.Env)
+	if err != nil {
+		return err
+	}
+	if err := checkDispatchStateAllowed(opts.Root, depthState); err != nil {
+		return err
+	}
 	stdout := writerOrDiscard(opts.Stdout)
 	record, err := resolveContinuationReservation(opts.Root, *opts.Reservation, opts.Handle)
 	if err != nil {
 		return err
+	}
+	if initialSession, loadErr := loadSession(opts.Root, record.Name); loadErr == nil {
+		if err := checkDispatchStateAllowed(opts.Root, depthState, initialSession.MaxDepth); err != nil {
+			return err
+		}
+	} else if !errors.Is(loadErr, errDispatchSessionNotFound) {
+		return loadErr
 	}
 	// Settle expiry and reject retired/started reservations before reading the
 	// prompt or preparing the target so replays with a deleted --prompt-file or
@@ -141,12 +172,11 @@ func continueReservation(opts ContinueOptions) error {
 	if err != nil {
 		return reportReservationChangeOrErr(opts.Root, record.ID, err)
 	}
-	stderr, env, depth, err := dispatchRuntimeInputs(opts.Stderr, opts.Env)
-	if err != nil {
-		return reportReservationChangeOrErr(opts.Root, record.ID, err)
-	}
 	session, err := loadSession(opts.Root, record.Name)
 	if err != nil {
+		return err
+	}
+	if err := checkDispatchStateAllowed(opts.Root, depthState, session.MaxDepth); err != nil {
 		return err
 	}
 	if session.ContinuationReservationID != record.ID {
@@ -173,10 +203,11 @@ func continueReservation(opts ContinueOptions) error {
 		}
 		defer release()
 	}
+	explicitCap := minPositive(depthState.MaxDepth, session.MaxDepth)
 	project, target, version, prompt, err := prepareStart(runOptions{
 		Root: opts.Root, WorkDir: opts.WorkDir, Prompt: promptText, SessionMCPServers: session.SessionMCPServers,
 		LookPath: opts.LookPath, VersionLookup: opts.VersionLookup,
-	}, target, stderr, depth)
+	}, target, stderr, depthState.Depth, explicitCap)
 	if err != nil {
 		return reportReservationChangeOrErr(opts.Root, record.ID, err)
 	}
@@ -206,7 +237,7 @@ func continueReservation(opts ContinueOptions) error {
 		return reportClaimedContinuationReservation(record)
 	}
 	run := &dispatchRun{Record: record, Dir: filepathForRun(opts.Root, record.ID)}
-	request := continuationWorkerRequest(opts, record.ID, session, prompt, depth)
+	request := continuationWorkerRequest(opts, record.ID, session, prompt, depthState.Depth, explicitCap)
 	return publishInvocation(opts.Context, opts.Root, run, session, request, stdout, opts.launchWorker)
 }
 
@@ -220,7 +251,7 @@ func reportReservationChangeOrErr(root string, id string, fallback error) error 
 
 // startReservation launches a reservation at most once. Every later start
 // fails without launching.
-func startReservation(opts StartOptions, requested targetMeta, promptText string, stderr io.Writer, env []string, depth int) error {
+func startReservation(opts StartOptions, requested targetMeta, promptText string, stderr io.Writer, env []string, depthState dispatchDepthState, requestedMaxDepth int) error {
 	stdout := writerOrDiscard(opts.Stdout)
 	record, err := resolveReservation(opts.Root, *opts.Reservation)
 	if err != nil {
@@ -239,7 +270,8 @@ func startReservation(opts StartOptions, requested targetMeta, promptText string
 	if err != nil {
 		return err
 	}
-	project, target, version, prompt, err := prepareStart(opts.runOptions(promptText, sessionMCP), requested, stderr, depth)
+	explicitCap := minPositive(depthState.MaxDepth, requestedMaxDepth)
+	project, target, version, prompt, err := prepareStart(opts.runOptions(promptText, sessionMCP), requested, stderr, depthState.Depth, explicitCap)
 	if err != nil {
 		return err
 	}
@@ -268,11 +300,11 @@ func startReservation(opts StartOptions, requested targetMeta, promptText string
 		return reportClaimedReservation(record)
 	}
 	run := &dispatchRun{Record: record, Dir: filepathForRun(opts.Root, record.ID)}
-	session, err := claimReservedSession(opts.Root, record.Name, record.ID, target.Name, opts.Model, opts.ReasoningEffort, sessionMCP)
+	session, err := claimReservedSession(opts.Root, record.Name, record.ID, target.Name, opts.Model, opts.ReasoningEffort, explicitCap, sessionMCP)
 	if err != nil {
 		return finishDispatchFailure(dispatchExecution{Root: opts.Root, Run: run, Session: Session{Name: record.Name}}, err)
 	}
-	request := workerRequest{Root: opts.Root, WorkDir: opts.WorkDir, RunID: record.ID, Mode: dispatchModeFresh, Prompt: prompt, Depth: depth + 1, Model: opts.Model, Effort: opts.ReasoningEffort, Skill: opts.Skill}
+	request := workerRequest{Root: opts.Root, WorkDir: opts.WorkDir, RunID: record.ID, Mode: dispatchModeFresh, Prompt: prompt, Depth: depthState.Depth + 1, MaxDepth: explicitCap, Model: opts.Model, Effort: opts.ReasoningEffort, Skill: opts.Skill}
 	return publishInvocation(opts.Context, opts.Root, run, session, request, stdout, opts.launchWorker)
 }
 
@@ -741,7 +773,7 @@ func claimReservation(root string, id string, launch func(*RunRecord)) (RunRecor
 // claimReservedSession keeps the run locked through the mapping update so a
 // cancelled or fenced reservation cannot reopen its conversation. Acquire the
 // session lock first, matching other session operations that reconcile runs.
-func claimReservedSession(root string, name string, runID string, agent string, model string, effort string, sessionMCP []SessionMCPServer) (Session, error) {
+func claimReservedSession(root string, name string, runID string, agent string, model string, effort string, maxDepth int, sessionMCP []SessionMCPServer) (Session, error) {
 	var claimed Session
 	err := withSessionLock(root, name, func() error {
 		return withRunLock(filepathForRun(root, runID), func() error {
@@ -762,6 +794,7 @@ func claimReservedSession(root string, name string, runID string, agent string, 
 			session.Agent = agent
 			session.Model = model
 			session.ReasoningEffort = effort
+			session.MaxDepth = maxDepth
 			session.SessionMCPServers = normalizeSessionMCPServers(sessionMCP)
 			if len(session.SessionMCPServers) > 0 {
 				if session.SessionMCPID == "" {

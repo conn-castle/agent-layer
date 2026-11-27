@@ -343,7 +343,7 @@ func RootMCPExclusions(cfg config.Config, client string) []string {
 // snapshotting their values into generated configuration.
 func BuiltInDispatchEnvVars() []string {
 	return []string{
-		"AL_DISPATCH_ACTIVE", "AL_RUN_ID", "AL_RUN_DIR",
+		"AL_DISPATCH_ACTIVE", "AL_DISPATCH_MAX_DEPTH", "AL_RUN_ID", "AL_RUN_DIR",
 		versiondispatch.EnvDevelopmentBypassVersionDispatch,
 		versiondispatch.EnvDevelopmentExecutable,
 	}

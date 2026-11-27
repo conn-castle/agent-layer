@@ -167,6 +167,7 @@ func TestCodexReceivesTheBuiltInDispatchServerWithItsHardTimeout(t *testing.T) {
 	}
 	wantBuiltInDispatchInvocation(t, server.Command, server.Args, project.Root)
 	require.Subset(t, server.EnvVars, []string{
+		"AL_DISPATCH_ACTIVE", "AL_DISPATCH_MAX_DEPTH",
 		"CODEX_HOME", "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "http_proxy", "https_proxy", "no_proxy",
 	})
 	if server.ToolTimeoutSec != minutes*60 {

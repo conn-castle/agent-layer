@@ -15,9 +15,9 @@ func loadDispatchProject(root string, stderr io.Writer, env []string) (*config.P
 	if err != nil {
 		return nil, nil, nil, 0, wrapExitError(ExitConfig, err.Error(), err)
 	}
-	stderr, env, depth, err := dispatchRuntimeInputs(stderr, env)
+	stderr, env, depthState, err := dispatchRuntimeInputs(stderr, env)
 	if err != nil {
 		return nil, nil, nil, 0, err
 	}
-	return project, stderr, env, depth, nil
+	return project, stderr, env, depthState.Depth, nil
 }

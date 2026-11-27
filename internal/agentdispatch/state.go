@@ -63,6 +63,7 @@ type Session struct {
 	Model                     string             `json:"model,omitempty"`
 	ReasoningEffort           string             `json:"reasoning_effort,omitempty"`
 	TargetPinned              bool               `json:"target_pinned,omitempty"`
+	MaxDepth                  int                `json:"max_depth,omitempty"`
 	ProviderSessionID         string             `json:"provider_session_id,omitempty"`
 	SessionMCPID              string             `json:"session_mcp_id,omitempty"`
 	SessionMCPDigest          string             `json:"session_mcp_digest,omitempty"`
@@ -826,7 +827,7 @@ func loadSession(root string, name string) (Session, error) {
 	}
 	// A reservation has no agent until `start --reservation` claims it.
 	unclaimedReservation := session.State == sessionStateReserved && session.Agent == ""
-	if session.Name != name || !validDispatchName(session.Name) || (!isProvider(session.Agent) && !unclaimedReservation) {
+	if session.Name != name || !validDispatchName(session.Name) || (!isProvider(session.Agent) && !unclaimedReservation) || session.MaxDepth < 0 {
 		return Session{}, exitError(ExitConfig, fmt.Sprintf("dispatch session %q is invalid", name))
 	}
 	return session, nil

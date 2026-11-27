@@ -739,3 +739,14 @@ func mustRootedDispatchServer(t *testing.T, cfg config.Config, client, root stri
 	}
 	return server, ok
 }
+
+func TestBuiltInDispatchEnvVarsIncludesMaxDepthCap(t *testing.T) {
+	t.Parallel()
+	vars := BuiltInDispatchEnvVars()
+	if !slices.Contains(vars, "AL_DISPATCH_ACTIVE") {
+		t.Fatalf("BuiltInDispatchEnvVars() = %v, missing AL_DISPATCH_ACTIVE", vars)
+	}
+	if !slices.Contains(vars, "AL_DISPATCH_MAX_DEPTH") {
+		t.Fatalf("BuiltInDispatchEnvVars() = %v, missing AL_DISPATCH_MAX_DEPTH", vars)
+	}
+}

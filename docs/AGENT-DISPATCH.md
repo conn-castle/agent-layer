@@ -27,9 +27,11 @@ hook, including Agent Dispatch, without saving global MCP permissions.
 
 Codex and Muse filter MCP subprocess environments. Their generated built-in
 server definitions explicitly forward dispatch depth (`AL_DISPATCH_ACTIVE`),
+the effective depth cap (`AL_DISPATCH_MAX_DEPTH`),
 parent-run metadata (`AL_RUN_ID`, `AL_RUN_DIR`), and development executable
 selection. These are launch-time values, so a later session does not inherit the
-session that ran `al sync`. Muse uses depth zero when the marker is unset.
+session that ran `al sync`. Muse uses depth zero when `AL_DISPATCH_ACTIVE` is
+unset and no inherited cap when `AL_DISPATCH_MAX_DEPTH` is unset.
 
 Agent-facing tool and parameter descriptions are maintained in
 `internal/agentdispatch/mcp_tool_descriptions.toml` and embedded at build time.
@@ -45,7 +47,7 @@ Agent-facing tool and parameter descriptions are maintained in
 | `dispatch_output` | Bounded final-answer or event text retrieval |
 
 `dispatch_start` accepts `agent`, optional `model`, `reasoning_effort`, `role`,
-and `skill`, and exactly one of `prompt` or `prompt_file`. `dispatch_continue`
+`skill`, and `max_depth`, and exactly one of `prompt` or `prompt_file`. `dispatch_continue`
 accepts `handle` and exactly one prompt source. `dispatch_wait`,
 `dispatch_cancel`, `dispatch_inspect`, and `dispatch_output` accept exactly one
 of `handle` or `invocation_id`. An explicit invocation ID never follows a later
@@ -130,7 +132,7 @@ al dispatch reserve [--continue <handle>]
 
 al dispatch start --agent <agent> [--model <model>] \
   [--reasoning-effort <effort>] [--role <role>] [--skill <skill>] \
-  [--reservation <handle>] [--mcp-config <path>]... \
+  [--max-depth <N>] [--reservation <handle>] [--mcp-config <path>]... \
   (--prompt <text> | --prompt-file <path>)
 
 al dispatch wait <handle-or-invocation-id> [--condition terminal|termination_confirmed]
@@ -206,6 +208,27 @@ effort are optional overrides. When omitted, Agent Layer uses its configured
 value; when that is also empty, it omits the provider flag so the provider uses
 its own default. `--role` is optional caller-defined workflow evidence retained
 on the run record; it does not change provider selection or prompt text.
+`--max-depth` (or `max_depth` in `dispatch_start`) is an optional positive
+integer that caps nested dispatch depth for the conversation and its
+descendants. The effective cap enforced on each operation is
+`min(dispatch.max_depth, inherited cap, session cap, requested max_depth)` — it
+can only tighten, never relax, repository config or an inherited parent cap.
+Non-positive or invalid values fail validation (exit 64). If the caller's
+current depth is already at or above the effective cap, `start` fails before
+launch with exit 75 (`ExitNested`). When an explicit cap is requested or
+inherited, it is persisted on the conversation record (including reserved
+starts) so every later `continue` enforces the same cap without re-supplying
+`--max-depth`, and is forwarded to dispatched workers via
+`AL_DISPATCH_MAX_DEPTH` so it propagates across children and repositories.
+Omitting `--max-depth` with no inherited cap leaves the conversation uncapped
+(`max_depth` is omitted from the session record and `AL_DISPATCH_MAX_DEPTH` is
+not set), preserving repo-local `dispatch.max_depth` behavior. Interactive
+launches strip leaked `AL_DISPATCH_ACTIVE` and `AL_DISPATCH_MAX_DEPTH` markers;
+malformed or non-positive inherited values fail closed with exit 75. Tools and
+skills stay fixed for prompt-cache stability; once a worker is at or above its
+effective cap, all state-changing operations (`reserve`, `start`, `continue`,
+and `cancel` via CLI or MCP) fail immediately with exit 75 while read-only
+operations (`options`, `wait`, `inspect`, `output`, `quota`) remain allowed.
 `start` returns immediately after durably creating the
 conversation and starting its first invocation.
 
@@ -283,7 +306,7 @@ server processes are tracked in isolated process groups and terminated and
 proven dead before `termination_confirmed` becomes true.
 
 `continue` uses the conversation's existing agent, model, reasoning effort,
-session-scoped MCP servers, and provider context. It requires exactly one new
+effective `max_depth` cap, session-scoped MCP servers, and provider context. It requires exactly one new
 prompt source and returns immediately after starting the next invocation.
 
 `--prompt-file` reads the named file as the prompt. It avoids shell escaping

@@ -44,7 +44,7 @@ func executeFreshDispatch(req dispatchExecRequest) error {
 	if err != nil {
 		return err
 	}
-	if err := checkDispatchDepth(project.Config, depth); err != nil {
+	if err := checkDispatchDepthCap(project.Config, depth); err != nil {
 		return err
 	}
 	target, ok := lookupTarget(req.Agent)
@@ -97,7 +97,7 @@ func executeContinueDispatch(req dispatchExecRequest, handle string) error {
 	if err != nil {
 		return err
 	}
-	if err := checkDispatchDepth(project.Config, depth); err != nil {
+	if err := checkDispatchDepthCap(project.Config, depth); err != nil {
 		return err
 	}
 	session, err := loadSession(req.Root, strings.TrimSpace(handle))

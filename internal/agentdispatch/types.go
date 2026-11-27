@@ -154,8 +154,12 @@ type StartOptions struct {
 	ReasoningEffort string
 	Role            string
 	Skill           string
-	Prompt          string
-	PromptFile      string
+	// MaxDepth, when set, caps the maximum dispatch depth for this conversation
+	// and its descendants. It can only tighten the repository dispatch.max_depth
+	// or any inherited parent cap.
+	MaxDepth   *int
+	Prompt     string
+	PromptFile string
 	// MCPConfigs lists paths to JSON files defining session-scoped stdio MCP
 	// servers (`{"mcpServers": {...}}`). CLI-only; persisted on the conversation.
 	MCPConfigs []string
@@ -185,6 +189,7 @@ type ReserveOptions struct {
 	// empty handle fails without creating anything.
 	ContinueHandle *string
 	Stdout         io.Writer
+	Env            []string
 }
 
 // ContinueOptions configures one asynchronous continuation of a conversation.
@@ -295,6 +300,7 @@ type CancelRequest struct {
 	Handle       string
 	InvocationID string
 	Stdout       io.Writer
+	Env          []string
 }
 
 // OptionsRequest configures an Agent Dispatch options response.

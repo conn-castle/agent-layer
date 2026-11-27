@@ -684,7 +684,7 @@ func TestDispatchEnvironmentStripsSessionMCPEnvForNestedDispatches(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	env := dispatchEnvironment([]string{"KEEP=yes", "AL_SESSION_MCP_0_0=secret"}, project, run, 1)
+	env := dispatchEnvironment([]string{"KEEP=yes", "AL_SESSION_MCP_0_0=secret"}, project, run, 1, 3)
 	if slices.Contains(env, "AL_SESSION_MCP_0_0=secret") {
 		t.Fatalf("dispatchEnvironment leaked AL_SESSION_MCP_* into child env: %v", env)
 	}
