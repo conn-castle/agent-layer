@@ -628,10 +628,10 @@ func persistOwnedSession(root string, name string, runID string, update func(*Se
 }
 
 func claimConversation(root string, name string, runID string) (Session, error) {
-	return claimConversationWithMaxDepth(root, name, runID, "", 0)
+	return claimConversationWithMaxDepth(root, name, runID, "", 0, 0)
 }
 
-func claimConversationWithMaxDepth(root string, name string, runID string, expectedPrev string, maxDepth int) (Session, error) {
+func claimConversationWithMaxDepth(root string, name string, runID string, expectedPrev string, depth int, maxDepth int) (Session, error) {
 	var claimed Session
 	err := withSessionLock(root, name, func() error {
 		path, err := sessionPath(root, name)
@@ -641,6 +641,9 @@ func claimConversationWithMaxDepth(root string, name string, runID string, expec
 		var session Session
 		if err := readJSON(path, &session); err != nil {
 			return wrapExitError(ExitConfig, "read dispatch mapping for active claim", err)
+		}
+		if err := checkExplicitDepthCap(depth, session.MaxDepth, maxDepth); err != nil {
+			return err
 		}
 		pending, hasPending, err := settlePendingContinuationReservationLocked(root, &session, time.Now().UTC())
 		if err != nil {

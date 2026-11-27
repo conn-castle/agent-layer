@@ -216,12 +216,14 @@ can only tighten, never relax, repository config or an inherited parent cap.
 Non-positive or invalid values fail validation (exit 64). If the caller's
 current depth is already at or above the effective cap, `start` fails before
 launch with exit 75 (`ExitNested`). When an explicit cap is requested or
-inherited, the clamped effective cap (`min(dispatch.max_depth, inherited cap,
-session cap, requested max_depth)`) is persisted on the conversation record
-(including reserved starts and continuations) so every later `continue`
-enforces the same cap without re-supplying `--max-depth`, and is forwarded to
-dispatched workers via `AL_DISPATCH_MAX_DEPTH` so it propagates across children
-and repositories. Conversation records that persist `max_depth` are not
+inherited, the explicit cap (`min(inherited cap, session cap, requested max_depth)`)
+is persisted on the conversation record (including reserved starts and
+continuations) so every later `continue` enforces it without re-supplying
+`--max-depth` and a temporary drop in repository `dispatch.max_depth` does not
+permanently overwrite it. Each launched worker receives the clamped effective
+cap (`min(dispatch.max_depth, explicit cap)`) via `AL_DISPATCH_MAX_DEPTH` so it
+propagates across children and repositories without relaxing the launch
+repository's ceiling. Conversation records that persist `max_depth` are not
 readable by older binaries that reject unknown fields. Omitting `--max-depth`
 with no inherited cap leaves the conversation uncapped (`max_depth` is omitted
 from the session record and `AL_DISPATCH_MAX_DEPTH` is not set), preserving

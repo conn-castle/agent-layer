@@ -210,6 +210,10 @@ func Cancel(request CancelRequest) error {
 	if err != nil {
 		return err
 	}
+	// Depth 0 is never blocked by a positive depth cap, so avoid letting a
+	// corrupt session mapping block top-level cancellation; nested callers
+	// (depth > 0) must fail closed on unreadable session state so a stored cap
+	// cannot be bypassed.
 	if depthState.Depth > 0 && record.Name != "" {
 		if session, loadErr := loadSession(request.Root, record.Name); loadErr == nil {
 			if err := checkDispatchStateAllowed(request.Root, depthState, session.MaxDepth); err != nil {

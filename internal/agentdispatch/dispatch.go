@@ -554,13 +554,23 @@ func checkDispatchDepthCap(cfg config.Config, depth int, caps ...int) error {
 	return nil
 }
 
+// checkExplicitDepthCap rejects a caller at depth >= the tightest explicit cap
+// without reading repository configuration.
+func checkExplicitDepthCap(depth int, caps ...int) error {
+	minCap := minPositive(caps...)
+	if minCap > 0 && depth >= minCap {
+		return exitError(ExitNested, fmt.Sprintf("nested dispatch is blocked at depth %d by max_depth cap = %d; this agent is already running inside `al dispatch`, use the built-in subagent tool instead", depth, minCap))
+	}
+	return nil
+}
+
 // checkDispatchStateAllowed rejects state-changing dispatch operations at or
 // above the effective depth cap (the tighter of repo dispatch.max_depth and any
 // inherited, persisted, or requested cap) with ExitNested.
 func checkDispatchStateAllowed(root string, state dispatchDepthState, extraCaps ...int) error {
 	minCap := minPositive(append([]int{state.MaxDepth}, extraCaps...)...)
-	if minCap > 0 && state.Depth >= minCap {
-		return exitError(ExitNested, fmt.Sprintf("nested dispatch is blocked at depth %d by max_depth cap = %d; this agent is already running inside `al dispatch`, use the built-in subagent tool instead", state.Depth, minCap))
+	if err := checkExplicitDepthCap(state.Depth, minCap); err != nil {
+		return err
 	}
 	if state.Depth == 0 {
 		// Every valid dispatch.max_depth is positive (>= 1), so depth 0 is never blocked.
