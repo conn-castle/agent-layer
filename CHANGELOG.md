@@ -3,6 +3,9 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+### Changed
+- Benchmarks pin Antigravity 1.5.18 and Grok 1.0.25. The shared Pier adapter update changes the identity of every existing benchmark study and arm, including Codex and Claude. A normal `al benchmark run` can execute those cells again and incur provider charges. Use `--recover-only` to regenerate compatible completed reports or finalize evidence-backed terminal test timeouts without paid calls (#567).
+
 ## v1.4.0 - 2026-11-25
 
 ### Changed

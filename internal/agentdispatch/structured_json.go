@@ -231,10 +231,9 @@ func (p *selectiveJSONReader) readArray(result map[string]any, path []string, de
 	}
 	content := len(path) == 2 && path[0] == jsonMessageKey && path[1] == jsonContentKey
 	mcpServers := len(path) == 1 && path[0] == "mcp_servers"
-	// Grok 1.0.5 emits one content element for tool updates. Generic arrays
-	// intentionally retain only the last scalar to keep parsing bounded; the
-	// provider-derived denial fixture locks the single-element contract used by
-	// failure detection.
+	// Generic arrays retain only the last scalar to keep parsing bounded.
+	// Grok denial detection relies on single-element tool-update content arrays,
+	// as captured in the provider-derived denial fixture.
 	for {
 		if content {
 			block := claudeToolUseBlock{}

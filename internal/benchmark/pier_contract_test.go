@@ -29,7 +29,7 @@ agent = AgentFactory.create_agent_from_import_path(
     "pier_agent_layer:AgentLayerGrok",
     logs_dir=Path("/tmp/agent-layer-pier-factory-test"),
     model_name="grok-4.5",
-    version="1.0.5",
+    version="` + GrokClientVersion + `",
     treatment_agent="grok",
     treatment_model="grok-4.5",
     treatment_reasoning_effort="low",
@@ -187,10 +187,11 @@ codex = module.AgentLayerCodex(logs_dir=Path("/tmp/pier-adapter-contract"),
                                treatment_agent="codex", treatment_model="gpt-6-luna",
                                treatment_reasoning_effort="high")
 assert set(codex.network_allowlist().domains) == {"api.openai.com", "chatgpt.com"}
-for cls, model, domains in [
-    (module.AgentLayerAntigravity, "gemini-3.5-flash-low", {"storage.googleapis.com", ".googleapis.com"}),
-    (module.AgentLayerGrok, "grok-4.5", {"storage.googleapis.com", "api.x.ai", "auth.x.ai"}),
+for cls, expected_version, expected_digest_len, model, domains in [
+    (module.AgentLayerAntigravity, sys.argv[2], 128, "gemini-3.5-flash-low", {"storage.googleapis.com", ".googleapis.com"}),
+    (module.AgentLayerGrok, sys.argv[3], 64, "grok-4.5", {"storage.googleapis.com", "api.x.ai", "auth.x.ai"}),
 ]:
+    assert cls.PINNED_VERSION == expected_version, (cls.name(), cls.PINNED_VERSION, expected_version)
     agent = cls(
         logs_dir=Path("/tmp/pier-adapter-contract"), model_name=model, version=cls.PINNED_VERSION,
         treatment_agent=agent_name if (agent_name := cls.name()) else "", treatment_model=model,
@@ -198,6 +199,10 @@ for cls, model, domains in [
     )
     install = agent.install_spec()
     assert install.agent_name == cls.name() and install.version == cls.PINNED_VERSION
+    assert cls.PINNED_VERSION in install.metadata["linux_amd64_artifact"], install.metadata
+    checksum = install.metadata["checksum"]
+    assert len(checksum) == expected_digest_len, install.metadata
+    assert all(digit in "0123456789abcdef" for digit in checksum), install.metadata
     assert install.verification_command == f"{cls.BINARY} --version"
     assert install.metadata["network_allowlist"] == ["storage.googleapis.com"]
     assert set(agent.network_allowlist().domains) == domains
@@ -294,7 +299,7 @@ except OSError as error:
     assert str(error) == "simulated checkpoint failure"
 assert commands == ["collected"]
 `
-	command := exec.CommandContext(t.Context(), "uvx", "--from", "datacurve-pier=="+PierVersion, "python", "-c", script, path) // #nosec G204 -- embedded test loads the checked-in adapter against its pinned runtime.
+	command := exec.CommandContext(t.Context(), "uvx", "--from", "datacurve-pier=="+PierVersion, "python", "-c", script, path, AntigravityClientVersion, GrokClientVersion) // #nosec G204 -- embedded test loads the checked-in adapter against its pinned runtime.
 	if output, err := command.CombinedOutput(); err != nil {
 		t.Fatalf("pinned Pier adapter contract failed: %v\n%s", err, output)
 	}
