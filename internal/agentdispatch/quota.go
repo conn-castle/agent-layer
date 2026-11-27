@@ -67,26 +67,31 @@ func ParseQuotaSelection(agents, profiles, expected, models []string, timeout ti
 		selection.sources = append(selection.sources, quota.Source{Selector: label, Agent: target.Name, File: file})
 	}
 	selectors := make(map[string]bool)
+	agentSelectors := make(map[string]bool)
 	for _, source := range selection.sources {
 		if selectors[source.Selector] {
 			return QuotaSelection{}, exitError(ExitUsage, "quota selectors must be unique")
 		}
 		selectors[source.Selector] = true
+		if source.File == "" {
+			agentSelectors[source.Selector] = true
+		}
 	}
 	if len(selection.sources) == 0 {
 		for _, target := range targetRegistry() {
 			selectors[target.Name] = true
+			agentSelectors[target.Name] = true
 		}
 	}
 	for _, argument := range expected {
-		key, value, ok := quotaAssignment(selectors, argument)
+		key, value, ok := quotaAssignment(selectors, agentSelectors, argument)
 		if !ok || selection.expected[key] != "" {
 			return QuotaSelection{}, exitError(ExitUsage, "quota --expect-account requires one SELECTOR=ID per selected account")
 		}
 		selection.expected[key] = value
 	}
 	for _, argument := range models {
-		key, value, ok := quotaAssignment(selectors, argument)
+		key, value, ok := quotaAssignment(selectors, agentSelectors, argument)
 		if !ok {
 			return QuotaSelection{}, exitError(ExitUsage, "quota --model requires SELECTOR=MODEL for a selected account")
 		}
@@ -95,9 +100,19 @@ func ParseQuotaSelection(agents, profiles, expected, models []string, timeout ti
 	return selection, nil
 }
 
-func quotaAssignment(selectors map[string]bool, argument string) (string, string, bool) {
+func quotaAssignment(selectors, agentSelectors map[string]bool, argument string) (string, string, bool) {
 	key, value, assigned := strings.Cut(argument, "=")
-	return key, value, assigned && selectors[key] && strings.TrimSpace(value) != "" && !strings.ContainsAny(value, "\x00\r\n")
+	if !assigned || strings.TrimSpace(value) == "" || strings.ContainsAny(value, "\x00\r\n") {
+		return "", "", false
+	}
+	if !selectors[key] {
+		target, ok := lookupTarget(key)
+		if !ok || !agentSelectors[target.Name] {
+			return "", "", false
+		}
+		key = target.Name
+	}
+	return key, value, true
 }
 
 // NeedsProject reports whether quota reads need the current Agent Layer project.

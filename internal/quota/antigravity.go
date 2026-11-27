@@ -156,14 +156,17 @@ func normalizeAntigravity(summary agySummary, legacy agyLegacy, catalog agyCatal
 		if slices.Contains(ids, bucket.ID) {
 			group = bucket.ID
 		}
-		for _, id := range ids {
-			covered[id] = true
-		}
 		duration, state := agyWindowDuration(bucket.Window)
 		if agySummaryWindowPending(bucket) {
 			state = windowPending
 		}
-		addAgyBucket(r, group, ids, agyWindow(bucket.ID, bucket, duration, state, creditBypass))
+		window := agyWindow(bucket.ID, bucket, duration, state, creditBypass)
+		if window.UsedPercent != nil || window.Disabled != nil && *window.Disabled {
+			for _, id := range ids {
+				covered[id] = true
+			}
+		}
+		addAgyBucket(r, group, ids, window)
 	}
 	flat := make(map[string]agyQuota, len(summary.Buckets))
 	for _, bucket := range summary.Buckets {
@@ -235,6 +238,11 @@ func agyHasWindow(windows []Window, duration time.Duration) bool {
 	})
 }
 
+func rawJSONAbsent(raw json.RawMessage) bool {
+	trimmed := strings.TrimSpace(string(raw))
+	return trimmed == "" || trimmed == "null"
+}
+
 func mergeAgySummaryBucket(group, flat agyQuota) agyQuota {
 	group.Model = textFrom(group.Model, flat.Model)
 	group.Window = textFrom(group.Window, flat.Window)
@@ -245,10 +253,10 @@ func mergeAgySummaryBucket(group, flat agyQuota) agyQuota {
 	group.Blocked = cmp.Or(group.Blocked, flat.Blocked)
 	group.Exhausted = cmp.Or(group.Exhausted, flat.Exhausted)
 	group.Pending = cmp.Or(group.Pending, flat.Pending)
-	if len(group.Reset) == 0 {
+	if rawJSONAbsent(group.Reset) {
 		group.Reset = flat.Reset
 	}
-	if len(group.Clears) == 0 {
+	if rawJSONAbsent(group.Clears) {
 		group.Clears = flat.Clears
 	}
 	if len(group.ModelIDs) == 0 {
@@ -271,26 +279,27 @@ func agySummaryWindowPending(bucket agyQuota) bool {
 	// timer before its first use. The legacy counters can synthesize timers
 	// and do not establish an unstarted window.
 	return bucket.Window == "5h" && bucket.Remaining != nil && *bucket.Remaining == 1 &&
-		(len(bucket.Reset) == 0 || string(bucket.Reset) == "null")
+		rawJSONAbsent(bucket.Reset)
 }
 
 func addAgyBucket(r *Result, group string, ids []string, window Window) {
 	for i := range r.Pools {
 		pool := &r.Pools[i]
-		if pool.ID == group && slices.Equal(pool.Models, ids) {
+		if pool.nativeGroup == group && slices.Equal(pool.Models, ids) {
 			pool.Windows = append(pool.Windows, window)
 			pool.Admission = windowAdmission(pool.Windows)
 			return
 		}
-		if pool.ID == group {
-			group += ":" + window.ID
-		}
+	}
+	poolID := group
+	if slices.ContainsFunc(r.Pools, func(pool Pool) bool { return pool.ID == poolID }) {
+		poolID = group + ":" + window.ID
 	}
 	scope := scopeUnknown
 	if len(ids) > 0 {
 		scope = scopeModels
 	}
-	r.Pools = append(r.Pools, Pool{ID: group, Scope: scope, Models: ids, Windows: []Window{window}, Admission: window.Admission})
+	r.Pools = append(r.Pools, Pool{ID: poolID, Scope: scope, Models: ids, Windows: []Window{window}, Admission: window.Admission, nativeGroup: group})
 }
 
 func agyBucketModels(description string, groupIDs []string, bucket agyQuota, catalog agyCatalog) []string {

@@ -118,14 +118,15 @@ type Result struct {
 	AccountCheck string        `json:"account_check"`
 	Subscription *Subscription `json:"subscription"`
 	Admission
-	Pools           []Pool   `json:"pools"`
-	Models          []Model  `json:"models"`
-	ModelCoverage   string   `json:"model_coverage"`
-	BlockReason     string   `json:"block_reason,omitempty"`
-	Missing         []string `json:"missing,omitempty"`
-	modelAuth       map[string]string
-	modelAliases    map[string]string
-	identityFailure failure
+	Pools            []Pool   `json:"pools"`
+	Models           []Model  `json:"models"`
+	ModelCoverage    string   `json:"model_coverage"`
+	BlockReason      string   `json:"block_reason,omitempty"`
+	Missing          []string `json:"missing,omitempty"`
+	modelAuth        map[string]string
+	modelAliases     map[string]string
+	identityFailure  failure
+	independentBlock Admission
 }
 
 // Subscription identifies a provider-side billing principal without returning personal identifiers.
@@ -149,7 +150,8 @@ type Pool struct {
 	Scope  string   `json:"scope"`
 	Models []string `json:"models,omitempty"`
 	Admission
-	Windows []Window `json:"windows"`
+	Windows     []Window `json:"windows"`
+	nativeGroup string
 }
 
 // Window holds one provider-reported utilization interval.
@@ -171,6 +173,7 @@ type Model struct {
 	Pools      []string `json:"pools"`
 	AuthStatus string   `json:"auth_status,omitempty"`
 	Admission
+	bypassesIncluded bool
 }
 
 type reader func(context.Context, *httpReader, credential, *Result) failure
@@ -457,6 +460,9 @@ func (r *Result) evaluateModels(requested []string) {
 	ids = slices.Compact(ids)
 	models := make([]Model, 0, len(ids))
 	for _, id := range ids {
+		if id == "" {
+			continue
+		}
 		models = append(models, r.evaluateModel(id))
 	}
 	r.Models = models
@@ -474,12 +480,16 @@ func (r *Result) evaluateModel(id string) Model {
 	}
 	var gates []Admission
 	explicitAllowance := false
+	bypassesIncluded := false
 	for _, existing := range r.Models {
 		if existing.ID == id {
 			m.Coverage = existing.Coverage
+			bypassesIncluded = existing.bypassesIncluded
 			if existing.Blocked != nil {
 				gates = append(gates, existing.Admission)
 				explicitAllowance = !*existing.Blocked
+			} else if bypassesIncluded {
+				gates = append(gates, existing.Admission)
 			}
 			break
 		}
@@ -498,7 +508,9 @@ func (r *Result) evaluateModel(id string) Model {
 				continue
 			}
 			m.Pools = append(m.Pools, pool.ID)
-			gates = append(gates, pool.Admission)
+			if !bypassesIncluded || pool.Scope != scopeAll {
+				gates = append(gates, pool.Admission)
+			}
 		} else if pool.Scope == scopeUnknown && m.Coverage == coverageComplete {
 			m.Coverage = coveragePartial
 		}
@@ -506,7 +518,11 @@ func (r *Result) evaluateModel(id string) Model {
 	if len(m.Pools) > 0 && m.Coverage == scopeUnknown {
 		m.Coverage = coveragePartial
 	}
-	if r.Blocked != nil && *r.Blocked {
+	if bypassesIncluded {
+		if r.independentBlock.Blocked != nil && *r.independentBlock.Blocked {
+			gates = append(gates, r.independentBlock)
+		}
+	} else if r.Blocked != nil && *r.Blocked {
 		gates = append(gates, r.Admission)
 	}
 	m.Admission = aggregate(gates...)

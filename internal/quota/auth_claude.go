@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"os/user"
 	"path/filepath"
 	"runtime"
 	"slices"
@@ -30,7 +31,8 @@ func claudeCredentialFrom(ctx context.Context, s credentialSource, platform stri
 	}
 	nativeConfigDir := s.value(claudeConfigEnv)
 	s.env = env
-	if s.has("CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX", "CLAUDE_CODE_USE_FOUNDRY", "CLAUDE_CODE_CUSTOM_OAUTH_URL") ||
+	if s.enabledFlag("CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX", "CLAUDE_CODE_USE_FOUNDRY") ||
+		s.has("CLAUDE_CODE_CUSTOM_OAUTH_URL") ||
 		customEndpoint(s.value("ANTHROPIC_BASE_URL"), "https://api.anthropic.com") {
 		return credential{}, unsupportedAuth(reasonCustomEndpoint)
 	}
@@ -66,10 +68,12 @@ func claudeCredentialFrom(ctx context.Context, s credentialSource, platform stri
 		raw, fail := read(ctx, service, "")
 		if fail.status == "" {
 			auth, fail := parseClaudeCredential(raw)
-			lockDir := home
-			if override && selected != nativeConfigDir {
-				lockDir = s.home("", "")
-			}
+			// Keychain service names hash the raw selector string. A relative
+			// selector maps to the same service from different working
+			// directories, so only an existing absolute selector uses its own
+			// lock directory; relative or missing selectors share a common
+			// fallback directory keyed by the OS user.
+			lockDir := claudeKeychainLockDir(selected, s.home("", ""))
 			auth.native = s.native(lockDir, "", "")
 			return auth, fail
 		}
@@ -88,23 +92,24 @@ func claudeCredentialFrom(ctx context.Context, s credentialSource, platform stri
 
 func claudeLaunchSettings(s credentialSource, home string) ([]string, map[string]any, failure) {
 	var settings map[string]any
+	if fail := settingsFile(filepath.Join(home, "settings.json"), &settings); fail.status != "" {
+		return nil, nil, fail
+	}
+	// Dispatch regenerates <root>/.claude/settings.json from project config,
+	// so resolve that layer from the current config rather than a stale file.
+	settings = mergeSettings(settings, s.config)
 	project := filepath.Join(s.root, ".claude")
 	workspace := filepath.Join(textFrom(s.workDir, s.root), ".claude")
-	projectSettings := filepath.Join(project, "settings.json")
-	paths := []string{filepath.Join(home, "settings.json"), projectSettings}
+	paths := []string{filepath.Join(project, "settings.local.json")}
 	if workspace != project {
 		paths = append(paths, filepath.Join(workspace, "settings.json"), filepath.Join(workspace, "settings.local.json"))
 	}
-	paths = append(paths, filepath.Join(project, "settings.local.json"))
-	for i, path := range paths {
+	for _, path := range paths {
 		var layer map[string]any
 		if fail := settingsFile(path, &layer); fail.status != "" {
 			return nil, nil, fail
 		}
 		settings = mergeSettings(settings, layer)
-		if i == 1 {
-			settings = mergeSettings(settings, s.config)
-		}
 	}
 	var managedPath string
 	switch runtime.GOOS {
@@ -167,11 +172,25 @@ func parseClaudeCredential(raw []byte) (credential, failure) {
 	}, failure{}
 }
 
-func claudePrincipal(org, account string) string {
-	if org == "" {
-		return account
+func claudeKeychainLockDir(selected, fallback string) string {
+	common := osUserLockDir(fallback)
+	if filepath.IsAbs(selected) {
+		return existingDirOrFallback(selected, common)
 	}
-	if account == "" {
+	return common
+}
+
+func osUserLockDir(fallback string) string {
+	if current, err := user.Current(); err == nil && current.HomeDir != "" {
+		if dir := existingDirOrFallback(current.HomeDir, ""); dir != "" {
+			return dir
+		}
+	}
+	return fallback
+}
+
+func claudePrincipal(org, account string) string {
+	if org == "" || account == "" {
 		return ""
 	}
 	return org + "/" + account

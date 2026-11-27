@@ -9,6 +9,7 @@ import (
 )
 
 const codexUsage = "https://chatgpt.com/backend-api/wham/usage"
+const codexIncludedLimitReached = "rate_limit_reached"
 
 type codexUsageResponse struct {
 	AccountID  string                `json:"account_id"`
@@ -96,7 +97,7 @@ func readCodex(ctx context.Context, h *httpReader, auth credential, r *Result) f
 	}
 	if data.Standard != nil {
 		standard := *data.Standard
-		if kind == "rate_limit_reached" && standard.Allowed == nil {
+		if kind == codexIncludedLimitReached && standard.Allowed == nil {
 			standard.LimitReached = ptr(true)
 		}
 		pool := makeCodexPool(agentCodex, scopeAll, nil, &standard)
@@ -125,30 +126,55 @@ func readCodex(ctx context.Context, h *httpReader, auth credential, r *Result) f
 		pool.Label = limit.Name
 		r.Pools = append(r.Pools, pool)
 	}
-	credits := !data.SpendControl.Reached && !data.Credits.OverageLimit &&
-		(data.Credits.Unlimited || data.Credits.HasCredits != nil && *data.Credits.HasCredits)
+	credits := codexCreditsUsable(data, kind)
 	for id, state := range data.ModelUsage {
 		gate := Admission{}
 		modelCoverage := r.ModelCoverage
+		bypassesIncluded := false
 		if state.Available != nil {
 			modelCoverage = coverageComplete
 			switch {
-			case *state.Available, state.CreditsWouldEnable && credits:
+			case *state.Available:
 				gate = knownAllowed()
+			case state.CreditsWouldEnable && credits != nil && *credits:
+				gate = knownAllowed()
+				bypassesIncluded = true
+			case state.CreditsWouldEnable && credits == nil:
+				bypassesIncluded = true
 			default:
 				gate = knownBlocked(optionalTime(state.AvailableAt))
 			}
 		}
-		r.Models = append(r.Models, Model{ID: id, Coverage: modelCoverage, Admission: gate})
+		r.Models = append(r.Models, Model{
+			ID:               id,
+			Coverage:         modelCoverage,
+			Admission:        gate,
+			bypassesIncluded: bypassesIncluded,
+		})
 	}
 	applyCodexAdmission(data, kind, r)
 	return failure{}
 }
 
+func codexCreditsUsable(data codexUsageResponse, kind string) *bool {
+	switch {
+	case data.SpendControl.Reached, data.Credits.OverageLimit:
+		return ptr(false)
+	case kind != "" && kind != codexIncludedLimitReached:
+		return ptr(false)
+	case data.Credits.Unlimited, data.Credits.HasCredits != nil && *data.Credits.HasCredits:
+		return ptr(true)
+	case data.Credits.HasCredits != nil && !*data.Credits.HasCredits:
+		return ptr(false)
+	default:
+		return nil
+	}
+}
+
 func applyCodexAdmission(data codexUsageResponse, kind string, r *Result) {
 	var clear *time.Time
 	switch kind {
-	case "rate_limit_reached":
+	case codexIncludedLimitReached:
 		if r.Blocked != nil && !*r.Blocked {
 			return
 		}
@@ -167,7 +193,9 @@ func applyCodexAdmission(data codexUsageResponse, kind string, r *Result) {
 	}
 	// Billing and workspace caps are independent of included window resets.
 	// An unknown expiry must survive even when an included window also blocks.
-	r.Admission = aggregate(r.Admission, knownBlocked(clear))
+	block := knownBlocked(clear)
+	r.independentBlock = aggregate(r.independentBlock, block)
+	r.Admission = aggregate(r.Admission, block)
 	r.BlockReason = kind
 }
 

@@ -203,17 +203,19 @@ func TestQuotaNativeOneShotFinishesDuringGrace(t *testing.T) {
 	defer cancel()
 	root := t.TempDir()
 	ready := filepath.Join(root, "ready")
+	release := filepath.Join(root, "release")
 	done := filepath.Join(root, "saved")
 	native := nativeCredential{dir: root, env: []string{"PATH=" + os.Getenv("PATH")}}
 	wait := make(chan error, 1)
 	go func() {
-		wait <- native.run(ctx, "/bin/sh", []string{"-c", `printf ready > ready; sleep 0.2; printf saved > saved`})
+		wait <- native.run(ctx, "/bin/sh", []string{"-c", `printf ready > ready; while [ ! -f release ]; do sleep 0.01; done; printf saved > saved`})
 	}()
 	require.Eventually(t, func() bool {
 		_, err := os.Stat(ready)
 		return err == nil
 	}, 2*time.Second, 10*time.Millisecond)
 	cancel()
+	require.NoError(t, os.WriteFile(release, []byte("go"), 0o600))
 	require.NoError(t, <-wait)
 	assert.FileExists(t, done)
 }
@@ -230,4 +232,72 @@ func TestQuotaClaudeKeychainFailureIsNotMissingLogin(t *testing.T) {
 	auth, fail := claudeCredentialFrom(t.Context(), s, platformDarwin, read)
 	assert.Empty(t, fail.status)
 	assert.Nil(t, auth.native)
+
+	// Keychain login when ~/.claude does not exist yet must fall back to the
+	// common OS-user lock directory so locking succeeds without ENOENT.
+	missingHome := t.TempDir()
+	keychainSource := credentialSource{root: missingHome, env: []string{"HOME=" + missingHome}}
+	keychainRead := func(context.Context, string, string) ([]byte, failure) {
+		return []byte(`{"claudeAiOauth":{"accessToken":"fixture-token","refreshToken":"fixture-refresh"}}`), failure{}
+	}
+	auth, fail = claudeCredentialFrom(t.Context(), keychainSource, platformDarwin, keychainRead)
+	require.Empty(t, fail.status)
+	require.NotNil(t, auth.native)
+	commonLockDir := osUserLockDir(missingHome)
+	assert.Equal(t, commonLockDir, auth.native.lockDir)
+	unlock, err := auth.native.lock(t.Context())
+	require.NoError(t, err)
+	unlock()
+
+	// Processes sharing the same Keychain service via an existing absolute
+	// CLAUDE_CONFIG_DIR vs CLAUDE_SECURESTORAGE_CONFIG_DIR lock that directory.
+	alt := t.TempDir()
+	viaConfigDir, failA := claudeCredentialFrom(t.Context(), credentialSource{
+		root: missingHome, env: []string{"HOME=" + missingHome, claudeConfigEnv + "=" + alt},
+	}, platformDarwin, keychainRead)
+	require.Empty(t, failA.status)
+	viaSecureStorage, failB := claudeCredentialFrom(t.Context(), credentialSource{
+		root: missingHome, env: []string{"HOME=" + missingHome, "CLAUDE_SECURESTORAGE_CONFIG_DIR=" + alt},
+	}, platformDarwin, keychainRead)
+	require.Empty(t, failB.status)
+	assert.Equal(t, alt, viaConfigDir.native.lockDir)
+	assert.Equal(t, viaConfigDir.native.lockDir, viaSecureStorage.native.lockDir)
+
+	// Relative CLAUDE_SECURESTORAGE_CONFIG_DIR hashes the raw value, so two
+	// different working directories and HOME overrides must share one OS-user lock.
+	dirA, dirB := t.TempDir(), t.TempDir()
+	require.NoError(t, os.Mkdir(filepath.Join(dirA, ".claude-config"), 0o700))
+	require.NoError(t, os.Mkdir(filepath.Join(dirB, ".claude-config"), 0o700))
+	relA, failRelA := claudeCredentialFrom(t.Context(), credentialSource{
+		root: dirA, workDir: dirA, env: []string{"HOME=" + dirA, "CLAUDE_SECURESTORAGE_CONFIG_DIR=.claude-config"},
+	}, platformDarwin, keychainRead)
+	require.Empty(t, failRelA.status)
+	relB, failRelB := claudeCredentialFrom(t.Context(), credentialSource{
+		root: dirB, workDir: dirB, env: []string{"HOME=" + dirB, "CLAUDE_SECURESTORAGE_CONFIG_DIR=.claude-config"},
+	}, platformDarwin, keychainRead)
+	require.Empty(t, failRelB.status)
+	assert.Equal(t, commonLockDir, relA.native.lockDir)
+	assert.Equal(t, relA.native.lockDir, relB.native.lockDir)
+}
+
+func TestQuotaGrokExternalAuthRenewalEnsuresPrivateHome(t *testing.T) {
+	old, fresh := fixedTime().Add(-time.Hour), fixedTime().Add(time.Hour)
+	grokLogin := func(token string, expires time.Time) string {
+		return fmt.Sprintf(`{"https://auth.x.ai::public-client":{"key":%q,"auth_mode":"oidc","refresh_token":"fixture-refresh","expires_at":%q,"principal_id":"seat1","team_id":"team1"}}`, token, expires.Format(time.RFC3339))
+	}
+	external := filepath.Join(t.TempDir(), "external-auth.json")
+	req, attempts := renewalTestRequest(t, agentGrok, agentGrok, "unused-store.json", grokLogin("stale", old), grokLogin(fakeToken, fresh))
+	writeFixture(t, external, grokLogin("stale", old))
+	req.Project.Env["AL_TEST_QUOTA_STORE"] = external
+	req.Project.Env["GROK_AUTH_PATH"] = external
+	grokHome := filepath.Join(req.Project.Root, ".grok-config")
+	_, err := os.Stat(grokHome)
+	require.ErrorIs(t, err, os.ErrNotExist)
+
+	out := query(t.Context(), req, renewalFixtureHTTP(t, fakeToken))
+	require.Equal(t, ResponseComplete, out.Status, out.Results)
+	assert.FileExists(t, attempts)
+	info, err := os.Stat(grokHome)
+	require.NoError(t, err)
+	assert.Equal(t, os.FileMode(0o700), info.Mode().Perm())
 }

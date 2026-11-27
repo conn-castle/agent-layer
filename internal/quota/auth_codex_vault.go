@@ -57,6 +57,10 @@ func readCodexVault(ctx context.Context, path, home string, read keyringReader) 
 	case <-ctx.Done():
 		return nil, contextFailure(ctx)
 	}
+	if ctx.Err() != nil {
+		<-codexVaultDecryptSlot
+		return nil, contextFailure(ctx)
+	}
 
 	type result struct {
 		auth []byte

@@ -6,7 +6,9 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"testing"
@@ -157,4 +159,254 @@ func TestQuotaMuseMacOSKeychainSelection(t *testing.T) {
 	content, err := readBoundedFile(path)
 	require.NoError(t, err)
 	assert.Equal(t, metadata, string(content))
+}
+
+type syntheticSecretItem struct {
+	collection string
+	attrs      map[string]string
+	locked     bool
+	secret     []byte
+}
+
+type syntheticSecretService struct {
+	defaultCollection string
+	lockedCollections map[string]bool
+	items             map[string]syntheticSecretItem
+	err               error
+}
+
+func (s *syntheticSecretService) searchItems(_ context.Context, attrs map[string]string) (unlocked, locked []string, err error) {
+	if s.err != nil {
+		return nil, nil, s.err
+	}
+	for path, item := range s.items {
+		if matchSecretAttrs(item.attrs, attrs) {
+			if item.locked || s.lockedCollections[item.collection] {
+				locked = append(locked, path)
+			} else {
+				unlocked = append(unlocked, path)
+			}
+		}
+	}
+	return unlocked, locked, nil
+}
+
+func (s *syntheticSecretService) readDefaultCollection(context.Context) (string, error) {
+	if s.err != nil {
+		return "", s.err
+	}
+	return s.defaultCollection, nil
+}
+
+func (s *syntheticSecretService) collectionLocked(_ context.Context, collection string) (bool, error) {
+	if s.err != nil {
+		return false, s.err
+	}
+	return s.lockedCollections[collection], nil
+}
+
+func (s *syntheticSecretService) collectionSearchItems(_ context.Context, collection string, attrs map[string]string) ([]string, error) {
+	if s.err != nil {
+		return nil, s.err
+	}
+	var out []string
+	for path, item := range s.items {
+		if item.collection == collection && matchSecretAttrs(item.attrs, attrs) {
+			out = append(out, path)
+		}
+	}
+	return out, nil
+}
+
+func (s *syntheticSecretService) itemAttributes(_ context.Context, item string) (map[string]string, error) {
+	if s.err != nil {
+		return nil, s.err
+	}
+	entry, ok := s.items[item]
+	if !ok {
+		return nil, errors.New("synthetic item missing")
+	}
+	return maps.Clone(entry.attrs), nil
+}
+
+func (s *syntheticSecretService) itemLocked(_ context.Context, item string) (bool, error) {
+	if s.err != nil {
+		return false, s.err
+	}
+	entry, ok := s.items[item]
+	if !ok {
+		return false, errors.New("synthetic item missing")
+	}
+	return entry.locked || s.lockedCollections[entry.collection], nil
+}
+
+func (s *syntheticSecretService) itemSecret(_ context.Context, item string) ([]byte, error) {
+	if s.err != nil {
+		return nil, s.err
+	}
+	entry, ok := s.items[item]
+	if !ok {
+		return nil, errors.New("synthetic item missing")
+	}
+	return entry.secret, nil
+}
+
+func matchSecretAttrs(have, want map[string]string) bool {
+	for key, value := range want {
+		if have[key] != value {
+			return false
+		}
+	}
+	return true
+}
+
+func TestQuotaCodexSecretServiceSelection(t *testing.T) {
+	const (
+		service = "Codex Auth"
+		account = "cli|0123456789abcdef"
+		defCol  = "/org/freedesktop/secrets/collection/login"
+		other   = "/org/freedesktop/secrets/collection/other"
+	)
+	for _, tc := range []struct {
+		name   string
+		store  syntheticSecretService
+		want   string
+		status string
+		reason string
+	}{
+		{
+			name: "unique target=default wins over legacy targetless and other targets",
+			store: syntheticSecretService{
+				defaultCollection: defCol,
+				items: map[string]syntheticSecretItem{
+					"/item/default": {collection: other, attrs: map[string]string{"service": service, "username": account, "target": "default"}, secret: []byte("default-secret")},
+					"/item/legacy":  {collection: defCol, attrs: map[string]string{"service": service, "username": account}, secret: []byte("legacy-secret")},
+					"/item/other":   {collection: defCol, attrs: map[string]string{"service": service, "username": account, "target": "custom"}, secret: []byte("other-secret")},
+				},
+			},
+			want: "default-secret",
+		},
+		{
+			name: "ambiguous target=default fails closed",
+			store: syntheticSecretService{
+				defaultCollection: defCol,
+				items: map[string]syntheticSecretItem{
+					"/item/a": {collection: defCol, attrs: map[string]string{"service": service, "username": account, "target": "default"}, secret: []byte("a")},
+					"/item/b": {collection: other, attrs: map[string]string{"service": service, "username": account, "target": "default"}, secret: []byte("b")},
+				},
+			},
+			status: statusUnsupported,
+			reason: reasonAmbiguousSlot,
+		},
+		{
+			name: "locked target=default reports unavailable",
+			store: syntheticSecretService{
+				defaultCollection: defCol,
+				items: map[string]syntheticSecretItem{
+					"/item/a": {collection: defCol, attrs: map[string]string{"service": service, "username": account, "target": "default"}, locked: true, secret: []byte("a")},
+				},
+			},
+			status: statusUnsupported,
+			reason: keyringUnavailable,
+		},
+		{
+			name: "unique targetless item in default collection selected and other targets ignored",
+			store: syntheticSecretService{
+				defaultCollection: defCol,
+				items: map[string]syntheticSecretItem{
+					"/item/other-target":     {collection: defCol, attrs: map[string]string{"service": service, "username": account, "target": "custom"}, secret: []byte("wrong")},
+					"/item/other-collection": {collection: other, attrs: map[string]string{"service": service, "username": account}, secret: []byte("wrong-collection")},
+					"/item/legacy":           {collection: defCol, attrs: map[string]string{"service": service, "username": account}, secret: []byte("legacy-secret")},
+				},
+			},
+			want: "legacy-secret",
+		},
+		{
+			name: "ambiguous targetless items in default collection fail closed",
+			store: syntheticSecretService{
+				defaultCollection: defCol,
+				items: map[string]syntheticSecretItem{
+					"/item/a": {collection: defCol, attrs: map[string]string{"service": service, "username": account}, secret: []byte("a")},
+					"/item/b": {collection: defCol, attrs: map[string]string{"service": service, "username": account}, secret: []byte("b")},
+				},
+			},
+			status: statusUnsupported,
+			reason: reasonAmbiguousSlot,
+		},
+		{
+			name: "locked targetless item reports unavailable",
+			store: syntheticSecretService{
+				defaultCollection: defCol,
+				items: map[string]syntheticSecretItem{
+					"/item/a": {collection: defCol, attrs: map[string]string{"service": service, "username": account}, locked: true, secret: []byte("a")},
+				},
+			},
+			status: statusUnsupported,
+			reason: keyringUnavailable,
+		},
+		{
+			name: "only non-default target in unlocked default collection proves absence",
+			store: syntheticSecretService{
+				defaultCollection: defCol,
+				items: map[string]syntheticSecretItem{
+					"/item/custom": {collection: defCol, attrs: map[string]string{"service": service, "username": account, "target": "custom"}, secret: []byte("wrong")},
+				},
+			},
+			status: statusCredentials,
+			reason: reasonMissingCredential,
+		},
+		{
+			name: "absent default collection alias proves absence",
+			store: syntheticSecretService{
+				defaultCollection: "/",
+			},
+			status: statusCredentials,
+			reason: reasonMissingCredential,
+		},
+		{
+			name: "locked empty default collection fails closed",
+			store: syntheticSecretService{
+				defaultCollection: defCol,
+				lockedCollections: map[string]bool{defCol: true},
+			},
+			status: statusUnsupported,
+			reason: keyringUnavailable,
+		},
+		{
+			name: "transport error fails closed as unavailable",
+			store: syntheticSecretService{
+				err: errors.New("session bus unavailable"),
+			},
+			status: statusUnsupported,
+			reason: keyringUnavailable,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			store := tc.store
+			got, fail := readCodexSecretService(t.Context(), t.Context(), &store, service, account)
+			assert.Equal(t, tc.status, fail.status)
+			assert.Equal(t, tc.reason, fail.reason)
+			assert.Equal(t, tc.want, string(got))
+		})
+	}
+
+	// Definite Secret Service absence lets Codex auto mode fall back to auth.json,
+	// whereas ambiguous or unavailable Secret Service fails closed.
+	home := t.TempDir()
+	fileAuth := codexCredentialFixture("fallback-workspace")
+	writeFixture(t, filepath.Join(home, authFilename), fileAuth)
+	settings := codexSettings{home: home, store: "auto"}
+	emptyUnlocked := &syntheticSecretService{defaultCollection: defCol}
+	raw, fail := codexStoredCredential(t.Context(), settings, func(ctx context.Context, svc, acct string) ([]byte, failure) {
+		return readCodexSecretService(ctx, ctx, emptyUnlocked, svc, acct)
+	})
+	require.Empty(t, fail.status)
+	assert.Equal(t, fileAuth, string(raw))
+
+	lockedCol := &syntheticSecretService{defaultCollection: defCol, lockedCollections: map[string]bool{defCol: true}}
+	raw, fail = codexStoredCredential(t.Context(), settings, func(ctx context.Context, svc, acct string) ([]byte, failure) {
+		return readCodexSecretService(ctx, ctx, lockedCol, svc, acct)
+	})
+	assert.Empty(t, raw)
+	assert.Equal(t, keyringUnavailable, fail.reason)
 }

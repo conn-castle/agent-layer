@@ -64,4 +64,19 @@ func TestQuotaSummaryPreservesRoutingSignals(t *testing.T) {
 	assert.Nil(t, mismatch.HighestUsage)
 	assert.Nil(t, mismatch.Blocked)
 	assert.Empty(t, mismatch.Models)
+
+	emptyModelReport := Response{
+		SchemaVersion: SchemaVersion, Status: ResponseComplete, Missing: []MissingReading{},
+		Results: []Result{{
+			Selector: "empty", Agent: agentCodex, Status: statusOK,
+			Models: []Model{{ID: "", Coverage: coverageComplete, Admission: knownAllowed()}},
+		}},
+	}.Summary([]Source{{Selector: "empty"}})
+	require.Len(t, emptyModelReport.Results, 1)
+	assert.Empty(t, emptyModelReport.Results[0].Models)
+
+	evaluated := Result{Agent: agentCodex, Models: []Model{{ID: ""}, {ID: "valid"}}}
+	evaluated.evaluateModels(nil)
+	require.Len(t, evaluated.Models, 1)
+	assert.Equal(t, "valid", evaluated.Models[0].ID)
 }

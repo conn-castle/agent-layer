@@ -81,7 +81,7 @@ func (r Response) Summary(sources []Source) SummaryResponse {
 func summarizeModels(models []Model, source Source) []summaryModel {
 	var result []summaryModel
 	for _, model := range models {
-		if model.ID == source.ConfiguredModel || slices.Contains(source.Models, model.ID) {
+		if model.ID != "" && (model.ID == source.ConfiguredModel || slices.Contains(source.Models, model.ID)) {
 			result = append(result, summaryModel{
 				ID: model.ID, Coverage: model.Coverage, AuthStatus: model.AuthStatus, Admission: model.Admission,
 			})

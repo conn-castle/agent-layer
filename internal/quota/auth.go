@@ -38,6 +38,9 @@ const (
 	grokIssuer               = "https://auth.x.ai"
 	keyringUnavailable       = "credential_store_unavailable"
 	credentialStoreFile      = "file"
+	credentialStoreAuto      = "auto"
+	keyringServiceAttr       = "service"
+	keyringUsernameAttr      = "username"
 	reasonExpiredCredentials = "expired_credentials"  // #nosec G101 -- public result reason.
 	reasonAccessExpired      = "access_token_expired" // #nosec G101 -- public result reason.
 )
@@ -75,6 +78,9 @@ func (c credential) authenticationFailure(reason string, now time.Time) failure 
 	if hasRenewal || c.renewalUnknown {
 		// Rejection alone does not establish whether the refresh grant survives.
 		return failure{status: statusCredentials, reason: reason}
+	}
+	if reason == credentialRevoked {
+		return failure{status: statusLoginExpired, reason: reason, reauth: ptr(true)}
 	}
 	return failure{status: statusCredentials, reason: reason, reauth: ptr(true)}
 }
@@ -123,6 +129,8 @@ func loadCredential(ctx context.Context, req Request, source Source) (credential
 			s.config = req.Project.Config.Agents.Claude.AgentSpecific
 		case agentGrok:
 			s.env = grok.ConfigureEnvironment(s.root, s.env, req.Project.Config.Agents.Grok, nil)
+		case agentAntigravity:
+			s.config = req.Project.Config.Agents.Antigravity.AgentSpecific
 		}
 	}
 	var auth credential
@@ -157,6 +165,26 @@ func (s credentialSource) has(names ...string) bool {
 		}
 	}
 	return false
+}
+
+func (s credentialSource) enabledFlag(names ...string) bool {
+	for _, name := range names {
+		switch strings.ToLower(strings.TrimSpace(s.value(name))) {
+		case "", "0", "false":
+		default:
+			return true
+		}
+	}
+	return false
+}
+
+func existingDirOrFallback(dir, fallback string) string {
+	if dir != "" {
+		if info, err := os.Stat(dir); err == nil && info.IsDir() {
+			return dir
+		}
+	}
+	return fallback
 }
 
 func (s credentialSource) home(override, defaultDirectory string) string {
@@ -279,7 +307,7 @@ func readKeyring(ctx context.Context, service, account string) ([]byte, failure)
 		}
 	case "linux":
 		path = "/usr/bin/secret-tool"
-		args = []string{"lookup", "service", service, "username", account}
+		args = []string{"lookup", keyringServiceAttr, service, keyringUsernameAttr, account}
 	default:
 		return nil, unsupportedAuth(keyringUnavailable)
 	}
@@ -317,14 +345,17 @@ func readKeyring(ctx context.Context, service, account string) ([]byte, failure)
 	return raw, failure{}
 }
 
-type cappedWriter struct{ bytes.Buffer }
+type cappedWriter struct{ buf bytes.Buffer }
 
 func (w *cappedWriter) Write(data []byte) (int, error) {
-	if len(data) > maxPayloadSize-w.Len() {
+	if len(data) > maxPayloadSize-w.buf.Len() {
 		return 0, errors.New("keyring output exceeds limit")
 	}
-	return w.Buffer.Write(data)
+	return w.buf.Write(data)
 }
+
+func (w *cappedWriter) Len() int      { return w.buf.Len() }
+func (w *cappedWriter) Bytes() []byte { return w.buf.Bytes() }
 
 func codexCredential(ctx context.Context, s credentialSource) (credential, failure) {
 	if s.file != "" {
@@ -359,7 +390,11 @@ func codexCredential(ctx context.Context, s credentialSource) (credential, failu
 		auth.account != "" && auth.account != auth.workspaceClaim) {
 		return credential{}, failure{status: statusCredentials, reason: "credential_workspace_mismatch", reauth: ptr(true)}
 	}
-	auth.native = s.native(settings.home, codexHomeEnv, settings.home)
+	lockDir := settings.home
+	if settings.store == "keyring" || settings.store == credentialStoreAuto {
+		lockDir = existingDirOrFallback(lockDir, s.home("", ""))
+	}
+	auth.native = s.native(lockDir, codexHomeEnv, settings.home)
 	return auth, failure{}
 }
 
@@ -579,7 +614,7 @@ func codexStoredCredential(ctx context.Context, settings codexSettings, read key
 	switch settings.store {
 	case "", credentialStoreFile:
 		return credentialFile(filepath.Join(home, authFilename))
-	case "keyring", "auto":
+	case "keyring", credentialStoreAuto:
 		var raw []byte
 		var fail failure
 		if settings.vault {
@@ -590,7 +625,7 @@ func codexStoredCredential(ctx context.Context, settings codexSettings, read key
 		if fail.status == "" {
 			return raw, failure{}
 		}
-		if settings.store == "auto" && fail.reason == reasonMissingCredential {
+		if settings.store == credentialStoreAuto && fail.reason == reasonMissingCredential {
 			return credentialFile(filepath.Join(home, authFilename))
 		}
 		// Our helper cannot establish that Codex itself could not open an

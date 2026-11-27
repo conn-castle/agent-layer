@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -211,11 +212,35 @@ func TestQuotaClaudeRevocationAndUnknownRenewal(t *testing.T) {
 		return response(http.StatusForbidden, `{"error":{"type":"permission_error","message":"OAuth token has been revoked. private text"}}`)
 	})
 	out := query(t.Context(), Request{Sources: []Source{source}}, h)
-	assert.Equal(t, "revoked_credentials", out.Results[0].Reason)
+	assert.Equal(t, statusLoginExpired, out.Results[0].Status)
+	assert.Equal(t, credentialRevoked, out.Results[0].Reason)
 	assert.Equal(t, ptr(true), out.Results[0].Reauth)
 	serialized, err := json.Marshal(out)
 	require.NoError(t, err)
 	assert.NotContains(t, string(serialized), "private text")
+
+	h = fixtureHTTP(func(*http.Request) (*http.Response, error) {
+		return response(http.StatusUnauthorized, `{"error":{"code":"refresh_token_revoked"}}`)
+	})
+	out = query(t.Context(), Request{Sources: []Source{source}}, h)
+	assert.Equal(t, statusLoginExpired, out.Results[0].Status)
+	assert.Equal(t, credentialRevoked, out.Results[0].Reason)
+	assert.Equal(t, ptr(true), out.Results[0].Reauth)
+
+	h = fixtureHTTP(func(*http.Request) (*http.Response, error) {
+		return response(http.StatusUnauthorized, `{"error":"token_revoked"}`)
+	})
+	out = query(t.Context(), Request{Sources: []Source{source}}, h)
+	assert.Equal(t, statusCredentials, out.Results[0].Status)
+	assert.Equal(t, credentialRevoked, out.Results[0].Reason)
+	assert.Nil(t, out.Results[0].Reauth)
+
+	noRefresh := detachedFixture(t, t.TempDir(), "claude-no-refresh", agentClaude,
+		`{"claudeAiOauth":{"accessToken":"fixture-token"}}`)
+	out = query(t.Context(), Request{Sources: []Source{noRefresh}}, h)
+	assert.Equal(t, statusLoginExpired, out.Results[0].Status)
+	assert.Equal(t, credentialRevoked, out.Results[0].Reason)
+	assert.Equal(t, ptr(true), out.Results[0].Reauth)
 
 	h = fixtureHTTP(func(*http.Request) (*http.Response, error) {
 		return response(http.StatusUnauthorized, `{}`)
@@ -254,6 +279,18 @@ func TestQuotaClaudeScopedLimitCoversAliases(t *testing.T) {
 	assert.Nil(t, findModel(t, result, "claude-opus-5-3").Blocked)
 	assert.Nil(t, findModel(t, result, "opus").Blocked)
 	assert.Equal(t, coveragePartial, findModel(t, result, "opus").Coverage)
+
+	// Any blocking window with an unknown reset makes the aggregate clear time unknown.
+	var mixed claudeUsageResponse
+	require.NoError(t, json.Unmarshal([]byte(`{
+		"five_hour":{"utilization":100,"resets_at":"2026-11-26T17:00:00Z"},
+		"seven_day":{"utilization":100},
+		"extra_usage":{"is_enabled":false}
+	}`), &mixed))
+	mixedResult := Result{Agent: agentClaude}
+	normalizeClaude(mixed, &mixedResult)
+	assert.Equal(t, ptr(true), mixedResult.Blocked)
+	assert.Nil(t, mixedResult.ClearsAt)
 }
 
 func TestQuotaClaudeWeeklyOnlyAdmission(t *testing.T) {
@@ -415,9 +452,10 @@ func TestQuotaClaudeSubdirectoryUsesProjectSettings(t *testing.T) {
 		Env:     []string{claudeConfigEnv + "=" + home},
 	}
 	source := Source{Agent: agentClaude}
-	writeFixture(t, filepath.Join(root, ".claude", "settings.json"), `{"env":{"ANTHROPIC_API_KEY":"fixture-api"}}`)
+	// Stale generated <root>/.claude/settings.json must be ignored when removed from config.
+	writeFixture(t, filepath.Join(root, ".claude", "settings.json"), `{"env":{"ANTHROPIC_API_KEY":"stale-api"}}`)
 	_, fail := loadCredential(t.Context(), req, source)
-	assert.Equal(t, statusNonSubscription, fail.status)
+	assert.Empty(t, fail.status)
 
 	req.Project.Config.Agents.Claude.AgentSpecific = map[string]any{
 		"env": map[string]any{"ANTHROPIC_BASE_URL": "https://fixture.example"},
@@ -425,9 +463,96 @@ func TestQuotaClaudeSubdirectoryUsesProjectSettings(t *testing.T) {
 	_, fail = loadCredential(t.Context(), req, source)
 	assert.Equal(t, reasonCustomEndpoint, fail.reason)
 
-	writeFixture(t, filepath.Join(root, ".claude", "settings.local.json"), `{"env":{"ANTHROPIC_BASE_URL":"","ANTHROPIC_API_KEY":"","CLAUDE_CONFIG_DIR":"other"}}`)
+	writeFixture(t, filepath.Join(root, ".claude", "settings.local.json"), `{"env":{"ANTHROPIC_BASE_URL":"","CLAUDE_CONFIG_DIR":"other"}}`)
 	_, fail = loadCredential(t.Context(), req, source)
 	assert.Equal(t, reasonCustomAuth, fail.reason)
+
+	// More-specific subdirectory settings.local.json must override repo-root settings.local.json.
+	writeFixture(t, filepath.Join(root, "subdir", ".claude", "settings.local.json"), fmt.Sprintf(`{"env":{"CLAUDE_CONFIG_DIR":%q}}`, home))
+	_, fail = loadCredential(t.Context(), req, source)
+	assert.Empty(t, fail.status)
+}
+
+func TestQuotaClaudeBooleanProviderFlags(t *testing.T) {
+	root, home := t.TempDir(), t.TempDir()
+	writeFixture(t, filepath.Join(home, claudeCredentials), `{"claudeAiOauth":{"accessToken":"fixture-token"}}`)
+	for _, tc := range []struct {
+		name   string
+		env    []string
+		reason string
+	}{
+		{"falsey flags ignored", []string{"CLAUDE_CODE_USE_BEDROCK=0", "CLAUDE_CODE_USE_VERTEX=false", "CLAUDE_CODE_USE_FOUNDRY= FALSE "}, ""},
+		{"truthy bedrock flag rejected", []string{"CLAUDE_CODE_USE_BEDROCK=1"}, reasonCustomEndpoint},
+		{"truthy vertex flag rejected", []string{"CLAUDE_CODE_USE_VERTEX=true"}, reasonCustomEndpoint},
+		{"custom oauth url rejected", []string{"CLAUDE_CODE_CUSTOM_OAUTH_URL=https://oauth.example"}, reasonCustomEndpoint},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			req := Request{
+				Project: &config.ProjectConfig{Root: root},
+				WorkDir: root,
+				Env:     append([]string{claudeConfigEnv + "=" + home}, tc.env...),
+			}
+			_, fail := loadCredential(t.Context(), req, Source{Agent: agentClaude})
+			assert.Equal(t, tc.reason, fail.reason)
+		})
+	}
+}
+
+func TestQuotaClaudeLegacyDoesNotOverrideStructuredRejection(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		payload string
+		blocked *bool
+	}{
+		{
+			name:    "structured rejected overrides legacy headroom",
+			payload: `{"five_hour":null,"seven_day":{"utilization":40,"resets_at":"2026-12-03T12:00:00Z"},"limits":[{"kind":"weekly_all","group":"weekly","severity":"rejected"}]}`,
+			blocked: nil,
+		},
+		{
+			name:    "structured rejected with partial percent stays unknown without extra_usage",
+			payload: `{"five_hour":null,"seven_day":{"utilization":40,"resets_at":"2026-12-03T12:00:00Z"},"limits":[{"kind":"weekly_all","group":"weekly","percent":90,"severity":"rejected"}]}`,
+			blocked: nil,
+		},
+		{
+			name:    "structured 100 percent overrides legacy headroom without extra_usage",
+			payload: `{"five_hour":null,"seven_day":{"utilization":40,"resets_at":"2026-12-03T12:00:00Z"},"limits":[{"kind":"weekly_all","group":"weekly","percent":100}]}`,
+			blocked: nil,
+		},
+		{
+			name:    "structured metadata-only inherits legacy allowance",
+			payload: `{"five_hour":null,"seven_day":{"utilization":40,"resets_at":"2026-12-03T12:00:00Z"},"limits":[{"kind":"weekly_all","group":"weekly"}]}`,
+			blocked: ptr(false),
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var usage claudeUsageResponse
+			require.NoError(t, json.Unmarshal([]byte(tc.payload), &usage))
+			result := Result{Agent: agentClaude}
+			normalizeClaude(usage, &result)
+			assert.Equal(t, tc.blocked, result.Blocked)
+			assert.Equal(t, tc.blocked, result.Pools[0].Windows[0].Blocked)
+		})
+	}
+}
+
+func TestQuotaAntigravityStructuredWithoutFractionPreservesLegacy(t *testing.T) {
+	var summary agySummary
+	require.NoError(t, json.Unmarshal([]byte(`{"groups":[
+		{"groupId":"missing-fraction","modelIds":["gemini-flash"],"buckets":[{"bucketId":"flash-5h","window":"5h"}]},
+		{"groupId":"disabled-group","modelIds":["gemini-other"],"buckets":[{"bucketId":"other-5h","window":"5h","disabled":true}]}
+	]}`), &summary))
+	var legacy agyLegacy
+	require.NoError(t, json.Unmarshal([]byte(`{"buckets":[
+		{"modelId":"gemini-flash","tokenType":"WTUS","remainingFraction":0.4},
+		{"modelId":"gemini-other","tokenType":"WTUS","remainingFraction":0.2}
+	]}`), &legacy))
+	r := Result{Agent: agentAntigravity}
+	normalizeAntigravity(summary, legacy, agyCatalog{}, agyCredits{}, credential{}, &r)
+	assert.True(t, r.hasUsage())
+	r.evaluateModels([]string{"gemini-flash", "gemini-other"})
+	assert.Contains(t, findModel(t, r, "gemini-flash").Pools, "gemini-flash")
+	assert.Equal(t, []string{"disabled-group"}, findModel(t, r, "gemini-other").Pools)
 }
 
 func TestQuotaCodexGlobalHomeNativeProjectAndLoginPrecedence(t *testing.T) {
@@ -475,4 +600,297 @@ func TestQuotaCodexGlobalHomeNativeProjectAndLoginPrecedence(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestQuotaCodexCreditBackedModelAdmission(t *testing.T) {
+	source := subscriptionsFixture(t)[0]
+	source.ConfiguredModel = "credit-model"
+	source.Models = []string{"blocked-model", "unlisted-model", "available-only-model", "special-blocked-model", "special-allowed-model"}
+	body := `{
+		"account_id": "workspace-fixture",
+		"plan_type": "plus",
+		"rate_limit": {
+			"allowed": false,
+			"limit_reached": true,
+			"primary_window": {"used_percent": 100, "limit_window_seconds": 18000, "reset_at": 1795701600}
+		},
+		"rate_limit_reached_type": {"type": "rate_limit_reached"},
+		"additional_rate_limits": [
+			{
+				"limit_id": "special-blocked-pool",
+				"normal_model_slug": "special-blocked-model",
+				"rate_limit": {"allowed": false, "primary_window": {"used_percent": 100, "reset_at": 1795716000}}
+			},
+			{
+				"limit_id": "special-allowed-pool",
+				"normal_model_slug": "special-allowed-model",
+				"rate_limit": {"allowed": true, "primary_window": {"used_percent": 20}}
+			}
+		],
+		"model_usage": {
+			"credit-model": {"available": false, "available_at": 1795701600, "credits_would_enable": true},
+			"blocked-model": {"available": false, "available_at": 1795701600, "credits_would_enable": false},
+			"available-only-model": {"available": true},
+			"special-blocked-model": {"available": false, "available_at": 1795701600, "credits_would_enable": true},
+			"special-allowed-model": {"available": false, "available_at": 1795701600, "credits_would_enable": true}
+		},
+		"credits": {"has_credits": true, "unlimited": false, "overage_limit_reached": false}
+	}`
+	h := fixtureHTTP(func(*http.Request) (*http.Response, error) { return response(http.StatusOK, body) })
+	out := query(t.Context(), Request{Sources: []Source{source}}, h)
+	require.Equal(t, ResponseComplete, out.Status)
+	result := out.Results[0]
+	assert.Equal(t, ptr(true), result.Blocked)
+	assert.Equal(t, unixSeconds(1795701600), result.ClearsAt)
+	assert.Equal(t, "rate_limit_reached", result.BlockReason)
+	assert.Equal(t, ptr(true), result.Pools[0].Blocked)
+
+	creditModel := findModel(t, result, "credit-model")
+	assert.Equal(t, ptr(false), creditModel.Blocked)
+	assert.Nil(t, creditModel.ClearsAt)
+	assert.Equal(t, []string{agentCodex}, creditModel.Pools)
+
+	assert.Equal(t, ptr(true), findModel(t, result, "blocked-model").Blocked)
+	assert.Equal(t, unixSeconds(1795701600), findModel(t, result, "blocked-model").ClearsAt)
+	assert.Equal(t, ptr(true), findModel(t, result, "unlisted-model").Blocked)
+	assert.Equal(t, ptr(true), findModel(t, result, "available-only-model").Blocked)
+
+	specialBlocked := findModel(t, result, "special-blocked-model")
+	assert.Equal(t, ptr(true), specialBlocked.Blocked)
+	assert.Equal(t, unixSeconds(1795716000), specialBlocked.ClearsAt)
+	assert.Equal(t, []string{agentCodex, "special-blocked-pool"}, specialBlocked.Pools)
+
+	specialAllowed := findModel(t, result, "special-allowed-model")
+	assert.Equal(t, ptr(false), specialAllowed.Blocked)
+	assert.Nil(t, specialAllowed.ClearsAt)
+
+	summary := out.Summary([]Source{source})
+	require.Len(t, summary.Results, 1)
+	assert.Equal(t, ptr(true), summary.Results[0].Blocked)
+	var summaryCredit summaryModel
+	for _, m := range summary.Results[0].Models {
+		if m.ID == "credit-model" {
+			summaryCredit = m
+		}
+	}
+	assert.Equal(t, "credit-model", summaryCredit.ID)
+	assert.Equal(t, ptr(false), summaryCredit.Blocked)
+	assert.Nil(t, summaryCredit.ClearsAt)
+
+	for _, tc := range []struct {
+		name    string
+		payload string
+		blocked *bool
+		clear   *time.Time
+	}{
+		{
+			name:    "unlimited credits enable model without has_credits",
+			payload: `{"account_id":"workspace-fixture","plan_type":"plus","rate_limit":{"allowed":false,"limit_reached":true,"primary_window":{"used_percent":100,"reset_at":1795701600}},"additional_rate_limits":[],"model_usage":{"credit-model":{"available":false,"available_at":1795701600,"credits_would_enable":true}},"credits":{"has_credits":false,"unlimited":true}}`,
+			blocked: ptr(false),
+		},
+		{
+			name:    "missing included pool with rate_limit_reached still allows credit-backed model",
+			payload: `{"account_id":"workspace-fixture","plan_type":"plus","rate_limit":null,"rate_limit_reached_type":{"type":"rate_limit_reached"},"additional_rate_limits":[{"limit_id":"other","normal_model_slug":"other-model","rate_limit":{"allowed":true,"primary_window":{"used_percent":10}}}],"model_usage":{"credit-model":{"available":false,"credits_would_enable":true}},"credits":{"has_credits":true}}`,
+			blocked: ptr(false),
+		},
+		{
+			name:    "workspace owner credits depleted overrides credit-backed model",
+			payload: `{"account_id":"workspace-fixture","plan_type":"business","user_id":"seat1","rate_limit":{"allowed":false,"limit_reached":true,"primary_window":{"used_percent":100,"reset_at":1795701600}},"rate_limit_reached_type":{"type":"workspace_owner_credits_depleted"},"additional_rate_limits":[],"model_usage":{"credit-model":{"available":false,"available_at":1795701600,"credits_would_enable":true}},"credits":{"has_credits":true}}`,
+			blocked: ptr(true),
+		},
+		{
+			name:    "workspace member usage limit overrides credit-backed model with reset",
+			payload: `{"account_id":"workspace-fixture","plan_type":"business","user_id":"seat1","rate_limit":{"allowed":false,"limit_reached":true,"primary_window":{"used_percent":100,"reset_at":1795701600}},"rate_limit_reached_type":{"type":"workspace_member_usage_limit_reached"},"spend_control":{"reached":true,"individual_limit":{"reset_at":1795720000}},"additional_rate_limits":[],"model_usage":{"credit-model":{"available":false,"available_at":1795701600,"credits_would_enable":true}},"credits":{"has_credits":true}}`,
+			blocked: ptr(true),
+			clear:   unixSeconds(1795720000),
+		},
+		{
+			name:    "overage limit reached keeps credit-backed model blocked",
+			payload: `{"account_id":"workspace-fixture","plan_type":"plus","rate_limit":{"allowed":false,"limit_reached":true,"primary_window":{"used_percent":100,"reset_at":1795701600}},"additional_rate_limits":[],"model_usage":{"credit-model":{"available":false,"available_at":1795701600,"credits_would_enable":true}},"credits":{"has_credits":true,"overage_limit_reached":true}}`,
+			blocked: ptr(true),
+			clear:   unixSeconds(1795701600),
+		},
+		{
+			name:    "unknown lockout reason does not bypass included exhaustion",
+			payload: `{"account_id":"workspace-fixture","plan_type":"plus","rate_limit":{"allowed":false,"limit_reached":true,"primary_window":{"used_percent":100,"reset_at":1795701600}},"rate_limit_reached_type":{"type":"future_billing_restriction"},"additional_rate_limits":[],"model_usage":{"credit-model":{"available":false,"available_at":1795701600,"credits_would_enable":true}},"credits":{"has_credits":true}}`,
+			blocked: ptr(true),
+			clear:   unixSeconds(1795701600),
+		},
+		{
+			name:    "omitted credit eligibility keeps credit-backed model admission unknown",
+			payload: `{"account_id":"workspace-fixture","plan_type":"plus","rate_limit":{"allowed":false,"limit_reached":true,"primary_window":{"used_percent":100,"reset_at":1795701600}},"additional_rate_limits":[],"model_usage":{"credit-model":{"available":false,"available_at":1795701600,"credits_would_enable":true}}}`,
+			blocked: nil,
+		},
+		{
+			name:    "omitted credit eligibility still enforces independent model pool block",
+			payload: `{"account_id":"workspace-fixture","plan_type":"plus","rate_limit":{"allowed":false,"limit_reached":true,"primary_window":{"used_percent":100,"reset_at":1795701600}},"additional_rate_limits":[{"limit_id":"model-pool","normal_model_slug":"credit-model","rate_limit":{"allowed":false,"primary_window":{"used_percent":100,"reset_at":1795716000}}}],"model_usage":{"credit-model":{"available":false,"available_at":1795701600,"credits_would_enable":true}}}`,
+			blocked: ptr(true),
+			clear:   unixSeconds(1795716000),
+		},
+		{
+			name:    "explicit has_credits false blocks credit-backed model",
+			payload: `{"account_id":"workspace-fixture","plan_type":"plus","rate_limit":{"allowed":false,"limit_reached":true,"primary_window":{"used_percent":100,"reset_at":1795701600}},"additional_rate_limits":[],"model_usage":{"credit-model":{"available":false,"available_at":1795701600,"credits_would_enable":true}},"credits":{"has_credits":false}}`,
+			blocked: ptr(true),
+			clear:   unixSeconds(1795701600),
+		},
+		{
+			name:    "available true with credit hint does not bypass exhausted included pool",
+			payload: `{"account_id":"workspace-fixture","plan_type":"plus","rate_limit":{"allowed":false,"limit_reached":true,"primary_window":{"used_percent":100,"reset_at":1795701600}},"additional_rate_limits":[],"model_usage":{"credit-model":{"available":true,"credits_would_enable":true}},"credits":{"has_credits":true}}`,
+			blocked: ptr(true),
+			clear:   unixSeconds(1795701600),
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h := fixtureHTTP(func(*http.Request) (*http.Response, error) { return response(http.StatusOK, tc.payload) })
+			out := query(t.Context(), Request{Sources: []Source{{Selector: agentCodex, Agent: agentCodex, File: source.File, Models: []string{"credit-model"}}}}, h)
+			require.Equal(t, ResponseComplete, out.Status)
+			model := findModel(t, out.Results[0], "credit-model")
+			assert.Equal(t, tc.blocked, model.Blocked)
+			assert.Equal(t, tc.clear, model.ClearsAt)
+		})
+	}
+}
+
+func TestQuotaAntigravityClearsFailedPartialDecode(t *testing.T) {
+	root := t.TempDir()
+	agy := filepath.Join(root, ".agy", agyProfileDirectory)
+	writeFixture(t, filepath.Join(agy, "antigravity-oauth-token"), `{"auth_method":"consumer","token":{"access_token":"fixture-token"}}`)
+	writeFixture(t, filepath.Join(agy, "settings.json"), `{"useG1Credits":true}`)
+	project := &config.ProjectConfig{Root: root}
+	routes := allFixtureRoutes(t)
+	// Summary populates a group matching gemini-flash before triggering a JSON type error.
+	routes[agyBase+"retrieveUserQuotaSummary"] = `{"groups":[{"groupId":"corrupt","modelIds":["gemini-flash"],"buckets":[{"bucketId":"corrupt-5h","window":"5h","remainingFraction":0.1}]}],"buckets":"bad-type"}`
+	// Credits populates tier and usable credits before triggering a JSON type error.
+	routes[agyBase+"loadCodeAssist"] = `{"paidTier":{"id":"bogus-tier"},"canUseG1Credits":true,"availableG1Credits":50,"currentTier":"bad-type"}`
+	// Legacy fallback reports exhausted gemini-flash.
+	routes[agyBase+"retrieveUserQuota"] = `{"buckets":[{"modelId":"gemini-flash","tokenType":"REQUESTS","remainingFraction":0,"resetTime":"2026-12-03T12:00:00Z"}]}`
+	h := fixtureHTTP(func(req *http.Request) (*http.Response, error) {
+		return response(http.StatusOK, routes[req.URL.String()])
+	})
+	out := query(t.Context(), Request{
+		Project: project,
+		WorkDir: root,
+		Sources: []Source{{Selector: agentAntigravity, Agent: agentAntigravity, Models: []string{"gemini-flash"}}},
+	}, h)
+	require.Equal(t, ResponseComplete, out.Status)
+	result := out.Results[0]
+	assert.Contains(t, result.Missing, "quota_summary")
+	assert.Contains(t, result.Missing, "credits")
+	require.NotNil(t, result.Subscription)
+	assert.Empty(t, result.Subscription.Tier)
+	require.Len(t, result.Pools, 1)
+	assert.Equal(t, "gemini-flash", result.Pools[0].ID)
+	assert.Equal(t, ptr(float64(100)), result.Pools[0].Windows[0].UsedPercent)
+	// Failed credits response must not enable credit bypass on the exhausted pool.
+	assert.Nil(t, result.Pools[0].Blocked)
+	assert.Nil(t, findModel(t, result, "gemini-flash").Blocked)
+}
+
+func TestQuotaAntigravityAgentSpecificOverridesSettingsFile(t *testing.T) {
+	root := t.TempDir()
+	agy := filepath.Join(root, ".agy", agyProfileDirectory)
+	writeFixture(t, filepath.Join(agy, "antigravity-oauth-token"), `{"auth_method":"consumer","token":{"access_token":"fixture-token"}}`)
+	writeFixture(t, filepath.Join(agy, "settings.json"), `{"useG1Credits":true}`)
+	project := &config.ProjectConfig{Root: root}
+	project.Config.Agents.Antigravity.AgentSpecific = map[string]any{"useG1Credits": false}
+	req := Request{Project: project, WorkDir: root}
+	auth, fail := loadCredential(t.Context(), req, Source{Agent: agentAntigravity})
+	require.Empty(t, fail.status)
+	assert.Equal(t, ptr(false), auth.useCredits)
+
+	routes := allFixtureRoutes(t)
+	routes[agyBase+"retrieveUserQuotaSummary"] = `{"groups":[{"displayName":"Gemini Models","modelIds":["gemini-4-neon-high"],"buckets":[
+		{"bucketId":"gemini-5h","window":"5h","remainingFraction":0,"resetTime":"2026-11-26T16:00:00Z"},
+		{"bucketId":"gemini-weekly","window":"weekly","remainingFraction":0.5,"resetTime":"2026-12-03T12:00:00Z"}
+	]}]}`
+	routes[agyBase+"loadCodeAssist"] = `{"canUseG1Credits":true,"availableG1Credits":10}`
+	h := fixtureHTTP(func(req *http.Request) (*http.Response, error) {
+		return response(http.StatusOK, routes[req.URL.String()])
+	})
+	out := query(t.Context(), Request{
+		Project: project,
+		WorkDir: root,
+		Sources: []Source{{Selector: agentAntigravity, Agent: agentAntigravity, Models: []string{"gemini-4-neon-high"}}},
+	}, h)
+	require.Equal(t, ResponseComplete, out.Status)
+	assert.Equal(t, ptr(true), findModel(t, out.Results[0], "gemini-4-neon-high").Blocked)
+
+	project.Config.Agents.Antigravity.AgentSpecific = map[string]any{"modelProvider": "gemini"}
+	_, fail = loadCredential(t.Context(), req, Source{Agent: agentAntigravity})
+	assert.Equal(t, statusNonSubscription, fail.status)
+	assert.Equal(t, reasonAPIKey, fail.reason)
+
+	writeFixture(t, filepath.Join(agy, "settings.json"), `{"modelProvider":"gemini"}`)
+	project.Config.Agents.Antigravity.AgentSpecific = map[string]any{"modelProvider": "antigravity"}
+	_, fail = loadCredential(t.Context(), req, Source{Agent: agentAntigravity})
+	assert.Empty(t, fail.status)
+
+	writeFixture(t, filepath.Join(agy, "settings.json"), `{"security":{"auth":{"selectedType":"oauth-personal"}}}`)
+	project.Config.Agents.Antigravity.AgentSpecific = map[string]any{"security": map[string]any{"auth": map[string]any{"selectedType": "gemini-api-key"}}}
+	_, fail = loadCredential(t.Context(), req, Source{Agent: agentAntigravity})
+	assert.Equal(t, statusNonSubscription, fail.status)
+	assert.Equal(t, reasonAPIKey, fail.reason)
+}
+
+func TestQuotaAntigravityNullTimestampsAndGroupMembershipOrder(t *testing.T) {
+	// Grouped null resetTime / lockoutClearTime must fall back to flat timestamps.
+	var summary agySummary
+	require.NoError(t, json.Unmarshal([]byte(`{
+		"buckets":[
+			{"bucketId":"b1","resetTime":"2026-12-03T12:00:00Z","lockoutClearTime":"2026-12-03T14:00:00Z"}
+		],
+		"groups":[
+			{
+				"groupId":"G",
+				"buckets":[
+					{"bucketId":"a-5h","window":"5h","modelIds":["model-a"],"remainingFraction":0.5,"resetTime":"2026-11-26T17:00:00Z"},
+					{"bucketId":"b1","window":"5h","modelIds":["model-b"],"remainingFraction":0,"blocked":true,"resetTime":null,"lockoutClearTime":null},
+					{"bucketId":"b-weekly","window":"weekly","modelIds":["model-b"],"remainingFraction":0.7,"resetTime":"2026-12-03T12:00:00Z"}
+				]
+			}
+		]
+	}`), &summary))
+	r := Result{Agent: agentAntigravity}
+	normalizeAntigravity(summary, agyLegacy{}, agyCatalog{}, agyCredits{}, credential{}, &r)
+	r.evaluateModels([]string{"model-a", "model-b"})
+	require.Len(t, r.Pools, 2)
+	assert.Equal(t, []string{"model-a"}, r.Pools[0].Models)
+	assert.Equal(t, []string{"model-b"}, r.Pools[1].Models)
+	require.Len(t, r.Pools[1].Windows, 2)
+	assert.Equal(t, parseTime("2026-12-03T12:00:00Z"), r.Pools[1].Windows[0].ResetsAt)
+	assert.Equal(t, parseTime("2026-12-03T14:00:00Z"), r.Pools[1].Windows[0].ClearsAt)
+	modelB := findModel(t, r, "model-b")
+	assert.Equal(t, coverageComplete, modelB.Coverage)
+	assert.Equal(t, ptr(true), modelB.Blocked)
+	assert.Equal(t, parseTime("2026-12-03T14:00:00Z"), modelB.ClearsAt)
+}
+
+func TestQuotaClaudeUnverifiedAccountOnlyIdentityUnset(t *testing.T) {
+	auth, fail := parseClaudeCredential([]byte(`{"claudeAiOauth":{"accessToken":"fixture-token","accountUuid":"acct-1","subscriptionType":"max"}}`))
+	require.Empty(t, fail.status)
+	require.NotNil(t, auth.identity)
+	assert.Empty(t, auth.identity.ID)
+	assert.False(t, auth.identity.Verified)
+	assert.Equal(t, "max", auth.identity.Tier)
+}
+
+func TestQuotaCappedWriterEnforcesLimitUnderIOCopy(t *testing.T) {
+	var w cappedWriter
+	_, err := io.Copy(&w, strings.NewReader(strings.Repeat("a", maxPayloadSize+1)))
+	require.Error(t, err)
+	assert.LessOrEqual(t, w.Len(), maxPayloadSize)
+
+	var ok cappedWriter
+	n, err := io.Copy(&ok, strings.NewReader("fixture"))
+	require.NoError(t, err)
+	assert.Equal(t, int64(7), n)
+	assert.Equal(t, "fixture", string(ok.Bytes()))
+}
+
+func TestQuotaUnmarshalCleanLeavesOutputUnchangedOnTypeError(t *testing.T) {
+	dst := agySummary{Buckets: []agyQuota{{ID: "existing"}}}
+	err := unmarshalClean([]byte(`{"buckets":[{"bucketId":"partial"}],"groups":"wrong-type"}`), &dst)
+	require.Error(t, err)
+	require.Len(t, dst.Buckets, 1)
+	assert.Equal(t, "existing", dst.Buckets[0].ID)
 }

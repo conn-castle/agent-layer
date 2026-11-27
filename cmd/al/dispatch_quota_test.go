@@ -70,6 +70,7 @@ func TestDispatchQuotaCLIRejectsInvalidArguments(t *testing.T) {
 		{"--profile", "broken=codex"},
 		{"--profile", "again=codex:a.json", "--profile", "again=muse:b.json"},
 		{"--profile", "only=codex:a.json", "--expect-account", "unselected=value"},
+		{"--profile", "Work=codex:a.json", "--expect-account", "work=value"},
 		{"--profile", "only=codex:a.json", "--model", "nope=custom"},
 		{"--timeout", "0s"},
 		{"--timeout", "61s"},
@@ -105,6 +106,7 @@ func TestDispatchQuotaCLIProjectAndMixedSelection(t *testing.T) {
 	}{
 		{nil, []string{"codex", "claude", "antigravity", "grok", "muse"}},
 		{[]string{"--agent", "codex", "--profile", "other=codex:relative.json"}, []string{"codex", "other"}},
+		{[]string{"--agent", "Claude", "--expect-account", "Claude=claude:id", "--model", " CLAUDE =opus"}, []string{"claude"}},
 	} {
 		var out, stderr bytes.Buffer
 		cmd := dispatchQuotaCommandWithReader(func(_ context.Context, req quota.Request) quota.Response {

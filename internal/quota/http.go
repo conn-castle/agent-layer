@@ -9,6 +9,7 @@ import (
 	mathrand "math/rand/v2"
 	"net"
 	"net/http"
+	"reflect"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -119,11 +120,24 @@ func (h *httpReader) fetchAttempt(req *http.Request, auth credential, output any
 	if ctx.Err() != nil {
 		return nil, contextFailure(ctx)
 	}
-	if len(raw) > maxPayloadSize || json.Unmarshal(raw, output) != nil {
+	if len(raw) > maxPayloadSize || unmarshalClean(raw, output) != nil {
 		return nil, unavailable("invalid_response")
 	}
 	// Timestamp receipt of the complete reading, which can lag its headers.
 	return ptr(h.now()), failure{}
+}
+
+func unmarshalClean(raw []byte, output any) error {
+	rv := reflect.ValueOf(output)
+	if rv.Kind() != reflect.Pointer || rv.IsNil() {
+		return json.Unmarshal(raw, output)
+	}
+	tmp := reflect.New(rv.Type().Elem())
+	if err := json.Unmarshal(raw, tmp.Interface()); err != nil {
+		return err
+	}
+	rv.Elem().Set(tmp.Elem())
+	return nil
 }
 
 func quotaNetworkFailure(ctx context.Context, err error) failure {
@@ -254,11 +268,11 @@ func httpAuthFailure(response *http.Response, host string, auth credential, now 
 		}
 		if response.StatusCode == http.StatusForbidden && host == "api.anthropic.com" &&
 			(strings.Contains(nested.Message, "OAuth token has been revoked") || strings.Contains(body.Message, "OAuth token has been revoked")) {
-			return failure{status: statusCredentials, reason: credentialRevoked, reauth: ptr(true)}
+			return failure{status: statusLoginExpired, reason: credentialRevoked, reauth: ptr(true)}
 		}
 		switch textFrom(nested.Code, nested.Type, code, body.Code, body.Type) {
 		case "session_revoked", "refresh_token_revoked":
-			return failure{status: statusCredentials, reason: credentialRevoked, reauth: ptr(true)}
+			return failure{status: statusLoginExpired, reason: credentialRevoked, reauth: ptr(true)}
 		case "token_revoked", "revoked_token":
 			return auth.authenticationFailure(credentialRevoked, now)
 		case "token_expired", "expired_token":

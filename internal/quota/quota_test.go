@@ -123,6 +123,11 @@ func TestQuotaProviderFixtures(t *testing.T) {
 	})
 	before, err := os.ReadDir(filepath.Dir(sources[0].File))
 	require.NoError(t, err)
+	beforeInfo := make([]os.FileInfo, len(before))
+	for i := range before {
+		beforeInfo[i], err = before[i].Info()
+		require.NoError(t, err)
+	}
 	out := query(t.Context(), Request{Sources: sources, Env: []string{"CODEX_API_KEY=ignored", "META_API_KEY=ignored"}}, h)
 	require.Equal(t, ResponseComplete, out.Status)
 	require.Equal(t, SchemaVersion, out.SchemaVersion)
@@ -176,11 +181,9 @@ func TestQuotaProviderFixtures(t *testing.T) {
 	for i := range before {
 		assert.Equal(t, before[i].Name(), after[i].Name())
 		assert.Equal(t, before[i].Type(), after[i].Type())
-		b, err := before[i].Info()
-		require.NoError(t, err)
 		a, err := after[i].Info()
 		require.NoError(t, err)
-		assert.Equal(t, b.ModTime(), a.ModTime())
+		assert.Equal(t, beforeInfo[i].ModTime(), a.ModTime())
 	}
 }
 
@@ -300,7 +303,8 @@ func TestQuotaCancellationAndCredentialRejection(t *testing.T) {
 		return response(http.StatusUnauthorized, `{"error":"session_revoked"}`)
 	})
 	out = query(t.Context(), Request{Sources: []Source{refresh}}, h)
-	assert.Equal(t, "revoked_credentials", out.Results[0].Reason)
+	assert.Equal(t, statusLoginExpired, out.Results[0].Status)
+	assert.Equal(t, credentialRevoked, out.Results[0].Reason)
 	assert.Equal(t, ptr(true), out.Results[0].Reauth)
 }
 

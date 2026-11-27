@@ -22,6 +22,11 @@ func antigravityCredential(ctx context.Context, s credentialSource) (credential,
 			return credential{}, unsupportedAuth(reasonCustomEndpoint)
 		}
 		profile := filepath.Join(s.root, ".agy", agyProfileDirectory)
+		var rawSettings map[string]any
+		if fail := settingsFile(filepath.Join(profile, "settings.json"), &rawSettings); fail.status != "" {
+			return credential{}, fail
+		}
+		rawSettings = mergeSettings(rawSettings, s.config)
 		var settings struct {
 			UseCredits    *bool  `json:"useG1Credits"`
 			ModelProvider string `json:"modelProvider"`
@@ -34,8 +39,11 @@ func antigravityCredential(ctx context.Context, s credentialSource) (credential,
 				} `json:"auth"`
 			} `json:"security"`
 		}
-		if fail := settingsFile(filepath.Join(profile, "settings.json"), &settings); fail.status != "" {
-			return credential{}, fail
+		if len(rawSettings) > 0 {
+			encoded, err := json.Marshal(rawSettings)
+			if err != nil || json.Unmarshal(encoded, &settings) != nil {
+				return credential{}, unsupportedAuth("provider_settings_unreadable")
+			}
 		}
 		if settings.ModelProvider == "gemini" {
 			return credential{}, nonSubscription(reasonAPIKey)

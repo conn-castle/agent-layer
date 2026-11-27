@@ -16,6 +16,7 @@ import (
 	"github.com/conn-castle/agent-layer/internal/agentoptions"
 	"github.com/conn-castle/agent-layer/internal/clients"
 	"github.com/conn-castle/agent-layer/internal/clients/antigravity"
+	"github.com/conn-castle/agent-layer/internal/clients/grok"
 	"github.com/conn-castle/agent-layer/internal/ownedprocess"
 )
 
@@ -153,6 +154,9 @@ func (n nativeCredential) refresh(ctx context.Context, agent, root string) error
 	case agentCodex:
 		return refreshCodex(ctx, &n)
 	case agentGrok:
+		if err := grok.EnsureHome(root); err != nil {
+			return err
+		}
 		// Grok's model catalog command completes native sign-in renewal
 		// before it exits, even when its catalog reports the old auth state.
 		return n.run(ctx, agentGrok, []string{"--no-auto-update", "models"})

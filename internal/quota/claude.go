@@ -170,9 +170,10 @@ func addClaudeLimit(r *Result, limit claudeLimit, extra *claudeExtra) {
 			windowID = "seven_day"
 		}
 		window := makeClaudeWindow(windowID, limit.Percent, duration, optionalTime(limit.Reset), limit.State, limit.LockedReason, limit.Severity, extra, false)
+		rejected := claudeWindowRejected(limit.LockedReason, limit.Severity)
 		for i := range r.Pools[0].Windows {
 			if r.Pools[0].Windows[i].ID == windowID {
-				r.Pools[0].Windows[i] = mergeClaudeWindow(r.Pools[0].Windows[i], window)
+				r.Pools[0].Windows[i] = mergeClaudeWindow(r.Pools[0].Windows[i], window, rejected)
 				return
 			}
 		}
@@ -190,12 +191,13 @@ func addClaudeLimit(r *Result, limit claudeLimit, extra *claudeExtra) {
 		scope = scopeUnknown
 	}
 	window := makeClaudeWindow(limit.Kind, limit.Percent, duration, optionalTime(limit.Reset), limit.State, limit.LockedReason, limit.Severity, extra, true)
+	rejected := claudeWindowRejected(limit.LockedReason, limit.Severity)
 	for i := 1; i < len(r.Pools); i++ {
 		pool := &r.Pools[i]
 		legacy := (pool.ID == claudeOpusWeekly || pool.ID == claudeSonnetWeekly) && pool.Windows[0].ID == pool.ID
 		if pool.ID == id || legacy && limit.Kind == "weekly_scoped" && limit.Scope.Surface == "" &&
 			slices.ContainsFunc(pool.Models, func(scope string) bool { return claudeScopeMatches(scope, model) }) {
-			pool.Windows[0] = mergeClaudeWindow(pool.Windows[0], window)
+			pool.Windows[0] = mergeClaudeWindow(pool.Windows[0], window, rejected)
 			pool.Models = models
 			return
 		}
@@ -203,7 +205,8 @@ func addClaudeLimit(r *Result, limit claudeLimit, extra *claudeExtra) {
 	r.Pools = append(r.Pools, Pool{ID: id, Scope: scope, Models: models, Windows: []Window{window}})
 }
 
-func mergeClaudeWindow(legacy, structured Window) Window {
+func mergeClaudeWindow(legacy, structured Window, structuredRejected bool) Window {
+	structuredFull := full(structured.UsedPercent)
 	if structured.UsedPercent == nil {
 		structured.UsedPercent = legacy.UsedPercent
 	}
@@ -214,11 +217,17 @@ func mergeClaudeWindow(legacy, structured Window) Window {
 		}
 	}
 	if structured.Blocked == nil {
-		structured.Admission = legacy.Admission
+		if !structuredRejected && !structuredFull {
+			structured.Admission = legacy.Admission
+		}
 	} else if *structured.Blocked {
 		structured.ClearsAt = structured.ResetsAt
 	}
 	return structured
+}
+
+func claudeWindowRejected(locked, severity string) bool {
+	return locked != "" || severity == "rejected" || severity == "locked" || severity == "blocked"
 }
 
 func makeClaudeWindow(id string, used *float64, length time.Duration, reset *time.Time, reportedState, locked, severity string, extra *claudeExtra, scoped bool) Window {
@@ -230,12 +239,13 @@ func makeClaudeWindow(id string, used *float64, length time.Duration, reset *tim
 	w := newWindow(id, used, length, reset, state)
 	enforced := extra != nil && (extra.Enabled != nil && !*extra.Enabled || extra.UserDisabled || extra.SpendLimit || extra.CreditsCanPay == "no")
 	canPay := !scoped && extra != nil && extra.Enabled != nil && *extra.Enabled && !extra.UserDisabled && !extra.SpendLimit && extra.CreditsCanPay == "yes"
+	rejected := claudeWindowRejected(locked, severity)
 	switch {
 	case state == windowPending, canPay:
 		w.Admission = knownAllowed()
-	case enforced && (locked != "" || severity == "rejected" || severity == "locked" || severity == "blocked" || full(w.UsedPercent)):
+	case enforced && (rejected || full(w.UsedPercent)):
 		w.Admission = knownBlocked(reset)
-	case locked == "" && (severity == "normal" || severity == "warning" || w.UsedPercent != nil && !full(w.UsedPercent)):
+	case !rejected && (severity == "normal" || severity == "warning" || w.UsedPercent != nil && !full(w.UsedPercent)):
 		w.Admission = knownAllowed()
 	}
 	return w
