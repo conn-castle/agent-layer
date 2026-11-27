@@ -513,8 +513,8 @@ printf '{"type":"turn.completed"}\n'
 		return outBuf.String(), errBuf.String(), code
 	}
 
-	mustJSON := func(raw string, label string) dispatchCLIResult {
-		var res dispatchCLIResult
+	mustJSON := func(raw string, label string) agentdispatch.Result {
+		var res agentdispatch.Result
 		if err := json.Unmarshal([]byte(raw), &res); err != nil {
 			t.Fatalf("%s invalid JSON %q: %v", label, raw, err)
 		}
@@ -632,11 +632,21 @@ printf '{"type":"turn.completed"}\n'
 	}
 	resA := mustJSON(outA, "parallel-a")
 	resB := mustJSON(outB, "parallel-b")
-	if out, stderr, code = runAl("dispatch", "wait", "--condition", "termination_confirmed", resA.Handle); code != 0 {
-		t.Fatalf("wait parallel-a failed (%d): %s %s", code, out, stderr)
-	}
-	if out, stderr, code = runAl("dispatch", "wait", "--condition", "termination_confirmed", resB.Handle); code != 0 {
-		t.Fatalf("wait parallel-b failed (%d): %s %s", code, out, stderr)
+	for _, parallel := range []struct {
+		label  string
+		handle string
+	}{
+		{"parallel-a", resA.Handle},
+		{"parallel-b", resB.Handle},
+	} {
+		out, stderr, code := runAl("dispatch", "wait", "--condition", "termination_confirmed", parallel.handle)
+		if code != 0 {
+			t.Fatalf("wait %s failed (%d): %s %s", parallel.label, code, out, stderr)
+		}
+		waited := mustJSON(out, "wait "+parallel.label)
+		if waited.State != "completed" || !waited.TerminationConfirmed || waited.ConditionMet == nil || !*waited.ConditionMet {
+			t.Fatalf("wait %s did not report completed+confirmed before timeout: %s", parallel.label, out)
+		}
 	}
 	dataA, err := os.ReadFile(obsParA) // #nosec G304 -- test observation log.
 	if err != nil {
