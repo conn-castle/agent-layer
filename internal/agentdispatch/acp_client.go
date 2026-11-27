@@ -492,6 +492,25 @@ func matchRPCID(raw json.RawMessage, want int64) bool {
 
 var acpNonInteractiveAuthMethods = []string{"cached_token", "api_key", "xai.api_key"}
 
+type acpAuthConfigError struct {
+	cause      error
+	signInHint string
+}
+
+func (e *acpAuthConfigError) Error() string {
+	return fmt.Sprintf("%s. Before dispatching, %s", e.cause, e.signInHint)
+}
+
+func (e *acpAuthConfigError) Unwrap() error { return e.cause }
+
+func (c *acpClient) authConfigError(cause error) error {
+	hint := "sign in to the provider CLI or configure non-interactive credentials"
+	if c.provider == AgentGrok {
+		hint = "sign in using `al grok` or configure non-interactive credentials"
+	}
+	return &acpAuthConfigError{cause: cause, signInHint: hint}
+}
+
 func (c *acpClient) authenticate(initResult json.RawMessage) error {
 	var parsed struct {
 		AuthMethods []struct {
@@ -534,21 +553,20 @@ func (c *acpClient) authenticate(initResult json.RawMessage) error {
 		if len(offered) > 0 {
 			offeredDesc = strings.Join(offered, ", ")
 		}
-		signInHint := "sign in to the provider CLI or configure non-interactive credentials"
-		if c.provider == AgentGrok {
-			signInHint = "sign in using `al grok` or configure non-interactive credentials"
-		}
-		return exitError(ExitConfig, fmt.Sprintf(
-			"not authenticated: no supported non-interactive auth method offered (offered: %s, supported: %s). Before dispatching, %s",
+		return c.authConfigError(fmt.Errorf(
+			"not authenticated: no supported non-interactive auth method offered (offered: %s, supported: %s)",
 			offeredDesc,
 			strings.Join(acpNonInteractiveAuthMethods, ", "),
-			signInHint,
 		))
 	}
 	_, err := c.call(acpMethodAuthenticate, map[string]any{
 		"methodId": methodID,
 		"_meta":    map[string]any{"headless": true},
 	}, acpHandshakeTimeout)
+	var rpcErr *acpRPCError
+	if errors.As(err, &rpcErr) {
+		return c.authConfigError(fmt.Errorf("authentication method %q rejected: %w", methodID, err))
+	}
 	return err
 }
 

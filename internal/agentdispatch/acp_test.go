@@ -3,6 +3,7 @@ package agentdispatch
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -1053,7 +1054,10 @@ func TestACPAuthenticateNonInteractiveSelectionAndFailFast(t *testing.T) {
 				if stdin.Len() != 0 {
 					t.Fatalf("unexpected RPC for unsupported authMethods: %s", stdin.String())
 				}
-				requireDispatchExitCode(t, err, ExitConfig)
+				var authErr *acpAuthConfigError
+				if !errors.As(err, &authErr) {
+					t.Fatalf("expected ACP authentication configuration error, got %v", err)
+				}
 				for _, substr := range tc.wantSubstrs {
 					if !strings.Contains(err.Error(), substr) {
 						t.Errorf("error %q missing expected substring %q", err.Error(), substr)
@@ -1062,63 +1066,142 @@ func TestACPAuthenticateNonInteractiveSelectionAndFailFast(t *testing.T) {
 			})
 		}
 	})
-
 }
 
-func TestACPGrokDispatchFailsFastWhenSignInRequired(t *testing.T) {
-	root := writeDispatchRepo(t, dispatchRepoConfig{})
-	replaceDispatchConfigText(t, root, "[agents.grok]\nenabled = false", "[agents.grok]\nenabled = true")
-	binDir := t.TempDir()
-	logDir := t.TempDir()
-	rpcLog := filepath.Join(logDir, "grok-rpc.log")
-	writeDispatchStub(t, binDir, "grok", `
+func TestACPGrokDispatchAuthenticationFailures(t *testing.T) {
+	for _, tc := range []struct {
+		name          string
+		authMethods   string
+		authResponse  string
+		wantCode      int
+		wantSignIn    bool
+		wantRPCs      []string
+		wantErrorText string
+	}{
+		{
+			name:          "interactive_only",
+			authMethods:   `[{"id":"grok.com"}]`,
+			wantCode:      ExitConfig,
+			wantSignIn:    true,
+			wantRPCs:      []string{acpMethodInitialize},
+			wantErrorText: `no supported non-interactive auth method offered (offered: "grok.com"`,
+		},
+		{
+			name:          "api_key_rejected",
+			authMethods:   `[{"id":"xai.api_key"},{"id":"grok.com"}]`,
+			authResponse:  `{"jsonrpc":"2.0","id":2,"error":{"code":-32000,"message":"Authentication required"}}`,
+			wantCode:      ExitConfig,
+			wantSignIn:    true,
+			wantRPCs:      []string{acpMethodInitialize, acpMethodAuthenticate},
+			wantErrorText: `authentication method "xai.api_key" rejected: ACP error -32000: Authentication required`,
+		},
+		{
+			name:          "transport_closed",
+			authMethods:   `[{"id":"cached_token"}]`,
+			wantCode:      ExitTargetFailure,
+			wantRPCs:      []string{acpMethodInitialize, acpMethodAuthenticate},
+			wantErrorText: "ACP stdout closed while awaiting authenticate response",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root := writeDispatchRepo(t, dispatchRepoConfig{})
+			replaceDispatchConfigText(t, root, "[agents.grok]\nenabled = false", "[agents.grok]\nenabled = true")
+			binDir := t.TempDir()
+			logDir := t.TempDir()
+			rpcLog := filepath.Join(logDir, "grok-rpc.log")
+			writeDispatchStub(t, binDir, "grok", `
 while IFS= read -r line; do
   printf '%s\n' "$line" >> "$AL_TEST_RPC_LOG"
   case "$line" in
     *'"method":"initialize"'*)
-      printf '%s\n' '{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":1,"authMethods":[{"id":"grok.com"}]}}'
+      printf '{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":1,"authMethods":%s}}\n' "$AL_TEST_AUTH_METHODS"
+      ;;
+    *'"method":"authenticate"'*)
+      [ -n "$AL_TEST_AUTH_RESPONSE" ] || exit 0
+      printf '%s\n' "$AL_TEST_AUTH_RESPONSE"
       ;;
     *) exit 1 ;;
   esac
 done
 `)
-	err := executeFreshDispatch(dispatchExecRequest{
-		Root:   root,
-		Agent:  AgentGrok,
-		Prompt: "hi",
-		Env: []string{
-			"PATH=" + testPath(binDir),
-			"AL_TEST_LOG=" + filepath.Join(logDir, "grok.log"),
-			"AL_TEST_RPC_LOG=" + rpcLog,
-		},
-		LookPath: mockLookPath(binDir),
-	})
-	requireDispatchExitCode(t, err, ExitConfig)
-	for _, substr := range []string{"grok ACP authenticate failed", "not authenticated", "grok.com", "al grok"} {
-		if !strings.Contains(err.Error(), substr) {
-			t.Errorf("error %q missing expected substring %q", err.Error(), substr)
-		}
-	}
+			err := executeFreshDispatch(dispatchExecRequest{
+				Root:   root,
+				Agent:  AgentGrok,
+				Prompt: "hi",
+				Env: []string{
+					"PATH=" + testPath(binDir),
+					"AL_TEST_LOG=" + filepath.Join(logDir, "grok.log"),
+					"AL_TEST_RPC_LOG=" + rpcLog,
+					"AL_TEST_AUTH_METHODS=" + tc.authMethods,
+					"AL_TEST_AUTH_RESPONSE=" + tc.authResponse,
+				},
+				LookPath: mockLookPath(binDir),
+			})
+			requireDispatchExitCode(t, err, tc.wantCode)
+			if message := err.Error(); !strings.Contains(message, "grok ACP authenticate failed") ||
+				!strings.Contains(message, tc.wantErrorText) || strings.Contains(message, "al grok") != tc.wantSignIn {
+				t.Errorf("unexpected authentication failure: %s", message)
+			}
 
-	observed, err := os.ReadFile(rpcLog) // #nosec G304 -- test-owned provider log path.
+			observed, err := os.ReadFile(rpcLog) // #nosec G304 -- test-owned provider log path.
+			if err != nil {
+				t.Fatal(err)
+			}
+			decoder := json.NewDecoder(bytes.NewReader(observed))
+			for _, method := range tc.wantRPCs {
+				var request acpJSONRPCMessage
+				if err := decoder.Decode(&request); err != nil || request.Method != method {
+					t.Fatalf("expected RPC %q, got %q: %v", method, request.Method, err)
+				}
+			}
+			var extra acpJSONRPCMessage
+			if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
+				t.Fatalf("unexpected RPC after %v: %q, %v", tc.wantRPCs, extra.Method, err)
+			}
+
+			sessions, err := listSessions(root)
+			if err != nil || len(sessions) != 1 {
+				t.Fatalf("list sessions = %#v, %v", sessions, err)
+			}
+			requireDispatchExitCode(t, Wait(WaitRequest{
+				Root:    root,
+				Handle:  sessions[0].Name,
+				Timeout: time.Second,
+			}), tc.wantCode)
+		})
+	}
+}
+
+func TestACPDispatchKeepsNonAuthPersistenceFailureAsTargetFailure(t *testing.T) {
+	root := t.TempDir()
+	run, err := newDispatchRun(root, AgentGrok, supportedProviderVersions[AgentGrok], dispatchModeFresh)
 	if err != nil {
 		t.Fatal(err)
 	}
-	var request acpJSONRPCMessage
-	if err := json.Unmarshal(observed, &request); err != nil {
-		t.Fatalf("expected one initialize request, got %q: %v", observed, err)
+	_, err = executeProvider(providerCommand{
+		Path: "/bin/sh",
+		Args: []string{"-c", `
+while IFS= read -r line; do
+  case "$line" in
+    *'"method":"initialize"'*)
+      printf '%s\n' '{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":1}}'
+      ;;
+    *'"method":"session/new"'*)
+      printf '%s\n' '{"jsonrpc":"2.0","id":2,"result":{"sessionId":"session-1"}}'
+      ;;
+    *) exit 1 ;;
+  esac
+done
+`},
+		Provider: AgentGrok,
+		RunMode:  dispatchModeFresh,
+		UseACP:   true,
+		ACP:      &acpLaunchConfig{WorkDir: root, Authenticate: true},
+	}, nil, run, root, nil, func(string) error {
+		return exitError(ExitUnavailable, "dispatch run no longer owns the conversation")
+	})
+	requireDispatchExitCode(t, err, ExitTargetFailure)
+	if !strings.Contains(err.Error(), "dispatch run no longer owns the conversation") {
+		t.Fatalf("expected persistence failure, got %v", err)
 	}
-	if request.Method != acpMethodInitialize {
-		t.Fatalf("observed RPC method = %q, want %q", request.Method, acpMethodInitialize)
-	}
-
-	sessions, err := listSessions(root)
-	if err != nil || len(sessions) != 1 {
-		t.Fatalf("list sessions = %#v, %v", sessions, err)
-	}
-	requireDispatchExitCode(t, Wait(WaitRequest{
-		Root:    root,
-		Handle:  sessions[0].Name,
-		Timeout: time.Second,
-	}), ExitConfig)
 }

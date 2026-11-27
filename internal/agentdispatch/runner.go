@@ -620,9 +620,9 @@ func executeProvider(
 		}
 	case currentSemanticErr != nil:
 		message := fmt.Sprintf("%s dispatch did not complete: %v", command.Provider, currentSemanticErr)
-		var dispatchErr *ExitError
-		if command.UseACP && errors.As(currentSemanticErr, &dispatchErr) {
-			primaryErr = wrapExitError(dispatchErr.Code, message, currentSemanticErr)
+		var authErr *acpAuthConfigError
+		if errors.As(currentSemanticErr, &authErr) {
+			primaryErr = wrapExitError(ExitConfig, message, currentSemanticErr)
 		} else {
 			primaryErr = exitError(ExitTargetFailure, message)
 		}
