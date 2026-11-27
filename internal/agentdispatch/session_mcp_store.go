@@ -168,6 +168,11 @@ func sessionMCPDurableStoreDir(root string) (string, error) {
 	return base, nil
 }
 
+// sessionMCPRuntimeRootFunc resolves the per-user private runtime root.
+// Production always uses canonical /tmp independent of TMPDIR; tests may
+// override it to keep test suites hermetic.
+var sessionMCPRuntimeRootFunc = defaultSessionMCPRuntimeRoot
+
 // sessionMCPRuntimeRoot returns the per-user private runtime root under
 // canonical /tmp, independent of caller or provider TMPDIR overrides.
 // Per-invocation wrapper runtime state lives under /tmp rather than the
@@ -177,6 +182,10 @@ func sessionMCPDurableStoreDir(root string) (string, error) {
 // ownership and MCP handshake proofs consistently across Start, wrapper,
 // Wait, Inspect, and Cancel processes.
 func sessionMCPRuntimeRoot() string {
+	return sessionMCPRuntimeRootFunc()
+}
+
+func defaultSessionMCPRuntimeRoot() string {
 	return filepath.Join(canonicalTempDir(), fmt.Sprintf("agent-layer-dispatch-%d", os.Getuid()))
 }
 

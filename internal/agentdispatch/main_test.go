@@ -18,13 +18,23 @@ import (
 // workerCommand is the hidden `al` subcommand that launchDetachedWorker runs.
 const workerCommand = "__dispatch-worker"
 
+// testSessionMCPRuntimeRootEnv is a test-binary-only environment variable used
+// by TestMain to propagate the isolated session MCP runtime root to re-execed
+// detached test workers. Production code never reads this variable.
+const testSessionMCPRuntimeRootEnv = "AL_TEST_SESSION_MCP_RUNTIME_ROOT"
+
 // TestMain makes the test binary a faithful stand-in for `al` and keeps the
 // package hermetic. Under `go test`, launchDetachedWorker re-executes this
 // binary as the detached worker, so the worker command must run the real
 // worker instead of the whole suite. Provider CLIs installed on the developer's
-// PATH are hidden so no test reaches a real provider, and the suite fails if
-// any worker it launched is still running when it ends.
+// PATH are hidden so no test reaches a real provider, session MCP runtime state
+// is isolated from /tmp/agent-layer-dispatch-<uid>, and the suite fails if any
+// worker it launched is still running or any session MCP runtime directory
+// leaked when it ends.
 func TestMain(m *testing.M) {
+	if inheritedRTRoot := strings.TrimSpace(os.Getenv(testSessionMCPRuntimeRootEnv)); inheritedRTRoot != "" {
+		sessionMCPRuntimeRootFunc = func() string { return inheritedRTRoot }
+	}
 	selfLeaseWorkerHelper()
 	detachedLeaseHelper()
 	if len(os.Args) > 1 && os.Args[1] == workerCommand {
@@ -34,12 +44,26 @@ func TestMain(m *testing.M) {
 	if err == nil {
 		err = os.Setenv("PATH", path)
 	}
+	var sessionMCPRTRoot string
+	if err == nil {
+		sessionMCPRTRoot, err = createIsolatedSessionMCPRuntimeRoot()
+		if err == nil {
+			sessionMCPRuntimeRootFunc = func() string { return sessionMCPRTRoot }
+			err = os.Setenv(testSessionMCPRuntimeRootEnv, sessionMCPRTRoot)
+		}
+	}
 	code := 1
 	if err == nil {
 		code = m.Run()
 	}
 	if err == nil {
 		err = reapDetachedWorkers(5 * time.Second)
+	}
+	if err == nil && code == 0 && sessionMCPRTRoot != "" {
+		err = verifyNoLeakedSessionMCPRuntimeDirs(sessionMCPRTRoot)
+	}
+	if sessionMCPRTRoot != "" {
+		err = errors.Join(err, os.RemoveAll(sessionMCPRTRoot)) // #nosec G703 -- sessionMCPRTRoot is the temporary directory this TestMain created.
 	}
 	if shadowRoot != "" {
 		err = errors.Join(err, os.RemoveAll(shadowRoot)) // #nosec G703 -- shadowRoot is the temporary directory this TestMain created.
@@ -49,6 +73,40 @@ func TestMain(m *testing.M) {
 		code = 1
 	}
 	os.Exit(code)
+}
+
+func createIsolatedSessionMCPRuntimeRoot() (string, error) {
+	dir, err := os.MkdirTemp("", "agentdispatch-session-mcp-rt-")
+	if err != nil {
+		return "", fmt.Errorf("create isolated session MCP runtime root: %w", err)
+	}
+	if resolved, evalErr := filepath.EvalSymlinks(dir); evalErr == nil && resolved != "" {
+		dir = filepath.Clean(resolved)
+	}
+	if err := ensureOwnedPrivateDir(dir); err != nil {
+		_ = os.RemoveAll(dir)
+		return "", fmt.Errorf("verify isolated session MCP runtime root: %w", err)
+	}
+	return dir, nil
+}
+
+func verifyNoLeakedSessionMCPRuntimeDirs(rtRoot string) error {
+	runsDir := filepath.Join(rtRoot, "runs")
+	entries, err := os.ReadDir(runsDir)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("inspect isolated session MCP runtime dirs: %w", err)
+	}
+	if len(entries) == 0 {
+		return nil
+	}
+	names := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		names = append(names, entry.Name())
+	}
+	return fmt.Errorf("tests leaked %d session MCP runtime directory(ies) under %s: %s; register t.Cleanup(func() { _ = removeSessionMCPRuntimeDir(runDir) })", len(names), runsDir, strings.Join(names, ", "))
 }
 
 // runTestWorker mirrors cmd/al's hidden worker command.

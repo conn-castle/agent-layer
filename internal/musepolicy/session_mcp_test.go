@@ -12,7 +12,16 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func isolateSessionMCPCacheDir(t *testing.T) string {
+	t.Helper()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CACHE_HOME", filepath.Join(home, "cache"))
+	return home
+}
+
 func TestMCPHookAllowsSessionMCPServersAcrossApprovalsModes(t *testing.T) {
+	isolateSessionMCPCacheDir(t)
 	root := t.TempDir()
 	sessionA := "11111111-1111-4111-8111-111111111111"
 	sessionB := "22222222-2222-4222-8222-222222222222"
@@ -72,12 +81,24 @@ func TestMCPHookAllowsSessionMCPServersAcrossApprovalsModes(t *testing.T) {
 }
 
 func TestSessionMCPGrantPruningAndCleanup(t *testing.T) {
+	home := isolateSessionMCPCacheDir(t)
 	root := t.TempDir()
 	keepID := "11111111-1111-4111-8111-111111111111"
 	staleID := "22222222-2222-4222-8222-222222222222"
 
 	require.NoError(t, WriteSessionMCPGrant(root, keepID, []string{"wf"}))
 	require.NoError(t, WriteSessionMCPGrant(root, staleID, []string{"wf"}))
+
+	// Confirm the written grant is inside the isolated test home.
+	resolvedHome, err := filepath.EvalSymlinks(home)
+	require.NoError(t, err)
+	initialKeepPath, err := sessionMCPGrantPath(root, keepID)
+	require.NoError(t, err)
+	resolvedGrant, err := filepath.EvalSymlinks(initialKeepPath)
+	require.NoError(t, err)
+	rel, err := filepath.Rel(resolvedHome, resolvedGrant)
+	require.NoError(t, err)
+	require.True(t, filepath.IsLocal(rel), "expected grant path %q inside isolated home %q", resolvedGrant, resolvedHome)
 
 	// A freshly written grant after notAfter is preserved against concurrent start races.
 	require.NoError(t, PruneSessionMCPGrants(root, map[string]bool{keepID: true}, time.Now().Add(-time.Minute), nil))
