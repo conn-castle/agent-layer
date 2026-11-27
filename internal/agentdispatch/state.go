@@ -63,6 +63,7 @@ type Session struct {
 	Model                     string             `json:"model,omitempty"`
 	ReasoningEffort           string             `json:"reasoning_effort,omitempty"`
 	TargetPinned              bool               `json:"target_pinned,omitempty"`
+	MaxDepth                  int                `json:"max_depth,omitempty"`
 	ProviderSessionID         string             `json:"provider_session_id,omitempty"`
 	SessionMCPID              string             `json:"session_mcp_id,omitempty"`
 	SessionMCPDigest          string             `json:"session_mcp_digest,omitempty"`
@@ -337,6 +338,10 @@ func randomDispatchName() (string, error) {
 func bigInt(value int) *big.Int { return big.NewInt(int64(value)) }
 
 func reserveSession(root string, run *dispatchRun, retention time.Duration) (Session, error) {
+	return reserveSessionWithMaxDepth(root, run, retention, 0)
+}
+
+func reserveSessionWithMaxDepth(root string, run *dispatchRun, retention time.Duration, maxDepth int) (Session, error) {
 	if err := os.MkdirAll(dispatchStatePath(root), 0o700); err != nil {
 		return Session{}, wrapExitError(ExitConfig, "create dispatch state directory", err)
 	}
@@ -345,7 +350,7 @@ func reserveSession(root string, run *dispatchRun, retention time.Duration) (Ses
 		if err != nil {
 			return Session{}, wrapExitError(ExitTargetFailure, "generate dispatch name", err)
 		}
-		session, reserved, err := createExclusiveSession(root, name, run)
+		session, reserved, err := createExclusiveSession(root, name, run, maxDepth)
 		if err != nil {
 			return Session{}, err
 		}
@@ -361,7 +366,7 @@ func reserveSession(root string, run *dispatchRun, retention time.Duration) (Ses
 		return Session{}, wrapExitError(ExitTargetFailure, "shuffle unused dispatch names", err)
 	}
 	for _, name := range unused {
-		session, reserved, err := createExclusiveSession(root, name, run)
+		session, reserved, err := createExclusiveSession(root, name, run, maxDepth)
 		if err != nil {
 			return Session{}, err
 		}
@@ -372,7 +377,7 @@ func reserveSession(root string, run *dispatchRun, retention time.Duration) (Ses
 	return Session{}, dispatchNamePoolExhaustedError(root, retention)
 }
 
-func createExclusiveSession(root string, name string, run *dispatchRun) (Session, bool, error) {
+func createExclusiveSession(root string, name string, run *dispatchRun, maxDepth int) (Session, bool, error) {
 	path, err := sessionPath(root, name)
 	if err != nil {
 		return Session{}, false, err
@@ -382,7 +387,7 @@ func createExclusiveSession(root string, name string, run *dispatchRun) (Session
 	if run.Record.State == dispatchStateReserved {
 		state = sessionStateReserved
 	}
-	session := Session{Name: name, Agent: run.Record.Agent, CreatedAt: now, LastUsedAt: now, State: state, RunID: run.Record.ID, ActiveRunID: run.Record.ID, ActiveClaimKnown: true}
+	session := Session{Name: name, Agent: run.Record.Agent, MaxDepth: maxDepth, CreatedAt: now, LastUsedAt: now, State: state, RunID: run.Record.ID, ActiveRunID: run.Record.ID, ActiveClaimKnown: true}
 	reserved, err := createJSONExclusive(path, session)
 	if err != nil {
 		return Session{}, false, wrapExitError(ExitConfig, "reserve dispatch name", err)
@@ -622,12 +627,12 @@ func persistOwnedSession(root string, name string, runID string, update func(*Se
 	return updated, err
 }
 
-func claimConversation(root string, name string, runID string, expectedPreviousRunID ...string) (Session, error) {
+func claimConversation(root string, name string, runID string) (Session, error) {
+	return claimConversationWithMaxDepth(root, name, runID, "", 0, 0)
+}
+
+func claimConversationWithMaxDepth(root string, name string, runID string, expectedPrev string, depth int, maxDepth int) (Session, error) {
 	var claimed Session
-	expectedPrev := ""
-	if len(expectedPreviousRunID) > 0 {
-		expectedPrev = expectedPreviousRunID[0]
-	}
 	err := withSessionLock(root, name, func() error {
 		path, err := sessionPath(root, name)
 		if err != nil {
@@ -636,6 +641,9 @@ func claimConversation(root string, name string, runID string, expectedPreviousR
 		var session Session
 		if err := readJSON(path, &session); err != nil {
 			return wrapExitError(ExitConfig, "read dispatch mapping for active claim", err)
+		}
+		if err := checkExplicitDepthCap(depth, session.MaxDepth, maxDepth); err != nil {
+			return err
 		}
 		pending, hasPending, err := settlePendingContinuationReservationLocked(root, &session, time.Now().UTC())
 		if err != nil {
@@ -663,6 +671,9 @@ func claimConversation(root string, name string, runID string, expectedPreviousR
 		session.ActiveRunID = runID
 		session.ActiveClaimKnown = true
 		session.RunID = runID
+		if tightened := minPositive(session.MaxDepth, maxDepth); tightened > 0 {
+			session.MaxDepth = tightened
+		}
 		session.LastUsedAt = time.Now().UTC()
 		if err := writeJSONAtomic(path, session); err != nil {
 			return wrapExitError(ExitConfig, "publish dispatch active claim", err)
@@ -826,7 +837,7 @@ func loadSession(root string, name string) (Session, error) {
 	}
 	// A reservation has no agent until `start --reservation` claims it.
 	unclaimedReservation := session.State == sessionStateReserved && session.Agent == ""
-	if session.Name != name || !validDispatchName(session.Name) || (!isProvider(session.Agent) && !unclaimedReservation) {
+	if session.Name != name || !validDispatchName(session.Name) || (!isProvider(session.Agent) && !unclaimedReservation) || session.MaxDepth < 0 {
 		return Session{}, exitError(ExitConfig, fmt.Sprintf("dispatch session %q is invalid", name))
 	}
 	return session, nil

@@ -37,7 +37,7 @@ func loadMCPToolDescriptions() (mcpToolDescriptionCatalog, error) {
 	}
 	expected := map[string][]string{
 		ToolOptions:  {},
-		ToolStart:    {"agent", modelParameter, "reasoning_effort", "role", "skill", jsonPromptKey, "prompt_file"},
+		ToolStart:    {"agent", modelParameter, "reasoning_effort", "role", "skill", "max_depth", jsonPromptKey, "prompt_file"},
 		ToolWait:     {handleParameter, invocationIDParameter, "condition"},
 		ToolContinue: {handleParameter, jsonPromptKey, "prompt_file"},
 		ToolCancel:   {handleParameter, invocationIDParameter},

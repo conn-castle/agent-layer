@@ -202,9 +202,26 @@ const (
 
 // Cancel terminates only the exact Agent Layer-owned process group.
 func Cancel(request CancelRequest) error {
+	depthState, err := checkDispatchOperationAllowed(request.Root, request.Env)
+	if err != nil {
+		return err
+	}
 	record, err := resolveInvocationSelector(request.Root, request.ID, request.Handle, request.InvocationID)
 	if err != nil {
 		return err
+	}
+	// Depth 0 is never blocked by a positive depth cap, so avoid letting a
+	// corrupt session mapping block top-level cancellation; nested callers
+	// (depth > 0) must fail closed on unreadable session state so a stored cap
+	// cannot be bypassed.
+	if depthState.Depth > 0 && record.Name != "" {
+		if session, loadErr := loadSession(request.Root, record.Name); loadErr == nil {
+			if err := checkDispatchStateAllowed(request.Root, depthState, session.MaxDepth); err != nil {
+				return err
+			}
+		} else if !errors.Is(loadErr, errDispatchSessionNotFound) {
+			return loadErr
+		}
 	}
 	record, ownedGroup, alreadyConfirmedCancelled, err := beginCancellation(request.Root, record.ID)
 	if err != nil {

@@ -255,7 +255,7 @@ func TestClaudeDispatchPrintBackgroundWaitCeilingIsAuthoritative(t *testing.T) {
 			if depth == 0 {
 				depth = 1
 			}
-			childEnv := dispatchEnvironment(tt.baseEnv, project, run, depth)
+			childEnv := dispatchEnvironment(tt.baseEnv, project, run, depth, 3)
 			for _, entry := range childEnv {
 				if strings.HasPrefix(entry, "HERDR_") {
 					t.Fatalf("dispatched environment retained HerdR value %q", entry)

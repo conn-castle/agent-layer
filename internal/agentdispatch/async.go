@@ -34,6 +34,7 @@ type workerRequest struct {
 	Mode         string `json:"mode"`
 	Prompt       []byte `json:"prompt"`
 	Depth        int    `json:"depth"`
+	MaxDepth     int    `json:"max_depth,omitempty"`
 	Model        string `json:"model"`
 	Effort       string `json:"effort"`
 	Skill        string `json:"skill,omitempty"`
@@ -55,11 +56,43 @@ func Start(opts StartOptions) error {
 	if strings.TrimSpace(opts.Agent) == "" || strings.TrimSpace(opts.Agent) == AgentRandom {
 		return exitError(ExitUsage, "dispatch start requires an explicit --agent")
 	}
-	promptText, err := resolvePromptSource(opts.Context, opts.Prompt, opts.PromptFile)
+	if err := validateRequestedMaxDepth(opts.MaxDepth); err != nil {
+		return err
+	}
+	requestedMaxDepth := 0
+	if opts.MaxDepth != nil {
+		requestedMaxDepth = *opts.MaxDepth
+	}
+	stderr, env, depthState, err := dispatchRuntimeInputs(opts.Stderr, opts.Env)
 	if err != nil {
 		return err
 	}
-	stderr, env, depth, err := dispatchRuntimeInputs(opts.Stderr, opts.Env)
+	if err := checkDispatchStateAllowed(opts.Root, depthState, requestedMaxDepth); err != nil {
+		return err
+	}
+	// If launching a start reservation at nonzero depth, enforce any cap stored
+	// on that reservation before reading the prompt or waiting on beforeProvider.
+	// Only real start reservations apply here so non-reservation targets keep
+	// their documented prompt-first / ExitReservationNotFound behavior.
+	if opts.Reservation != nil && depthState.Depth > 0 {
+		if record, resolveErr := resolveReservation(opts.Root, *opts.Reservation); resolveErr == nil {
+			if reservedSession, loadErr := loadSession(opts.Root, record.Name); loadErr == nil {
+				if reservedSession.MaxDepth > 0 {
+					if err := checkExplicitDepthCap(depthState.Depth, depthState.MaxDepth, reservedSession.MaxDepth, requestedMaxDepth); err != nil {
+						return err
+					}
+				}
+			} else if !errors.Is(loadErr, errDispatchSessionNotFound) {
+				return loadErr
+			}
+		} else {
+			var exitErr *ExitError
+			if !errors.As(resolveErr, &exitErr) || exitErr.Code != ExitReservationNotFound {
+				return resolveErr
+			}
+		}
+	}
+	promptText, err := resolvePromptSource(opts.Context, opts.Prompt, opts.PromptFile)
 	if err != nil {
 		return err
 	}
@@ -75,16 +108,18 @@ func Start(opts StartOptions) error {
 		defer release()
 	}
 	if opts.Reservation != nil {
-		return startReservation(opts, requested, promptText, stderr, env, depth)
+		return startReservation(opts, requested, promptText, stderr, env, depthState, requestedMaxDepth)
 	}
 	sessionMCP, err := resolveSessionMCPServers(opts.MCPConfigs, opts.SessionMCPServers)
 	if err != nil {
 		return err
 	}
-	project, target, version, prompt, err := prepareStart(opts.runOptions(promptText, sessionMCP), requested, stderr, depth)
+	explicitCap := minPositive(depthState.MaxDepth, requestedMaxDepth)
+	project, target, version, prompt, err := prepareStart(opts.runOptions(promptText, sessionMCP), requested, stderr, depthState.Depth, explicitCap)
 	if err != nil {
 		return err
 	}
+	workerCap := clampExplicitCap(project.Config, explicitCap)
 	retention := config.DispatchSessionRetention(project.Config)
 	if err := pruneDispatchEvidence(opts.Root, time.Now(), retention); err != nil {
 		return err
@@ -107,11 +142,12 @@ func Start(opts StartOptions) error {
 	}
 	session.Model = opts.Model
 	session.ReasoningEffort = opts.ReasoningEffort
+	session.MaxDepth = explicitCap
 	session.SessionMCPServers = sessionMCP
 	if err := persistSession(opts.Root, session); err != nil {
 		return finishDispatchFailure(dispatchExecution{Root: opts.Root, Run: run, Session: session}, err)
 	}
-	request := workerRequest{Root: opts.Root, WorkDir: opts.WorkDir, RunID: run.Record.ID, Mode: dispatchModeFresh, Prompt: prompt, Depth: depth + 1, Model: opts.Model, Effort: opts.ReasoningEffort, Skill: opts.Skill}
+	request := workerRequest{Root: opts.Root, WorkDir: opts.WorkDir, RunID: run.Record.ID, Mode: dispatchModeFresh, Prompt: prompt, Depth: depthState.Depth + 1, MaxDepth: workerCap, Model: opts.Model, Effort: opts.ReasoningEffort, Skill: opts.Skill}
 	return publishInvocation(opts.Context, opts.Root, run, session, request, writerOrDiscard(opts.Stdout), opts.launchWorker)
 }
 
@@ -124,15 +160,15 @@ func (o StartOptions) runOptions(prompt string, sessionMCP []SessionMCPServer) r
 
 // prepareStart validates an invocation's target and prompt and refreshes
 // its projections under the project lock.
-func prepareStart(opts runOptions, requested targetMeta, stderr io.Writer, depth int) (*config.ProjectConfig, targetMeta, string, []byte, error) {
+func prepareStart(opts runOptions, requested targetMeta, stderr io.Writer, depth int, caps ...int) (*config.ProjectConfig, targetMeta, string, []byte, error) {
 	var project *config.ProjectConfig
 	var target targetMeta
 	var version string
 	var prompt []byte
 	err := sync.WithLockedProject(sync.RealSystem{}, opts.Root, func(loaded *config.ProjectConfig) error {
 		project = loaded
-		if err := checkDispatchDepth(project.Config, depth); err != nil {
-			return err
+		if depthErr := checkDispatchDepthCap(project.Config, depth, caps...); depthErr != nil {
+			return depthErr
 		}
 		var prepareErr error
 		target, version, prompt, prepareErr = prepareFresh(project, requested, opts)
@@ -156,17 +192,31 @@ func Continue(opts ContinueOptions) error {
 	if opts.Reservation != nil {
 		return continueReservation(opts)
 	}
-	promptText, err := resolvePromptSource(opts.Context, opts.Prompt, opts.PromptFile)
+	stderr, env, depthState, err := dispatchRuntimeInputs(opts.Stderr, opts.Env)
 	if err != nil {
 		return err
 	}
-	stderr, env, depth, err := dispatchRuntimeInputs(opts.Stderr, opts.Env)
-	if err != nil {
+	if err := checkDispatchStateAllowed(opts.Root, depthState); err != nil {
 		return err
 	}
 	handle := strings.TrimSpace(opts.Handle)
 	if handle == "" {
 		return exitError(ExitUsage, "dispatch continue requires a conversation handle")
+	}
+	// Check any persisted session cap before reading the prompt (so a caller
+	// blocked by session.MaxDepth fails immediately without waiting on a FIFO)
+	// while still letting unknown handles keep their prompt-validation order
+	// when depth is 0.
+	if initialSession, loadErr := loadSession(opts.Root, handle); loadErr == nil {
+		if err := checkDispatchStateAllowed(opts.Root, depthState, initialSession.MaxDepth); err != nil {
+			return err
+		}
+	} else if !errors.Is(loadErr, errDispatchSessionNotFound) {
+		return loadErr
+	}
+	promptText, err := resolvePromptSource(opts.Context, opts.Prompt, opts.PromptFile)
+	if err != nil {
+		return err
 	}
 	if _, err := loadSession(opts.Root, handle); err != nil {
 		return err
@@ -180,6 +230,9 @@ func Continue(opts ContinueOptions) error {
 		session, loadErr = loadSession(opts.Root, handle)
 		if loadErr != nil {
 			return loadErr
+		}
+		if capErr := checkDispatchStateAllowed(opts.Root, depthState, session.MaxDepth); capErr != nil {
+			return capErr
 		}
 		pending, hasPending, settleErr := settlePendingContinuationReservationLocked(opts.Root, &session, now)
 		if settleErr != nil {
@@ -208,10 +261,11 @@ func Continue(opts ContinueOptions) error {
 		}
 		defer release()
 	}
-	_, target, version, prompt, err := prepareStart(runOptions{
+	explicitCap := minPositive(depthState.MaxDepth, session.MaxDepth)
+	project, target, version, prompt, err := prepareStart(runOptions{
 		Root: opts.Root, WorkDir: opts.WorkDir, Prompt: promptText, SessionMCPServers: session.SessionMCPServers,
 		LookPath: opts.LookPath, VersionLookup: opts.VersionLookup,
-	}, target, stderr, depth)
+	}, target, stderr, depthState.Depth, explicitCap)
 	if err != nil {
 		return err
 	}
@@ -227,11 +281,12 @@ func Continue(opts ContinueOptions) error {
 	if err := writeRunRecord(run.Dir, &run.Record); err != nil {
 		return err
 	}
-	session, err = claimConversation(opts.Root, session.Name, run.Record.ID, current.ID)
+	session, err = claimConversationWithMaxDepth(opts.Root, session.Name, run.Record.ID, current.ID, depthState.Depth, depthState.MaxDepth)
 	if err != nil {
 		return finishRejectedResume(run, err, writeRunRecord)
 	}
-	request := continuationWorkerRequest(opts, run.Record.ID, session, prompt, depth)
+	workerCap := clampExplicitCap(project.Config, session.MaxDepth)
+	request := continuationWorkerRequest(opts, run.Record.ID, session, prompt, depthState.Depth, workerCap)
 	return publishInvocation(opts.Context, opts.Root, run, session, request, writerOrDiscard(opts.Stdout), opts.launchWorker)
 }
 
@@ -244,10 +299,10 @@ func continuationMode(session Session) string {
 
 // continuationWorkerRequest builds the worker request shared by ordinary and
 // reserved continuations so both inherit identical session configuration.
-func continuationWorkerRequest(opts ContinueOptions, runID string, session Session, prompt []byte, depth int) workerRequest {
+func continuationWorkerRequest(opts ContinueOptions, runID string, session Session, prompt []byte, depth int, maxDepth int) workerRequest {
 	return workerRequest{
 		Root: opts.Root, WorkDir: opts.WorkDir, RunID: runID,
-		Mode: continuationMode(session), Prompt: prompt, Depth: depth + 1,
+		Mode: continuationMode(session), Prompt: prompt, Depth: depth + 1, MaxDepth: maxDepth,
 		Model: session.Model, Effort: session.ReasoningEffort, TargetPinned: session.TargetPinned,
 	}
 }
@@ -472,11 +527,12 @@ func RunWorker(root string, runID string, gate io.Reader) error {
 	if !ok {
 		return failWorkerBeforeExecution(root, runID, exitError(ExitConfig, fmt.Sprintf("unsupported dispatch provider %q", record.Agent)))
 	}
+	maxDepth := minPositive(request.MaxDepth, session.MaxDepth)
 	return executeDispatch(dispatchExecution{
 		Root: root, WorkDir: request.WorkDir, Project: project, Target: target,
 		Version: record.ProviderVersion, Prompt: request.Prompt, Mode: request.Mode,
 		Run: &dispatchRun{Record: record, Dir: filepathForRun(root, runID)}, Session: session,
-		Stdout: io.Discard, Stderr: io.Discard, Env: os.Environ(), Depth: request.Depth,
+		Stdout: io.Discard, Stderr: io.Discard, Env: os.Environ(), Depth: request.Depth, MaxDepth: maxDepth,
 		Model: request.Model, Effort: request.Effort, TargetPinned: request.TargetPinned, Skill: request.Skill,
 	})
 }

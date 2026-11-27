@@ -977,9 +977,16 @@ See [subscription quota](./agent-dispatch.mdx#subscription-quota) for flags,
 JSON fields, and exit codes.
 
 `start` requires an agent and either `--prompt`
-or `--prompt-file`; model and reasoning effort are optional overrides. It
-returns a conversation handle immediately. `continue` inherits that
-conversation's resolved target configuration and returns immediately.
+or `--prompt-file`; `--model`, `--reasoning-effort`, `--role`, `--skill`, and
+`--max-depth` (positive integer, tighten-only nested dispatch depth cap) are
+optional. It returns a conversation handle immediately. `continue` inherits that
+conversation's resolved target configuration and any persisted explicit
+`max_depth` cap (omitting `--max-depth` with no inherited cap preserves
+repo-local `dispatch.max_depth` behavior) and returns immediately. Once a
+dispatched worker reaches its effective depth cap, state-changing dispatch
+operations (`reserve`, `start`, `continue`, `cancel` via CLI or MCP) fail
+immediately with exit 75 while read-only operations (`options`, `wait`,
+`inspect`, `output`, `quota`) remain allowed.
 `wait` blocks for up to eight minutes. If the invocation remains active, it
 returns `running` without changing that invocation; call `wait` again with the
 same handle. Completed output is stored atomically in the immutable Markdown

@@ -183,11 +183,22 @@ func TestBuildEnvStripsShimActive(t *testing.T) {
 // `al claude` launched from a shell that exported the marker should run
 // the child without it.
 func TestBuildEnvStripsDispatchActive(t *testing.T) {
-	base := []string{"PATH=/bin", EnvDispatchActive + "=1", "OTHER=data"}
-	env := BuildEnv(base, nil, nil)
+	base := []string{"PATH=/bin", EnvDispatchActive + "=1", EnvDispatchMaxDepth + "=2", "OTHER=data"}
+	projectEnv := map[string]string{
+		EnvDispatchActive:   "3",
+		EnvDispatchMaxDepth: "1",
+		"PROJECT_KEY":       "ok",
+	}
+	env := BuildEnv(base, projectEnv, nil)
 
 	if _, ok := GetEnv(env, EnvDispatchActive); ok {
 		t.Fatalf("expected %s to be stripped from environment", EnvDispatchActive)
+	}
+	if _, ok := GetEnv(env, EnvDispatchMaxDepth); ok {
+		t.Fatalf("expected %s to be stripped from environment", EnvDispatchMaxDepth)
+	}
+	if value, ok := GetEnv(env, "PROJECT_KEY"); !ok || value != "ok" {
+		t.Fatalf("expected PROJECT_KEY to remain, got %v", value)
 	}
 	if value, ok := GetEnv(env, "PATH"); !ok || value != "/bin" {
 		t.Fatalf("expected PATH to remain, got %v", value)

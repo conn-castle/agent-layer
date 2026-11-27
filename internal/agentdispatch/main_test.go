@@ -13,6 +13,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/conn-castle/agent-layer/internal/clients"
 )
 
 // workerCommand is the hidden `al` subcommand that launchDetachedWorker runs.
@@ -40,6 +42,8 @@ func TestMain(m *testing.M) {
 	if len(os.Args) > 1 && os.Args[1] == workerCommand {
 		os.Exit(runTestWorker(os.Args[2:]))
 	}
+	_ = os.Unsetenv(clients.EnvDispatchActive)
+	_ = os.Unsetenv(clients.EnvDispatchMaxDepth)
 	path, shadowRoot, err := hideProviders(os.Getenv("PATH"))
 	if err == nil {
 		err = os.Setenv("PATH", path)

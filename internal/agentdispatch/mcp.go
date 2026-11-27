@@ -86,6 +86,7 @@ type StartInput struct {
 	ReasoningEffort string `json:"reasoning_effort,omitempty"`
 	Role            string `json:"role,omitempty"`
 	Skill           string `json:"skill,omitempty"`
+	MaxDepth        *int   `json:"max_depth,omitempty"`
 	Prompt          string `json:"prompt,omitempty"`
 	PromptFile      string `json:"prompt_file,omitempty"`
 }
@@ -321,7 +322,7 @@ func (s *dispatchToolServer) handleStart(ctx context.Context, _ *mcp.CallToolReq
 	err := Start(StartOptions{
 		Context: ctx, Root: s.root, WorkDir: s.workDir, Agent: agent, Model: model,
 		ReasoningEffort: effort, Role: strings.TrimSpace(input.Role), Skill: strings.TrimSpace(input.Skill),
-		Prompt: input.Prompt, PromptFile: input.PromptFile,
+		MaxDepth: input.MaxDepth, Prompt: input.Prompt, PromptFile: input.PromptFile,
 		Stdout: &out, Stderr: io.Discard, Env: s.env,
 		beforeProvider: s.acquireProvider,
 	})
@@ -390,7 +391,7 @@ func (s *dispatchToolServer) handleCancel(_ context.Context, _ *mcp.CallToolRequ
 	var out bytes.Buffer
 	err := Cancel(CancelRequest{
 		Root: s.root, Handle: strings.TrimSpace(input.Handle),
-		InvocationID: strings.TrimSpace(input.InvocationID), Stdout: &out,
+		InvocationID: strings.TrimSpace(input.InvocationID), Stdout: &out, Env: s.env,
 	})
 	return decodeCancelResult(&out, err)
 }

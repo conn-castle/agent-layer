@@ -597,10 +597,10 @@ func TestDispatchInputAndEnvironmentContracts(t *testing.T) {
 	if err != nil || stderr != io.Discard || depth != 2 || len(env) != 1 {
 		t.Fatalf("loadDispatchProject = %#v, %v, %#v, %d, %v", project, stderr, env, depth, err)
 	}
-	if err := checkDispatchDepth(project.Config, depth); err != nil {
+	if err := checkDispatchDepthCap(project.Config, depth); err != nil {
 		t.Fatalf("depth two should be allowed: %v", err)
 	}
-	if err := checkDispatchDepth(project.Config, 3); err == nil {
+	if err := checkDispatchDepthCap(project.Config, 3); err == nil {
 		t.Fatal("max depth was accepted")
 	} else {
 		requireDispatchExitCode(t, err, ExitNested)

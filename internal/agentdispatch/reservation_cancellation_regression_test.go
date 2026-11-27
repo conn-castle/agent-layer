@@ -30,7 +30,7 @@ func TestCancelledReservationCannotReopenSession(t *testing.T) {
 			} else if _, _, _, err := beginCancellation(root, reservation.InvocationID); err != nil {
 				t.Fatal(err)
 			}
-			if _, err := claimReservedSession(root, reservation.Handle, reservation.InvocationID, AgentCodex, "", "", nil); err == nil {
+			if _, err := claimReservedSession(root, reservation.Handle, reservation.InvocationID, AgentCodex, "", "", 3, nil); err == nil {
 				t.Fatal("cancelled reservation reopened its session")
 			}
 			session, err := loadSession(root, reservation.Handle)

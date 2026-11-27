@@ -254,7 +254,7 @@ func TestMuseMCPRuntimeEnvironmentDefaults(t *testing.T) {
 	require.NoError(t, json.Unmarshal(data, &output))
 	require.Equal(t, map[string]string{ghConfigDirEnv: "/explicit/gh", xdgConfigHomeEnv: "${XDG_CONFIG_HOME:-}", xdgDataHomeEnv: "${XDG_DATA_HOME:-}"}, output.Servers["shared-env"].Env)
 	require.Empty(t, output.Servers["claude-env"].Env)
-	require.Equal(t, map[string]string{ghConfigDirEnv: "${GH_CONFIG_DIR:-}", xdgConfigHomeEnv: "${XDG_CONFIG_HOME:-}", xdgDataHomeEnv: "${XDG_DATA_HOME:-}", versiondispatch.EnvDevelopmentBypassVersionDispatch: "${AL_DEV_BYPASS_VERSION_DISPATCH:-}", "AL_DEV_EXECUTABLE": "${AL_DEV_EXECUTABLE:-}", "AL_DISPATCH_ACTIVE": "${AL_DISPATCH_ACTIVE:-0}", "AL_RUN_ID": "${AL_RUN_ID:-}", "AL_RUN_DIR": "${AL_RUN_DIR:-}"}, output.Servers["agent-layer"].Env)
+	require.Equal(t, map[string]string{ghConfigDirEnv: "${GH_CONFIG_DIR:-}", xdgConfigHomeEnv: "${XDG_CONFIG_HOME:-}", xdgDataHomeEnv: "${XDG_DATA_HOME:-}", versiondispatch.EnvDevelopmentBypassVersionDispatch: "${AL_DEV_BYPASS_VERSION_DISPATCH:-}", "AL_DEV_EXECUTABLE": "${AL_DEV_EXECUTABLE:-}", "AL_DISPATCH_ACTIVE": "${AL_DISPATCH_ACTIVE:-0}", "AL_DISPATCH_MAX_DEPTH": "${AL_DISPATCH_MAX_DEPTH:-}", "AL_RUN_ID": "${AL_RUN_ID:-}", "AL_RUN_DIR": "${AL_RUN_DIR:-}"}, output.Servers["agent-layer"].Env)
 	require.NotContains(t, string(data), os.Getenv("XDG_CONFIG_HOME"))
 
 	project.Config.Agents.Muse.Enabled = configBool(false)

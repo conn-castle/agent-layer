@@ -106,7 +106,7 @@ func newDispatchReserveCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			opts := agentdispatch.ReserveOptions{Root: root, Stdout: cmd.OutOrStdout()}
+			opts := agentdispatch.ReserveOptions{Root: root, Stdout: cmd.OutOrStdout(), Env: os.Environ()}
 			// A present but empty --continue (such as an unset shell variable)
 			// must fail instead of allocating a fresh start reservation.
 			if cmd.Flags().Changed("continue") {
@@ -121,6 +121,7 @@ func newDispatchReserveCmd() *cobra.Command {
 
 func newDispatchStartCmd() *cobra.Command {
 	var agent, model, effort, role, skill, prompt, promptFile, reservation string
+	var maxDepth int
 	var mcpConfigs []string
 	cmd := &cobra.Command{
 		Use:          dispatchStartCommand,
@@ -138,6 +139,9 @@ func newDispatchStartCmd() *cobra.Command {
 				MCPConfigs: mcpConfigs,
 				Stdout:     cmd.OutOrStdout(), Stderr: cmd.ErrOrStderr(), Env: os.Environ(),
 			}
+			if cmd.Flags().Changed("max-depth") {
+				opts.MaxDepth = &maxDepth
+			}
 			// A present but empty --reservation (such as an unset shell
 			// variable) must fail as unknown, never fall back to a plain start.
 			if cmd.Flags().Changed("reservation") {
@@ -146,11 +150,15 @@ func newDispatchStartCmd() *cobra.Command {
 			return dispatchCommandError(cmd, agentdispatch.Start(opts))
 		},
 	}
+	cmd.SetFlagErrorFunc(func(cmd *cobra.Command, err error) error {
+		return dispatchCommandError(cmd, &agentdispatch.ExitError{Code: agentdispatch.ExitUsage, Message: err.Error()})
+	})
 	cmd.Flags().StringVar(&agent, "agent", "", messages.DispatchAgentFlag)
 	cmd.Flags().StringVar(&model, "model", "", messages.DispatchModelFlag)
 	cmd.Flags().StringVar(&effort, "reasoning-effort", "", messages.DispatchReasoningEffortFlag)
 	cmd.Flags().StringVar(&role, "role", "", messages.DispatchRoleFlag)
 	cmd.Flags().StringVar(&skill, "skill", "", messages.DispatchSkillFlag)
+	cmd.Flags().IntVar(&maxDepth, "max-depth", 0, messages.DispatchMaxDepthFlag)
 	cmd.Flags().StringVar(&reservation, "reservation", "", messages.DispatchReservationFlag)
 	cmd.Flags().StringArrayVar(&mcpConfigs, "mcp-config", nil, messages.DispatchMCPConfigFlag)
 	addDispatchPromptFlags(cmd, &prompt, &promptFile)
@@ -220,7 +228,7 @@ func newDispatchCancelCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return dispatchCommandError(cmd, agentdispatch.Cancel(agentdispatch.CancelRequest{Root: root, ID: args[0], Stdout: cmd.OutOrStdout()}))
+			return dispatchCommandError(cmd, agentdispatch.Cancel(agentdispatch.CancelRequest{Root: root, ID: args[0], Stdout: cmd.OutOrStdout(), Env: os.Environ()}))
 		},
 	}
 }
