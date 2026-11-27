@@ -866,3 +866,277 @@ func TestACPPermissionHardeningAndToolCallMetadataMerge(t *testing.T) {
 		}
 	})
 }
+
+func TestACPAuthenticateNonInteractiveSelectionAndFailFast(t *testing.T) {
+	t.Run("empty_or_omitted_authMethods_skips_authenticate", func(t *testing.T) {
+		for _, tc := range []struct {
+			name string
+			raw  string
+		}{
+			{"omitted", `{"protocolVersion":1}`},
+			{"null", `{"protocolVersion":1,"authMethods":null}`},
+			{"empty", `{"protocolVersion":1,"authMethods":[]}`},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				clientInR, clientInW := io.Pipe()
+				t.Cleanup(func() {
+					_ = clientInW.Close()
+					_ = clientInR.Close()
+				})
+				writeCalled := make(chan struct{}, 1)
+				go func() {
+					buf := make([]byte, 1)
+					if n, _ := clientInR.Read(buf); n > 0 {
+						writeCalled <- struct{}{}
+					}
+				}()
+				client := &acpClient{
+					stdin:    clientInW,
+					provider: AgentGrok,
+				}
+				if err := client.authenticate(json.RawMessage(tc.raw)); err != nil {
+					t.Fatalf("authenticate(%s) returned error: %v", tc.name, err)
+				}
+				select {
+				case <-writeCalled:
+					t.Fatalf("authenticate(%s) unexpectedly wrote an RPC frame", tc.name)
+				default:
+				}
+			})
+		}
+	})
+
+	t.Run("selects_preferred_non_interactive_method", func(t *testing.T) {
+		for _, tc := range []struct {
+			name        string
+			authMethods []map[string]any
+			wantMethod  string
+		}{
+			{
+				name:        "cached_token_only",
+				authMethods: []map[string]any{{"id": "cached_token"}},
+				wantMethod:  "cached_token",
+			},
+			{
+				name:        "api_key_only",
+				authMethods: []map[string]any{{"id": "api_key"}},
+				wantMethod:  "api_key",
+			},
+			{
+				name: "prefers_cached_token_over_api_key_and_interactive",
+				authMethods: []map[string]any{
+					{"id": "grok.com", "name": "Grok", "description": "Sign in with Grok"},
+					{"id": "api_key", "name": "API Key"},
+					{"id": "cached_token", "name": "Cached Token"},
+				},
+				wantMethod: "cached_token",
+			},
+			{
+				name: "selects_api_key_when_paired_with_interactive",
+				authMethods: []map[string]any{
+					{"id": "grok.com", "name": "Grok", "description": "Sign in with Grok"},
+					{"id": "api_key", "name": "API Key"},
+				},
+				wantMethod: "api_key",
+			},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				clientInR, clientInW := io.Pipe()
+				serverOutR, serverOutW := io.Pipe()
+				frames := make(chan acpIncomingFrame, 8)
+				stopReader := make(chan struct{})
+				readerDone := make(chan struct{})
+				go readACPFrames(serverOutR, io.Discard, frames, stopReader, readerDone)
+				t.Cleanup(func() {
+					_ = clientInW.Close()
+					_ = serverOutW.Close()
+					close(stopReader)
+					<-readerDone
+				})
+
+				gotMethodCh := make(chan string, 1)
+				gotHeadlessCh := make(chan bool, 1)
+				go func() {
+					defer func() { _ = serverOutW.Close() }()
+					dec := json.NewDecoder(clientInR)
+					enc := json.NewEncoder(serverOutW)
+					var msg acpJSONRPCMessage
+					if err := dec.Decode(&msg); err != nil {
+						return
+					}
+					var params struct {
+						MethodID string         `json:"methodId"`
+						Meta     map[string]any `json:"_meta"`
+					}
+					_ = json.Unmarshal(msg.Params, &params)
+					gotMethodCh <- params.MethodID
+					headless, _ := params.Meta["headless"].(bool)
+					gotHeadlessCh <- headless
+					_ = enc.Encode(map[string]any{"jsonrpc": "2.0", "id": msg.ID, "result": map[string]any{}})
+				}()
+
+				initRaw, err := json.Marshal(map[string]any{
+					"protocolVersion": 1,
+					"authMethods":     tc.authMethods,
+				})
+				if err != nil {
+					t.Fatal(err)
+				}
+				client := &acpClient{
+					stdin:    clientInW,
+					frames:   frames,
+					provider: AgentGrok,
+				}
+				if err := client.authenticate(initRaw); err != nil {
+					t.Fatalf("authenticate failed: %v", err)
+				}
+				if got := <-gotMethodCh; got != tc.wantMethod {
+					t.Fatalf("methodId = %q, want %q", got, tc.wantMethod)
+				}
+				if headless := <-gotHeadlessCh; !headless {
+					t.Fatal("expected _meta.headless=true in authenticate params")
+				}
+			})
+		}
+	})
+
+	t.Run("fails_fast_without_sending_authenticate_when_only_interactive_methods_offered", func(t *testing.T) {
+		for _, tc := range []struct {
+			name        string
+			provider    string
+			authMethods []map[string]any
+			wantSubstrs []string
+		}{
+			{
+				name:     "grok_interactive_oauth_only",
+				provider: AgentGrok,
+				authMethods: []map[string]any{
+					{"id": "grok.com", "name": "Grok", "description": "Sign in with Grok"},
+				},
+				wantSubstrs: []string{"not authenticated", "grok.com", "cached_token, api_key", "al grok"},
+			},
+			{
+				name:     "multiple_interactive_methods_deduplicated",
+				provider: AgentAntigravity,
+				authMethods: []map[string]any{
+					{"id": "oauth_browser"},
+					{"id": "device_code"},
+					{"id": "oauth_browser"},
+				},
+				wantSubstrs: []string{"not authenticated", "oauth_browser, device_code", "sign in to the provider CLI"},
+			},
+			{
+				name:     "empty_id_entry",
+				provider: AgentGrok,
+				authMethods: []map[string]any{
+					{"id": "   "},
+				},
+				wantSubstrs: []string{"not authenticated", "none with an id", "al grok"},
+			},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				clientInR, clientInW := io.Pipe()
+				t.Cleanup(func() {
+					_ = clientInW.Close()
+					_ = clientInR.Close()
+				})
+				rpcSent := make(chan string, 1)
+				go func() {
+					var msg acpJSONRPCMessage
+					if err := json.NewDecoder(clientInR).Decode(&msg); err == nil {
+						rpcSent <- msg.Method
+					}
+				}()
+
+				initRaw, err := json.Marshal(map[string]any{
+					"protocolVersion": 1,
+					"authMethods":     tc.authMethods,
+				})
+				if err != nil {
+					t.Fatal(err)
+				}
+				client := &acpClient{
+					stdin:    clientInW,
+					provider: tc.provider,
+				}
+				err = client.authenticate(initRaw)
+				if err == nil {
+					t.Fatal("expected authentication error, got nil")
+				}
+				for _, substr := range tc.wantSubstrs {
+					if !strings.Contains(err.Error(), substr) {
+						t.Errorf("error %q missing expected substring %q", err.Error(), substr)
+					}
+				}
+				select {
+				case method := <-rpcSent:
+					t.Fatalf("unexpected RPC %q sent for interactive-only authMethods", method)
+				default:
+				}
+			})
+		}
+	})
+
+	t.Run("runACPDispatch_fails_fast_on_grok_interactive_only_authMethods", func(t *testing.T) {
+		root := t.TempDir()
+		run, err := newDispatchRun(root, AgentGrok, supportedProviderVersions[AgentGrok], dispatchModeFresh)
+		if err != nil {
+			t.Fatal(err)
+		}
+		clientInR, clientInW := io.Pipe()
+		serverOutR, serverOutW := io.Pipe()
+		var observedMethods []string
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			defer func() { _ = serverOutW.Close() }()
+			dec := json.NewDecoder(clientInR)
+			enc := json.NewEncoder(serverOutW)
+			for {
+				var msg acpJSONRPCMessage
+				if decErr := dec.Decode(&msg); decErr != nil {
+					return
+				}
+				if msg.Method == "" {
+					continue
+				}
+				observedMethods = append(observedMethods, msg.Method)
+				if msg.Method == acpMethodInitialize {
+					_ = enc.Encode(map[string]any{
+						"jsonrpc": "2.0",
+						"id":      msg.ID,
+						"result": map[string]any{
+							"protocolVersion": 1,
+							"authMethods": []map[string]any{
+								{"id": "grok.com", "name": "Grok", "description": "Sign in with Grok"},
+							},
+						},
+					})
+				}
+			}
+		}()
+
+		err = runACPDispatch(clientInW, serverOutR, io.Discard, providerCommand{
+			Provider: AgentGrok,
+			RunMode:  dispatchModeFresh,
+			UseACP:   true,
+			ACP: &acpLaunchConfig{
+				WorkDir:       root,
+				ApprovalsMode: config.ApprovalModeNone,
+				Authenticate:  true,
+			},
+		}, []byte("hi"), root, run, func(providerEvent) error { return nil })
+		<-done
+		if err == nil {
+			t.Fatal("expected runACPDispatch to fail when only grok.com auth is offered")
+		}
+		for _, substr := range []string{"grok ACP authenticate failed", "not authenticated", "grok.com", "al grok"} {
+			if !strings.Contains(err.Error(), substr) {
+				t.Errorf("error %q missing expected substring %q", err.Error(), substr)
+			}
+		}
+		if strings.Join(observedMethods, ",") != acpMethodInitialize {
+			t.Fatalf("observed RPC methods = %v, want only [%s]", observedMethods, acpMethodInitialize)
+		}
+	})
+}
