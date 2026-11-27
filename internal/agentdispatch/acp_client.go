@@ -32,6 +32,7 @@ const (
 	acpStopReasonEndTurn      = "end_turn"
 	acpMethodInitialize       = "initialize"
 	acpMethodAuthenticate     = "authenticate"
+	acpRPCAuthRequired        = -32000
 	acpMethodSessionNew       = "session/new"
 	acpMethodSessionResume    = "session/resume"
 	acpMethodSessionSetModel  = "session/set_model"
@@ -84,6 +85,12 @@ func (e *acpRPCError) Error() string {
 	}
 	return e.Message
 }
+
+// acpConfigError identifies configuration failures detected by the ACP adapter.
+// Its wrapped ExitError also exposes the exit code to callers of the adapter.
+type acpConfigError struct{ *ExitError }
+
+func (e *acpConfigError) Unwrap() error { return e.ExitError }
 
 type acpIncomingFrame struct {
 	msg acpJSONRPCMessage
@@ -156,7 +163,10 @@ func runACPDispatch(
 	consume func(providerEvent) error,
 ) error {
 	if command.ACP == nil {
-		return exitError(ExitConfig, "ACP dispatch command missing ACP configuration")
+		return &acpConfigError{exitError(ExitConfig, "ACP dispatch command missing ACP configuration")}
+	}
+	if command.RunMode == dispatchModeResume && command.SessionID == "" {
+		return &acpConfigError{exitError(ExitConfig, fmt.Sprintf("%s ACP resume requires a provider session ID", command.Provider))}
 	}
 	frames := make(chan acpIncomingFrame, 64)
 	stopReader := make(chan struct{})
@@ -492,23 +502,13 @@ func matchRPCID(raw json.RawMessage, want int64) bool {
 
 var acpNonInteractiveAuthMethods = []string{"cached_token", "api_key", "xai.api_key"}
 
-type acpAuthConfigError struct {
-	cause      error
-	signInHint string
-}
-
-func (e *acpAuthConfigError) Error() string {
-	return fmt.Sprintf("%s. Before dispatching, %s", e.cause, e.signInHint)
-}
-
-func (e *acpAuthConfigError) Unwrap() error { return e.cause }
-
 func (c *acpClient) authConfigError(cause error) error {
 	hint := "sign in to the provider CLI or configure non-interactive credentials"
 	if c.provider == AgentGrok {
 		hint = "sign in using `al grok` or configure non-interactive credentials"
 	}
-	return &acpAuthConfigError{cause: cause, signInHint: hint}
+	message := fmt.Sprintf("%s. Before dispatching, %s", cause, hint)
+	return &acpConfigError{wrapExitError(ExitConfig, message, cause)}
 }
 
 func (c *acpClient) authenticate(initResult json.RawMessage) error {
@@ -564,7 +564,7 @@ func (c *acpClient) authenticate(initResult json.RawMessage) error {
 		"_meta":    map[string]any{"headless": true},
 	}, acpHandshakeTimeout)
 	var rpcErr *acpRPCError
-	if errors.As(err, &rpcErr) {
+	if errors.As(err, &rpcErr) && rpcErr.Code == acpRPCAuthRequired {
 		return c.authConfigError(fmt.Errorf("authentication method %q rejected: %w", methodID, err))
 	}
 	return err
@@ -576,9 +576,6 @@ func (c *acpClient) openSession(command providerCommand) (string, error) {
 		mcpSpecs = []acpMCPServerSpec{}
 	}
 	if command.RunMode == dispatchModeResume {
-		if command.SessionID == "" {
-			return "", exitError(ExitConfig, fmt.Sprintf("%s ACP resume requires a provider session ID", command.Provider))
-		}
 		raw, err := c.call(acpMethodSessionResume, map[string]any{
 			jsonSessionIDCamelKey: command.SessionID,
 			"cwd":                 c.cfg.WorkDir,

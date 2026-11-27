@@ -1054,10 +1054,7 @@ func TestACPAuthenticateNonInteractiveSelectionAndFailFast(t *testing.T) {
 				if stdin.Len() != 0 {
 					t.Fatalf("unexpected RPC for unsupported authMethods: %s", stdin.String())
 				}
-				var authErr *acpAuthConfigError
-				if !errors.As(err, &authErr) {
-					t.Fatalf("expected ACP authentication configuration error, got %v", err)
-				}
+				requireDispatchExitCode(t, err, ExitConfig)
 				for _, substr := range tc.wantSubstrs {
 					if !strings.Contains(err.Error(), substr) {
 						t.Errorf("error %q missing expected substring %q", err.Error(), substr)
@@ -1094,6 +1091,14 @@ func TestACPGrokDispatchAuthenticationFailures(t *testing.T) {
 			wantSignIn:    true,
 			wantRPCs:      []string{acpMethodInitialize, acpMethodAuthenticate},
 			wantErrorText: `authentication method "xai.api_key" rejected: ACP error -32000: Authentication required`,
+		},
+		{
+			name:          "rpc_internal_error",
+			authMethods:   `[{"id":"cached_token"}]`,
+			authResponse:  `{"jsonrpc":"2.0","id":2,"error":{"code":-32603,"message":"Internal error"}}`,
+			wantCode:      ExitTargetFailure,
+			wantRPCs:      []string{acpMethodInitialize, acpMethodAuthenticate},
+			wantErrorText: "ACP error -32603: Internal error",
 		},
 		{
 			name:          "transport_closed",
@@ -1172,15 +1177,43 @@ done
 	}
 }
 
-func TestACPDispatchKeepsNonAuthPersistenceFailureAsTargetFailure(t *testing.T) {
-	root := t.TempDir()
-	run, err := newDispatchRun(root, AgentGrok, supportedProviderVersions[AgentGrok], dispatchModeFresh)
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, err = executeProvider(providerCommand{
-		Path: "/bin/sh",
-		Args: []string{"-c", `
+func TestACPDispatchConfigurationAndPersistenceExitCodes(t *testing.T) {
+	for _, tc := range []struct {
+		name          string
+		runMode       string
+		omitConfig    bool
+		wantCode      int
+		wantErrorText string
+	}{
+		{
+			name:          "missing_acp_configuration",
+			runMode:       dispatchModeFresh,
+			omitConfig:    true,
+			wantCode:      ExitConfig,
+			wantErrorText: "ACP dispatch command missing ACP configuration",
+		},
+		{
+			name:          "resume_without_session_id",
+			runMode:       dispatchModeResume,
+			wantCode:      ExitConfig,
+			wantErrorText: "grok ACP resume requires a provider session ID",
+		},
+		{
+			name:          "persistence_failure",
+			runMode:       dispatchModeFresh,
+			wantCode:      ExitTargetFailure,
+			wantErrorText: "dispatch run no longer owns the conversation",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root := t.TempDir()
+			run, err := newDispatchRun(root, AgentGrok, supportedProviderVersions[AgentGrok], tc.runMode)
+			if err != nil {
+				t.Fatal(err)
+			}
+			command := providerCommand{
+				Path: "/bin/sh",
+				Args: []string{"-c", `
 while IFS= read -r line; do
   case "$line" in
     *'"method":"initialize"'*)
@@ -1193,15 +1226,21 @@ while IFS= read -r line; do
   esac
 done
 `},
-		Provider: AgentGrok,
-		RunMode:  dispatchModeFresh,
-		UseACP:   true,
-		ACP:      &acpLaunchConfig{WorkDir: root, Authenticate: true},
-	}, nil, run, root, nil, func(string) error {
-		return exitError(ExitUnavailable, "dispatch run no longer owns the conversation")
-	})
-	requireDispatchExitCode(t, err, ExitTargetFailure)
-	if !strings.Contains(err.Error(), "dispatch run no longer owns the conversation") {
-		t.Fatalf("expected persistence failure, got %v", err)
+				Provider: AgentGrok,
+				RunMode:  tc.runMode,
+				UseACP:   true,
+				ACP:      &acpLaunchConfig{WorkDir: root, Authenticate: true},
+			}
+			if tc.omitConfig {
+				command.ACP = nil
+			}
+			_, err = executeProvider(command, nil, run, root, nil, func(string) error {
+				return exitError(ExitUnavailable, "dispatch run no longer owns the conversation")
+			})
+			requireDispatchExitCode(t, err, tc.wantCode)
+			if !strings.Contains(err.Error(), tc.wantErrorText) {
+				t.Fatalf("error %q missing expected substring %q", err, tc.wantErrorText)
+			}
+		})
 	}
 }
