@@ -327,6 +327,8 @@ else:
 	for _, required := range []string{
 		"ANTIGRAVITY_LINUX_AMD64_SHA512", "GROK_LINUX_AMD64_SHA256", "network_allowlist", "_bounded_provider_capture", "uuid.uuid4()",
 		`grok_home = f"{REMOTE_WORKSPACE}/.grok-config"`, "--trust", "antigravity-mcp-preflight.json", "grok-mcp-preflight.json",
+		`PINNED_VERSION = "` + AntigravityClientVersion + `"`,
+		`PINNED_VERSION = "` + GrokClientVersion + `"`,
 	} {
 		if !strings.Contains(contents, required) {
 			t.Fatalf("adapter omitted pinned/runtime contract %q", required)

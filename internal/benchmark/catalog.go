@@ -17,8 +17,8 @@ const (
 	// These are the Linux client releases the benchmark adapters are written
 	// and fixture-tested against.  They are part of a new-provider identity;
 	// do not change the legacy Codex or Claude identity fields above.
-	AntigravityClientVersion = "1.1.21"
-	GrokClientVersion        = "1.0.5"
+	AntigravityClientVersion = "1.5.18"
+	GrokClientVersion        = "1.0.25"
 	ReportSchemaVersion      = "benchmark-report-v5"
 	StorageSchemaVersion     = "benchmark-store-v1"
 	TreatmentSchemaVersion   = "benchmark-treatment-v2"

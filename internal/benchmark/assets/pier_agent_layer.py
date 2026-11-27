@@ -64,20 +64,20 @@ PROJECTED_PATHS = (
 )
 
 # These URLs are immutable, versioned Linux/amd64 artifacts.  The Antigravity
-# digest is published in the vendor manifest for 1.1.21.  xAI's installer
+# digest is published in the vendor manifest for 1.5.18.  xAI's installer
 # publishes the immutable Grok artifact URL but no SHA-256 sidecar; the pinned
-# digest below is the SHA-256 recorded from that vendor object on 2026-08-26.
+# digest below is the SHA-256 recorded from that vendor object on 2026-11-27.
 # Do not replace either with a channel/latest installer.
 ANTIGRAVITY_LINUX_AMD64_URL = (
     "https://storage.googleapis.com/antigravity-public/antigravity-cli/"
-    "1.1.21-6424454201475072/linux-x64/cli_linux_x64.tar.gz"
+    "1.5.18-6386224290725888/linux-x64/cli_linux_x64.tar.gz"
 )
 ANTIGRAVITY_LINUX_AMD64_SHA512 = (
-    "3de7552ef089c136c0f570cdc9c04652278e02c1d41ed3911ad5f9f1b8c3bd"
-    "567643aa401a1916060ea32a1b17fbaf90cbb417071db33f467880fcd848868d92"
+    "ef379ec869719112f696e8c7cfddf776618712e58fc38e53df80801d6528abb4"
+    "677782c7c8778f9c09c9123fa44c2c32675d228c06f2a8f7a8f4214e75f5bb26"
 )
-GROK_LINUX_AMD64_URL = "https://storage.googleapis.com/grok-build-public-artifacts/cli/grok-1.0.5-linux-x86_64"
-GROK_LINUX_AMD64_SHA256 = "9ba87444e1819e8f6104adbbf4676a870c204380aa5c3e1c38a926c4ea677238"
+GROK_LINUX_AMD64_URL = "https://storage.googleapis.com/grok-build-public-artifacts/cli/grok-1.0.25-linux-x86_64"
+GROK_LINUX_AMD64_SHA256 = "a46d17bcd602c46135b5be2da69a081447f8c514c5ea733c5be1265bcfb62b80"
 STREAM_BYTE_CAP = 16 * 1024 * 1024
 ANTIGRAVITY_PROMPT_BYTE_CAP = 100 * 1024
 
@@ -836,7 +836,7 @@ class _AgentLayerTreatment:
                     ),
                 )
             elif self._treatment_agent == "antigravity":
-                # agy 1.1.21's `mcp list` ignores --gemini_dir and therefore
+                # agy 1.5.18's `mcp list` ignores --gemini_dir and therefore
                 # cannot inspect the contained home. Validate the exact file
                 # that agy migrates on first launch; the protocol preflight
                 # below separately starts the configured server.
@@ -1222,7 +1222,7 @@ class _AgentLayerStreamAgent(_AgentLayerTreatment, BaseInstalledAgent):
                 "install -m 0755 \"$payload\" /usr/local/bin/grok",
             )
             checksum_algorithm = "sha256"
-            checksum_provenance = "sha256 recorded from immutable xAI versioned artifact on 2026-08-26"
+            checksum_provenance = "sha256 recorded from immutable xAI versioned artifact on 2026-11-27"
         else:
             raise RuntimeError(f"unsupported pinned stream agent binary {self.BINARY!r}")
         # The install step reaches only the one static storage.googleapis.com
@@ -1335,7 +1335,7 @@ class _AgentLayerStreamAgent(_AgentLayerTreatment, BaseInstalledAgent):
 
 class AgentLayerAntigravity(_AgentLayerStreamAgent):
     BINARY = "agy"
-    PINNED_VERSION = "1.1.21"
+    PINNED_VERSION = "1.5.18"
     OUTPUT_NAME = "antigravity.jsonl"
 
     @staticmethod
@@ -1413,7 +1413,7 @@ with open(path, "w", encoding="utf-8") as stream:
 
 class AgentLayerGrok(_AgentLayerStreamAgent):
     BINARY = "grok"
-    PINNED_VERSION = "1.0.5"
+    PINNED_VERSION = "1.0.25"
     OUTPUT_NAME = "grok.jsonl"
     # Pier already runs the agent in a disposable task container. Grok's
     # built-in devbox profile is designed for that boundary and, unlike the
