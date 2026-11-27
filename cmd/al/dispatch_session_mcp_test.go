@@ -79,6 +79,20 @@ func TestDispatchCLISessionMCPValidationAndOptions(t *testing.T) {
 	}
 }
 
+func sessionMCPRuntimeDirForTest(t *testing.T, runDir string) string {
+	t.Helper()
+	canonicalTmp, err := filepath.EvalSymlinks("/tmp")
+	if err != nil || canonicalTmp == "" {
+		canonicalTmp = "/tmp"
+	}
+	canonicalRunDir, err := filepath.EvalSymlinks(runDir)
+	if err != nil {
+		t.Fatalf("resolve run dir %q: %v", runDir, err)
+	}
+	runKeySum := sha256.Sum256([]byte(filepath.Clean(canonicalRunDir)))
+	return filepath.Join(canonicalTmp, "agent-layer-dispatch-"+strconv.Itoa(os.Getuid()), "runs", hex.EncodeToString(runKeySum[:16]))
+}
+
 func TestDispatchSessionMCPWrapperEndToEndWithBuiltBinary(t *testing.T) {
 	tmp := t.TempDir()
 	alBin := filepath.Join(tmp, "al")
@@ -86,6 +100,19 @@ func TestDispatchSessionMCPWrapperEndToEndWithBuiltBinary(t *testing.T) {
 	if out, err := build.CombinedOutput(); err != nil {
 		t.Fatalf("build al binary: %v\n%s", err, out)
 	}
+
+	// Isolate os.UserCacheDir (XDG_CACHE_HOME on Linux, HOME/Library/Caches on
+	// macOS) after `go build` so durable session MCP specs are cleaned up with
+	// t.TempDir() instead of accumulating in the user's cache directory.
+	testHome := filepath.Join(tmp, "home")
+	testCache := filepath.Join(tmp, "cache")
+	for _, dir := range []string{testHome, testCache} {
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Setenv("HOME", testHome)
+	t.Setenv("XDG_CACHE_HOME", testCache)
 
 	// Create a fake stdio MCP server inside customBin (not on PATH) that records
 	// cwd, env, and argv then exits 0.
@@ -131,6 +158,9 @@ func TestDispatchSessionMCPWrapperEndToEndWithBuiltBinary(t *testing.T) {
 	}
 	specSum := sha256.Sum256(specBytes)
 	specDigest := hex.EncodeToString(specSum[:])
+
+	runRTDir := sessionMCPRuntimeDirForTest(t, runDir)
+	t.Cleanup(func() { _ = os.RemoveAll(runRTDir) })
 
 	run := exec.Command(alBin, "__dispatch-session-mcp", "--run-dir", runDir, "--server", "wf", "--spec", specPath, "--digest", specDigest)
 	run.Dir = tmp
@@ -207,16 +237,7 @@ func TestDispatchSessionMCPWrapperEndToEndWithBuiltBinary(t *testing.T) {
 	hsDigest := hex.EncodeToString(hsSum[:])
 
 	// Compute the canonical private runtime directory under /tmp (independent of TMPDIR).
-	canonicalTmp, err := filepath.EvalSymlinks("/tmp")
-	if err != nil || canonicalTmp == "" {
-		canonicalTmp = "/tmp"
-	}
-	canonicalHSRunDir, err := filepath.EvalSymlinks(hsRunDir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	runKeySum := sha256.Sum256([]byte(filepath.Clean(canonicalHSRunDir)))
-	hsRTDir := filepath.Join(canonicalTmp, "agent-layer-dispatch-"+strconv.Itoa(os.Getuid()), "runs", hex.EncodeToString(runKeySum[:16]))
+	hsRTDir := sessionMCPRuntimeDirForTest(t, hsRunDir)
 	t.Cleanup(func() { _ = os.RemoveAll(hsRTDir) })
 
 	hsTmp := filepath.Join(tmp, "hs-tmp")
@@ -334,6 +355,19 @@ func TestDispatchSessionMCPFullLifecycleParallelAndCancel(t *testing.T) {
 	if out, err := build.CombinedOutput(); err != nil {
 		t.Fatalf("build al binary: %v\n%s", err, out)
 	}
+
+	// Isolate os.UserCacheDir (XDG_CACHE_HOME on Linux, HOME/Library/Caches on
+	// macOS) after `go build` so durable session MCP specs are cleaned up with
+	// t.TempDir() instead of accumulating in the user's cache directory.
+	testHome := filepath.Join(tmp, "home")
+	testCache := filepath.Join(tmp, "cache")
+	for _, dir := range []string{testHome, testCache} {
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Setenv("HOME", testHome)
+	t.Setenv("XDG_CACHE_HOME", testCache)
 
 	root := newReservationTestRepo(t, "")
 	fakeBin := filepath.Join(tmp, "fake-bin")
@@ -598,10 +632,10 @@ printf '{"type":"turn.completed"}\n'
 	}
 	resA := mustJSON(outA, "parallel-a")
 	resB := mustJSON(outB, "parallel-b")
-	if out, stderr, code = runAl("dispatch", "wait", resA.Handle); code != 0 {
+	if out, stderr, code = runAl("dispatch", "wait", "--condition", "termination_confirmed", resA.Handle); code != 0 {
 		t.Fatalf("wait parallel-a failed (%d): %s %s", code, out, stderr)
 	}
-	if out, stderr, code = runAl("dispatch", "wait", resB.Handle); code != 0 {
+	if out, stderr, code = runAl("dispatch", "wait", "--condition", "termination_confirmed", resB.Handle); code != 0 {
 		t.Fatalf("wait parallel-b failed (%d): %s %s", code, out, stderr)
 	}
 	dataA, err := os.ReadFile(obsParA) // #nosec G304 -- test observation log.

@@ -30,6 +30,17 @@ func writeMCPConfigFile(t *testing.T, dir string, name string, content string) s
 	return path
 }
 
+// isolateSessionMCPCacheDir redirects os.UserCacheDir (XDG_CACHE_HOME on Linux,
+// HOME/Library/Caches on macOS) into a test-owned temporary directory so tests
+// never leave durable session MCP specs or Muse grants in the user's cache dir.
+func isolateSessionMCPCacheDir(t *testing.T) string {
+	t.Helper()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CACHE_HOME", filepath.Join(home, "cache"))
+	return home
+}
+
 func supportedVersionsLookup(_ string, agent string) (string, error) {
 	return supportedProviderVersions[agent], nil
 }
@@ -250,6 +261,7 @@ func TestBuildProviderCommandSessionMCPDeliveryAcrossApprovalsModes(t *testing.T
 			if err != nil {
 				t.Fatal(err)
 			}
+			t.Cleanup(func() { _ = removeSessionMCPRuntimeDir(claudeRun.Dir) })
 			claudeCmd, err := buildProviderCommandForSession(claudeTarget, project, root, nil, []byte("hi"), "", "", false, dispatchMode, runtimeSessionID, servers, claudeRun, io.Discard)
 			if err != nil {
 				t.Fatalf("claude %s/%s: %v", mode, dispatchMode, err)
@@ -258,7 +270,6 @@ func TestBuildProviderCommandSessionMCPDeliveryAcrossApprovalsModes(t *testing.T
 			if err != nil {
 				t.Fatal(err)
 			}
-			t.Cleanup(func() { _ = removeSessionMCPRuntimeDir(claudeRun.Dir) })
 			wantMCPFile := filepath.Join(claudeRTDir, sessionMCPClaudeFile)
 			if !argPairPresent(claudeCmd.Args, "--mcp-config", wantMCPFile) {
 				t.Errorf("claude %s/%s missing --mcp-config %s in %v", mode, dispatchMode, wantMCPFile, claudeCmd.Args)
@@ -299,6 +310,7 @@ func TestBuildProviderCommandSessionMCPDeliveryAcrossApprovalsModes(t *testing.T
 			if err != nil {
 				t.Fatal(err)
 			}
+			t.Cleanup(func() { _ = removeSessionMCPRuntimeDir(codexRun.Dir) })
 			codexCmd, err := buildProviderCommandForSession(codexTarget, project, root, nil, []byte("hi"), "", "", false, dispatchMode, runtimeSessionID, servers, codexRun, io.Discard)
 			if err != nil {
 				t.Fatalf("codex %s/%s: %v", mode, dispatchMode, err)
@@ -337,6 +349,7 @@ func TestBuildProviderCommandSessionMCPDeliveryAcrossApprovalsModes(t *testing.T
 			if err != nil {
 				t.Fatal(err)
 			}
+			t.Cleanup(func() { _ = removeSessionMCPRuntimeDir(museRun.Dir) })
 			museCmd, err := buildProviderCommandForSession(museTarget, project, root, nil, []byte("hi"), "", "", false, dispatchMode, runtimeSessionID, servers, museRun, io.Discard)
 			if err != nil {
 				t.Fatalf("muse %s/%s: %v", mode, dispatchMode, err)
@@ -366,6 +379,7 @@ func TestBuildProviderCommandSessionMCPDeliveryAcrossApprovalsModes(t *testing.T
 				if err != nil {
 					t.Fatal(err)
 				}
+				t.Cleanup(func() { _ = removeSessionMCPRuntimeDir(acpRun.Dir) })
 				acpCmd, err := buildProviderCommandForSession(acpTarget, project, root, nil, []byte("hi"), "", "", false, dispatchMode, runtimeSessionID, servers, acpRun, io.Discard)
 				if err != nil {
 					t.Fatalf("%s %s/%s: %v", acpAgent, mode, dispatchMode, err)
@@ -491,6 +505,7 @@ func TestClaudeSessionMCPNoSilentDegradation(t *testing.T) {
 }
 
 func TestStartReservationAndContinuePersistSessionMCPServers(t *testing.T) {
+	isolateSessionMCPCacheDir(t)
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	cfgDir := t.TempDir()
 	mcpCfg := writeMCPConfigFile(t, cfgDir, "wf.json", `{
@@ -697,6 +712,7 @@ func TestRunSessionMCPServerEnvWorkDirAndClosedFence(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { _ = removeSessionMCPRuntimeDir(runDir) })
 	t.Cleanup(func() { _ = removeSessionMCPArtifacts(runDir) })
 
 	origExec := sessionMCPExec
@@ -755,7 +771,6 @@ func TestRunSessionMCPServerEnvWorkDirAndClosedFence(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = removeSessionMCPRuntimeDir(runDir) })
 	doc, err := readSessionMCPProcsLocked(rtDir)
 	if err != nil || len(doc.Processes) != 1 || doc.Processes[0].Server != "wf" || doc.Processes[0].PID != os.Getpid() {
 		t.Fatalf("recorded session MCP processes = %#v err=%v", doc, err)
@@ -879,6 +894,7 @@ func TestTerminationConfirmedWaitsForTrackedSessionMCPProcesses(t *testing.T) {
 }
 
 func TestMuseExecuteDispatchWritesAndCleansSessionMCPGrant(t *testing.T) {
+	isolateSessionMCPCacheDir(t)
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	cfgPath := filepath.Join(root, ".agent-layer", "config.toml")
 	rawCfg, err := os.ReadFile(cfgPath) // #nosec G304 -- test repository config.toml.
@@ -1206,5 +1222,57 @@ func TestCancelTerminatesSurvivingSessionMCPFromRunningState(t *testing.T) {
 	}
 	if res.State != dispatchStateCancelled || !res.TerminationConfirmed {
 		t.Fatalf("expected cancelled + termination_confirmed=true, got %+v", res)
+	}
+}
+
+func TestSessionMCPTestsIsolateRuntimeAndCacheRoots(t *testing.T) {
+	home := isolateSessionMCPCacheDir(t)
+	defaultRoot := defaultSessionMCPRuntimeRoot()
+	if got := sessionMCPRuntimeRoot(); got == defaultRoot {
+		t.Fatalf("TestMain did not isolate sessionMCPRuntimeRoot() away from %q", defaultRoot)
+	}
+	// Production runtime root must remain anchored under canonical /tmp independent of TMPDIR.
+	t.Setenv("TMPDIR", t.TempDir())
+	if got := defaultSessionMCPRuntimeRoot(); got != defaultRoot {
+		t.Fatalf("defaultSessionMCPRuntimeRoot() changed under TMPDIR override: got %q, want %q", got, defaultRoot)
+	}
+
+	root := writeDispatchRepo(t, dispatchRepoConfig{})
+	storeDir, err := sessionMCPDurableStoreDir(root)
+	if err != nil {
+		t.Fatalf("sessionMCPDurableStoreDir: %v", err)
+	}
+	if !pathWithinDir(storeDir, home) {
+		t.Fatalf("durable store dir %q was not isolated inside test home %q", storeDir, home)
+	}
+
+	origExec := sessionMCPExecutable
+	sessionMCPExecutable = func() (string, error) { return "/opt/al-test", nil }
+	t.Cleanup(func() { sessionMCPExecutable = origExec })
+
+	project := loadApprovalsTestProject(t, root)
+	codexTarget, _ := lookupTarget(AgentCodex)
+	run, err := newDispatchRun(root, AgentCodex, supportedProviderVersions[AgentCodex], dispatchModeFresh)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rtDir, err := sessionMCPRuntimeDirPath(run.Dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pathWithinDir(rtDir, defaultRoot) {
+		t.Fatalf("test runtime dir %q resolved inside production root %q", rtDir, defaultRoot)
+	}
+	if _, err := buildProviderCommandForSession(codexTarget, project, root, nil, []byte("hi"), "", "", false, dispatchModeFresh, runtimeSessionID, []SessionMCPServer{{Name: "wf", Command: "/bin/wf"}}, run, io.Discard); err != nil {
+		t.Fatalf("buildProviderCommandForSession: %v", err)
+	}
+	if _, err := os.Stat(rtDir); err != nil {
+		t.Fatalf("expected staged runtime dir %q to exist: %v", rtDir, err)
+	}
+	if err := removeSessionMCPRuntimeDir(run.Dir); err != nil {
+		t.Fatalf("removeSessionMCPRuntimeDir: %v", err)
+	}
+	if _, err := os.Stat(rtDir); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("runtime dir %q still exists after cleanup: %v", rtDir, err)
 	}
 }
