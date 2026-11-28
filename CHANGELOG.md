@@ -3,14 +3,30 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+## v1.5.0 - 2026-11-28
+
 ### Added
-- `al dispatch start` accepts an optional positive integer `--max-depth <N>` flag (and MCP `dispatch_start` accepts optional `max_depth`) to apply a tighten-only nested dispatch depth cap for a conversation and its descendants. When set or inherited, the explicit cap persists on the conversation record across continuations and reservations (without being permanently overwritten by temporary repository `dispatch.max_depth` drops), and each launched worker receives the repo-clamped effective cap via `AL_DISPATCH_MAX_DEPTH` so it propagates across children and repositories (older binaries that strictly decode session mappings cannot read sessions that persist `max_depth`); omitting it preserves existing repo-local `dispatch.max_depth` behavior without writing `max_depth` to `session.json`. Once a worker reaches its effective depth cap (from `--max-depth`, `AL_DISPATCH_MAX_DEPTH`, or the repository's `dispatch.max_depth`), all state-changing CLI operations (`reserve`, `start`, `continue`, `cancel`) fail immediately with exit `75` (`ExitNested`) and the corresponding MCP tools (`dispatch_start`, `dispatch_continue`, `dispatch_cancel`) return a tool error without mutating state, while read-only operations (`options`, `wait`, `inspect`, `output`, `quota`) and tool definitions remain unchanged (#576).
+- Attach conversation-scoped stdio MCP servers to any of the five dispatch providers with repeatable `al dispatch start --mcp-config <path>` flags. Continuations reattach the same servers from private storage (#563).
+- Reserve the next turn with `al dispatch reserve --continue <handle>` and launch it at most once with `al dispatch continue --reservation <invocation-id>`. Retrying a claimed reservation cannot launch a duplicate turn (#565).
+- `al dispatch quota` reports current subscription usage and available model admission information for Codex, Claude, Antigravity, Grok, and Muse using the project's selected sign-ins (#575).
+- Tighten the nested dispatch depth for a conversation and its descendants with `al dispatch start --max-depth <N>` or MCP `dispatch_start` with `max_depth`. Requested and inherited caps persist through continuations, and the effective cap propagates across repositories. At the cap, mutating dispatch commands fail with exit 75 and read-only commands remain available (#576).
 
 ### Changed
-- Benchmarks pin Antigravity 1.5.18 and Grok 1.0.25. The shared Pier adapter update changes the identity of every existing benchmark study and arm, including Codex and Claude. A normal `al benchmark run` can execute those cells again and incur provider charges. Use `--recover-only` to regenerate compatible completed reports or finalize evidence-backed terminal test timeouts without paid calls (#567).
+- Antigravity and Grok dispatch now use the providers' ACP stdio interfaces to start and resume conversations (#566).
+- `needs review` for benchmark users who resume existing studies. The shared Pier adapter update and the new Antigravity 1.5.18 and Grok 1.0.25 pins change the identity of every existing benchmark study and arm, including Codex and Claude. A normal `al benchmark run` can execute those cells again and incur provider charges. Use `--recover-only` to regenerate compatible completed reports or finalize evidence-backed terminal test timeouts without paid calls (#567).
 
 ### Fixed
-- Session-scoped MCP startup verification for ACP providers (`grok` and `antigravity`) is now protocol-agnostic and switches both stdio streams to raw passthrough immediately after the first successful JSON-RPC 2.0 startup exchange. This fixes compatibility with MCP `2026-07-28` (`server/discover`) client/server pairs such as Antigravity 1.5.18 with the Python MCP 2.x SDK, treats valid JSON-RPC `-32601` (`Method not found`) startup responses as non-fatal version-negotiation probes, and removes post-startup frame-size limits on large MCP payloads. ACP startup readiness confirms the first successful JSON-RPC startup round-trip rather than validating method-specific `initialize` and `tools/list` response schemas.
+- ACP dispatch fails promptly with sign-in guidance when the provider offers only interactive authentication (#571).
+- ACP session MCP startup accepts the first successful JSON-RPC round trip, tolerates method-not-found responses during version negotiation, and then relays raw stdio. This supports MCP `2026-07-28` discovery and removes the relay's frame-size limit after startup (#579).
+
+### Security
+- Update the transitive `golang.org/x/crypto` dependency to v0.59.0. The release preflight flagged the previous version for GO-2026-5932, GO-2026-6354, and GO-2026-6355.
+
+### Upgrade notes
+- `breaking/manual` for dispatch users with older provider CLIs. Dispatch rejects Antigravity below 1.5.1 and Grok below 1.0.25. Update each affected provider before upgrading Agent Layer. Live probes for this release used Antigravity 1.5.18 and Grok 1.0.25. `al doctor` also warns on Grok versions below 1.0.25.
+- Reconnect existing Agent Layer MCP servers after upgrading to load the new dispatch behavior.
+- `needs review` before downgrading Agent Layer. Use v1.5.0 or newer to read conversations that persist a depth cap or session-scoped MCP metadata. Older binaries with strict session decoders can reject those records.
+- `needs review` when upgrading across earlier release lines. For upgrades from before v1.3.0, review the Muse receipt guidance. For upgrades from before v1.2.0, move hand-added Antigravity grants into `.agent-layer/commands.allow` before upgrading. See the migration table in the upgrade guide.
 
 ## v1.4.0 - 2026-11-25
 
