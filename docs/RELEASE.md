@@ -267,12 +267,13 @@ a failure for that provider. Do not change credentials, sign-ins, or
 configuration to make a probe pass.
 
 Antigravity's live evidence must include a structured conversation ID, final
-answer, and usage. With ACP, verify the session ID in the session response and
-answer chunks, then verify a successful terminal `session/prompt` response
-with usage and a retained answer matching the structured chunks. Any
-conversation ID in provider diagnostics must match the structured ID. Missing
-or inconsistent structured terminal evidence fails the probe. Plain provider
-output cannot substitute for it.
+answer, and usage. For a fresh ACP turn, take the ID from the `session/new`
+response. For a continued turn, use the ID requested by `session/resume` and
+check any ID the response echoes. Verify the answer chunks belong to that
+session and match the retained answer. Verify a successful terminal
+`session/prompt` response with usage. Any conversation ID in provider
+diagnostics must match the structured ID. Missing or inconsistent structured
+terminal evidence fails the probe. Plain provider output cannot substitute for it.
 
 ## GitHub release (automatic)
 1. Tag push triggers the release workflow.

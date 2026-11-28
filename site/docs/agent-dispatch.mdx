@@ -66,6 +66,7 @@ Start independent conversations for parallel work. When a completed specialist n
 - [How dispatch works](#how-dispatch-works)
 - [MCP tools](#mcp-tools)
 - [CLI commands](#cli-commands)
+- [Session-scoped MCP servers](#session-scoped-mcp-servers)
 - [Subscription quota](#subscription-quota)
 - [Conversation lifecycle](#conversation-lifecycle)
 - [Results and errors](#results-and-errors)
@@ -161,6 +162,7 @@ The CLI exposes the same backend for people and scripts:
 ```bash
 al dispatch options
 al dispatch quota --agent codex --agent grok
+al dispatch reserve [--continue <handle>]
 
 al dispatch start --agent codex \
   [--model <model>] \
@@ -168,6 +170,7 @@ al dispatch start --agent codex \
   [--role <role>] \
   [--skill <skill>] \
   [--max-depth <N>] \
+  [--reservation <handle>] \
   [--mcp-config <path>]... \
   (--prompt <text> | --prompt-file <path>)
 
@@ -203,7 +206,9 @@ al dispatch wait abc123
 
 ### Session-scoped MCP servers
 
-Use repeatable `--mcp-config <path>` flags on `al dispatch start` to attach stdio MCP servers to a conversation with any dispatch provider. Each path names a JSON file containing an `mcpServers` object. Agent Layer stores the definitions privately and reattaches them on continuation. This flag is available through the CLI. See the [session MCP configuration and permission rules](https://github.com/conn-castle/agent-layer/blob/main/docs/AGENT-DISPATCH.md#session-scoped-mcp-servers).
+Use repeatable `--mcp-config <path>` flags on `al dispatch start` to attach stdio MCP servers to a conversation with any dispatch provider. Each path names a JSON file containing an `mcpServers` object. Agent Layer stores the definitions privately and reattaches them on continuation. This flag is available through the CLI.
+
+Tools from explicitly attached servers run without interactive approval prompts in every `approvals.mode`. Attach only server definitions you trust. See the [session MCP configuration and permission rules](https://github.com/conn-castle/agent-layer/blob/main/docs/AGENT-DISPATCH.md#session-scoped-mcp-servers).
 
 ### Subscription quota
 

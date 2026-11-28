@@ -13,15 +13,20 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 - Antigravity and Grok dispatch now use the providers' ACP stdio interfaces to start and resume conversations (#566).
-- Benchmarks pin Antigravity 1.5.18 and Grok 1.0.25. The shared Pier adapter update changes the identity of every existing benchmark study and arm, including Codex and Claude. A normal `al benchmark run` can execute those cells again and incur provider charges. Use `--recover-only` to regenerate compatible completed reports or finalize evidence-backed terminal test timeouts without paid calls (#567).
+- `needs review` for benchmark users who resume existing studies. The shared Pier adapter update and the new Antigravity 1.5.18 and Grok 1.0.25 pins change the identity of every existing benchmark study and arm, including Codex and Claude. A normal `al benchmark run` can execute those cells again and incur provider charges. Use `--recover-only` to regenerate compatible completed reports or finalize evidence-backed terminal test timeouts without paid calls (#567).
 
 ### Fixed
 - ACP dispatch fails promptly with sign-in guidance when the provider offers only interactive authentication (#571).
 - ACP session MCP startup accepts the first successful JSON-RPC round trip, tolerates method-not-found responses during version negotiation, and then relays raw stdio. This supports MCP `2026-07-28` discovery and removes the relay's frame-size limit after startup (#579).
 
+### Security
+- Update the transitive `golang.org/x/crypto` dependency to v0.59.0. The release preflight flagged the previous version for GO-2026-5932, GO-2026-6354, and GO-2026-6355.
+
 ### Upgrade notes
-- Reconnect existing Agent Layer MCP servers after upgrading to load the new dispatch behavior. Use v1.5.0 or newer to read conversations that persist a depth cap or session-scoped MCP metadata. Older binaries with strict session decoders can reject those records.
-- For upgrades from before v1.3.0, review the Muse receipt guidance. For upgrades from before v1.2.0, move hand-added Antigravity grants into `.agent-layer/commands.allow` before upgrading. See the migration table in the upgrade guide.
+- `breaking/manual` for dispatch users with older provider CLIs. Upgrade to Antigravity 1.5.1 or newer or Grok 1.0.25 or newer before upgrading Agent Layer if you dispatch to those providers.
+- Reconnect existing Agent Layer MCP servers after upgrading to load the new dispatch behavior.
+- `needs review` before downgrading Agent Layer. Use v1.5.0 or newer to read conversations that persist a depth cap or session-scoped MCP metadata. Older binaries with strict session decoders can reject those records.
+- `needs review` when upgrading across earlier release lines. For upgrades from before v1.3.0, review the Muse receipt guidance. For upgrades from before v1.2.0, move hand-added Antigravity grants into `.agent-layer/commands.allow` before upgrading. See the migration table in the upgrade guide.
 
 ## v1.4.0 - 2026-11-25
 
