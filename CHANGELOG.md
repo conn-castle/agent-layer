@@ -23,7 +23,7 @@ All notable changes to this project will be documented in this file.
 - Update the transitive `golang.org/x/crypto` dependency to v0.59.0. The release preflight flagged the previous version for GO-2026-5932, GO-2026-6354, and GO-2026-6355.
 
 ### Upgrade notes
-- `breaking/manual` for dispatch users with older provider CLIs. Upgrade to Antigravity 1.5.1 or newer or Grok 1.0.25 or newer before upgrading Agent Layer if you dispatch to those providers.
+- `breaking/manual` for dispatch users with older provider CLIs. Dispatch rejects Antigravity below 1.5.1 and Grok below 1.0.25. Update each affected provider before upgrading Agent Layer. Live probes for this release used Antigravity 1.5.18 and Grok 1.0.25. `al doctor` also warns on Grok versions below 1.0.25.
 - Reconnect existing Agent Layer MCP servers after upgrading to load the new dispatch behavior.
 - `needs review` before downgrading Agent Layer. Use v1.5.0 or newer to read conversations that persist a depth cap or session-scoped MCP metadata. Older binaries with strict session decoders can reject those records.
 - `needs review` when upgrading across earlier release lines. For upgrades from before v1.3.0, review the Muse receipt guidance. For upgrades from before v1.2.0, move hand-added Antigravity grants into `.agent-layer/commands.allow` before upgrading. See the migration table in the upgrade guide.
