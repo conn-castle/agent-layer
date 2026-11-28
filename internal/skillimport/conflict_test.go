@@ -13,6 +13,7 @@ import (
 )
 
 func TestPullConflictWorkspaceCoversBinaryAndDeleteModify(t *testing.T) {
+	t.Parallel()
 	source := newGitRepo(t, "main")
 	source.WriteSkill("skills/alpha", "alpha", "Alpha body")
 	source.WriteFile("skills/alpha/data.bin", string([]byte{0, 1, 2}), 0o644)
@@ -64,6 +65,7 @@ func TestPullConflictWorkspaceCoversBinaryAndDeleteModify(t *testing.T) {
 }
 
 func TestResolveIgnoresUntrackedFilesAndRejectsStaleWorkspaces(t *testing.T) {
+	t.Parallel()
 	source := newGitRepo(t, "main")
 	source.WriteSkill("skills/alpha", "alpha", "Alpha body")
 	source.WriteFile("skills/alpha/notes.md", "shared\n", 0o644)
@@ -120,6 +122,7 @@ func TestResolveIgnoresUntrackedFilesAndRejectsStaleWorkspaces(t *testing.T) {
 }
 
 func TestResolveRejectsPullWorkspaceAfterConfigRefChange(t *testing.T) {
+	t.Parallel()
 	source := newGitRepo(t, "main")
 	source.WriteSkill("skills/alpha", "alpha", "Alpha body")
 	source.WriteFile("skills/alpha/notes.md", "shared\n", 0o644)
@@ -157,6 +160,7 @@ func TestResolveRejectsPullWorkspaceAfterConfigRefChange(t *testing.T) {
 }
 
 func TestStatusReportsMatchingConflictWorkspace(t *testing.T) {
+	t.Parallel()
 	source := newGitRepo(t, "main")
 	source.WriteSkill("skills/alpha", "alpha", "Alpha body")
 	source.WriteFile("skills/alpha/notes.md", "shared\n", 0o644)
@@ -195,6 +199,7 @@ func TestStatusReportsMatchingConflictWorkspace(t *testing.T) {
 }
 
 func TestRetryPreservesAnActiveConflictWorkspace(t *testing.T) {
+	t.Parallel()
 	source := newGitRepo(t, "main")
 	source.WriteSkill("skills/alpha", "alpha", "Alpha body")
 	source.WriteFile("skills/alpha/notes.md", "shared\n", 0o644)
@@ -260,6 +265,7 @@ func TestRetryPreservesAnActiveConflictWorkspace(t *testing.T) {
 }
 
 func TestStatusFailsForCorruptConflictMetadata(t *testing.T) {
+	t.Parallel()
 	source := newGitRepo(t, "main")
 	source.WriteSkill("skills/alpha", "alpha", "Alpha body")
 	source.Commit("add alpha")
@@ -286,6 +292,7 @@ func TestStatusFailsForCorruptConflictMetadata(t *testing.T) {
 }
 
 func TestResolveRejectsUnknownSkillAndWorkspaceKind(t *testing.T) {
+	t.Parallel()
 	source := newGitRepo(t, "main")
 	source.WriteSkill("skills/alpha", "alpha", "Alpha body")
 	source.Commit("add alpha")
@@ -311,6 +318,7 @@ func TestResolveRejectsUnknownSkillAndWorkspaceKind(t *testing.T) {
 }
 
 func TestResolveAppliesAConflictedPushWithoutMovingSource(t *testing.T) {
+	t.Parallel()
 	source := newGitRepo(t, "main")
 	source.WriteSkill("skills/alpha", "alpha", "Alpha body")
 	source.WriteFile("skills/alpha/notes.md", "shared\n", 0o644)
@@ -385,6 +393,7 @@ func TestResolveAppliesAConflictedPushWithoutMovingSource(t *testing.T) {
 }
 
 func TestResolvedPushConflictCanCreateAMissingContributionBranch(t *testing.T) {
+	t.Parallel()
 	source := newGitRepo(t, "main")
 	source.WriteSkill("skills/alpha", "alpha", "Alpha body")
 	source.WriteFile("skills/alpha/notes.md", "shared\n", 0o644)
@@ -430,6 +439,7 @@ func TestResolvedPushConflictCanCreateAMissingContributionBranch(t *testing.T) {
 }
 
 func TestResetInvalidatesAConflictedPushWorkspace(t *testing.T) {
+	t.Parallel()
 	source := newGitRepo(t, "main")
 	source.WriteSkill("skills/alpha", "alpha", "Alpha body")
 	source.WriteFile("skills/alpha/notes.md", "shared\n", 0o644)
@@ -469,6 +479,7 @@ func TestResetInvalidatesAConflictedPushWorkspace(t *testing.T) {
 }
 
 func TestWriteConflictWorkspacePreservesAStaleWorkspace(t *testing.T) {
+	t.Parallel()
 	source := newGitRepo(t, "main")
 	source.WriteSkill("skills/alpha", "alpha", "Alpha body")
 	source.WriteFile("skills/alpha/notes.md", "shared\n", 0o644)
@@ -518,6 +529,7 @@ func TestWriteConflictWorkspacePreservesAStaleWorkspace(t *testing.T) {
 }
 
 func TestResolveRejectsPushWorkspaceAfterWritePolicyChange(t *testing.T) {
+	t.Parallel()
 	source := newGitRepo(t, "main")
 	source.WriteSkill("skills/alpha", "alpha", "Alpha body")
 	source.WriteFile("skills/alpha/notes.md", "shared\n", 0o644)
@@ -551,6 +563,7 @@ func TestResolveRejectsPushWorkspaceAfterWritePolicyChange(t *testing.T) {
 }
 
 func TestResolveRejectsPullWorkspaceAfterClearingPinnedTracking(t *testing.T) {
+	t.Parallel()
 	source := newGitRepo(t, "main")
 	source.WriteSkill("skills/alpha", "alpha", "Alpha body")
 	source.WriteFile("skills/alpha/notes.md", "shared\n", 0o644)
@@ -585,6 +598,7 @@ func TestResolveRejectsPullWorkspaceAfterClearingPinnedTracking(t *testing.T) {
 }
 
 func TestPushConflictMatchesLiteralUnicodeBranch(t *testing.T) {
+	t.Parallel()
 	branch := "review/castle\u00a0"
 	source := newGitRepo(t, "main")
 	source.WriteSkill("skills/alpha", "alpha", "Alpha body")

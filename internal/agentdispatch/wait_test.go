@@ -15,6 +15,7 @@ import (
 )
 
 func TestWaitReturnsDurableCompletedResult(t *testing.T) {
+	t.Parallel()
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	run, session := newWaitTestRun(t, root)
 	if err := os.WriteFile(run.Record.AnswerPath, []byte("done"), 0o600); err != nil {
@@ -44,6 +45,7 @@ func TestWaitReturnsDurableCompletedResult(t *testing.T) {
 }
 
 func TestCompletedResultPathRejectsEmptyAndNonFilePaths(t *testing.T) {
+	t.Parallel()
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	run, _ := newWaitTestRun(t, root)
 	for _, answerPath := range []string{"", run.Dir, t.TempDir()} {
@@ -53,6 +55,7 @@ func TestCompletedResultPathRejectsEmptyAndNonFilePaths(t *testing.T) {
 }
 
 func TestCompletedResultPathResolvesRelativePathInsideRun(t *testing.T) {
+	t.Parallel()
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	run, _ := newWaitTestRun(t, root)
 	if err := os.WriteFile(run.Record.AnswerPath, []byte("done"), 0o600); err != nil {
@@ -68,6 +71,7 @@ func TestCompletedResultPathResolvesRelativePathInsideRun(t *testing.T) {
 }
 
 func TestWaitReturnsFailedJSONAndExitCategory(t *testing.T) {
+	t.Parallel()
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	run, session := newWaitTestRun(t, root)
 	now := time.Now().UTC()
@@ -91,6 +95,7 @@ func TestWaitReturnsFailedJSONAndExitCategory(t *testing.T) {
 }
 
 func TestWaitBlocksUntilTerminal(t *testing.T) {
+	t.Parallel()
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	run, session := newWaitTestRun(t, root)
 	run.Record.State = dispatchStateRunning
@@ -124,6 +129,7 @@ func TestWaitBlocksUntilTerminal(t *testing.T) {
 }
 
 func TestWaitYieldsRunningWithoutChangingInvocation(t *testing.T) {
+	t.Parallel()
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	run, session := newWaitTestRun(t, root)
 	run.Record.State = dispatchStateRunning
@@ -167,6 +173,7 @@ func TestWaitYieldsRunningWithoutChangingInvocation(t *testing.T) {
 // TestWaitReturnsPromptlyWhenContextIsCancelled ensures that a CLI interrupted
 // with Ctrl-C stops polling without changing the provider invocation state.
 func TestWaitReturnsPromptlyWhenContextIsCancelled(t *testing.T) {
+	t.Parallel()
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	run, session := newWaitTestRun(t, root)
 	run.Record.State = dispatchStateRunning
@@ -203,6 +210,7 @@ func TestWaitReturnsPromptlyWhenContextIsCancelled(t *testing.T) {
 // written. A concurrent waiter must not terminalize the run while the worker
 // is alive, or successful runs intermittently fail and lose their answers.
 func TestReconcileOrphanKeepsReapedProviderWithLiveWorker(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	run, _ := newWaitTestRun(t, root)
 	reaped := exec.Command("true")
@@ -231,6 +239,7 @@ func TestReconcileOrphanKeepsReapedProviderWithLiveWorker(t *testing.T) {
 // claiming the run but before publishing any worker identity. Without
 // launcher-identity reconciliation, wait would poll such a run forever.
 func TestWaitFailsInvocationAbandonedBeforeWorkerLaunch(t *testing.T) {
+	t.Parallel()
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	run, session := newWaitTestRun(t, root)
 	record, err := tryReconcileOrphan(root, run.Record)
@@ -258,6 +267,7 @@ func TestWaitFailsInvocationAbandonedBeforeWorkerLaunch(t *testing.T) {
 }
 
 func TestWaitRetainsOrphanClaimWhileDescendantsSurvive(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	run, session := newWaitTestRun(t, root)
 	childPath := filepath.Join(root, "child.pid")
@@ -312,6 +322,7 @@ func TestWaitRetainsOrphanClaimWhileDescendantsSurvive(t *testing.T) {
 }
 
 func TestWaitRecoversReusedProcessGroupWithoutSignallingIt(t *testing.T) {
+	t.Parallel()
 	for _, state := range []string{dispatchStateRunning, dispatchStateCancelled} {
 		t.Run(state, func(t *testing.T) {
 			root := t.TempDir()
@@ -364,6 +375,7 @@ func TestWaitRecoversReusedProcessGroupWithoutSignallingIt(t *testing.T) {
 }
 
 func TestWaitRejectsUnknownHandle(t *testing.T) {
+	t.Parallel()
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	err := Wait(WaitRequest{Root: root, ID: "missing-handle", Stdout: io.Discard})
 	var dispatchErr *ExitError

@@ -71,14 +71,10 @@ func newGitRepo(t *testing.T, defaultBranch string) *gitRepo {
 	return repo
 }
 
-// configureTestGitIdentity keeps service-created destination commits
-// independent of the developer or CI runner's global Git config.
+// configureTestGitIdentity is a no-op because git_env_test.go sets the constant
+// test Git identity once at package init, allowing tests to run in parallel.
 func configureTestGitIdentity(t *testing.T) {
 	t.Helper()
-	t.Setenv("GIT_AUTHOR_NAME", "Agent Layer Test")
-	t.Setenv("GIT_AUTHOR_EMAIL", "test@example.invalid")
-	t.Setenv("GIT_COMMITTER_NAME", "Agent Layer Test")
-	t.Setenv("GIT_COMMITTER_EMAIL", "test@example.invalid")
 }
 
 func requireGit(t *testing.T) {

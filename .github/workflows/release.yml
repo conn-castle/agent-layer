@@ -1,10 +1,7 @@
 name: Release
-run-name: ${{ github.event_name == 'workflow_dispatch' && inputs.rehearsal && format('Release rehearsal {0}', inputs.release_tag) || format('Release {0}', inputs.release_tag || github.ref_name) }}
+run-name: ${{ inputs.rehearsal && format('Release rehearsal {0}', inputs.release_tag) || format('Release {0}', inputs.release_tag) }}
 
 on:
-  push:
-    tags:
-      - "v*"
   workflow_dispatch:
     inputs:
       release_tag:
@@ -12,24 +9,62 @@ on:
         required: true
         type: string
       rehearsal:
-        description: Sign, notarize, and validate without publishing
+        description: Validate, sign, notarize, and check website/formula without tagging or publishing
         type: boolean
         default: true
+
+concurrency:
+  group: ${{ inputs.rehearsal && format('release-rehearsal-{0}', github.run_id) || 'release-publish' }}
+  cancel-in-progress: false
 
 permissions:
   actions: read
   contents: read
 
 env:
-  RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
-  REHEARSAL: ${{ github.event_name == 'workflow_dispatch' && inputs.rehearsal }}
-  RELEASE_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.rehearsal && github.sha || format('refs/tags/{0}', inputs.release_tag || github.ref_name) }}
+  RELEASE_TAG: ${{ inputs.release_tag }}
+  REHEARSAL: ${{ inputs.rehearsal }}
 
 jobs:
   release-readiness:
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    environment: release
+    permissions:
+      actions: read
+      contents: read
+      pull-requests: read
+    outputs:
+      release_commit: ${{ steps.commit.outputs.sha }}
     steps:
+      - name: Verify authorized release actor and branch
+        env:
+          RELEASE_ACTORS: ${{ vars.RELEASE_ACTORS }}
+        run: |
+          set -euo pipefail
+          if [[ "${GITHUB_REF}" != "refs/heads/main" ]]; then
+            echo "::error::Release workflow must run from refs/heads/main (got ${GITHUB_REF})."
+            exit 1
+          fi
+          if [[ -z "${RELEASE_ACTORS:-}" || -z "${GITHUB_ACTOR:-}" ]]; then
+            echo "::error::RELEASE_ACTORS must be configured in the release environment."
+            exit 1
+          fi
+          matched=0
+          IFS=',' read -ra actors <<<"${RELEASE_ACTORS}"
+          for entry in "${actors[@]}"; do
+            entry="$(printf '%s' "${entry}" | tr -d '[:space:]')"
+            if [[ -n "${entry}" && "${entry}" == "${GITHUB_ACTOR}" ]]; then
+              matched=1
+              break
+            fi
+          done
+          if [[ "${matched}" -ne 1 ]]; then
+            echo "::error::Actor ${GITHUB_ACTOR} is not authorized in RELEASE_ACTORS."
+            exit 1
+          fi
+          echo "Authorized release actor: ${GITHUB_ACTOR}"
+
       - name: Validate stable release tag format
         run: |
           set -euo pipefail
@@ -37,63 +72,84 @@ jobs:
             echo "::error::Unsupported release tag ${RELEASE_TAG}. Release publishing supports stable tags only (vX.Y.Z)."
             exit 1
           fi
+
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ env.RELEASE_REF }}
+          ref: ${{ github.sha }}
+          fetch-depth: 0
           persist-credentials: false
+
+      - name: Record release commit and verify tag is unused
+        id: commit
+        run: |
+          set -euo pipefail
+          release_commit="$(git rev-parse HEAD)"
+          if [[ -n "$(git ls-remote --tags origin "refs/tags/${RELEASE_TAG}")" ]]; then
+            echo "::error::Release tag ${RELEASE_TAG} already exists on origin. Never rebuild an already-tagged release; recover a failed publish via 'Re-run failed jobs'."
+            exit 1
+          fi
+          echo "sha=${release_commit}" >> "${GITHUB_OUTPUT}"
+          echo "Release commit: ${release_commit}"
+
       - name: Verify exact-commit CI
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           release_commit="$(git rev-parse HEAD)"
-          for workflow in ci.yml; do
-            certification_url="$(
-              gh run list \
-                --workflow "${workflow}" \
-                --event push \
-                --branch main \
-                --commit "${release_commit}" \
-                --limit 100 \
-                --json conclusion,headSha,event,headBranch,url \
-                --jq "map(select(.conclusion == \"success\" and .headSha == \"${release_commit}\"
-                  and .event == \"push\" and .headBranch == \"main\"))[0].url // \"\""
-            )"
-            if [[ -z "${certification_url}" ]]; then
-              echo "::error::No successful push-event ${workflow} run on main exists for exact source commit ${release_commit}."
-              echo "::error::Run make release-certify AL_VERSION=${RELEASE_TAG} on clean, pushed main before tagging."
-              exit 1
-            fi
-            echo "Using exact-commit ${workflow}: ${certification_url}"
-          done
+          ./scripts/verify-release-ci.sh \
+            --commit "${release_commit}" \
+            --repo "${GITHUB_REPOSITORY}"
 
-      - name: Verify exact-commit release rehearsal before publication
-        if: env.REHEARSAL != 'true'
-        env:
-          GH_TOKEN: ${{ github.token }}
+      - name: Validate upgrade contract docs and changelog
         run: |
           set -euo pipefail
-          release_commit="$(git rev-parse HEAD)"
-          rehearsal_url="$(gh run list --workflow release.yml --event workflow_dispatch \
-            --branch main --commit "${release_commit}" --limit 100 \
-            --json conclusion,headSha,event,headBranch,displayTitle,url \
-            --jq "map(select(.conclusion == \"success\" and .headSha == \"${release_commit}\"
-              and .event == \"workflow_dispatch\" and .headBranch == \"main\"
-              and .displayTitle == \"Release rehearsal ${RELEASE_TAG}\"))[0].url // \"\"")"
-          if [[ -z "${rehearsal_url}" ]]; then
-            echo "::error::No successful exact-commit rehearsal exists for ${RELEASE_TAG}. Run make release-certify AL_VERSION=${RELEASE_TAG} before tagging."
+          if ! command -v rg >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install -y ripgrep
+          fi
+          make docs-upgrade-check RELEASE_TAG="${RELEASE_TAG}"
+          notes="$(sed -n "/^## ${RELEASE_TAG} /,/^## v[0-9]/p" CHANGELOG.md | tail -n +2 | grep -v "^## v[0-9]" | awk 'NF { found=1 } found { print }' || true)"
+          if [[ -z "${notes}" ]]; then
+            echo "::error::No changelog entry found for ${RELEASE_TAG} in CHANGELOG.md"
             exit 1
           fi
-          echo "Using signed release rehearsal: ${rehearsal_url}"
 
   build-release:
     needs: release-readiness
     runs-on: macos-latest
-    # Permissions cannot use expressions; only this shared publication job needs write.
+    timeout-minutes: 15
+    environment: release
     permissions:
-      actions: read
-      contents: write
+      contents: read
     steps:
+      - name: Verify authorized release actor and branch
+        env:
+          RELEASE_ACTORS: ${{ vars.RELEASE_ACTORS }}
+        run: |
+          set -euo pipefail
+          if [[ "${GITHUB_REF}" != "refs/heads/main" ]]; then
+            echo "::error::Release workflow must run from refs/heads/main (got ${GITHUB_REF})."
+            exit 1
+          fi
+          if [[ -z "${RELEASE_ACTORS:-}" || -z "${GITHUB_ACTOR:-}" ]]; then
+            echo "::error::RELEASE_ACTORS must be configured in the release environment."
+            exit 1
+          fi
+          matched=0
+          IFS=',' read -ra actors <<<"${RELEASE_ACTORS}"
+          for entry in "${actors[@]}"; do
+            entry="$(printf '%s' "${entry}" | tr -d '[:space:]')"
+            if [[ -n "${entry}" && "${entry}" == "${GITHUB_ACTOR}" ]]; then
+              matched=1
+              break
+            fi
+          done
+          if [[ "${matched}" -ne 1 ]]; then
+            echo "::error::Actor ${GITHUB_ACTOR} is not authorized in RELEASE_ACTORS."
+            exit 1
+          fi
+
       - name: Validate stable release tag format
         run: |
           set -euo pipefail
@@ -101,136 +157,97 @@ jobs:
             echo "::error::Unsupported release tag ${RELEASE_TAG}. Release publishing supports stable tags only (vX.Y.Z)."
             exit 1
           fi
+
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ env.RELEASE_REF }}
+          ref: ${{ needs.release-readiness.outputs.release_commit }}
           persist-credentials: false
+
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         id: setup-go
         with:
           go-version-file: go.mod
-          cache: false
-      - name: Install system dependencies
-        run: |
-          set -euo pipefail
-          if ! command -v rg >/dev/null 2>&1; then
-            brew install ripgrep
-          fi
-      - name: Validate upgrade contract docs
-        run: |
-          set -euo pipefail
-          make docs-upgrade-check RELEASE_TAG="${RELEASE_TAG}"
-      - name: Cache pinned tools
+          cache: true
+
+      - name: Cache pinned release tools
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .tools/bin
-          key: ${{ runner.os }}-go-tools-${{ steps.setup-go.outputs.go-version }}-${{ hashFiles('go.mod', 'go.sum', 'Makefile') }}
-          restore-keys: |
-            ${{ runner.os }}-go-tools-${{ steps.setup-go.outputs.go-version }}-
-            ${{ runner.os }}-go-tools-
-      - name: Cache e2e release binaries
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ~/.cache/al-e2e/bin
-          key: e2e-binaries-${{ runner.os }}-${{ runner.arch }}
-      - name: Install pinned tools
-        run: make tools
+          key: ${{ runner.os }}-release-tools-v2-${{ steps.setup-go.outputs.go-version }}-${{ hashFiles('go.mod', 'go.sum', 'scripts/install-go-tools.sh') }}
+
       - name: Install pinned release tools
         run: make release-tools
-      - name: CI checks
-        run: make ci
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
+
       - name: Import Developer ID cert
         uses: Apple-Actions/import-codesign-certs@288b8ec97b82c66b6f2a6baaf7acc8dfbcbe331c # v7.2.0
         with:
           p12-file-base64: ${{ secrets.MACOS_CERT_P12_BASE64 }}
           p12-password: ${{ secrets.MACOS_CERT_P12_PASSWORD }}
+
       - name: Build release artifacts
         env:
           AL_CODESIGN_IDENTITY: "Developer ID Application: Hardware Breakout LLC (DQCZX59J6D)"
           AL_REQUIRE_CODESIGN: "1"
-        run: |
-          set -euo pipefail
-          make release-dist AL_VERSION="${RELEASE_TAG}" DIST_DIR=dist
+          AL_VERSION: ${{ env.RELEASE_TAG }}
+          DIST_DIR: dist
+        run: ./scripts/build-release.sh
+
       - name: Scan release binaries for known vulnerable symbols
         run: make release-vuln-check DIST_DIR=dist
+
       - name: Notarize darwin binaries
         env:
           NOTARY_KEY_ID: ${{ secrets.MACOS_NOTARY_API_KEY_ID }}
           NOTARY_ISSUER_ID: ${{ secrets.MACOS_NOTARY_API_KEY_ISSUER_ID }}
           NOTARY_KEY_P8_BASE64: ${{ secrets.MACOS_NOTARY_API_KEY_P8_BASE64 }}
-        run: |
-          set -euo pipefail
-          scripts/notarize-release.sh
+        run: ./scripts/notarize-release.sh
 
       - name: Upload dist artifacts for downstream jobs
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: dist
           path: dist/*
+          retention-days: 1
 
-      - name: Extract changelog for this version
-        id: changelog
-        run: |
-          set -euo pipefail
-          VERSION="${RELEASE_TAG}"
-
-          # Extract section between this version header and the next version header
-          # - sed range: from "## vX.Y.Z " to next "## v" line
-          # - tail -n +2: skip the version header line
-          # - grep -v: remove the next version header if present
-          # - || true: prevent grep exit code 1 when no lines match
-          NOTES=$(sed -n "/^## ${VERSION} /,/^## v[0-9]/p" CHANGELOG.md | tail -n +2 | grep -v "^## v[0-9]" || true)
-
-          # Trim leading and trailing blank lines using awk
-          NOTES=$(echo "$NOTES" | awk '
-            NF { found=1 }
-            found { lines[++n] = $0 }
-            END {
-              # Find last non-blank line
-              for (i=n; i>=1; i--) { if (lines[i] ~ /[^ \t]/) { last=i; break } }
-              # Print from first to last non-blank
-              for (i=1; i<=last; i++) print lines[i]
-            }
-          ')
-
-          # Error if no changelog found for this version
-          if [ -z "$NOTES" ]; then
-            echo "::error::No changelog entry found for ${VERSION} in CHANGELOG.md"
-            echo "::error::Ensure CHANGELOG.md has an entry like: ## ${VERSION} - YYYY-MM-DD"
-            exit 1
-          fi
-
-          # Write to output using heredoc delimiter
-          {
-            echo "notes<<CHANGELOG_EOF"
-            echo "$NOTES"
-            echo "CHANGELOG_EOF"
-          } >> "$GITHUB_OUTPUT"
-      - name: Publish release
-        if: env.REHEARSAL != 'true'
-        uses: softprops/action-gh-release@8a0cd651e5b2365bd640854a3fa5dfc70e4875f3 # v3.0.4
-        with:
-          tag_name: ${{ env.RELEASE_TAG }}
-          body: ${{ steps.changelog.outputs.notes }}
-          files: |
-            dist/*
-
-  publish-website-and-tap:
-    needs: build-release
+  build-website:
+    needs: release-readiness
     runs-on: ubuntu-latest
-    if: startsWith(inputs.release_tag || github.ref_name, 'v')
-    concurrency:
-      group: ${{ github.event_name == 'workflow_dispatch' && inputs.rehearsal && format('agent-layer-web-rehearsal-{0}', github.run_id) || 'agent-layer-web-publish' }}
-      cancel-in-progress: false
+    timeout-minutes: 10
+    environment: release
     permissions:
       contents: read
     steps:
+      - name: Verify authorized release actor and branch
+        env:
+          RELEASE_ACTORS: ${{ vars.RELEASE_ACTORS }}
+        run: |
+          set -euo pipefail
+          if [[ "${GITHUB_REF}" != "refs/heads/main" ]]; then
+            echo "::error::Release workflow must run from refs/heads/main (got ${GITHUB_REF})."
+            exit 1
+          fi
+          if [[ -z "${RELEASE_ACTORS:-}" || -z "${GITHUB_ACTOR:-}" ]]; then
+            echo "::error::RELEASE_ACTORS must be configured in the release environment."
+            exit 1
+          fi
+          matched=0
+          IFS=',' read -ra actors <<<"${RELEASE_ACTORS}"
+          for entry in "${actors[@]}"; do
+            entry="$(printf '%s' "${entry}" | tr -d '[:space:]')"
+            if [[ -n "${entry}" && "${entry}" == "${GITHUB_ACTOR}" ]]; then
+              matched=1
+              break
+            fi
+          done
+          if [[ "${matched}" -ne 1 ]]; then
+            echo "::error::Actor ${GITHUB_ACTOR} is not authorized in RELEASE_ACTORS."
+            exit 1
+          fi
+
       - name: Checkout agent-layer release source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ env.RELEASE_REF }}
+          ref: ${{ needs.release-readiness.outputs.release_commit }}
           fetch-depth: 0
           persist-credentials: false
 
@@ -245,7 +262,7 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
-          cache: false
+          cache: true
 
       - name: Create GitHub App token for website repo
         id: web-app-token
@@ -265,11 +282,13 @@ jobs:
           token: ${{ steps.web-app-token.outputs.token }}
           path: agent-layer-web
           fetch-depth: 0
-          persist-credentials: ${{ env.REHEARSAL != 'true' }}
+          persist-credentials: false
 
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '24.21.0'
+          cache: 'npm'
+          cache-dependency-path: 'agent-layer-web/package-lock.json'
 
       - name: Install website dependencies
         working-directory: agent-layer-web
@@ -291,36 +310,185 @@ jobs:
       - name: Validate website assets
         run: python3 scripts/check-website-assets.py agent-layer-web/build
 
-      - name: Commit and push
-        if: env.REHEARSAL != 'true'
+      - name: Bundle staged website commit for publication
         working-directory: agent-layer-web
         run: |
           set -euo pipefail
+          mkdir -p "${RUNNER_TEMP}/website-update"
+          base_sha="$(git rev-parse HEAD)"
           git config user.name "agent-layer-bot"
           git config user.email "agent-layer-bot@users.noreply.github.com"
           git add -A
           if git diff --cached --quiet; then
-            echo "No changes to commit."
+            echo "No website changes to commit."
+            touch "${RUNNER_TEMP}/website-update/no-changes"
             exit 0
           fi
           git commit -m "Publish site for ${RELEASE_TAG}"
-          for attempt in 1 2 3; do
-            git pull --rebase origin main
-            if git push origin main; then
-              exit 0
-            fi
-            echo "Push failed (attempt ${attempt}/3). Retrying in 2s..."
-            sleep 2
-          done
+          git bundle create "${RUNNER_TEMP}/website-update/website-update.bundle" "${base_sha}..HEAD"
 
-          echo "::error::Failed to push agent-layer-web/main after 3 attempts"
-          exit 1
+      - name: Upload staged website bundle
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: website-update
+          path: ${{ runner.temp }}/website-update/*
+          retention-days: 1
+
+  publish:
+    needs:
+      - release-readiness
+      - build-release
+      - build-website
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: release
+    permissions:
+      contents: read
+    steps:
+      - name: Verify authorized release actor and branch
+        env:
+          RELEASE_ACTORS: ${{ vars.RELEASE_ACTORS }}
+        run: |
+          set -euo pipefail
+          if [[ "${GITHUB_REF}" != "refs/heads/main" ]]; then
+            echo "::error::Release workflow must run from refs/heads/main (got ${GITHUB_REF})."
+            exit 1
+          fi
+          if [[ -z "${RELEASE_ACTORS:-}" || -z "${GITHUB_ACTOR:-}" ]]; then
+            echo "::error::RELEASE_ACTORS must be configured in the release environment."
+            exit 1
+          fi
+          matched=0
+          IFS=',' read -ra actors <<<"${RELEASE_ACTORS}"
+          for entry in "${actors[@]}"; do
+            entry="$(printf '%s' "${entry}" | tr -d '[:space:]')"
+            if [[ -n "${entry}" && "${entry}" == "${GITHUB_ACTOR}" ]]; then
+              matched=1
+              break
+            fi
+          done
+          if [[ "${matched}" -ne 1 ]]; then
+            echo "::error::Actor ${GITHUB_ACTOR} is not authorized in RELEASE_ACTORS."
+            exit 1
+          fi
+
+      - name: Validate stable release tag format
+        run: |
+          set -euo pipefail
+          if [[ ! "${RELEASE_TAG}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Unsupported release tag ${RELEASE_TAG}. Release publishing supports stable tags only (vX.Y.Z)."
+            exit 1
+          fi
+
+      - name: Checkout agent-layer release source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.release-readiness.outputs.release_commit }}
+          persist-credentials: false
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
 
       - name: Download dist artifacts
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: dist
           path: dist
+
+      - name: Download staged website bundle
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: website-update
+          path: website-update
+
+      - name: Verify dist integrity and Linux smoke test
+        run: |
+          set -euo pipefail
+          SEMVER="${RELEASE_TAG#v}"
+          for asset in \
+            "al-darwin-arm64" \
+            "al-darwin-amd64" \
+            "al-linux-arm64" \
+            "al-linux-amd64" \
+            "al-install.sh" \
+            "agent-layer-${SEMVER}.tar.gz" \
+            "checksums.txt"; do
+            if [[ ! -f "dist/${asset}" ]]; then
+              echo "::error::Missing expected release artifact: dist/${asset}"
+              exit 1
+            fi
+          done
+          (cd dist && sha256sum -c checksums.txt)
+          cmp -s al-install.sh dist/al-install.sh
+
+          chmod +x dist/al-linux-amd64
+          linux_bin="$(pwd)/dist/al-linux-amd64"
+          smoke_root="$(mktemp -d)"
+          trap 'rm -rf "${smoke_root}"' EXIT
+          project_root="${smoke_root}/project"
+          mkdir -p "${project_root}" "${smoke_root}/home"
+          git -C "${project_root}" init -q
+          (
+            export HOME="${smoke_root}/home"
+            export AL_NO_NETWORK=1
+            unset AL_VERSION
+            cd "${project_root}"
+            actual_version="$("${linux_bin}" --version)"
+            if [[ "${actual_version}" != "${RELEASE_TAG}" ]]; then
+              echo "::error::Linux release binary version is ${actual_version}; expected ${RELEASE_TAG}"
+              exit 1
+            fi
+            "${linux_bin}" init --here --no-wizard >/dev/null
+            actual_pin="$(tr -d '[:space:]' < .agent-layer/al.version)"
+            if [[ "${actual_pin}" != "${SEMVER}" ]]; then
+              echo "::error::Linux release binary initialized pin ${actual_pin}; expected ${SEMVER}"
+              exit 1
+            fi
+            "${linux_bin}" upgrade plan >/dev/null
+          )
+          echo "Linux release binary smoke test passed for ${RELEASE_TAG}."
+
+      - name: Extract changelog for this version
+        run: |
+          set -euo pipefail
+          VERSION="${RELEASE_TAG}"
+          NOTES=$(sed -n "/^## ${VERSION} /,/^## v[0-9]/p" CHANGELOG.md | tail -n +2 | grep -v "^## v[0-9]" || true)
+          NOTES=$(echo "$NOTES" | awk '
+            NF { found=1 }
+            found { lines[++n] = $0 }
+            END {
+              for (i=n; i>=1; i--) { if (lines[i] ~ /[^ \t]/) { last=i; break } }
+              for (i=1; i<=last; i++) print lines[i]
+            }
+          ')
+          if [ -z "$NOTES" ]; then
+            echo "::error::No changelog entry found for ${VERSION} in CHANGELOG.md"
+            echo "::error::Ensure CHANGELOG.md has an entry like: ## ${VERSION} - YYYY-MM-DD"
+            exit 1
+          fi
+          printf '%s\n' "$NOTES" > "${RUNNER_TEMP}/release-notes.md"
+
+      - name: Create GitHub App token for agent-layer release tagging
+        id: release-app-token
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          app-id: ${{ secrets.RELEASE_APP_ID || secrets.HOMEBREW_TAP_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY || secrets.HOMEBREW_TAP_PRIVATE_KEY }}
+          owner: conn-castle
+          repositories: agent-layer
+          permission-contents: write
+
+      - name: Create GitHub App token for website repo
+        id: web-app-token
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          app-id: ${{ secrets.AGENT_LAYER_WEB_APP_ID }}
+          private-key: ${{ secrets.AGENT_LAYER_WEB_APP_PRIVATE_KEY }}
+          owner: conn-castle
+          repositories: agent-layer-web
+          permission-contents: write
 
       - name: Create GitHub App token for tap repo
         id: app-token
@@ -341,6 +509,175 @@ jobs:
           path: homebrew-tap
           persist-credentials: ${{ env.REHEARSAL != 'true' }}
 
+      - name: Update binary formula
+        run: |
+          set -euo pipefail
+          TAG="${RELEASE_TAG}"
+          FORMULA="homebrew-tap/Formula/agent-layer.rb"
+          if [ ! -f "${FORMULA}" ]; then
+            echo "::error::${FORMULA} not found in tap repo"
+            exit 1
+          fi
+          go run -tags tools ./internal/tools/updateformula "${FORMULA}" "${TAG}" dist/checksums.txt
+          git -C homebrew-tap status --porcelain
+          git -C homebrew-tap diff -- Formula/agent-layer.rb
+
+      - name: Validate rendered formula syntax and checksums
+        run: |
+          set -euo pipefail
+          FORMULA="homebrew-tap/Formula/agent-layer.rb"
+          ruby -c "${FORMULA}"
+          for bin in al-darwin-arm64 al-darwin-amd64 al-linux-arm64 al-linux-amd64; do
+            expected_url="https://github.com/conn-castle/agent-layer/releases/download/${RELEASE_TAG}/${bin}"
+            expected_sha="$(awk -v b="${bin}" '{f=$2; sub(/^\*/, "", f); sub(/^\.\//, "", f); if (f == b) print $1}' dist/checksums.txt)"
+            if [[ -z "${expected_sha}" ]]; then
+              echo "::error::Missing checksum for ${bin} in dist/checksums.txt"
+              exit 1
+            fi
+            grep -Fq "\"${expected_url}\"" "${FORMULA}" || { echo "::error::Formula missing expected URL ${expected_url}"; exit 1; }
+            grep -Fq "\"${expected_sha}\"" "${FORMULA}" || { echo "::error::Formula missing expected sha256 ${expected_sha} for ${bin}"; exit 1; }
+          done
+
+      - name: Create annotated tag and publish release
+        if: env.REHEARSAL != 'true'
+        env:
+          GH_TOKEN: ${{ steps.release-app-token.outputs.token }}
+          RELEASE_COMMIT: ${{ needs.release-readiness.outputs.release_commit }}
+        run: |
+          set -euo pipefail
+          TAG="${RELEASE_TAG}"
+          SEMVER="${TAG#v}"
+
+          # Create annotated tag if absent; on re-run recovery, require exact commit match.
+          if ref_json="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${TAG}" 2>/dev/null)"; then
+            ref_type="$(jq -r '.object.type' <<<"${ref_json}")"
+            ref_sha="$(jq -r '.object.sha' <<<"${ref_json}")"
+            if [[ "${ref_type}" == "tag" ]]; then
+              target_sha="$(gh api "repos/${GITHUB_REPOSITORY}/git/tags/${ref_sha}" --jq '.object.sha')"
+            else
+              target_sha="${ref_sha}"
+            fi
+            if [[ "${target_sha}" != "${RELEASE_COMMIT}" ]]; then
+              echo "::error::Tag ${TAG} already exists pointing to ${target_sha}, not ${RELEASE_COMMIT}."
+              exit 1
+            fi
+            echo "Annotated tag ${TAG} already points to certified commit ${RELEASE_COMMIT}."
+          else
+            tag_obj_sha="$(
+              gh api -X POST "repos/${GITHUB_REPOSITORY}/git/tags" \
+                -f tag="${TAG}" \
+                -f message="${TAG}" \
+                -f object="${RELEASE_COMMIT}" \
+                -f type="commit" \
+                --jq '.sha'
+            )"
+            gh api -X POST "repos/${GITHUB_REPOSITORY}/git/refs" \
+              -f ref="refs/tags/${TAG}" \
+              -f sha="${tag_obj_sha}" >/dev/null
+            echo "Created annotated tag ${TAG} -> ${RELEASE_COMMIT} (tag object ${tag_obj_sha})."
+          fi
+
+          # Publish via draft -> upload all 7 assets -> verify -> publish (compatible with Immutable Releases).
+          # Query the releases list via API because GET /releases/tags/<tag> returns 404 for drafts.
+          find_release_json() {
+            gh api "repos/${GITHUB_REPOSITORY}/releases?per_page=30" \
+              --jq "map(select(.tag_name == \"${TAG}\"))[0] // empty"
+          }
+
+          rel_json="$(find_release_json)"
+          if [[ -n "${rel_json}" ]]; then
+            rel_id="$(jq -r '.id' <<<"${rel_json}")"
+            is_draft="$(jq -r '.draft' <<<"${rel_json}")"
+            if [[ "${is_draft}" == "true" ]]; then
+              echo "Resuming draft release ${TAG} (id ${rel_id}): uploading verified dist assets..."
+              gh release upload "${TAG}" dist/* --clobber
+              rel_json="$(find_release_json)"
+              asset_count="$(jq -r '.assets | length' <<<"${rel_json}")"
+              if [[ "${asset_count}" -ne 7 ]]; then
+                echo "::error::Draft release ${TAG} has ${asset_count} assets; expected 7."
+                exit 1
+              fi
+              gh api -X PATCH "repos/${GITHUB_REPOSITORY}/releases/${rel_id}" \
+                -F draft=false \
+                -f name="${TAG}" \
+                -F body=@"${RUNNER_TEMP}/release-notes.md" >/dev/null
+            else
+              echo "Release ${TAG} is already published; verifying expected assets..."
+            fi
+          else
+            gh release create "${TAG}" \
+              --draft \
+              --title "${TAG}" \
+              --notes-file "${RUNNER_TEMP}/release-notes.md" \
+              dist/*
+            rel_json="$(find_release_json)"
+            rel_id="$(jq -r '.id' <<<"${rel_json}")"
+            asset_count="$(jq -r '.assets | length' <<<"${rel_json}")"
+            if [[ -z "${rel_id}" || "${asset_count}" -ne 7 ]]; then
+              echo "::error::Draft release ${TAG} has ${asset_count:-0} assets (id=${rel_id:-missing}); expected 7."
+              exit 1
+            fi
+            gh api -X PATCH "repos/${GITHUB_REPOSITORY}/releases/${rel_id}" -F draft=false >/dev/null
+          fi
+
+          # Final verification of all 7 expected published assets.
+          published_assets="$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${TAG}" --jq '[.assets[].name] | sort | join("\n")')"
+          for asset in \
+            "agent-layer-${SEMVER}.tar.gz" \
+            "al-darwin-amd64" \
+            "al-darwin-arm64" \
+            "al-install.sh" \
+            "al-linux-amd64" \
+            "al-linux-arm64" \
+            "checksums.txt"; do
+            grep -Fxq "${asset}" <<<"${published_assets}" || { echo "::error::Published release missing asset ${asset}"; exit 1; }
+          done
+          echo "Published GitHub Release ${TAG} with all 7 verified assets."
+
+      - name: Checkout agent-layer-web for publication
+        if: env.REHEARSAL != 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: conn-castle/agent-layer-web
+          ref: main
+          token: ${{ steps.web-app-token.outputs.token }}
+          path: agent-layer-web
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Commit and push website update
+        if: env.REHEARSAL != 'true'
+        run: |
+          set -euo pipefail
+          if [[ -f "website-update/no-changes" ]]; then
+            echo "No website changes to push."
+            exit 0
+          fi
+          bundle_path="$(pwd)/website-update/website-update.bundle"
+          if [[ ! -f "${bundle_path}" ]]; then
+            echo "::error::Missing staged website bundle: ${bundle_path}"
+            exit 1
+          fi
+          cd agent-layer-web
+          git config user.name "agent-layer-bot"
+          git config user.email "agent-layer-bot@users.noreply.github.com"
+          if git log -n 20 --format=%s | grep -Fxq "Publish site for ${RELEASE_TAG}"; then
+            echo "Website commit for ${RELEASE_TAG} is already on origin/main."
+            exit 0
+          fi
+          git fetch "${bundle_path}" HEAD:refs/heads/staged-release
+          git cherry-pick staged-release
+          for attempt in 1 2 3; do
+            git pull --rebase origin main
+            if git push origin main; then
+              exit 0
+            fi
+            echo "Push failed (attempt ${attempt}/3). Retrying in 2s..."
+            sleep 2
+          done
+          echo "::error::Failed to push agent-layer-web/main after 3 attempts"
+          exit 1
+
       - name: Verify release assets are available
         if: env.REHEARSAL != 'true'
         run: |
@@ -354,45 +691,17 @@ jobs:
             "al-linux-arm64"
             "al-linux-amd64"
           )
-
           for asset in "${ASSETS[@]}"; do
             URL="https://github.com/conn-castle/agent-layer/releases/download/${TAG}/${asset}"
-            # Retry a few times in case GitHub is briefly eventual-consistent
             for _ in 1 2 3 4 5; do
               if curl -fsIL "$URL" >/dev/null; then
                 continue 2
               fi
               sleep 3
             done
-
             echo "::error::Release asset not reachable: $URL"
             exit 1
           done
-
-      - name: Update binary formula
-        run: |
-          set -euo pipefail
-
-          TAG="${RELEASE_TAG}"
-
-          if [ ! -f "dist/checksums.txt" ]; then
-            echo "::error::dist/checksums.txt not found in workflow artifacts"
-            exit 1
-          fi
-
-          FORMULA="homebrew-tap/Formula/agent-layer.rb"
-          if [ ! -f "${FORMULA}" ]; then
-            echo "::error::${FORMULA} not found in tap repo"
-            exit 1
-          fi
-
-          go run -tags tools ./internal/tools/updateformula "${FORMULA}" "${TAG}" dist/checksums.txt
-
-          git -C homebrew-tap status --porcelain
-          git -C homebrew-tap diff -- Formula/agent-layer.rb
-
-      - name: Validate rendered formula syntax
-        run: ruby -c homebrew-tap/Formula/agent-layer.rb
 
       - name: Create PR in tap repo
         if: env.REHEARSAL != 'true'

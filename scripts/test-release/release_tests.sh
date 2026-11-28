@@ -398,16 +398,36 @@ MOCK_SIGNING_TOOL
     local last_build_event first_scan_event
     last_build_event="$(grep -n '^build|' "$preflight_event_log" | tail -n 1 | cut -d: -f1)"
     first_scan_event="$(grep -n '^scan|' "$preflight_event_log" | head -n 1 | cut -d: -f1)"
-    if [[ "$(wc -l < "$preflight_ci_log" | tr -d ' ')" -eq 1 ]] &&
-        [[ "$(head -n 1 "$preflight_event_log")" == "ci" ]] &&
+    if [[ ! -s "$preflight_ci_log" ]] &&
+        [[ -n "$last_build_event" && -n "$first_scan_event" ]] &&
         [[ "$first_scan_event" -gt "$last_build_event" ]] &&
         [[ ! -s "$preflight_sign_log" ]]; then
-      pass "release-preflight runs CI once before building, scans afterward, and does not sign"
+      pass "release-preflight skips redundant local CI, builds first, scans afterward, and does not sign"
     else
-      fail "release-preflight CI order or unsigned behavior was incorrect"
+      fail "release-preflight order or unsigned behavior was incorrect"
     fi
   else
     fail "release-preflight did not retain exactly one artifact directory"
+  fi
+
+  # Verify host-only e2e build mode compiles exactly one host binary + checksums.txt.
+  local host_only_dist="$tmp_dir/host-only-dist"
+  local host_only_go_log="$tmp_dir/host-only-go.log"
+  : > "$host_only_go_log"
+  if (
+    export PATH="$mock_bin:$PATH"
+    export MOCK_GO_LOG="$host_only_go_log"
+    export MOCK_RELEASE_BINARY_LOG="$tmp_dir/host-only-binary.log"
+    cd "$ROOT_DIR"
+    AL_BUILD_HOST_ONLY=1 AL_VERSION="$expected_version" DIST_DIR="$host_only_dist" ./scripts/build-release.sh
+  ) > "$tmp_dir/host-only.log" 2>&1 &&
+     [[ "$(wc -l < "$host_only_go_log" | tr -d ' ')" -eq 1 ]] &&
+     [[ -f "$host_only_dist/checksums.txt" ]] &&
+     [[ ! -f "$host_only_dist/agent-layer-${expected_version_no_v}.tar.gz" ]]; then
+    pass "build-release.sh AL_BUILD_HOST_ONLY=1 builds only the host binary and checksums.txt"
+  else
+    fail "build-release.sh AL_BUILD_HOST_ONLY=1 did not restrict to host binary"
+    cat "$tmp_dir/host-only.log"
   fi
 
   local build_failure_root="$tmp_dir/preflight-build-failure"

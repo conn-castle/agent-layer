@@ -13,6 +13,7 @@ import (
 )
 
 func TestCatalogDiagnosticsAreScopedUntilTierRootIsUnsafe(t *testing.T) {
+	t.Parallel()
 	proj := newProject(t)
 	require.NoError(t, os.MkdirAll(proj.paths.ImportedSkillsDir, 0o750))
 	for _, name := range []string{"other", "Other"} {
@@ -34,6 +35,7 @@ func TestCatalogDiagnosticsAreScopedUntilTierRootIsUnsafe(t *testing.T) {
 }
 
 func TestInstallCatalogRefusesOrdinaryLocalNameBeforeFetching(t *testing.T) {
+	t.Parallel()
 	proj := newProject(t)
 	proj.WriteUserSkill("ship-pr")
 	service := New(proj.root)

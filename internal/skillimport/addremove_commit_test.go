@@ -19,6 +19,7 @@ import (
 // the trees have changed, with both pre-publication and post-publication file
 // failures, so passing requires actual rollback as well as honest reporting.
 func TestAddRemoveCommitFailureRollsBackAndDiscardsResults(t *testing.T) {
+	t.Parallel()
 	source := newGitRepo(t, "main")
 	for _, name := range []string{"alpha", "beta"} {
 		source.WriteSkill("skills/"+name, name, name+" body")

@@ -275,9 +275,8 @@ make ci
 ```
 Run from: repo root
 Prerequisites: Go 1.27.0+, `make tools` has been run
-Notes: The complete local/pre-PR verification command; GitHub Actions runs the same target. Includes `make tidy-check`, `make fmt-check`, `make lint`, `make shell-syntax-check`, `make dead-code`, `make coverage`, `make test-muse-fixture`, `make test-deepswe-planner`, `make test-race` (race detector on concurrency-critical packages), `make test-release`, `make test-e2e-harness`, `make test-e2e-ci` (online e2e with required upgrade scenarios), and `make docs-cta-check`; requires network access for upgrade binary downloads. `tidy-check` permits an existing intended diff, reports a validation failure when `go mod tidy` changes the module files, and propagates dependency, toolchain, network, and filesystem errors.
+Notes: The complete local/pre-PR verification command; GitHub Actions runs the same target. Includes `make check-project-paths`, `make tidy-check`, `make fmt-check`, `make lint`, `make shell-syntax-check`, `make benchmark-boundary-check`, `make dead-code`, `make ci-test` (runs every package once with full coverage, with `-race` enabled on all 10 concurrency-critical packages), `make test-muse-fixture`, `make test-deepswe-planner`, `make test-release`, `make test-e2e-harness`, `make test-e2e-ci` (online e2e with required upgrade scenarios, host-only build), and `make docs-cta-check`. Hosted Linux CI also runs `AL_VERSION=ci DIST_DIR=dist ./scripts/build-release.sh` followed by `make release-vuln-check DIST_DIR=dist`.
 GitHub Actions also runs a separate website build job using `make website-build-check` against `conn-castle/agent-layer-web`.
-The release workflow runs this target on macOS before importing signing credentials.
 
 - Run local CI with an isolated temp directory when ancestor root markers interfere
 ```bash
@@ -304,13 +303,13 @@ Run from: repo root
 Prerequisites: Go 1.27.0+, network access
 Notes: Installs the `govulncheck` version pinned in `go.mod` into `.tools/bin`. This tool is release-only and is not installed by `make tools`.
 
-- Scan all four built release executables for known vulnerable symbols
+- Scan all four built release executables for known vulnerable symbols (in parallel)
 ```bash
 make release-vuln-check DIST_DIR=dist
 ```
 Run from: repo root
 Prerequisites: `make release-tools`, all four release binaries in `DIST_DIR`, network access to the Go vulnerability database
-Notes: Uses `govulncheck -mode=binary` and fails on a missing binary, known vulnerable symbol finding, scanner failure, or database failure. The tag-triggered release workflow enforces this after build and before notarization or publication; ordinary CI does not run it.
+Notes: Uses `govulncheck -mode=binary` in parallel across all four binaries and fails on a missing binary, known vulnerable symbol finding, scanner failure, or database failure. Enforced in Linux PR/push CI (`ci.yml`), `make release-preflight`, and `release.yml` before notarization or publication.
 
 - Generate an embedded template ownership manifest for a release version
 ```bash
@@ -320,23 +319,41 @@ Run from: repo root
 Prerequisites: Go 1.27.0+ (reads from the working tree, no git tag required)
 Notes: Writes `internal/templates/manifests/X.Y.Z.json`. Run for each new release version and commit the generated manifest. After a version is tagged, do not regenerate or edit its manifest for later work; create the next version's manifest instead.
 
-- Validate release readiness (run before tagging)
+- Run parallel live Agent Dispatch release compatibility probes
+```bash
+make release-probe
+```
+Run from: repo root
+Prerequisites: Installed/authenticated locally enabled providers, Python 3, Go 1.27.0+
+Notes: Builds a scratch candidate executable (`make al-dev-build AL_DEV_BIN_DIR=<scratch>`), probes all locally enabled available providers concurrently (fresh start + continuation), restores local projections (`make al-sync`), removes scratch, validates pass criteria including Antigravity structured ACP evidence, and prints a Markdown evidence table.
+
+- Fast fail-fast release artifact and vulnerability preflight (~10–15s)
 ```bash
 make release-preflight RELEASE_TAG=vX.Y.Z
 ```
 Run from: repo root
-Prerequisites: Go 1.27.0+, `make tools` and `make release-tools` have been run, `rg` (ripgrep) available on PATH, both manifests committed
-Notes: Validates the tag and upgrade-contract docs before running `make ci` once, then builds unsigned four-platform artifacts into a unique retained `release-preflight/` directory and scans those binaries with `govulncheck`. The native smoke test covers only the host platform and the source tarball is from `HEAD`. Requires a clean working tree and network access for upgrade binary downloads and the vulnerability database. It does not sign or notarize; hosted signing, notarization, and scanning remain the final release gate and can fail after a local pass.
+Prerequisites: Go 1.27.0+, `make release-tools` has been run, `rg` (ripgrep) available on PATH, both manifests present
+Notes: Validates the tag and upgrade-contract docs, checks `govulncheck`, cross-compiles unsigned four-platform release binaries + native smoke test in parallel into a unique retained `release-preflight/` directory, and scans all four binaries in parallel with `govulncheck`. Does not re-run local `make ci` (full CI runs on the Release PR). Does not sign or notarize; hosted signing, notarization, Linux smoke test, and scanning in `release.yml` remain the authoritative publication gate.
 
-- Certify the exact pushed `main` commit before creating a release tag
+- Publish a release from clean, pushed `main` (single-run atomic workflow)
 ```bash
+make release AL_VERSION=vX.Y.Z
+```
+Run from: repo root on `main`, after merging the Release PR and pulling `origin/main`
+Prerequisites: Explicit user approval of the exact stable release version, GitHub CLI authentication (authorized in `RELEASE_ACTORS`), clean working tree, `HEAD == origin/main`
+Notes: Verifies full CI passed (exact-commit `push` CI on `main` OR clean-merge exact-tree same-repo PR CI—zero post-merge CI wait on clean merges), verifies `refs/tags/vX.Y.Z` does not exist, and dispatches `release.yml` (`rehearsal=false`). The workflow builds/signs/scans/notarizes and builds/validates the website in parallel, runs a Linux smoke test and formula check, and only then creates the annotated tag, publishes an immutable GitHub Release, pushes the website, and opens the Homebrew tap PR.
+
+- Run optional nonpublishing signed release dry-run
+```bash
+make release-rehearsal AL_VERSION=vX.Y.Z
+# Compatibility alias:
 make release-certify AL_VERSION=vX.Y.Z
 ```
-Run from: repo root on `main`, after committing and pushing the release metadata but before creating the tag
-Prerequisites: Explicit user approval of the exact stable release version, GitHub CLI authentication, a clean working tree, and local `HEAD` equal to `origin/main`
-Notes: Requires AL_VERSION=vX.Y.Z and verifies full CI plus a signed, version-matched release rehearsal for the exact pushed commit. Reuses successful runs or waits for active runs; dispatches the release workflow with rehearsal=true when needed. Failed or missing CI blocks rehearsal, and CI is never dispatched. Catalog/ECR access is not required. The old release-catalog-certify target remains an alias. This command can dispatch a release rehearsal, so the approval gate above applies.
+Run from: repo root on `main`
+Prerequisites: Same as `make release`
+Notes: Runs the full `release.yml` pipeline with `rehearsal=true` (signing, scanning, notarization, website build/asset checks, Linux smoke test, App-token issuance, formula validation) without creating the tag or performing external writes. Optional—primarily for testing changes to `release.yml` or release scripts.
 
-Release order: prepare and commit the approved version metadata, run `make release-preflight RELEASE_TAG=vX.Y.Z`, push `main`, run `make release-certify AL_VERSION=vX.Y.Z`, and only then create and push `vX.Y.Z`.
+Release order: run `make release-probe` (when dispatch changed), prepare manifests/changelog/upgrade row, run `make release-preflight RELEASE_TAG=vX.Y.Z`, open and merge the Release PR after full PR CI + review, pull `main`, and run `make release AL_VERSION=vX.Y.Z`.
 
 - Validate upgrade-contract docs for a target release tag
 ```bash

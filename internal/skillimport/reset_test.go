@@ -12,6 +12,7 @@ import (
 // explicit destructive escape hatch for a conflicted skill and changes no
 // selector membership around it.
 func TestResetDiscardsLocalEditsAndAcceptsCurrentUpstream(t *testing.T) {
+	t.Parallel()
 	source := newGitRepo(t, "main")
 	source.WriteSkill("skills/alpha", "alpha", "Alpha original")
 	source.WriteFile("skills/alpha/notes.md", "base\n", 0o644)
@@ -48,6 +49,7 @@ func TestResetDiscardsLocalEditsAndAcceptsCurrentUpstream(t *testing.T) {
 // TestResetRepinsAPinnedBranch proves reset deliberately moves a pin once,
 // while ordinary pull leaves the replacement pinned afterward.
 func TestResetRepinsAPinnedBranch(t *testing.T) {
+	t.Parallel()
 	source := newGitRepo(t, "main")
 	source.WriteSkill("skills/alpha", "alpha", "Alpha one")
 	first := source.Commit("add alpha")
@@ -87,6 +89,7 @@ func TestResetRepinsAPinnedBranch(t *testing.T) {
 // remains addressable when configuration replaces its recorded exact selector
 // with one unambiguous wildcard that still selects the same path.
 func TestResetUsesTheCurrentSelectorAfterManualReplacement(t *testing.T) {
+	t.Parallel()
 	source := newGitRepo(t, "main")
 	source.WriteSkill("skills/alpha", "alpha", "Alpha one")
 	source.Commit("add alpha")
@@ -120,6 +123,7 @@ func TestResetUsesTheCurrentSelectorAfterManualReplacement(t *testing.T) {
 // path selected by several current blocks as unconfigured or choose one policy
 // arbitrarily.
 func TestResetReportsAmbiguousSelectorOwnership(t *testing.T) {
+	t.Parallel()
 	source := newGitRepo(t, "main")
 	source.WriteSkill("skills/alpha", "alpha", "Alpha body")
 	source.Commit("add alpha")
@@ -149,6 +153,7 @@ func TestResetReportsAmbiguousSelectorOwnership(t *testing.T) {
 // TestResetFailurePreservesLocalContentAndLock proves source validation is a
 // preflight: a missing upstream path cannot discard the user's local tree.
 func TestResetFailurePreservesLocalContentAndLock(t *testing.T) {
+	t.Parallel()
 	source := newGitRepo(t, "main")
 	source.WriteSkill("skills/alpha", "alpha", "Alpha original")
 	source.Commit("add alpha")

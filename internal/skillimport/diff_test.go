@@ -9,6 +9,7 @@ import (
 )
 
 func TestDiffComparesLiveLocalAndUpstreamTrees(t *testing.T) {
+	t.Parallel()
 	source := newGitRepo(t, "main")
 	source.WriteSkill("skills/alpha", "alpha", "Alpha body")
 	source.WriteFile("skills/alpha/notes.md", "base\n", 0o644)
@@ -63,6 +64,7 @@ func TestDiffComparesLiveLocalAndUpstreamTrees(t *testing.T) {
 }
 
 func TestDiffRejectsUnknownSidesAndMissingDestination(t *testing.T) {
+	t.Parallel()
 	source := newGitRepo(t, "main")
 	source.WriteSkill("skills/alpha", "alpha", "Alpha body")
 	source.Commit("add alpha")
@@ -89,6 +91,7 @@ push_branch = "missing-branch"`)
 }
 
 func TestDiffRejectsBranchPolicyTargetingDefaultBranch(t *testing.T) {
+	t.Parallel()
 	source := newGitRepo(t, "trunk")
 	source.WriteSkill("skills/alpha", "alpha", "Alpha body")
 	source.Commit("add alpha")
@@ -106,6 +109,7 @@ func TestDiffRejectsBranchPolicyTargetingDefaultBranch(t *testing.T) {
 }
 
 func TestDiffTreatsAbsentDestinationPathAsEmptyTree(t *testing.T) {
+	t.Parallel()
 	source := newGitRepo(t, "main")
 	source.WriteSkill("skills/alpha", "alpha", "Alpha body")
 	source.WriteFile("skills/alpha/notes.md", "present\n", 0o644)
@@ -136,6 +140,7 @@ func TestDiffTreatsAbsentDestinationPathAsEmptyTree(t *testing.T) {
 }
 
 func TestDiffReadsAnExistingWritableDestination(t *testing.T) {
+	t.Parallel()
 	source := newGitRepo(t, "main")
 	source.WriteSkill("skills/alpha", "alpha", "Alpha body")
 	source.WriteFile("skills/alpha/notes.md", "base\n", 0o644)
@@ -165,6 +170,7 @@ func TestDiffReadsAnExistingWritableDestination(t *testing.T) {
 }
 
 func TestDiffReportsUnavailableLocalAndUpstreamSides(t *testing.T) {
+	t.Parallel()
 	source := newGitRepo(t, "main")
 	source.WriteSkill("skills/alpha", "alpha", "Alpha body")
 	source.Commit("add alpha")

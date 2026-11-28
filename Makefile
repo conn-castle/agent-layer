@@ -30,10 +30,12 @@ help: ## Show available targets
 	@awk 'BEGIN {FS = ":.*##"} /^[a-zA-Z0-9_.-]+:.*##/ {printf "  %-18s %s\n", $$1, $$2}' $(call al_shell_quote,$(ROOT_DIR)/Makefile)
 
 .PHONY: tools
-tools: $(TOOL_BIN)/goimports $(TOOL_BIN)/golangci-lint $(TOOL_BIN)/gotestsum $(TOOL_BIN)/deadcode ## Install pinned Go tools into $(TOOL_BIN)
+tools: ## Install pinned Go tools into $(TOOL_BIN)
+	@./scripts/install-go-tools.sh "$(TOOL_BIN)" "$(GO_CACHE)" "$(GO_MOD_CACHE)" "$(GOLANGCI_LINT_VERSION)" goimports golangci-lint gotestsum deadcode
 
 .PHONY: release-tools
-release-tools: $(TOOL_BIN)/govulncheck ## Install pinned release-only Go tools into $(TOOL_BIN)
+release-tools: ## Install pinned release-only Go tools into $(TOOL_BIN)
+	@./scripts/install-go-tools.sh "$(TOOL_BIN)" "$(GO_CACHE)" "$(GO_MOD_CACHE)" "$(GOLANGCI_LINT_VERSION)" govulncheck
 
 .PHONY: check-goimports
 check-goimports: ## Fail if goimports is missing
@@ -72,34 +74,6 @@ check-govulncheck: ## Fail if govulncheck is missing
 
 .PHONY: check-tools
 check-tools: check-goimports check-golangci-lint check-gotestsum check-deadcode ## Fail if any required tool is missing
-
-$(TOOL_BIN)/goimports: go.mod go.sum
-	@mkdir -p "$(TOOL_BIN)" "$(GO_CACHE)" "$(GO_MOD_CACHE)"
-	@version="$$(go list -m -f '{{.Version}}' golang.org/x/tools)"; \
-	  if [[ -z "$$version" ]]; then echo "Failed to resolve golang.org/x/tools version from go.mod" >&2; exit 1; fi; \
-	  GOBIN="$(TOOL_BIN)" GOCACHE="$(GO_CACHE)" GOMODCACHE="$(GO_MOD_CACHE)" go install "golang.org/x/tools/cmd/goimports@$$version"
-
-$(TOOL_BIN)/golangci-lint: Makefile
-	@mkdir -p "$(TOOL_BIN)" "$(GO_CACHE)" "$(GO_MOD_CACHE)"
-	@GOBIN="$(TOOL_BIN)" GOCACHE="$(GO_CACHE)" GOMODCACHE="$(GO_MOD_CACHE)" go install "github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION)"
-
-$(TOOL_BIN)/gotestsum: go.mod go.sum
-	@mkdir -p "$(TOOL_BIN)" "$(GO_CACHE)" "$(GO_MOD_CACHE)"
-	@version="$$(go list -m -f '{{.Version}}' gotest.tools/gotestsum)"; \
-	  if [[ -z "$$version" ]]; then echo "Failed to resolve gotestsum version from go.mod" >&2; exit 1; fi; \
-	  GOBIN="$(TOOL_BIN)" GOCACHE="$(GO_CACHE)" GOMODCACHE="$(GO_MOD_CACHE)" go install "gotest.tools/gotestsum@$$version"
-
-$(TOOL_BIN)/deadcode: go.mod go.sum
-	@mkdir -p "$(TOOL_BIN)" "$(GO_CACHE)" "$(GO_MOD_CACHE)"
-	@version="$$(go list -m -f '{{.Version}}' golang.org/x/tools)"; \
-	  if [[ -z "$$version" ]]; then echo "Failed to resolve golang.org/x/tools version from go.mod" >&2; exit 1; fi; \
-	  GOBIN="$(TOOL_BIN)" GOCACHE="$(GO_CACHE)" GOMODCACHE="$(GO_MOD_CACHE)" go install "golang.org/x/tools/cmd/deadcode@$$version"
-
-$(TOOL_BIN)/govulncheck: go.mod go.sum
-	@mkdir -p "$(TOOL_BIN)" "$(GO_CACHE)" "$(GO_MOD_CACHE)"
-	@version="$$(go list -m -f '{{.Version}}' golang.org/x/vuln)"; \
-	  if [[ -z "$$version" ]]; then echo "Failed to resolve golang.org/x/vuln version from go.mod" >&2; exit 1; fi; \
-	  GOBIN="$(TOOL_BIN)" GOCACHE="$(GO_CACHE)" GOMODCACHE="$(GO_MOD_CACHE)" go install "golang.org/x/vuln/cmd/govulncheck@$$version"
 
 .PHONY: fmt
 fmt: check-goimports ## Format Go files (gofmt + goimports)
@@ -172,10 +146,12 @@ refresh-deepswe-planner-data: ## Download the official DeepSWE snapshot and rege
 	  --output site/static/deepswe-planner/app/data.js \
 	  --retrieved-at "$$(date -u +%Y-%m-%dT%H:%M:%S.000Z)"
 
+CI_RACE_PACKAGES := ./internal/agentdispatch/... ./internal/musepolicy/... ./internal/sync/... ./internal/install/... ./internal/warnings/... ./internal/projectlock/... ./internal/skillimport/... ./internal/ownedprocess/... ./internal/gitrepo/... ./internal/agentoptions/...
+
 .PHONY: test-race
 test-race: ## Run race detector for concurrency-critical packages
 	@mkdir -p "$(GO_CACHE)" "$(GO_MOD_CACHE)"
-	@GOCACHE="$(GO_CACHE)" GOMODCACHE="$(GO_MOD_CACHE)" go test -race ./internal/agentdispatch/... ./internal/musepolicy/... ./internal/sync/... ./internal/install/... ./internal/warnings/... ./internal/projectlock/... ./internal/skillimport/... ./internal/ownedprocess/... ./internal/gitrepo/... ./internal/agentoptions/...
+	@GOCACHE="$(GO_CACHE)" GOMODCACHE="$(GO_MOD_CACHE)" go test -race $(CI_RACE_PACKAGES)
 
 .PHONY: dead-code
 dead-code: check-deadcode ## Run dead code analysis across all packages (test-aware); fails on findings
@@ -292,15 +268,44 @@ website-build-check: ## Publish site into a website checkout and run Docusaurus 
 	@python3 scripts/test-check-website-assets.py
 	@python3 scripts/check-website-assets.py "$${WEBSITE_REPO_DIR}/build"
 
+.PHONY: ci-test
+ci-test: check-gotestsum ## Run all tests once with full coverage and race detection on concurrency-critical packages
+	@mkdir -p "$(GO_CACHE)" "$(GO_MOD_CACHE)" "$(TEST_LOG_DIR)"
+	@log_dir="$$(mktemp -d "$(TEST_LOG_DIR)/ci-test-$$(date -u +%Y%m%dT%H%M%SZ)-XXXXXX")"; status=0; \
+	  GOCACHE="$(GO_CACHE)" GOMODCACHE="$(GO_MOD_CACHE)" go list $(CI_RACE_PACKAGES) | sort -u > "$$log_dir/race.pkgs"; \
+	  GOCACHE="$(GO_CACHE)" GOMODCACHE="$(GO_MOD_CACHE)" go list ./... | sort -u > "$$log_dir/all.pkgs"; \
+	  comm -23 "$$log_dir/all.pkgs" "$$log_dir/race.pkgs" > "$$log_dir/rest.pkgs"; \
+	  race_pkgs=(); while IFS= read -r pkg; do [[ -n "$$pkg" ]] && race_pkgs+=("$$pkg"); done < "$$log_dir/race.pkgs"; \
+	  rest_pkgs=(); while IFS= read -r pkg; do [[ -n "$$pkg" ]] && rest_pkgs+=("$$pkg"); done < "$$log_dir/rest.pkgs"; \
+	  if [[ $${#race_pkgs[@]} -gt 0 ]]; then \
+	    GOCACHE="$(GO_CACHE)" GOMODCACHE="$(GO_MOD_CACHE)" "$(TOOL_BIN)/gotestsum" --format standard-quiet --jsonfile "$$log_dir/go-test-race.jsonl" -- -race -covermode=atomic -coverprofile="$$log_dir/race.cover" "$${race_pkgs[@]}" 2>&1 | tee "$$log_dir/output.log" || status=$$?; \
+	  fi; \
+	  if [[ $$status -eq 0 && $${#rest_pkgs[@]} -gt 0 ]]; then \
+	    GOCACHE="$(GO_CACHE)" GOMODCACHE="$(GO_MOD_CACHE)" "$(TOOL_BIN)/gotestsum" --format standard-quiet --jsonfile "$$log_dir/go-test-rest.jsonl" -- -covermode=atomic -coverprofile="$$log_dir/rest.cover" "$${rest_pkgs[@]}" 2>&1 | tee -a "$$log_dir/output.log" || status=$$?; \
+	  fi; \
+	  if [[ $$status -eq 0 && -f "$$log_dir/go-test-race.jsonl" ]]; then \
+	    GOCACHE="$(GO_CACHE)" GOMODCACHE="$(GO_MOD_CACHE)" go run -tags tools ./internal/tools/checktestevents "$$log_dir/go-test-race.jsonl" 2>&1 | tee -a "$$log_dir/output.log" || status=$$?; \
+	  fi; \
+	  if [[ $$status -eq 0 && -f "$$log_dir/go-test-rest.jsonl" ]]; then \
+	    GOCACHE="$(GO_CACHE)" GOMODCACHE="$(GO_MOD_CACHE)" go run -tags tools ./internal/tools/checktestevents "$$log_dir/go-test-rest.jsonl" 2>&1 | tee -a "$$log_dir/output.log" || status=$$?; \
+	  fi; \
+	  if [[ $$status -eq 0 ]]; then \
+	    printf 'mode: atomic\n' > coverage.out; \
+	    if [[ -f "$$log_dir/race.cover" ]]; then tail -n +2 "$$log_dir/race.cover" >> coverage.out; fi; \
+	    if [[ -f "$$log_dir/rest.cover" ]]; then tail -n +2 "$$log_dir/rest.cover" >> coverage.out; fi; \
+	    GOCACHE="$(GO_CACHE)" GOMODCACHE="$(GO_MOD_CACHE)" go run -tags tools ./internal/tools/coverreport -profile coverage.out 2>&1 | tee -a "$$log_dir/output.log" || status=$$?; \
+	  fi; \
+	  echo "Full test logs: $$log_dir (go-test-race.jsonl, go-test-rest.jsonl, output.log)"; \
+	  exit $$status
+
 .PHONY: release-preflight
-release-preflight: ## Run CI, build unsigned release artifacts, and scan them (set RELEASE_TAG=vX.Y.Z)
+release-preflight: ## Validate upgrade docs, build unsigned release artifacts, and scan them fast (set RELEASE_TAG=vX.Y.Z)
 	@if [[ -z "$${RELEASE_TAG:-}" ]]; then \
 	  echo "RELEASE_TAG is required (example: make release-preflight RELEASE_TAG=v0.8.0)" >&2; \
 	  exit 1; \
 	fi
 	@./scripts/check-upgrade-docs.sh --tag "$${RELEASE_TAG}"
 	@$(MAKE) check-govulncheck
-	@$(MAKE) ci
 	@if [[ " $${MAKEFLAGS} " == *" -n "* || ( "$(firstword $(MAKEFLAGS))" != -* && "$(firstword $(MAKEFLAGS))" == *n* ) ]]; then exit 0; fi; \
 	  artifact_root="$(RELEASE_PREFLIGHT_ARTIFACT_ROOT)"; \
 	  mkdir -p "$$artifact_root"; \
@@ -311,8 +316,17 @@ release-preflight: ## Run CI, build unsigned release artifacts, and scan them (s
 	  AL_CODESIGN_IDENTITY= AL_REQUIRE_CODESIGN=0 AL_VERSION="$${RELEASE_TAG}" DIST_DIR="$$artifact_dir" ./scripts/build-release.sh; \
 	  $(MAKE) release-vuln-check DIST_DIR="$$artifact_dir"
 
-.PHONY: release-certify release-catalog-certify
-release-certify: ## Certify exact-commit CI and signed rehearsal before tagging (set AL_VERSION=vX.Y.Z)
+.PHONY: release release-rehearsal release-probe release-certify release-catalog-certify
+release: ## Dispatch single-run release workflow on clean, pushed main (set AL_VERSION=vX.Y.Z)
+	@AL_VERSION="$(AL_VERSION)" AL_RELEASE_REHEARSAL=0 ./scripts/release.sh
+
+release-rehearsal: ## Dispatch nonpublishing signed release dry-run on clean, pushed main (set AL_VERSION=vX.Y.Z)
+	@AL_VERSION="$(AL_VERSION)" AL_RELEASE_REHEARSAL=1 ./scripts/release.sh
+
+release-probe: ## Probe all locally enabled Agent Dispatch providers in parallel for release evidence
+	@./scripts/probe-release-dispatch.sh
+
+release-certify: ## Verify CI readiness and run optional signed release rehearsal (set AL_VERSION=vX.Y.Z)
 	@AL_VERSION="$(AL_VERSION)" ./scripts/certify-release.sh
 
 release-catalog-certify: release-certify ## Compatibility alias for release-certify; no catalog downloads
@@ -332,15 +346,29 @@ release-dist: test-release ## Build release artifacts (cross-compile)
 	@AL_VERSION="$(AL_VERSION)" DIST_DIR="$(DIST_DIR)" ./scripts/build-release.sh
 
 .PHONY: release-vuln-check
-release-vuln-check: check-govulncheck ## Scan every release executable for known vulnerable symbols (set DIST_DIR=dist)
+release-vuln-check: check-govulncheck ## Scan every release executable for known vulnerable symbols in parallel (set DIST_DIR=dist)
 	@for binary in $(RELEASE_BINARIES); do \
 	  path="$(DIST_DIR)/$$binary"; \
 	  if [[ ! -f "$$path" ]]; then echo "Release binary not found: $$path" >&2; exit 1; fi; \
 	done
-	@for binary in $(RELEASE_BINARIES); do \
-	  echo "Scanning release binary: $(DIST_DIR)/$$binary"; \
-	  "$(TOOL_BIN)/govulncheck" -mode=binary "$(DIST_DIR)/$$binary" || exit $$?; \
-	done
+	@pids=(); \
+	  tmp_dir="$$(mktemp -d)"; \
+	  trap 'rm -rf "$$tmp_dir"' EXIT; \
+	  for binary in $(RELEASE_BINARIES); do \
+	    ( \
+	      echo "Scanning release binary: $(DIST_DIR)/$$binary"; \
+	      "$(TOOL_BIN)/govulncheck" -mode=binary "$(DIST_DIR)/$$binary" \
+	    ) > "$$tmp_dir/$$binary.log" 2>&1 & \
+	    pids+=("$$!"); \
+	  done; \
+	  failed=0; \
+	  for pid in "$${pids[@]}"; do \
+	    wait "$$pid" || failed=1; \
+	  done; \
+	  for binary in $(RELEASE_BINARIES); do \
+	    cat "$$tmp_dir/$$binary.log"; \
+	  done; \
+	  exit "$$failed"
 
 .PHONY: setup
 setup: ## Run one-time setup for this clone
@@ -362,7 +390,7 @@ check-project-paths: ## Check artifacts generated from the project path definiti
 	@go run -tags tools ./internal/tools/projectlayout -check
 
 .PHONY: ci
-ci: check-project-paths tidy-check fmt-check lint shell-syntax-check benchmark-boundary-check dead-code coverage test-muse-fixture test-deepswe-planner test-race test-release test-e2e-harness test-e2e-ci docs-cta-check ## Run CI checks locally
+ci: check-project-paths tidy-check fmt-check lint shell-syntax-check benchmark-boundary-check dead-code ci-test test-muse-fixture test-deepswe-planner test-release test-e2e-harness test-e2e-ci docs-cta-check ## Run CI checks locally
 
 .PHONY: dev
 dev: ## Fast local formatting and lint loop

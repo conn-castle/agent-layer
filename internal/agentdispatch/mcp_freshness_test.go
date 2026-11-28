@@ -220,6 +220,7 @@ func TestMCPFreshnessRealImages(t *testing.T) {
 	}
 	for _, mode := range []string{"development fallback", "legacy bypass", "unpinned", "unpinned symlink"} {
 		t.Run(mode, func(t *testing.T) {
+			t.Parallel()
 			root, bin := writeDispatchRepo(t, dispatchRepoConfig{}), t.TempDir()
 			image := filepath.Join(t.TempDir(), "al")
 			if mode == "unpinned symlink" {
@@ -270,6 +271,7 @@ func TestMCPFreshnessRealImages(t *testing.T) {
 		})
 	}
 	t.Run("newer global delegates to older project pin", func(t *testing.T) {
+		t.Parallel()
 		root, cache := writeDispatchRepo(t, dispatchRepoConfig{}), t.TempDir()
 		cached := filepath.Join(cache, "versions", "1.2.3", runtime.GOOS+"-"+runtime.GOARCH, "al-"+runtime.GOOS+"-"+runtime.GOARCH)
 		if err := os.MkdirAll(filepath.Dir(cached), 0o700); err != nil {
@@ -312,6 +314,7 @@ func TestMCPFreshnessRealImages(t *testing.T) {
 		}
 	})
 	t.Run("pinned server survives global replacement", func(t *testing.T) {
+		t.Parallel()
 		root, bin, cache := writeDispatchRepo(t, dispatchRepoConfig{}), t.TempDir(), t.TempDir()
 		image := filepath.Join(t.TempDir(), "al")
 		copyImage(t, a, image)
@@ -387,6 +390,7 @@ printf '%%s\n' '{"type":"thread.started","thread_id":"11111111-1111-4111-8111-11
 		}
 	})
 	t.Run("development snapshot with unverifiable startup identity", func(t *testing.T) {
+		t.Parallel()
 		root, cache := writeDispatchRepo(t, dispatchRepoConfig{}), t.TempDir()
 		sum, err := imageSHA256(a)
 		if err != nil {
@@ -411,6 +415,7 @@ printf '%%s\n' '{"type":"thread.started","thread_id":"11111111-1111-4111-8111-11
 		}
 	})
 	t.Run("unpinned dispatched server tracks the installed entry", func(t *testing.T) {
+		t.Parallel()
 		root, bin := writeDispatchRepo(t, dispatchRepoConfig{}), t.TempDir()
 		runner, installed := filepath.Join(t.TempDir(), "al-cached"), filepath.Join(t.TempDir(), "al")
 		copyImage(t, a, runner)
@@ -441,6 +446,7 @@ printf '%%s\n' '{"type":"thread.started","thread_id":"11111111-1111-4111-8111-11
 		}
 	})
 	t.Run("development snapshot retains server and worker image after replacement", func(t *testing.T) {
+		t.Parallel()
 		root, bin := writeDispatchRepo(t, dispatchRepoConfig{}), t.TempDir()
 		image, signalDir, cache := filepath.Join(t.TempDir(), "al"), t.TempDir(), t.TempDir()
 		copyImage(t, a, image)

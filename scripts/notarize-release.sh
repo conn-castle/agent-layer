@@ -54,15 +54,18 @@ key_path="${tmp_dir}/AuthKey_${NOTARY_KEY_ID}.p8"
 printf '%s' "$NOTARY_KEY_P8_BASE64" | base64 -D >"$key_path"
 chmod 600 "$key_path"
 
-for binary in "${binaries[@]}"; do
-  archive="${tmp_dir}/$(basename "$binary").zip"
+notarize_binary() {
+  local binary="$1"
+  local name archive log_path err_path status submission_id
+  name="$(basename "$binary")"
+  archive="${tmp_dir}/${name}.zip"
   # Keep notarytool's JSON on stdout and its human-readable progress/errors on
   # stderr in separate files. Mixing them corrupts the JSON that the status/id
   # parsers read, so only log_path (stdout) is ever parsed.
-  log_path="${tmp_dir}/$(basename "$binary").notarytool.json"
-  err_path="${tmp_dir}/$(basename "$binary").notarytool.err"
+  log_path="${tmp_dir}/${name}.notarytool.json"
+  err_path="${tmp_dir}/${name}.notarytool.err"
 
-  echo "Notarizing $(basename "$binary")..."
+  echo "Notarizing ${name}..."
   ditto -c -k --keepParent "$binary" "$archive"
 
   if ! xcrun notarytool submit "$archive" \
@@ -80,13 +83,26 @@ for binary in "${binaries[@]}"; do
         --key-id "$NOTARY_KEY_ID" \
         --issuer "$NOTARY_ISSUER_ID" || true
     fi
-    exit 1
+    return 1
   fi
 
   status="$(notary_status_from_output "$log_path")"
   if [[ "$status" != "Accepted" ]]; then
-    echo "notarize-release: notarization for $(basename "$binary") returned status ${status:-unknown}; expected Accepted." >&2
+    echo "notarize-release: notarization for ${name} returned status ${status:-unknown}; expected Accepted." >&2
     cat "$log_path" "$err_path" >&2
-    exit 1
+    return 1
   fi
+  echo "Notarized ${name} (Accepted)."
+}
+
+pids=()
+for binary in "${binaries[@]}"; do
+  notarize_binary "$binary" &
+  pids+=("$!")
 done
+
+failed=0
+for pid in "${pids[@]}"; do
+  wait "$pid" || failed=1
+done
+exit "$failed"

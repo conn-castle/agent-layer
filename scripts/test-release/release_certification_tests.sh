@@ -1,5 +1,5 @@
 run_release_certification_script_tests() {
-  section "Release Certification Helper Tests"
+  section "Release Dispatch Helper Tests"
 
   local fixture mock_bin log head_sha scenario
   fixture="$(mktemp -d)"
@@ -7,39 +7,60 @@ run_release_certification_script_tests() {
   log="$fixture/gh.log"
   head_sha="1111111111111111111111111111111111111111"
   mkdir -p "$fixture/scripts" "$mock_bin"
+  cp "$ROOT_DIR/scripts/release.sh" "$fixture/scripts/"
   cp "$ROOT_DIR/scripts/certify-release.sh" "$fixture/scripts/"
+  chmod +x "$fixture/scripts/release.sh" "$fixture/scripts/certify-release.sh"
+
+  # Stub verify-release-ci.sh inside the fixture (its own logic is tested exhaustively in workflow_security_tests.sh).
+  cat >"$fixture/scripts/verify-release-ci.sh" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+printf 'verify-release-ci %s\n' "$*" >>"${TEST_GH_LOG}"
+if [[ "${TEST_SCENARIO}" == ci-failed ]]; then
+  echo "ERROR: No successful CI run" >&2
+  exit 1
+fi
+echo "Using exact-tree same-repo PR #580 ci.yml: https://example.invalid/runs/901"
+EOF
+  chmod +x "$fixture/scripts/verify-release-ci.sh"
 
   cat >"$mock_bin/git" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
 case "$*" in
-  "branch --show-current") echo main ;;
-  "status --porcelain") if [[ "${TEST_SCENARIO}" == rehearsal-changed && -f "${TEST_FIXTURE}/rehearsal.seen" ]]; then echo ' M release-source'; fi ;;
+  "branch --show-current") echo "${TEST_BRANCH:-main}" ;;
+  "status --porcelain")
+    if [[ "${TEST_SCENARIO}" == dirty-after-run && -f "${TEST_FIXTURE}/run.watched" ]]; then
+      echo ' M release-source'
+    elif [[ "${TEST_SCENARIO}" == dirty-tree ]]; then
+      echo ' M dirty'
+    fi
+    ;;
   "rev-parse HEAD") echo "${TEST_HEAD_SHA}" ;;
   "ls-remote --exit-code origin refs/heads/main") printf '%s\trefs/heads/main\n' "${TEST_REMOTE_SHA}" ;;
+  "ls-remote --tags origin refs/tags/"*)
+    if [[ "${TEST_SCENARIO}" == tag-exists ]]; then
+      printf '9999999999999999999999999999999999999999\trefs/tags/v9.8.7\n'
+    fi
+    ;;
   *) echo "unexpected git invocation: $*" >&2; exit 2 ;;
 esac
 EOF
+
   cat >"$mock_bin/sleep" <<'EOF'
 #!/usr/bin/env bash
 printf 'sleep %s\n' "$*" >>"${TEST_GH_LOG}"
 EOF
-  # Exact-commit run lists come from TEST_SCENARIO and are filtered through the
-  # script's own --jq expression, so the run-state classification is exercised.
+
   cat >"$mock_bin/gh" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
 printf '%s\n' "$*" >>"${TEST_GH_LOG}"
-next_count() {
-  local file="${TEST_FIXTURE}/$1.count" count=0
-  [[ -f "${file}" ]] && count="$(<"${file}")"
-  count=$((count + 1))
-  printf '%s' "${count}" >"${file}"
-  echo "${count}"
-}
 case "$*" in
+  "repo view --json nameWithOwner --jq .nameWithOwner")
+    echo "conn-castle/agent-layer"
+    ;;
   "run list "*"--json databaseId,status,conclusion"*)
-    count="$(next_count state)"
     workflow="" branch="" commit="" event="" limit=20 fields="" jq_expr=""
     shift 2
     while [[ $# -gt 0 ]]; do
@@ -55,170 +76,120 @@ case "$*" in
       esac
       shift 2
     done
-    [[ "${TEST_SCENARIO}" != list-error ]] || { echo "HTTP 502" >&2; exit 1; }
-    if [[ "$workflow" == ci.yml ]]; then
-      run_event=push
-      case "${TEST_SCENARIO}" in
-        ci-missing) runs='[]' ;;
-        ci-late) if [[ "${count}" -le 3 ]]; then runs='[]'; else runs='[{"databaseId":61,"status":"completed","conclusion":"success"}]'; fi ;;
-        ci-failed) runs='[{"databaseId":60,"status":"completed","conclusion":"failure"}]' ;;
-        ci-active|ci-watch-failed) runs='[{"databaseId":60,"status":"in_progress","conclusion":""}]' ;;
-        ci-pr-success) runs='[{"databaseId":60,"status":"completed","conclusion":"success","event":"pull_request"}]' ;;
-        ci-pr-active) runs='[{"databaseId":60,"status":"in_progress","conclusion":"","event":"pull_request"}]' ;;
-        ci-response-event-success) runs='[{"databaseId":60,"status":"completed","conclusion":"success","responseEvent":"pull_request"}]' ;;
-        ci-response-event-active) runs='[{"databaseId":60,"status":"in_progress","conclusion":"","responseEvent":"pull_request"}]' ;;
-        ci-response-branch-success) runs='[{"databaseId":60,"status":"completed","conclusion":"success","responseHeadBranch":"feature"}]' ;;
-        ci-response-sha-active) runs='[{"databaseId":60,"status":"in_progress","conclusion":"","responseHeadSha":"2222222222222222222222222222222222222222"}]' ;;
-        *) runs='[{"databaseId":61,"status":"completed","conclusion":"success"}]' ;;
-      esac
-    elif [[ "$workflow" == release.yml ]]; then
-      run_event=workflow_dispatch
+    runs='[]'
+    if [[ "${TEST_SCENARIO}" == rehearsal-cached ]]; then
       runs='[{"databaseId":70,"status":"completed","conclusion":"success","displayTitle":"Release rehearsal v9.8.7"}]'
-      if [[ "${TEST_SCENARIO}" == rehearsal-other && ! -f "${TEST_FIXTURE}/release.dispatched" ]]; then
-        runs='[{"databaseId":70,"status":"completed","conclusion":"success","displayTitle":"Release rehearsal v9.8.6"},{"databaseId":71,"status":"completed","conclusion":"success","displayTitle":"Release v9.8.7"}]'
-      elif [[ "${TEST_SCENARIO}" == rehearsal-failed || -f "${TEST_FIXTURE}/release.dispatched" ]]; then
-        runs='[{"databaseId":72,"status":"in_progress","conclusion":"","displayTitle":"Release rehearsal v9.8.7"}]'
-      else
-        case "${TEST_SCENARIO}" in
-          rehearsal-response-event-success) runs="$(jq 'map(.responseEvent = "push")' <<<"$runs")" ;;
-          rehearsal-response-branch-active) runs="$(jq 'map(.status = "in_progress" | .conclusion = "" | .responseHeadBranch = "feature")' <<<"$runs")" ;;
-          rehearsal-response-sha-success) runs="$(jq 'map(.responseHeadSha = "2222222222222222222222222222222222222222")' <<<"$runs")" ;;
-        esac
-      fi
-    else
-      echo "unexpected workflow: $workflow" >&2; exit 2
+    elif [[ -f "${TEST_FIXTURE}/release.dispatched" ]]; then
+      title="Release v9.8.7"
+      [[ "${TEST_REHEARSAL:-0}" == "1" ]] && title="Release rehearsal v9.8.7"
+      runs="[{\"databaseId\":72,\"status\":\"in_progress\",\"conclusion\":\"\",\"displayTitle\":\"${title}\"}]"
     fi
-    if [[ "${TEST_SCENARIO}" == certified-after-20 ]]; then
-      runs="$(jq '[range(25) | . as $i | {databaseId: (100 + $i), status: "completed", conclusion: "failure", displayTitle: "Release rehearsal v9.8.7"}] + .' <<<"$runs")"
-    fi
-    jq --arg sha "$TEST_HEAD_SHA" --arg run_event "$run_event" \
-      --arg branch "$branch" --arg commit "$commit" --arg event "$event" \
-      --argjson limit "$limit" --arg fields "$fields" '
-        map(.headSha = (.headSha // $sha) | .headBranch = (.headBranch // "main") |
-          .event = (.event // $run_event))
-        | map(select(($branch == "" or .headBranch == $branch) and
-          ($commit == "" or .headSha == $commit) and ($event == "" or .event == $event)))[:$limit]
-        | map(if has("responseEvent") then .event = .responseEvent else . end)
-        | map(if has("responseHeadBranch") then .headBranch = .responseHeadBranch else . end)
-        | map(if has("responseHeadSha") then .headSha = .responseHeadSha else . end)
-        | ($fields | split(",")) as $keys
-        | map(with_entries(select(.key as $key | $keys | index($key))))
-      ' <<<"$runs" | jq -r "$jq_expr"
+    jq --arg sha "$TEST_HEAD_SHA" --arg branch "$branch" --arg commit "$commit" \
+       --arg event "$event" --argjson limit "$limit" --arg fields "$fields" '
+      map(.headSha = (.headSha // $sha) | .headBranch = (.headBranch // "main") | .event = (.event // "workflow_dispatch"))
+      | map(select(($branch == "" or .headBranch == $branch) and ($commit == "" or .headSha == $commit) and ($event == "" or .event == $event)))[:$limit]
+      | ($fields | split(",")) as $keys
+      | map(with_entries(select(.key as $key | $keys | index($key))))
+    ' <<<"$runs" | jq -r "$jq_expr"
     ;;
-  "workflow run release.yml --ref main -f release_tag=v9.8.7 -f rehearsal=true") touch "${TEST_FIXTURE}/release.dispatched" ;;
-  "run watch "*" --exit-status") ;;
-  "run view "*" --json conclusion --jq .conclusion") if [[ "${TEST_SCENARIO}" == ci-watch-failed || "${TEST_SCENARIO}" == rehearsal-failed ]]; then echo failure; else echo success; fi ;;
-  "run view "*" --json url --jq .url") [[ "$3" != 70 ]] || touch "${TEST_FIXTURE}/rehearsal.seen"; echo "https://example.invalid/runs/$3" ;;
+  "workflow run release.yml --ref main -f release_tag=v9.8.7 -f rehearsal="*)
+    touch "${TEST_FIXTURE}/release.dispatched"
+    ;;
+  "run watch "*" --exit-status")
+    touch "${TEST_FIXTURE}/run.watched"
+    ;;
+  "run view "*" --json conclusion --jq .conclusion")
+    if [[ "${TEST_SCENARIO}" == run-failed ]]; then echo failure; else echo success; fi
+    ;;
+  "run view "*" --json url --jq .url")
+    echo "https://example.invalid/runs/$3"
+    ;;
   *) echo "unexpected gh invocation: $*" >&2; exit 2 ;;
 esac
 EOF
   chmod +x "$mock_bin/git" "$mock_bin/gh" "$mock_bin/sleep"
 
-  # Exercise macOS system Bash 3.2 in hosted CI as well as Linux Bash.
-  run_certify() {
+  run_release_helper() {
     scenario="$1"
-    rm -f "$fixture"/*.count "$fixture"/*.dispatched "$fixture"/*.seen
+    local remote_sha="${2:-$head_sha}"
+    local version="${3-v9.8.7}"
+    local rehearsal="${4:-0}"
+    local script_name="${5:-release.sh}"
+    rm -f "$fixture/release.dispatched" "$fixture/run.watched"
     : >"$log"
-    PATH="$mock_bin:$PATH" TEST_HEAD_SHA="$head_sha" TEST_REMOTE_SHA="${2:-$head_sha}" \
-      TEST_GH_LOG="$log" TEST_FIXTURE="$fixture" TEST_SCENARIO="$scenario" AL_VERSION="${3-v9.8.7}" \
-      /bin/bash "$fixture/scripts/certify-release.sh" >"$fixture/$scenario.out" 2>"$fixture/$scenario.err"
+    PATH="$mock_bin:$PATH" TEST_HEAD_SHA="$head_sha" TEST_REMOTE_SHA="$remote_sha" \
+      TEST_GH_LOG="$log" TEST_FIXTURE="$fixture" TEST_SCENARIO="$scenario" \
+      TEST_REHEARSAL="$rehearsal" AL_RELEASE_REHEARSAL="$rehearsal" AL_VERSION="$version" \
+      /bin/bash "$fixture/scripts/$script_name" >"$fixture/$scenario.out" 2>"$fixture/$scenario.err"
   }
 
-  assert_full_ci_appearance_wait() {
-    # The documented 60s appearance window uses twelve 5s polls.
-    # Update this expectation explicitly when changing the wait contract.
-    awk '
-      /^sleep / { polls++; if ($0 != "sleep 5") invalid = 1 }
-      END { exit !(polls == 12 && !invalid) }
-    ' "$log"
-  }
-
-  if run_certify certified && \
-     ! grep -q -e '^workflow run' -e '^run watch' -e 'catalog' "$log" && \
-     grep -q "Ready to tag v9.8.7 at $head_sha: full CI and signed release rehearsal passed" "$fixture/$scenario.out"; then
-    pass "release-certification: exact-SHA CI and version-matched rehearsal suffice without querying any catalog"
+  if run_release_helper publish-ok "$head_sha" "v9.8.7" "0" &&
+     grep -q '^workflow run release.yml --ref main -f release_tag=v9.8.7 -f rehearsal=false$' "$log" &&
+     grep -q '^run watch 72 --exit-status$' "$log" &&
+     grep -q 'Published v9.8.7 at ' "$fixture/publish-ok.out"; then
+    pass "release-helper: dispatches single-run release with rehearsal=false and watches to completion"
   else
-    fail "release-certification: must ignore absent or failed catalog runs"
+    fail "release-helper: publish path failed"
+    cat "$fixture/publish-ok.out" "$fixture/publish-ok.err" "$log"
   fi
 
-  if grep -Fq -- "--workflow ci.yml --branch main --commit ${head_sha} --event push" "$log" &&
-     grep -Fq -- "--workflow release.yml --branch main --commit ${head_sha} --event workflow_dispatch" "$log"; then
-    pass "release-certification: server queries bind CI to push and rehearsal to workflow_dispatch"
+  if run_release_helper rehearsal-ok "$head_sha" "v9.8.7" "1" "certify-release.sh" &&
+     grep -q '^workflow run release.yml --ref main -f release_tag=v9.8.7 -f rehearsal=true$' "$log" &&
+     grep -q 'Signed release rehearsal passed for v9.8.7' "$fixture/rehearsal-ok.out"; then
+    pass "release-helper: certify-release.sh compatibility wrapper dispatches rehearsal=true"
   else
-    fail "release-certification: server event filters must match the required evidence"
+    fail "release-helper: certify-release.sh wrapper failed"
+    cat "$fixture/rehearsal-ok.out" "$fixture/rehearsal-ok.err" "$log"
   fi
 
-  if run_certify certified-after-20 && ! grep -q -e '^workflow run' -e '^run watch' "$log" &&
-     grep -q "Ready to tag v9.8.7 at $head_sha" "$fixture/$scenario.out"; then
-    pass "release-certification: reuses valid CI and rehearsal beyond 20 newer unsuccessful runs"
+  if run_release_helper rehearsal-cached "$head_sha" "v9.8.7" "1" &&
+     ! grep -q '^workflow run' "$log" &&
+     grep -q 'already succeeded' "$fixture/rehearsal-cached.out"; then
+    pass "release-helper: reuses already-successful rehearsal for exact SHA and tag"
   else
-    fail "release-certification: must find valid evidence beyond the default 20-run window"
+    fail "release-helper: failed to reuse cached rehearsal"
   fi
 
-  for scenario in ci-missing ci-pr-success ci-pr-active ci-response-event-success ci-response-event-active \
-    ci-response-branch-success ci-response-sha-active; do
-    if run_certify "$scenario" || grep -q -e '^run watch' -e '^workflow run' -e '--workflow release.yml' "$log" ||
-       ! grep -Fxq "ERROR: CI workflow has no successful push-event run on main for ${head_sha} (none)" "$fixture/$scenario.err" ||
-       ! assert_full_ci_appearance_wait; then
-      fail "release-certification: $scenario must reject absent push CI after the full appearance wait"
-    else
-      pass "release-certification: $scenario rejects absent push CI after the full appearance wait"
-    fi
-  done
-
-  for scenario in rehearsal-response-event-success rehearsal-response-branch-active rehearsal-response-sha-success; do
-    if run_certify "$scenario" && grep -q '^workflow run release.yml ' "$log" &&
-       grep -q '^run watch 72 --exit-status$' "$log" && ! grep -q -e '^run watch 70 ' -e '^run view 70 ' "$log"; then
-      pass "release-certification: $scenario dispatches valid evidence instead of accepting or awaiting unrelated rehearsal"
-    else
-      fail "release-certification: $scenario must reject unrelated rehearsal evidence"
-    fi
-  done
-
-  if run_certify list-error; then
-    fail "release-certification: succeeded although the run list failed"
-  elif grep -q '^workflow run' "$log"; then
-    fail "release-certification: must not dispatch when the run list fails"
+  if run_release_helper tag-exists "$head_sha" "v9.8.7" "0" || [[ -s "$log" ]] ||
+     ! grep -q 'already exists on origin' "$fixture/tag-exists.err"; then
+    fail "release-helper: must reject an already-existing tag before CI/workflow calls"
   else
-    pass "release-certification: stops without dispatching when the run list fails"
+    pass "release-helper: rejects an already-existing tag before workflow calls"
   fi
 
-  if run_certify unpushed "2222222222222222222222222222222222222222"; then
-    fail "release-certification: accepted an unpushed main commit"
-  elif [[ -s "$log" ]] || ! grep -q 'is not the pushed origin/main commit' "$fixture/$scenario.err"; then
-    fail "release-certification: must reject an unpushed commit before GitHub workflow calls"
+  if run_release_helper unpushed "2222222222222222222222222222222222222222" "v9.8.7" "0" || [[ -s "$log" ]] ||
+     ! grep -q 'is not the pushed origin/main commit' "$fixture/unpushed.err"; then
+    fail "release-helper: must reject an unpushed main commit"
   else
-    pass "release-certification: rejects an unpushed commit before GitHub workflow calls"
+    pass "release-helper: rejects an unpushed main commit"
   fi
 
-  for scenario in ci-failed ci-watch-failed; do
-    if run_certify "$scenario" || grep -q -- '--workflow release.yml' "$log" || ! grep -q 'CI' "$fixture/$scenario.err"; then
-      fail "release-certification: $scenario must block before any rehearsal workflow call"
-    else pass "release-certification: $scenario blocks release certification"; fi
-  done
-  if run_certify ci-active && awk '/^run watch 60 / {watch=NR} /^run view 60 / {view=NR} /--workflow release.yml/ && !rehearsal {rehearsal=NR} END {exit !(watch && view>watch && rehearsal>view)}' "$log"; then
-    pass "release-certification: awaits pending exact-SHA CI and verifies success before release rehearsal"
+  if run_release_helper ci-failed "$head_sha" "v9.8.7" "0" || grep -q '^workflow run' "$log"; then
+    fail "release-helper: must stop before dispatching when CI verification fails"
   else
-    fail "release-certification: must await and verify pending CI before release rehearsal"
+    pass "release-helper: blocks dispatch when CI verification fails"
   fi
 
-  if run_certify ci-late && [[ "$(grep -c '^sleep 5$' "$log")" -eq 3 ]] && ! grep -q '^workflow run ci.yml' "$log"; then
-    pass "release-certification: waits for late push CI without dispatching it"
-  else fail "release-certification: must await late push CI"; fi
+  if run_release_helper no-version "$head_sha" "" "0" || [[ -s "$log" ]] ||
+     ! grep -q 'AL_VERSION must explicitly name' "$fixture/no-version.err"; then
+    fail "release-helper: must reject missing AL_VERSION"
+  else
+    pass "release-helper: rejects missing AL_VERSION"
+  fi
 
-  if run_certify rehearsal-other && grep -q '^workflow run release.yml --ref main -f release_tag=v9.8.7 -f rehearsal=true$' "$log" && grep -q 'run watch 72 --exit-status' "$log" && grep -q "Ready to tag v9.8.7 at $head_sha" "$fixture/$scenario.out"; then
-    pass "release-rehearsal: other versions and publication runs cannot satisfy exact-SHA rehearsal; dispatches and awaits the intended version"
-  else fail "release-rehearsal: must dispatch and await the intended version instead of accepting unrelated success"; fi
-  if run_certify rehearsal-failed || ! grep -q 'release.yml certification 72 concluded failure' "$fixture/$scenario.err"; then
-    fail "release-rehearsal: must stop when the awaited rehearsal fails"
-  else pass "release-rehearsal: failed rehearsal blocks tagging readiness"; fi
-  if run_certify no-version "$head_sha" "" || [[ -s "$log" ]] || ! grep -q 'AL_VERSION must explicitly name' "$fixture/$scenario.err"; then
-    fail "release-rehearsal: must reject a missing intended version before workflow calls"
-  else pass "release-rehearsal: intended version is required, never inferred"; fi
-  if run_certify rehearsal-changed || ! grep -q 'main changed during certification' "$fixture/$scenario.err"; then
-    fail "release-rehearsal: must reject source changes after successful certification"
-  else pass "release-rehearsal: dirty working tree invalidates successful evidence"; fi
+  if run_release_helper run-failed "$head_sha" "v9.8.7" "0" ||
+     ! grep -q 'concluded failure' "$fixture/run-failed.err"; then
+    fail "release-helper: must fail when dispatched workflow concludes failure"
+  else
+    pass "release-helper: propagates workflow failure"
+  fi
+
+  if run_release_helper dirty-after-run "$head_sha" "v9.8.7" "0" ||
+     ! grep -q 'main changed during release workflow execution' "$fixture/dirty-after-run.err"; then
+    fail "release-helper: must detect main/tree change during workflow execution"
+  else
+    pass "release-helper: detects main/tree changes during workflow execution"
+  fi
 
   rm -rf "$fixture"
-
 }

@@ -21,6 +21,7 @@ import (
 // constructor that fails, so any attempt to contact a remote would fail the
 // test rather than pass silently.
 func TestStatusReportsLocalStateWithoutNetworkAccess(t *testing.T) {
+	t.Parallel()
 	source := newGitRepo(t, "main")
 	source.WriteSkill("skills/alpha", "alpha", "Alpha body")
 	source.WriteSkill("skills/beta", "beta", "Beta body")
@@ -91,6 +92,7 @@ func TestStatusReportsLocalStateWithoutNetworkAccess(t *testing.T) {
 // TestStatusReportsMissingRefEvidence proves status never guesses a ref kind
 // offline: a configured block with no recorded state is reported instead.
 func TestStatusReportsMissingRefEvidence(t *testing.T) {
+	t.Parallel()
 	proj := newProject(t)
 	proj.AppendConfig(importBlock("https://example.test/skills.git", []string{"skills/alpha"}))
 
@@ -117,6 +119,7 @@ func TestStatusReportsMissingRefEvidence(t *testing.T) {
 // keeps reporting the current policy when one unambiguous wildcard replaces an
 // entry's recorded exact selector.
 func TestStatusMapsAManuallyReplacedSelectorToItsUniqueBlock(t *testing.T) {
+	t.Parallel()
 	source := newGitRepo(t, "main")
 	source.WriteSkill("skills/alpha", "alpha", "Alpha body")
 	source.Commit("add alpha")
@@ -143,6 +146,7 @@ func TestStatusMapsAManuallyReplacedSelectorToItsUniqueBlock(t *testing.T) {
 // TestStatusDetectsUserManagedCollision proves an ownership collision is
 // surfaced by status rather than only failing at projection time.
 func TestStatusDetectsUserManagedCollision(t *testing.T) {
+	t.Parallel()
 	source := newGitRepo(t, "main")
 	source.WriteSkill("skills/alpha", "alpha", "Alpha body")
 	source.Commit("add alpha")
@@ -167,6 +171,7 @@ func TestStatusDetectsUserManagedCollision(t *testing.T) {
 // share the project lock: concurrent callers observe one consistent snapshot
 // rather than interleaving reads and mutations.
 func TestConcurrentImportOperationsSerialize(t *testing.T) {
+	t.Parallel()
 	source := newGitRepo(t, "main")
 	source.WriteSkill("skills/alpha", "alpha", "Alpha body")
 	source.Commit("add alpha")
@@ -282,6 +287,7 @@ func TestReportKeepsOneResultPerSkill(t *testing.T) {
 // TestPushReportsDestinationFailureForEveryGroupedSkill proves a destination
 // that cannot be opened fails every skill routed to it, not just the first.
 func TestPushReportsDestinationFailureForEveryGroupedSkill(t *testing.T) {
+	t.Parallel()
 	source := newGitRepo(t, "main")
 	source.WriteSkill("skills/alpha", "alpha", "Alpha body")
 	source.WriteSkill("skills/beta", "beta", "Beta body")
@@ -309,6 +315,7 @@ func TestPushReportsDestinationFailureForEveryGroupedSkill(t *testing.T) {
 // TestStatusPreservesLocalStateWhenTheImportedTierIsUnreadable proves an
 // unreadable imported skill fails only itself and is reported as invalid.
 func TestStatusPreservesLocalStateWhenTheImportedTierIsUnreadable(t *testing.T) {
+	t.Parallel()
 	source := newGitRepo(t, "main")
 	source.WriteSkill("skills/alpha", "alpha", "Alpha body")
 	source.Commit("add alpha")
@@ -368,6 +375,7 @@ func TestUserManagedNamesRejectNFKCCollisions(t *testing.T) {
 // hash disagrees with its recorded commit is refused rather than used as a
 // merge base, and that local content survives.
 func TestPullFailsASkillWhoseRecordedBaseNoLongerMatches(t *testing.T) {
+	t.Parallel()
 	source := newGitRepo(t, "main")
 	source.WriteSkill("skills/alpha", "alpha", "Alpha body")
 	source.Commit("add alpha")
@@ -406,6 +414,7 @@ func TestPullFailsASkillWhoseRecordedBaseNoLongerMatches(t *testing.T) {
 // TestPullRetiresSkillsWhoseBlockWasDeletedFromConfiguration proves removing an
 // import block by hand still applies the one retirement rule.
 func TestPullRetiresSkillsWhoseBlockWasDeletedFromConfiguration(t *testing.T) {
+	t.Parallel()
 	source := newGitRepo(t, "main")
 	source.WriteSkill("skills/alpha", "alpha", "Alpha body")
 	source.WriteSkill("skills/beta", "beta", "Beta body")
@@ -438,6 +447,7 @@ func TestPullRetiresSkillsWhoseBlockWasDeletedFromConfiguration(t *testing.T) {
 // recomputes membership at the new commit: a new valid root is imported and a
 // disappeared one retires, in the same operation that advances the rest.
 func TestPullReconcilesWildcardMembershipWhileAdvancing(t *testing.T) {
+	t.Parallel()
 	source := newGitRepo(t, "main")
 	source.WriteSkill("skills/alpha", "alpha", "Alpha body")
 	source.WriteSkill("skills/gone", "gone", "Gone body")
@@ -502,6 +512,7 @@ func TestReportSortsSourcesAndSkillsDeterministically(t *testing.T) {
 // projection failure after a successful source-state commit is reported but
 // never rolls that valid state back.
 func TestAddReportsAProjectionFailureWithoutDiscardingSourceState(t *testing.T) {
+	t.Parallel()
 	source := newGitRepo(t, "main")
 	source.WriteSkill("skills/alpha", "alpha", "Alpha body")
 	source.Commit("add alpha")
@@ -542,6 +553,7 @@ func TestAddReportsAProjectionFailureWithoutDiscardingSourceState(t *testing.T) 
 // still renders when its configuration block was removed by hand, so the user
 // can see what `al skills pull` is about to retire.
 func TestStatusReportsSkillsWhoseBlockIsNoLongerConfigured(t *testing.T) {
+	t.Parallel()
 	source := newGitRepo(t, "main")
 	source.WriteSkill("skills/alpha", "alpha", "Alpha body")
 	source.Commit("add alpha")
@@ -578,6 +590,7 @@ func TestStatusReportsSkillsWhoseBlockIsNoLongerConfigured(t *testing.T) {
 // still exist; status must list that skill and report it as not write-enabled
 // rather than omitting it.
 func TestStatusReportsASkillWhoseSelectorLeftConfiguration(t *testing.T) {
+	t.Parallel()
 	source := newGitRepo(t, "main")
 	source.WriteSkill("skills/alpha", "alpha", "Alpha body")
 	source.Commit("add alpha")
@@ -608,6 +621,7 @@ func TestStatusReportsASkillWhoseSelectorLeftConfiguration(t *testing.T) {
 }
 
 func TestTierReadersAllowOnlyRegularCasePairs(t *testing.T) {
+	t.Parallel()
 	for _, kind := range []string{"files", "directories", "directory and file", "symlink and file", "file then directory", "file then symlink"} {
 		t.Run(kind, func(t *testing.T) {
 			dir := t.TempDir()
@@ -650,6 +664,7 @@ func TestTierReadersAllowOnlyRegularCasePairs(t *testing.T) {
 }
 
 func TestStatusAndReportRecognizeASCIIPaddedOmittedRef(t *testing.T) {
+	t.Parallel()
 	proj := newProject(t)
 	proj.AppendConfig(importBlock("https://example.test/skills.git", []string{"skills/alpha"}, `ref = "  "`))
 	status, err := proj.Service().Status()

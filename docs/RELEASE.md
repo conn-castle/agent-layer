@@ -1,374 +1,150 @@
 # Release Process
 
-Releases are designed to be predictable and verifiable: the same tag should always produce the same artifacts, checksums, and docs. This section documents the exact steps so the release pipeline remains auditable and repeatable.
+Releases are designed to be fast, predictable, and tamper-resistant: a single `workflow_dispatch` workflow validates, builds, signs, scans, notarizes, tests both macOS and Linux binaries, builds and validates the website, and validates the Homebrew formula **before** creating an immutable annotated `vX.Y.Z` tag and publishing.
 
 ## Required version approval
 
-Before changing any release-versioned file, creating or pushing a release tag, dispatching a release workflow, or publishing a release, obtain the user's explicit approval of the exact `vX.Y.Z` version in the current conversation. A general request such as "release" authorizes assessment of release readiness only. It does not authorize choosing a version, and the operator must not infer major, minor, or patch from the changelog or commit history.
+Before changing any release-versioned file, dispatching a release workflow, or publishing a release, obtain the user's explicit approval of the exact `vX.Y.Z` version in the current conversation. A general request such as "release" authorizes assessment of release readiness only. It does not authorize choosing a version, and the operator must not infer major, minor, or patch from the changelog or commit history.
 
 ## Preconditions (local repo state)
-- On `main` and up to date with `origin/main`.
+- On `main` and up to date with `origin/main` before running `make release`.
 - Clean working tree (`git status --porcelain` is empty).
-- All release changes committed (including `CHANGELOG.md`).
+- All release changes merged to `main` (including `CHANGELOG.md`, `site/docs/upgrades.mdx`, migration manifest, template ownership manifest, and any required Agent Dispatch compatibility evidence).
 
-## Release commands
+## Fast end-to-end release workflow
+
+### 1. Prepare release metadata on a Release PR
+
+1. **Migration manifest** — create `internal/templates/migrations/<version>.json` (version without leading `v`). Set `min_prior_version` to the release line supported by the target row in `site/docs/upgrades.mdx`; from v1.2.0 onward it must be at least `1.0.0` (`skillmigration.MinimumCLI`), the supported installed-project floor. Unknown-source upgrades receive source-agnostic operations only from manifests after `1.0.0`. Add any needed migration operations; use an empty `operations` array if all changes are additive. See existing manifests for the schema.
+2. **Template ownership manifest** — generate from the working tree (no git tag required):
+   ```bash
+   ./scripts/generate-template-manifest.sh --tag "$VERSION"
+   ```
+3. **Changelog and upgrade docs** — finalize the `## vX.Y.Z - YYYY-MM-DD` section in `CHANGELOG.md` and add the matching migration-rules row in `site/docs/upgrades.mdx`.
+4. **Live Agent Dispatch compatibility evidence (when Agent Dispatch changed)** — run the committed parallel probe script (~1 min):
+   ```bash
+   make release-probe
+   ```
+   Attach the generated evidence record under `docs/release-evidence/` to the Release PR. See [Agent Dispatch compatibility evidence](#agent-dispatch-compatibility-evidence) below for pass criteria and failure handling.
+5. **Fast local preflight (~10–15s)** — validate upgrade docs/manifests, build unsigned four-platform release binaries + native smoke test, and scan all four binaries with `govulncheck` *before* opening or updating the Release PR:
+   ```bash
+   make release-tools
+   make release-preflight RELEASE_TAG="$VERSION"
+   ```
+   `make release-preflight` fails fast on missing manifests, upgrade doc drift, build errors, or Go vulnerabilities without re-running the full local `make ci` suite (PR CI runs full `make ci` on both Linux and macOS, plus `govulncheck` on Linux, native Muse on both OSes, website build + asset checks, and benchmark companion contracts).
+6. **Open the Release PR, address review feedback, and merge cleanly to `main`.**
+
+### 2. Publish from clean, pushed `main` (~1.5–2 minutes)
+
+Once the Release PR is merged to `main`:
+
 ```bash
 VERSION="vX.Y.Z"
 
-# Ensure main is current and clean
 git checkout main
 git fetch origin
 git pull --ff-only origin main
 git status --porcelain
 
-# Push and certify exact-commit CI and signed nonpublishing rehearsal
-git push origin main
-RELEASE_COMMIT="$(git rev-parse HEAD)"
+# Single-run release: verifies CI, builds, signs, scans, notarizes, validates
+# website and Homebrew formula, then creates the annotated tag and publishes.
+make release AL_VERSION="$VERSION"
+```
+
+There is **no manual `git tag` or `git push origin "$VERSION"` step** and **no mandatory separate rehearsal wait**.
+
+- **Zero post-merge CI wait on clean merges:** Both `make release` and the `release-readiness` job run `scripts/verify-release-ci.sh`, which accepts either:
+  1. A successful `push`-event `ci.yml` run on `main` for the exact release commit, **or**
+  2. A clean-merge exact-tree same-repo PR whose `pull_request` `ci.yml` run passed (verified from GitHub + local Git: merged PR targets `main` from `conn-castle/agent-layer`, never a fork; no other PR sharing that head SHA targets a non-`main` branch; `git tree(release_commit) == git tree(pr_head)`; and `release_commit^1` is an ancestor of `pr_head`, proving `main` did not advance past the PR).
+  `main`'s `push` CI still runs unattended in the background to refresh default-branch caches and double-check merged commits. If another commit landed on `main` before the Release PR merged (causing merge skew), `scripts/verify-release-ci.sh` automatically waits for/requires `push` CI on `main`.
+- **Single-run atomic publication:** `release.yml` runs `build-release` (macOS signing + parallel 4-target build + `govulncheck` + parallel Apple notarization) and `build-website` (cached `npm ci` + `publish-site` + Docusaurus build + local asset validation) **in parallel** (~1 min). Only after both pass does `publish` verify `dist/checksums.txt`, run a Linux native smoke test on `al-linux-amd64`, validate all three GitHub App tokens, and render + syntax/checksum-check `Formula/agent-layer.rb`. Only after **every** validation passes does it create the annotated `vX.Y.Z` tag, upload all 7 assets into a draft release and publish it (locking it under GitHub Immutable Releases), push the pre-built website commit, verify published asset URLs, and open the Homebrew tap PR.
+
+### Optional signed dry-run rehearsal
+
+Manual `workflow_dispatch` runs of `release.yml` default to `rehearsal=true`. Use a nonpublishing rehearsal when testing changes to `.github/workflows/release.yml`, signing/notarization scripts, or release tooling:
+
+```bash
+make release-rehearsal AL_VERSION="$VERSION"
+# Equivalent compatibility alias:
 make release-certify AL_VERSION="$VERSION"
-
-# Tag only the unchanged certified commit after both gates succeed
-git tag -a "$VERSION" "$RELEASE_COMMIT" -m "$VERSION"
-git push origin "$VERSION"
-
-# Release assets are built by the GitHub Actions workflow.
 ```
 
-Before tagging, prepare and commit both release manifests:
+Rehearsal executes the exact same `release-readiness`, `build-release` (signing, vulnerability scanning, notarization), `build-website`, Linux smoke test, App-token issuance, and Homebrew formula validation, then stops before creating the tag or performing any external write.
 
-1. **Migration manifest** — create `internal/templates/migrations/<version>.json` (version without leading `v`). Set `min_prior_version` to the release line supported by the target row in `site/docs/upgrades.mdx`; from v1.2.0 onward it must be at least `1.0.0` (`skillmigration.MinimumCLI`), the supported installed-project floor. Unknown-source upgrades receive source-agnostic operations only from manifests after `1.0.0`. Add any needed migration operations; use an empty `operations` array if all changes are additive. See existing manifests for the schema.
+### Security model & recovery
 
-2. **Template ownership manifest** — generate via the script below. The script reads templates directly from the working tree (no git tag required). This keeps offline upgrade source-version inference deterministic without runtime network/tag lookups.
-
-```bash
-# 1. Create or verify the migration manifest (manual; see existing files for schema)
-#    internal/templates/migrations/"${VERSION#v}".json
-
-# 2. Generate the template ownership manifest (reads from working tree, no tag needed)
-./scripts/generate-template-manifest.sh --tag "$VERSION"
-
-# 3. Stage both manifests
-git add internal/templates/migrations/"${VERSION#v}".json \
-       internal/templates/manifests/"${VERSION#v}".json
-
-# 4. Commit the manifests
-git commit -m "release: add manifests for $VERSION"
-
-# 5. Run the local unsigned artifact and vulnerability preflight
-make release-preflight RELEASE_TAG="$VERSION"
-```
-
-CI validates both manifests exist via `make docs-upgrade-check RELEASE_TAG=<tag>`. The release workflow will fail if either manifest is missing. Run `make release-preflight` locally before tagging: it validates the tag and upgrade docs before CI, builds unsigned artifacts for all four supported platform/architecture combinations, and scans those binaries with the existing vulnerability check. The command prints its retained artifact directory. Install the scanner first with `make release-tools`. This local pass does not sign or notarize artifacts, and the native smoke test covers only the host platform while its source tarball is made from `HEAD`.
-
-The vulnerability database is network-backed and can change before tagging. Hosted signing, notarization, and its release scan remain the final publication gate, so they can still fail after a local preflight passes.
-
-After pushing the release commit to `main`, run `make release-certify AL_VERSION="$VERSION"` before tagging. The explicit stable version is required; the helper rejects missing versions and the Makefile's default `dev` value. On clean, pushed current `main`, it first requires successful exact-commit full CI (`ci.yml`) from a `push` event on `main`, including both Linux/macOS verification jobs, both native Muse jobs, the website build, and companion fixture contracts. It awaits active CI and allows up to 60 seconds for a missing push run to appear. Failed or missing CI stops without dispatching certification; CI is never dispatched by the helper.
-
-Benchmarking ships as an optional companion and is verified through offline fixtures plus a separate pinned Pier contract CI job. Core certification never queries or dispatches a live catalog run and requires no Docker images or ECR access. Actual evaluations preflight only their selected tasks. See [benchmark setup and registry availability](BENCHMARK.md#registry-availability-and-verification).
-
-Finally the helper reuses, awaits, or dispatches `release.yml` with `release_tag="$VERSION"` and `rehearsal=true`. Rehearsal evidence must have the same main SHA and the exact run title `Release rehearsal vX.Y.Z`; publication runs and other versions cannot satisfy this gate. The helper waits for the entire workflow to succeed and rechecks that local and remote main have not changed. It fails if the dispatched run of that exact SHA does not appear within 30 seconds. No source changes may follow successful certification: if main, manifests, or release sources change, push and certify the new commit again before tagging. Record the certified SHA, intended version, and rehearsal run URL with the release evidence.
-
-### Reusable signed rehearsal
-
-Manual release executions default to `rehearsal=true`. To rehearse an explicit intended version on pushed main without creating its tag:
-
-```bash
-gh workflow run release.yml --ref main -f release_tag="$VERSION" -f rehearsal=true
-```
-
-Use the helper above to bind, wait for, and verify the successful exact-SHA run. The workflow checks out the dispatched `github.sha` in rehearsal; publication checks out the release tag. Both modes use the same signing, vulnerability scanning, notarization, artifact transfer, app-token issuance with publication permissions, local website build/asset validation, formula generation, and Ruby syntax checks. Rehearsal skips release publication, website commit/push, public release-asset URL checks, and tap PR creation. External checkout credentials are not persisted, and rehearsal uses a separate concurrency group. Tag pushes still publish; manual publication requires explicitly selecting `rehearsal=false` and the existing version/publication approval.
-
-The release workflow itself requires successful exact-commit CI in both modes, plus a successful matching rehearsal before publication. Readiness selects successful conclusions with matching source SHAs, events, and `main` branches from up to 100 of the newest runs matching each lookup's workflow, event, branch, and commit, avoiding GitHub's lagging server-side status filter. CI evidence must come from a `push` run on `main`; pull request runs cannot satisfy the gate. GitHub token permissions are static, so the shared build/publication job retains `contents: write` with its release action guarded off during rehearsal; the other jobs use `contents: read`. App tokens deliberately request normal publication permissions to verify issuance, but rehearsal never uses them to push or create a PR. Rehearsal validates the local publication payloads and credentials, not actual external writes or the tap repository's post-publication test/auto-merge result. External service state can also change after certification; preserve the existing publication approvals and post-publication checks.
+- **No raw tag triggers:** `release.yml` is triggered strictly via `workflow_dispatch` (no `on: push: tags`), preventing accidental raw tag pushes and ensuring App-created tags never re-trigger the workflow.
+- **Release Environment & actor authorization:** Every job runs in the GitHub `release` Environment restricted to `main` only (no UI click gate—releases stay 100% CLI-driven) and enforces fail-closed matching of `github.actor` against the Admin-only `RELEASE_ACTORS` Environment variable. Non-admin contributors with `write` access cannot dispatch releases or access `release` Environment secrets.
+- **Split tag protection + Immutable Releases:** Existing `v*` tags are protected by an Admin-only ruleset (`update`, `deletion`, `non_fast_forward`) with no App bypass; a separate `v*` `creation` ruleset allows only Repo Admins and the release GitHub App (`conn-castle-release-bot`) to create new `v*` tags. GitHub Immutable Releases prevents replacing published release assets.
+- **Never rebuild after a tag exists:** Because Apple Developer ID secure timestamps make macOS binaries non-reproducible across builds, `release-readiness` refuses to start a new build if `refs/tags/vX.Y.Z` already exists. If a transient GitHub outage interrupts `publish` after tag creation, recover by clicking **Re-run failed jobs** on that workflow run (`publish` reuses the already-uploaded signed `dist` artifact and resumes idempotently).
 
 ## Agent Dispatch compatibility evidence
 
-For a release that changes Agent Dispatch, attach a short evidence record under
-`docs/release-evidence/` to the release pull request before tagging. Record the
-exact `claude --version`, `codex --version`, `agy --version`,
-`grok --version`, and `muse --version` values, plus a fresh `start`/`wait` probe and a
-`continue`/`wait` probe for each locally enabled dispatch provider. List every
-declared supported provider in the evidence, marking disabled or unavailable
-providers as untested with the reason; do not enable them just for the probe.
+For a release that changes Agent Dispatch, attach a short evidence record under `docs/release-evidence/` to the Release PR before merging. Record the exact `claude --version`, `codex --version`, `agy --version`, `grok --version`, and `muse --version` values, plus a fresh `start`/`wait` probe and a `continue`/`wait` probe for each locally enabled dispatch provider. List every declared supported provider in the evidence, marking disabled or unavailable providers as untested with the reason; do not enable them just for the probe.
 
-Run these live probes from the existing local release checkout using its
-`.agent-layer/config.toml`, `.agent-layer/.env`, and normal repo-local provider
-configuration and sign-ins. Preserve the configured models, reasoning efforts,
-and permissions. Do not initialize a scratch project, substitute template
-defaults, redirect provider homes, or copy credentials into a test fixture.
-Disposable projects remain appropriate for install/upgrade tests, which do not
-validate live provider authentication.
-
-Build and run the candidate in a unique scratch directory from the repository
-root. The command-line `AL_DEV_BIN_DIR` override keeps the candidate build out
-of the operator's development executable printed by `make -s al-dev-path`. Dispatch start/continue still
-regenerate the project's MCP launchers and HerdR hooks using the scratch path.
-After **all** probe workers have terminated, leave the probe environment and
-run `make al-sync` to restore those projections to the operator's normal dev
-build before removing the scratch directory. This restoration may rebuild the
-normal dev executable; a snapshotted MCP server started from that normal dev
-path keeps serving its startup code while the path remains a regular executable,
-without reconnecting. A client that connects while the probe
-projections are active starts a candidate snapshot. After scratch removal that
-server still answers options with changed-source status, but refuses new start
-and continue requests so it cannot re-project the deleted scratch path. Restore
-projections as below, then reconnect that server to use the operator's normal dev
-build. Wait, inspect, output and cancel remain available for existing work.
-
-The nested subshell below confines the probe environment. Confirmed provider
-failures are recorded and later providers are still probed. After a confirmed
-failure, an operator can type `retry-transient` at the terminal only when the
-reported cause is explicitly transient and after waiting its requested delay;
-this permits one retry of the fresh/continuation pair on a new handle. Without a
-terminal or that explicit response, the failure is retained without retrying.
-
-Cleanup runs after every started invocation has termination confirmed, including
-confirmed failures, and projection restoration succeeds. The block exits nonzero
-if any provider still failed. An unsuccessful CLI call, invalid response or
-unconfirmed termination stops probing and retains scratch for manual recovery:
-confirm termination of every invocation started, then run `make al-sync` from
-the original shell before removing that directory:
+Run the committed parallel probe script from the existing local release checkout using its `.agent-layer/config.toml`, `.agent-layer/.env`, and normal repo-local provider configuration and sign-ins:
 
 ```bash
-(
-  probe_bin_dir="$(mktemp -d "${TMPDIR:-/tmp}/al-release-probe.XXXXXX")" || exit 1
-  make al-dev-build AL_DEV_BIN_DIR="$probe_bin_dir" || exit 1
-  printf 'Release probe executable: %s\n' "$probe_bin_dir/al"
-  probe_status=0
-  (
-    unset AL_RUN_DIR AL_RUN_ID AL_DISPATCH_CALLER_AGENT AL_DISPATCH_ACTIVE AL_DISPATCH_MAX_DEPTH AL_SHIM_ACTIVE
-    unset AL_INSTALLED_EXECUTABLE
-    unset CODEX_HOME CLAUDE_CONFIG_DIR AGY_CLI_DISABLE_AUTO_UPDATE GROK_HOME
-    export PATH="$probe_bin_dir:$PATH"
-    export AL_DEV_BYPASS_VERSION_DISPATCH=1
-    export AL_DEV_EXECUTABLE="$probe_bin_dir/al"
-    export AL_DEV_SOURCE_ROOT="$PWD"
-    options="$(al dispatch options)" || exit 20
-    printf '%s\n' "$options"
-    providers="$(python3 -c 'import json, sys
-for agent in json.load(sys.stdin)["agents"]:
-    if agent["available"]:
-        print(agent["agent"])' <<<"$options")" || exit 20
-    if [ -z "$providers" ]; then
-      printf '%s\n' 'No available providers to probe; retain scratch until projections are restored.' >&2
-      exit 20
-    fi
-    # 0 = completed, 10 = confirmed provider failure, 20 = unsafe to proceed.
-    wait_for_termination() {
-      local result
-      result="$(al dispatch wait "$1" --condition termination_confirmed)" || return 20
-      printf '%s\n' "$result"
-      python3 -c 'import json, sys
-result = json.load(sys.stdin)
-confirmed = result.get("condition_met") is True and result.get("termination_confirmed") is True
-state = result.get("state")
-sys.exit(0 if confirmed and state == "completed" else 10 if confirmed and state in ("failed", "cancelled", "interrupted") else 20)' <<<"$result"
-    }
-    probe_provider() {
-      local started handle status
-      started="$(al dispatch start --agent "$1" --prompt 'Reply with exactly release-probe-fresh. Do not use tools or modify files.')" || return 20
-      printf '%s\n' "$started"
-      handle="$(python3 -c 'import json, sys
-handle = json.load(sys.stdin)["handle"]
-if not isinstance(handle, str) or not handle:
-    raise ValueError("missing dispatch handle")
-print(handle)' <<<"$started")" || return 20
-      wait_for_termination "$handle"
-      status=$?
-      [ "$status" -eq 0 ] || return "$status"
-      al dispatch continue "$handle" --prompt 'Reply with exactly release-probe-continue. Do not use tools or modify files.' || return 20
-      wait_for_termination "$handle"
-    }
-    retry_transient_failure() {
-      local answer
-      printf '%s\n' 'Only after an explicitly transient error and its requested delay: type retry-transient to retry once on a new handle; otherwise press Enter.' 2>/dev/null >/dev/tty || return 1
-      IFS= read -r answer 2>/dev/null </dev/tty || return 1
-      [ "$answer" = retry-transient ]
-    }
-    probe_failed=0
-    while IFS= read -r provider <&3; do
-      attempt=1
-      while :; do
-        status=0
-        probe_provider "$provider" || status=$?
-        case "$status" in
-          0) break ;;
-          10)
-            if [ "$attempt" -eq 1 ] && retry_transient_failure; then
-              attempt=2
-              continue
-            fi
-            printf '%s\n' "Provider $provider failed after confirmed termination (attempt $attempt); continue collecting evidence." >&2
-            probe_failed=1
-            break ;;
-          *) exit 20 ;;
-        esac
-      done
-    done 3<<<"$providers"
-    exit "$probe_failed"
-  ) || probe_status=$?
-  # Only success or confirmed failures permit restoration and scratch cleanup.
-  if [ "$probe_status" -ne 0 ] && [ "$probe_status" -ne 1 ]; then
-    exit "$probe_status"
-  fi
-  # No probe worker may remain to regenerate projections after this restore.
-  make al-sync || exit 30
-  rm -rf -- "$probe_bin_dir"
-  exit "$probe_status"
-)
+make release-probe
 ```
 
-Exit statuses distinguish the cleanup outcome:
+`scripts/probe-release-dispatch.sh` builds a scratch candidate executable (`make al-dev-build AL_DEV_BIN_DIR=<scratch>`), records its SHA-256 and installed provider CLI versions, probes all locally enabled, available providers **in parallel** inside a clean probe environment (preserving configured models, reasoning efforts, and permissions without copying credentials or creating scratch projects), waits for `termination_confirmed` on every invocation, restores local projections via `make al-sync`, removes the scratch binary directory, validates all pass criteria (including Antigravity structured ACP session/usage evidence), and prints a ready-to-attach Markdown table.
 
-- `0`: every provider probe completed; projections were restored and scratch removed.
-- `1`: scratch creation or the candidate build failed before probing, or a provider
-  failed after confirmed termination and successful restoration and cleanup. The
-  printed probe path and build/probe output distinguish these cases; a failed
-  build can leave its scratch directory behind.
-- `20`: probing stopped because a CLI call failed, a response was invalid, no
-  providers were available, or termination was unconfirmed. Scratch is retained;
-  confirm termination and restore projections before removing it.
-- `30`: projection restoration failed after all started invocations terminated.
-  Scratch is retained; fix the restoration failure and run `make al-sync` again
-  from the original shell before removing it.
+Exit statuses:
+- `0`: every available provider passed fresh + continuation probes; projections restored and scratch removed.
+- `1`: build failed or one or more providers failed after confirmed termination (projections restored and scratch removed after termination confirmation).
+- `20`: unsafe stop (CLI call failed, invalid response, no providers available, or termination unconfirmed). Scratch is retained; confirm termination of every started invocation, run `make al-sync`, and remove scratch manually.
+- `30`: projection restoration (`make al-sync`) failed after all invocations terminated; fix restoration and rerun `make al-sync` before removing scratch.
 
-The block probes every enabled, available provider listed in options and captures
-each returned handle for both waits and continuation. The provider list uses a
-separate descriptor so dispatch commands cannot consume later provider names. Providers that are
-unavailable remain listed in the printed options with their reasons. Model and
-reasoning overrides are omitted so Agent Layer uses the local config.
-Record the effective targets and checkout commit alongside the CLI versions,
-fresh/continuation results, and provider session IDs. Each invocation's
-provider session ID is the `provider_session_id` field of
-the `dispatch.json` file for the invocation in the [run directory](../site/docs/reference.mdx#ephemeral-artifacts-under-agent-layertmp). Store agent-only probe artifacts in the working directory. Never include credentials or account
-identifiers in the evidence record.
-
-A provider passes only when all of the following hold:
-
-- The fresh and continuation invocations each reach `completed` with
-  termination confirmed.
-- The continuation reports the same provider session ID as the fresh
-  invocation.
-- Each final answer contains its requested token (`release-probe-fresh` or
-  `release-probe-continue`). Any other text, whitespace, punctuation, or
-  formatting in the answer is not a failure; record the answer verbatim. A
-  missing token is a failure.
-
-The probes validate the dispatch lifecycle, not the model's formatting
-compliance, so do not rerun a probe to obtain an exact match.
-
-Authentication and quota failures from this local setup are not passing
-compatibility evidence. A failure is transient only when the provider's error
-explicitly reports a temporary condition (for example, a Claude OAuth refresh
-lock); missing, expired, or rejected credentials and exhausted quota are not
-transient. After a transient failure, wait for any delay the error suggests,
-then repeat that provider's fresh and continuation probes once on a
-new handle. Record the failed attempt's invocation ID and error alongside the
-retry result. Report any other failure, or a transient failure that recurs, as
-a failure for that provider. Do not change credentials, sign-ins, or
-configuration to make a probe pass.
-
-Antigravity's live evidence must include a structured conversation ID, final
-answer, and usage. For a fresh ACP turn, take the ID from the `session/new`
-response. For a continued turn, use the ID requested by `session/resume` and
-check any ID the response echoes. Verify the answer chunks belong to that
-session and match the retained answer. Verify a successful terminal
-`session/prompt` response with usage. Any conversation ID in provider
-diagnostics must match the structured ID. Missing or inconsistent structured
-terminal evidence fails the probe. Plain provider output cannot substitute for it.
-
-## GitHub release (automatic)
-1. Tag push triggers the release workflow.
-2. The workflow validates upgrade-contract docs for the tag (`make docs-upgrade-check RELEASE_TAG=<tag>`), ensuring a matching migration-table row exists, blocking placeholder migration text when changelog notes breaking/manual migration impact, verifying the migration manifest and template ownership manifest exist, and enforcing upgrade CTA syntax drift checks in core docs/message surfaces.
-3. The workflow runs `make ci` on macOS before importing signing credentials, then imports the Developer ID certificate, builds release artifacts, signs the darwin binaries, writes checksums after signing, notarizes the darwin binaries, and publishes `al-install.sh`, macOS/Linux platform binaries, `agent-layer-<version>.tar.gz` (source tarball; version without leading `v`), and `checksums.txt`.
-4. The workflow opens a PR against `conn-castle/homebrew-tap` to render `Formula/agent-layer.rb` as a binary formula using the published macOS/Linux release assets and their SHA256 values. **Eligible PRs merge automatically after successful validation — see [Homebrew tap PR](#homebrew-tap-pr--automatic-after-successful-validation). Do not merge it manually.**
-5. The workflow publishes website content by pushing directly to `conn-castle/agent-layer-web` on `main`. This is mandatory; the release fails if `cmd/publish-site/main.go` or `site/` is missing, or if the published Docusaurus site does not build.
-6. Release notes are automatically extracted from `CHANGELOG.md` by the workflow.
-
-Once this workflow succeeds, the release is done. The tap PR normally completes automatically after its own validation; if it remains open after validation and auto-merge have finished, inspect the auto-merge guards. The only remaining routine step is the optional [post-release verification](#post-release-verification-fresh-repo) below.
+Pass criteria (every provider):
+- Fresh and continuation invocations both reach `completed` with `termination_confirmed = true`.
+- Continuation reports the same `provider_session_id` as the fresh invocation.
+- Each final answer contains its requested token (`release-probe-fresh` or `release-probe-continue`). Other text/punctuation/whitespace is not a failure; record verbatim.
+- Authentication and quota failures are not passing evidence. Only an explicitly transient provider error (e.g., an OAuth refresh lock) may be retried once after its requested delay on a new handle, recording the failed attempt alongside the retry.
+- Antigravity evidence must include structured ACP session/conversation ID and terminal `usage` in `events.jsonl`; plain provider output cannot substitute.
+- If a later PR commit changes only documentation/manifests (no changes to `cmd/`, `internal/`, `go.mod`, or `go.sum`), existing probe evidence from the unchanged executable remains valid—record that `git diff --exit-code <probed-commit> HEAD -- cmd internal go.mod go.sum` is empty.
 
 ## Homebrew tap PR — automatic after successful validation
 
 > **Do not merge, approve, label, or close the `conn-castle/homebrew-tap` PR manually. Eligible PRs merge automatically after successful validation.**
 
-An open PR titled `agent-layer vX.Y.Z` in `conn-castle/homebrew-tap` immediately after a release is the **normal, healthy, expected** state. `brew test-bot` or the auto-merge workflow may still be running. Releasing is complete once the release workflow succeeds; if both tap workflows complete without a merge, inspect the auto-merge run to identify which guard stopped it.
-
-Every `agent-layer` tap PR to date has been merged by the `conn-castle-release-bot` app, typically 2–25 minutes after it was opened.
+An open PR titled `agent-layer vX.Y.Z` in `conn-castle/homebrew-tap` immediately after a release is the **normal, healthy, expected** state. `brew test-bot` or the auto-merge workflow may still be running. Releasing is complete once `make release` succeeds; if both tap workflows complete without a merge, inspect the auto-merge run to identify which guard stopped it.
 
 ### What happens without you
-1. This repo's release workflow opens the PR as `conn-castle-release-bot`, from branch `bump-agent-layer-vX.Y.Z`, changing only `Formula/agent-layer.rb`.
+1. `release.yml` opens the PR as `conn-castle-release-bot`, from branch `bump-agent-layer-vX.Y.Z`, changing only `Formula/agent-layer.rb`.
 2. The tap's `brew test-bot` workflow validates the formula on macOS and Linux.
-3. On success, the tap's `Auto merge binary formula bumps` workflow (`.github/workflows/auto-merge-binary-formula.yml` in the tap repo) **squash-merges the PR and attempts to delete the branch automatically.**
-
-There is no manual approval gate anywhere in that chain.
+3. On success, the tap's `Auto merge binary formula bumps` workflow **squash-merges the PR and deletes the branch automatically.**
 
 ### Never do these
 - **Do not merge the PR by hand.** Merging it yourself bypasses the `brew test-bot` gate.
-- **Do not add the `pr-pull` label and do not run `brew pr-pull`.** The auto-merge workflow deliberately *refuses to merge* any binary-formula PR carrying that label, so adding it converts a self-completing release into a stuck one. `pr-pull` is only for formulae that produce Homebrew bottle artifacts; `agent-layer` is a binary formula that points at this repo's already-signed and notarized release assets, so the tap never builds, signs, notarizes, or bottles it.
-
-**If it really is stuck:** when both `brew test-bot` and auto-merge have completed but the PR remains open, read the tap's `Auto merge binary formula bumps` run to see which guard stopped it, and fix that cause rather than merging by hand.
+- **Do not add the `pr-pull` label and do not run `brew pr-pull`.** The auto-merge workflow deliberately refuses any binary-formula PR carrying that label. `agent-layer` is a binary formula pointing at already-signed and notarized release assets, so the tap never builds or bottles it.
 
 ## Website publish details (agent-layer-web)
-The `publish-website-and-tap` job publishes website content by running `go run ./cmd/publish-site --tag vX.Y.Z --repo-b-dir agent-layer-web`, then runs `npm run build` in `agent-layer-web`.
-Release publishing currently supports stable tags only (`vX.Y.Z`); prerelease tags are intentionally unsupported.
-That command:
-1. Stages `site/pages/`, generates the three Best Practices pages from their canonical guides under `docs/`, and replaces `agent-layer-web/src/pages/`.
-2. Replaces the owned `static/deepswe-planner/` application, copies `site/static/llms.txt`, and leaves unrelated website static assets intact.
-3. Replaces `agent-layer-web/docs/` with `site/docs/` and publishes an agent-readable `.md` mirror under `agent-layer-web/static/docs/`.
-4. Overwrites `agent-layer-web/CHANGELOG.md` with this repo’s `CHANGELOG.md`.
-5. Removes any existing versioned docs for this tag, then runs `npx docusaurus docs:version X.Y.Z` to snapshot the docs into `versioned_docs/version-X.Y.Z/` and `versioned_sidebars/version-X.Y.Z-sidebars.json`.
-6. Rewrites `versions.json` (dedupe + newest-first sort), then applies retention:
-   - keep the newest 4 patch releases from the newest minor line,
-   - keep the newest patch release for each of the newest 4 minor lines (including the newest minor line),
-   - keep stable releases only (prereleases are dropped),
-   - keep the union of those sets in newest-first order.
-7. Prunes dropped versions from both `versioned_docs/version-<version>/` and `versioned_sidebars/version-<version>-sidebars.json`.
 
-Historical docs are retained by the policy above. The current tag is always removed/recreated first for idempotency before retention is applied.
+The `build-website` job runs in parallel with `build-release`, staging `site/` + `CHANGELOG.md` into `conn-castle/agent-layer-web` via `go run ./cmd/publish-site --tag vX.Y.Z --repo-b-dir agent-layer-web`, running `npm run build` and `python3 scripts/check-website-assets.py agent-layer-web/build`, and bundling the resulting commit for `publish` to push once the GitHub Release succeeds.
 
-After publishing, the workflow runs the Docusaurus production build before committing and pushing the website changes.
+Retention policy in `versions.json`:
+- keep the newest 4 patch releases from the newest minor line,
+- keep the newest patch release for each of the newest 4 minor lines (including the newest minor line),
+- keep stable releases only (prereleases are dropped),
+- keep the union in newest-first order and prune dropped versions from `versioned_docs/` and `versioned_sidebars/`.
 
-The existing website CI check and release publisher also validate local asset
-references in generated HTML, failing with the referring page and missing path.
-This checks images, scripts, stylesheets, embedded pages, media, and social-image
-metadata against the combined build, without requesting external URLs. It does
-not detect unpublished design intent, CSS or JavaScript-generated URLs, or
-`srcset` candidates; Docusaurus continues to validate page links and anchors.
-The checker requires Python 3.9 or later (available on the hosted Ubuntu runner).
+Website releases span two repositories: navbar config, theme components, CSS, branding assets, and global metadata belong to `agent-layer-web`. Routine CLI releases only need the automated Docusaurus build and asset validation (`website-build` in CI and `build-website` in `release.yml`); run manual browser/Playwright inspection only when website pages, layout, navigation, or styles actually changed.
 
-Website releases span two repositories. This publisher does **not** copy navbar
-configuration, theme components, CSS, branding assets, or global metadata from
-a local website checkout. Those files belong to `agent-layer-web` and must be
-reviewed, merged, and deployed there. Before releasing page changes, inspect both
-repositories for pending website work and confirm that every new asset and route
-exists in the website's `main`. Build the combined result and inspect navigation,
-footer, logos, and mobile/dark-mode rendering; a content publish alone does not
-ship website-owned changes. Website-only corrections do not need a new CLI tag.
-
-
-CI also runs the same website build shape on pull requests and pushes to `main` with a synthetic docs tag:
+CI runs the same website build check on every PR and push to `main`:
 
 ```bash
 make website-build-check SITE_BUILD_TAG=v999.0.0 WEBSITE_REPO_DIR=agent-layer-web
 ```
 
-Use a disposable, clean website checkout and a valid test version newer than the
-versions already listed in `versions.json`. Older test versions can be removed by
-the retention step before the build, which would validate the previous docs instead
-of the files you just published.
+Required secrets (stored in the `release` GitHub Environment, restricted to `main`):
+- `HOMEBREW_TAP_APP_ID`, `HOMEBREW_TAP_PRIVATE_KEY` (`conn-castle-release-bot` — used for both `agent-layer` tag/release creation and `homebrew-tap` PRs; optional dedicated `RELEASE_APP_ID`/`RELEASE_APP_PRIVATE_KEY` override supported)
+- `MACOS_CERT_P12_BASE64`, `MACOS_CERT_P12_PASSWORD`
+- `MACOS_NOTARY_API_KEY_ID`, `MACOS_NOTARY_API_KEY_ISSUER_ID`, `MACOS_NOTARY_API_KEY_P8_BASE64`
+- `AGENT_LAYER_WEB_APP_ID`, `AGENT_LAYER_WEB_APP_PRIVATE_KEY`
 
-Required secrets for the tap PR:
-- `HOMEBREW_TAP_APP_ID`
-- `HOMEBREW_TAP_PRIVATE_KEY`
-
-Required secrets for darwin signing and notarization:
-- `MACOS_CERT_P12_BASE64`
-- `MACOS_CERT_P12_PASSWORD`
-- `MACOS_NOTARY_API_KEY_ID`
-- `MACOS_NOTARY_API_KEY_ISSUER_ID`
-- `MACOS_NOTARY_API_KEY_P8_BASE64`
-
-Required secrets for the website publish:
-- `AGENT_LAYER_WEB_APP_ID`
-- `AGENT_LAYER_WEB_APP_PRIVATE_KEY`
+Required variable in the `release` GitHub Environment:
+- `RELEASE_ACTORS` (comma-separated list of authorized GitHub usernames, Admin-only editable)
 
 ## Upgrade contract maintenance
 - `site/docs/upgrades.mdx` is the canonical upgrade contract for event categories, compatibility guarantees, migration rules, and OS/shell support.

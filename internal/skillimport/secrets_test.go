@@ -12,6 +12,7 @@ import (
 // against the resolved value, and the placeholder text — not the value — is
 // what stays in configuration, in the lockfile, and in status output.
 func TestPullResolvesRepositoryPlaceholdersWithoutRecordingThem(t *testing.T) {
+	t.Parallel()
 	source := newGitRepo(t, "main")
 	source.WriteSkill("skills/alpha", "alpha", "Alpha body")
 	source.Commit("add alpha")
@@ -72,6 +73,7 @@ func TestPullResolvesRepositoryPlaceholdersWithoutRecordingThem(t *testing.T) {
 // that .agent-layer/.env does not define stops the block with a message naming
 // the variable and the file, rather than handing git a half-substituted URL.
 func TestPullFailsActionablyWhenAPlaceholderIsUndefined(t *testing.T) {
+	t.Parallel()
 	proj := newProject(t)
 	proj.WriteEnv(map[string]string{"AL_UNRELATED": "value"})
 	proj.AppendConfig(importBlock("https://${AL_SKILLS_TOKEN}@example.test/skills.git", []string{"skills/alpha"}))
@@ -101,6 +103,7 @@ func TestPullFailsActionablyWhenAPlaceholderIsUndefined(t *testing.T) {
 // out of a failure report even though repository URLs are ordinary git command
 // arguments, and git echoes them back in its own diagnostics.
 func TestPullRedactsResolvedSecretsFromGitFailures(t *testing.T) {
+	t.Parallel()
 	// The resolved value is a path that is not a repository, so git fails with
 	// the value in both the command arguments and its stderr.
 	secret := filepath.Join(t.TempDir(), "s3cr3t-not-a-repository")
@@ -129,6 +132,7 @@ func TestPullRedactsResolvedSecretsFromGitFailures(t *testing.T) {
 // policy boundary end to end: a literal secret never loads, while the same URL
 // shape written as a placeholder does.
 func TestConfigurationRejectsLiteralCredentialsButAcceptsPlaceholders(t *testing.T) {
+	t.Parallel()
 	proj := newProject(t)
 	proj.WriteEnv(map[string]string{"AL_SKILLS_TOKEN": "token-value"})
 	// #nosec G101 -- an invented credential in a fixture proving such URLs are refused.
@@ -163,6 +167,7 @@ func TestConfigurationRejectsLiteralCredentialsButAcceptsPlaceholders(t *testing
 // the group against the recorded repository to decide lock advancement, and
 // renders the destination into every result detail.
 func TestPushResolvesPlaceholdersForSourceAndDestination(t *testing.T) {
+	t.Parallel()
 	source := newGitRepo(t, "main")
 	source.WriteSkill("skills/alpha", "alpha", "Alpha body")
 	source.WriteSkill("skills/zulu", "zulu", "Zulu body")
@@ -230,6 +235,7 @@ func TestPushResolvesPlaceholdersForSourceAndDestination(t *testing.T) {
 // covers the destination side too: a push opens a second repository, and its
 // git failures carry that URL just as the source's do.
 func TestPushRedactsResolvedSecretsFromDestinationFailures(t *testing.T) {
+	t.Parallel()
 	source := newGitRepo(t, "main")
 	source.WriteSkill("skills/alpha", "alpha", "Alpha body")
 	source.Commit("add alpha")

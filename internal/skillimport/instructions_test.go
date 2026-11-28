@@ -13,6 +13,7 @@ import (
 )
 
 func TestInstructionsExactFileLifecycleAndNumericProjection(t *testing.T) {
+	t.Parallel()
 	repo := newGitRepo(t, "main")
 	repo.WriteFile("instructions/rules.md", "first\nsecond\nthird\n", 0o644)
 	repo.WriteFile("instructions/memory.md", "memory\n", 0o644)

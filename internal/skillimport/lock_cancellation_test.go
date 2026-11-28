@@ -14,6 +14,7 @@ import (
 )
 
 func TestServiceCancellationStopsProjectLockWait(t *testing.T) {
+	t.Parallel()
 	for _, operation := range []string{"add", "remove", "remove catalog", "install catalog", "reset", "resolve", "pull", "push", "diff", "catalog state"} {
 		t.Run(operation, func(t *testing.T) {
 			proj := newProject(t)

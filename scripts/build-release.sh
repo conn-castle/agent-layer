@@ -46,17 +46,14 @@ build() {
     go build -o "${dist_dir}/${output}" -ldflags "-s -w -X main.Version=${version}" ./cmd/al
 }
 
-smoke_native_release_binary() {
-  if [[ "$stable_release" != "1" ]]; then
-    return 0
-  fi
+host_only="${AL_BUILD_HOST_ONLY:-0}"
 
-  local host_os host_arch binary
+detect_host_platform() {
   case "$(uname -s)" in
     Darwin) host_os="darwin" ;;
     Linux) host_os="linux" ;;
     *)
-      echo "ERROR: unsupported host OS for release artifact smoke test: $(uname -s)" >&2
+      echo "ERROR: unsupported host OS: $(uname -s)" >&2
       exit 1
       ;;
   esac
@@ -64,10 +61,19 @@ smoke_native_release_binary() {
     arm64|aarch64) host_arch="arm64" ;;
     x86_64|amd64) host_arch="amd64" ;;
     *)
-      echo "ERROR: unsupported host architecture for release artifact smoke test: $(uname -m)" >&2
+      echo "ERROR: unsupported host architecture: $(uname -m)" >&2
       exit 1
       ;;
   esac
+}
+
+smoke_native_release_binary() {
+  if [[ "$stable_release" != "1" ]]; then
+    return 0
+  fi
+
+  local host_os host_arch binary
+  detect_host_platform
   binary="${dist_dir}/al-${host_os}-${host_arch}"
   binary="$(cd "$(dirname "$binary")" && pwd)/$(basename "$binary")"
 
@@ -122,27 +128,57 @@ sign_darwin_binaries() {
     return 0
   fi
 
-  ./scripts/codesign-release.sh "${dist_dir}/al-darwin-arm64"
-  ./scripts/codesign-release.sh "${dist_dir}/al-darwin-amd64"
+  ./scripts/codesign-release.sh "${dist_dir}/al-darwin-arm64" &
+  local pid_arm64=$!
+  ./scripts/codesign-release.sh "${dist_dir}/al-darwin-amd64" &
+  local pid_amd64=$!
+
+  local sign_failed=0
+  wait "$pid_arm64" || sign_failed=1
+  wait "$pid_amd64" || sign_failed=1
+  if [[ "$sign_failed" -ne 0 ]]; then
+    exit 1
+  fi
 }
 
-build darwin arm64 al-darwin-arm64
-build darwin amd64 al-darwin-amd64
-build linux arm64 al-linux-arm64
-build linux amd64 al-linux-amd64
+if [[ "$host_only" == "1" ]]; then
+  host_os=""
+  host_arch=""
+  detect_host_platform
+  build "$host_os" "$host_arch" "al-${host_os}-${host_arch}"
+  smoke_native_release_binary
+else
+  build darwin arm64 al-darwin-arm64 &
+  pid_darwin_arm64=$!
+  build darwin amd64 al-darwin-amd64 &
+  pid_darwin_amd64=$!
+  build linux arm64 al-linux-arm64 &
+  pid_linux_arm64=$!
+  build linux amd64 al-linux-amd64 &
+  pid_linux_amd64=$!
 
-sign_darwin_binaries
-smoke_native_release_binary
+  build_failed=0
+  wait "$pid_darwin_arm64" || build_failed=1
+  wait "$pid_darwin_amd64" || build_failed=1
+  wait "$pid_linux_arm64" || build_failed=1
+  wait "$pid_linux_amd64" || build_failed=1
+  if [[ "$build_failed" -ne 0 ]]; then
+    exit 1
+  fi
 
-git archive --format=tar --prefix="${source_name}/" HEAD > "$source_tar"
-gzip -n -f "$source_tar"
+  sign_darwin_binaries
+  smoke_native_release_binary
 
-if [[ ! -f "$source_tgz" ]]; then
-  echo "ERROR: source tarball was not created at ${source_tgz}" >&2
-  exit 1
+  git archive --format=tar --prefix="${source_name}/" HEAD > "$source_tar"
+  gzip -n -f "$source_tar"
+
+  if [[ ! -f "$source_tgz" ]]; then
+    echo "ERROR: source tarball was not created at ${source_tgz}" >&2
+    exit 1
+  fi
+
+  cp al-install.sh "$dist_dir/"
 fi
-
-cp al-install.sh "$dist_dir/"
 
 if command -v sha256sum >/dev/null 2>&1; then
   (cd "$dist_dir" && rm -f checksums.txt && sha256sum ./* > checksums.txt)

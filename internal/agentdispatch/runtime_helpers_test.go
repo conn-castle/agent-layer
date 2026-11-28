@@ -15,6 +15,7 @@ import (
 )
 
 func TestProviderObservePollIntervalIsSlowerOnDarwin(t *testing.T) {
+	t.Parallel()
 	got := providerObservePollInterval()
 	if runtime.GOOS == "darwin" {
 		if got <= providerTerminationPollInterval {
@@ -28,6 +29,7 @@ func TestProviderObservePollIntervalIsSlowerOnDarwin(t *testing.T) {
 }
 
 func TestProviderTerminationAllowsGracefulProcessGroupExit(t *testing.T) {
+	t.Parallel()
 	readyPath := filepath.Join(t.TempDir(), "ready")
 	// wait is interruptible by SIGTERM; a foreground sleep can swallow the trap
 	// until that sleep ends and miss a short CI grace period.
@@ -67,6 +69,7 @@ func TestProviderTerminationAllowsGracefulProcessGroupExit(t *testing.T) {
 }
 
 func TestProviderTerminationWaitsForZombieReaping(t *testing.T) {
+	t.Parallel()
 	cmd := exec.Command("/bin/sh", "-c", "exit 0")
 	prepareProviderProcessGroup(cmd)
 	if err := cmd.Start(); err != nil {
@@ -117,6 +120,7 @@ func TestProviderTerminationWaitsForZombieReaping(t *testing.T) {
 }
 
 func TestProviderTerminationEscalatesAndUnblocksDescendantPipesAndWait(t *testing.T) {
+	t.Parallel()
 	childPIDPath := filepath.Join(t.TempDir(), "child.pid")
 	cmd := exec.Command("/bin/sh", "-c", `trap 'exit 0' TERM; (trap '' TERM; while :; do sleep 1; done) & child=$!; printf '%s\n' "$child" > "$1"; wait "$child"`, "sh", childPIDPath) // #nosec G204 -- fixed test-only shell command.
 	prepareProviderProcessGroup(cmd)
@@ -176,6 +180,7 @@ func TestProviderTerminationEscalatesAndUnblocksDescendantPipesAndWait(t *testin
 }
 
 func TestTerminateDoesNotSignalReusedProcessGroup(t *testing.T) {
+	t.Parallel()
 	unrelated := exec.Command("/bin/sh", "-c", `trap '' TERM; while :; do sleep 1; done`) // #nosec G204 -- fixed test-only shell command.
 	prepareProviderProcessGroup(unrelated)
 	if err := unrelated.Start(); err != nil {
@@ -200,6 +205,7 @@ func TestTerminateDoesNotSignalReusedProcessGroup(t *testing.T) {
 }
 
 func TestProviderStoppedAfterReapDoesNotSignalWhenGroupDead(t *testing.T) {
+	t.Parallel()
 	cmd := exec.Command("/bin/sh", "-c", "exit 0")
 	prepareProviderProcessGroup(cmd)
 	if err := cmd.Start(); err != nil {
@@ -222,6 +228,7 @@ func TestProviderStoppedAfterReapDoesNotSignalWhenGroupDead(t *testing.T) {
 }
 
 func TestProviderStoppedAfterReapTerminatesDescendants(t *testing.T) {
+	t.Parallel()
 	childPIDPath := filepath.Join(t.TempDir(), "child.pid")
 	cmd := exec.Command("/bin/sh", "-c", `(trap '' TERM; while :; do sleep 1; done) & child=$!; printf '%s\n' "$child" > "$1"; exit 0`, "sh", childPIDPath) // #nosec G204 -- fixed test-only shell command.
 	prepareProviderProcessGroup(cmd)
@@ -252,6 +259,7 @@ func TestProviderStoppedAfterReapTerminatesDescendants(t *testing.T) {
 }
 
 func TestReapOwnedProviderLeaderDoesNotWaitOnReusedPID(t *testing.T) {
+	t.Parallel()
 	cmd := exec.Command("/bin/sh", "-c", `trap '' TERM; while :; do sleep 1; done`) // #nosec G204 -- fixed test-only shell command.
 	prepareProviderProcessGroup(cmd)
 	if err := cmd.Start(); err != nil {
@@ -276,6 +284,7 @@ func TestReapOwnedProviderLeaderDoesNotWaitOnReusedPID(t *testing.T) {
 }
 
 func TestReleaseUnreapedProviderAfterIdentityMismatch(t *testing.T) {
+	t.Parallel()
 	unrelated := exec.Command("/bin/sh", "-c", `trap '' TERM; while :; do sleep 1; done`) // #nosec G204 -- fixed test-only shell command.
 	prepareProviderProcessGroup(unrelated)
 	if err := unrelated.Start(); err != nil {
@@ -312,6 +321,7 @@ func TestReleaseUnreapedProviderAfterIdentityMismatch(t *testing.T) {
 }
 
 func TestProviderTerminationRejectsMismatchedProcessIdentityWithoutSignalling(t *testing.T) {
+	t.Parallel()
 	cmd := exec.Command("/bin/sh", "-c", `trap '' TERM; while :; do sleep 1; done`) // #nosec G204 -- fixed test-only shell command.
 	prepareProviderProcessGroup(cmd)
 	if err := cmd.Start(); err != nil {

@@ -16,6 +16,7 @@ import (
 )
 
 func TestCommitRollbackPreservesOriginalOrSurvivingGeneration(t *testing.T) {
+	t.Parallel()
 	for _, kind := range []string{"normal absent lock", "normal present lock", "missing lock", "missing imported backup", "linked imported backup"} {
 		t.Run(kind, func(t *testing.T) {
 			proj := newProject(t)

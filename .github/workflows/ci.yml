@@ -6,6 +6,10 @@ on:
     branches:
       - main
 
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 permissions:
   contents: read
 
@@ -31,16 +35,23 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .tools/bin
-          key: ${{ runner.os }}-go-tools-${{ steps.setup-go.outputs.go-version }}-${{ hashFiles('go.mod', 'go.sum', 'Makefile') }}
+          key: ${{ runner.os }}-go-tools-v2-${{ steps.setup-go.outputs.go-version }}-${{ hashFiles('go.mod', 'go.sum', 'Makefile', 'scripts/install-go-tools.sh') }}
+      - name: Cache golangci-lint
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .cache/golangci-lint
+          key: ${{ runner.os }}-golangci-lint-${{ steps.setup-go.outputs.go-version }}-${{ hashFiles('.golangci.yml', 'go.sum') }}-${{ github.sha }}
           restore-keys: |
-            ${{ runner.os }}-go-tools-${{ steps.setup-go.outputs.go-version }}-
-            ${{ runner.os }}-go-tools-
+            ${{ runner.os }}-golangci-lint-${{ steps.setup-go.outputs.go-version }}-${{ hashFiles('.golangci.yml', 'go.sum') }}-
+            ${{ runner.os }}-golangci-lint-${{ steps.setup-go.outputs.go-version }}-
       - name: Install system dependencies
         run: |
           set -euo pipefail
           if [[ "${RUNNER_OS}" == "Linux" ]]; then
-            sudo apt-get update
-            sudo apt-get install -y ripgrep
+            if ! command -v rg >/dev/null 2>&1; then
+              sudo apt-get update
+              sudo apt-get install -y ripgrep
+            fi
           elif ! command -v rg >/dev/null 2>&1; then
             brew install ripgrep
           fi
@@ -50,14 +61,22 @@ jobs:
           path: ~/.cache/al-e2e/bin
           key: e2e-binaries-${{ runner.os }}-${{ runner.arch }}
       - name: Install pinned tools
-        run: make tools
+        run: |
+          set -euo pipefail
+          make tools
+          if [[ "${RUNNER_OS}" == "Linux" ]]; then
+            make release-tools
+          fi
       - name: CI checks
         run: make ci
         env:
           GOFLAGS: -count=1
           GITHUB_TOKEN: ${{ github.token }}
       - name: Build release artifacts (dry run)
-        run: make release-dist AL_VERSION=ci DIST_DIR=dist
+        run: AL_VERSION=ci DIST_DIR=dist ./scripts/build-release.sh
+      - name: Scan release binaries for known vulnerable symbols
+        if: runner.os == 'Linux'
+        run: make release-vuln-check DIST_DIR=dist
 
   benchmark-contracts:
     name: Benchmark companion contracts
@@ -149,9 +168,6 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version: '24.21.0'
       - name: Checkout agent-layer-web
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -159,5 +175,10 @@ jobs:
           ref: main
           path: agent-layer-web
           persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24.21.0'
+          cache: 'npm'
+          cache-dependency-path: 'agent-layer-web/package-lock.json'
       - name: Build published website
         run: make website-build-check SITE_BUILD_TAG=v999.0.0 WEBSITE_REPO_DIR=agent-layer-web

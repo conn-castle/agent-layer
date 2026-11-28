@@ -181,6 +181,7 @@ func TestRunnerBoundsHandoffAndCleansDescendants(t *testing.T) {
 		{"slow persistence while live", answer + session + gate + `trap '' TERM; while :; do sleep 1; done`, true, providerShutdownGrace + 2*providerTerminationGrace},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			root := t.TempDir()
 			run, err := newDispatchRun(root, AgentCodex, supportedProviderVersions[AgentCodex], dispatchModeFresh)
 			if err != nil {

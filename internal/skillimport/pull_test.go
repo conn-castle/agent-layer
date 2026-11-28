@@ -34,6 +34,7 @@ func importBlock(repository string, selectors []string, extra ...string) string 
 // tree (including hidden and executable resources) lands in the imported tier,
 // lock state records the resolved source, and ordinary projection runs.
 func TestPullImportsResolvesAndProjects(t *testing.T) {
+	t.Parallel()
 	source := newGitRepo(t, "main")
 	source.WriteSkill("skills/alpha", "alpha", "Alpha body")
 	source.WriteFile("skills/alpha/scripts/run.sh", "#!/bin/sh\necho alpha\n", 0o755)
@@ -99,6 +100,7 @@ func TestPullImportsResolvesAndProjects(t *testing.T) {
 // locked base, local edits, and new upstream content without discarding local
 // work, and advances the lock even though local modifications remain.
 func TestPullMergesUpstreamAndLocalChanges(t *testing.T) {
+	t.Parallel()
 	source := newGitRepo(t, "main")
 	source.WriteSkill("skills/alpha", "alpha", "Alpha body")
 	source.WriteFile("skills/alpha/notes.md", "line one\nline two\nline three\n", 0o644)
@@ -144,6 +146,7 @@ func TestPullMergesUpstreamAndLocalChanges(t *testing.T) {
 // fails only that skill, leaves local content untouched, and does not advance
 // its lock.
 func TestPullConflictPreservesLocalContentAndLock(t *testing.T) {
+	t.Parallel()
 	source := newGitRepo(t, "main")
 	source.WriteSkill("skills/alpha", "alpha", "Alpha body")
 	source.WriteFile("skills/alpha/notes.md", "shared\n", 0o644)
@@ -231,6 +234,7 @@ func TestPullConflictPreservesLocalContentAndLock(t *testing.T) {
 // upstream directory of the same name fail only that skill with a resolution
 // workspace, instead of failing the whole pull when the merged tree is written.
 func TestPullReportsAFileDirectoryCollisionAsAConflict(t *testing.T) {
+	t.Parallel()
 	source := newGitRepo(t, "main")
 	source.WriteSkill("skills/alpha", "alpha", "Alpha body")
 	source.WriteSkill("skills/beta", "beta", "Beta body")
@@ -279,6 +283,7 @@ func TestPullReportsAFileDirectoryCollisionAsAConflict(t *testing.T) {
 // TestResolveAppliesAConflictedPull proves the conflict workspace is the public
 // handoff between pull and resolve, without a snapshot or second fetch.
 func TestResolveAppliesAConflictedPull(t *testing.T) {
+	t.Parallel()
 	source := newGitRepo(t, "main")
 	source.WriteSkill("skills/alpha", "alpha", "Alpha body")
 	source.WriteFile("skills/alpha/notes.md", "shared\n", 0o644)
@@ -343,6 +348,7 @@ func TestResolveAppliesAConflictedPull(t *testing.T) {
 // retirement rule: a clean skill that leaves the desired set is deleted, and a
 // modified one is preserved and reported as a failure with instructions.
 func TestPullRetiresCleanAndPreservesModifiedDisappearances(t *testing.T) {
+	t.Parallel()
 	source := newGitRepo(t, "main")
 	source.WriteSkill("skills/alpha", "alpha", "Alpha body")
 	source.WriteSkill("skills/beta", "beta", "Beta body")
@@ -383,6 +389,7 @@ func TestPullRetiresCleanAndPreservesModifiedDisappearances(t *testing.T) {
 // TestPullRestoresMissingImportedDirectory proves a desired skill whose
 // directory was deleted is rebuilt from the selected source and reported.
 func TestPullRestoresMissingImportedDirectory(t *testing.T) {
+	t.Parallel()
 	source := newGitRepo(t, "main")
 	source.WriteSkill("skills/alpha", "alpha", "Alpha body")
 	source.Commit("add alpha")
@@ -414,6 +421,7 @@ func TestPullRestoresMissingImportedDirectory(t *testing.T) {
 // longer matches, the stale lock entry is pruned and the imported collision is
 // never recreated.
 func TestPullAdoptionPrunesLockAndSkipsRestoration(t *testing.T) {
+	t.Parallel()
 	source := newGitRepo(t, "main")
 	source.WriteSkill("skills/alpha", "alpha", "Alpha body")
 	source.Commit("add alpha")
@@ -471,6 +479,7 @@ func TestPullAdoptionPrunesLockAndSkipsRestoration(t *testing.T) {
 // TestPullBlocksImportOfAUserManagedName proves an existing user-managed skill
 // blocks an import of the same name instead of shadowing either source.
 func TestPullBlocksImportOfAUserManagedName(t *testing.T) {
+	t.Parallel()
 	for _, kind := range []string{"directory", "retired directory", "regular file", "imported case file"} {
 		t.Run(kind, func(t *testing.T) {
 			name := "alpha"
@@ -517,6 +526,7 @@ func TestPullBlocksImportOfAUserManagedName(t *testing.T) {
 // move when upstream advances, and that changing the configured ref reconciles
 // local edits onto the newly selected version.
 func TestPullPinnedRefStaysStationaryAndRetargets(t *testing.T) {
+	t.Parallel()
 	source := newGitRepo(t, "main")
 	source.WriteSkill("skills/alpha", "alpha", "Alpha v1")
 	source.WriteFile("skills/alpha/notes.md", "one\ntwo\nthree\nfour\nfive\n", 0o644)
@@ -570,6 +580,7 @@ func TestPullPinnedRefStaysStationaryAndRetargets(t *testing.T) {
 // block is only shorthand: a newly discovered member pins at today's target
 // while an existing member keeps its own older pin.
 func TestPinnedWildcardImportsNewMembershipWithoutMovingExistingPins(t *testing.T) {
+	t.Parallel()
 	source := newGitRepo(t, "main")
 	source.WriteSkill("skills/alpha", "alpha", "Alpha one")
 	first := source.Commit("add alpha")
@@ -615,6 +626,7 @@ func TestPinnedWildcardImportsNewMembershipWithoutMovingExistingPins(t *testing.
 // TestPullRejectsExplicitTrackedNonBranch proves a tracked tag is an actionable
 // error rather than a silent downgrade to pinning.
 func TestPullRejectsExplicitTrackedNonBranch(t *testing.T) {
+	t.Parallel()
 	source := newGitRepo(t, "main")
 	source.WriteSkill("skills/alpha", "alpha", "Alpha body")
 	source.Commit("add alpha")
@@ -638,6 +650,7 @@ func TestPullRejectsExplicitTrackedNonBranch(t *testing.T) {
 // TestPullContinuesAfterOneSourceFails proves a source-level failure blocks
 // only its own block while other sources still import and project.
 func TestPullContinuesAfterOneSourceFails(t *testing.T) {
+	t.Parallel()
 	good := newGitRepo(t, "main")
 	good.WriteSkill("skills/alpha", "alpha", "Alpha body")
 	good.Commit("add alpha")
@@ -669,6 +682,7 @@ func TestPullContinuesAfterOneSourceFails(t *testing.T) {
 // recorded members of a failed block are reported as failed rather than
 // silently omitted or, worse, mistaken for skills that left the desired set.
 func TestPullReportsEveryAlreadyImportedSkillBlockedByASourceFailure(t *testing.T) {
+	t.Parallel()
 	source := newGitRepo(t, "main")
 	source.WriteSkill("skills/alpha", "alpha", "Alpha body")
 	source.WriteSkill("skills/beta", "beta", "Beta body")
@@ -703,6 +717,7 @@ func TestPullReportsEveryAlreadyImportedSkillBlockedByASourceFailure(t *testing.
 // TestPullFailsOnMalformedLockWithoutTouchingContent proves a lockfile that
 // cannot establish a merge base fails loudly and preserves local content.
 func TestPullFailsOnMalformedLockWithoutTouchingContent(t *testing.T) {
+	t.Parallel()
 	source := newGitRepo(t, "main")
 	source.WriteSkill("skills/alpha", "alpha", "Alpha body")
 	source.Commit("add alpha")
@@ -725,6 +740,7 @@ func TestPullFailsOnMalformedLockWithoutTouchingContent(t *testing.T) {
 // TestPullRejectsOrphanImportedDirectories proves a directory Agent Layer does
 // not own blocks operations with actionable instructions.
 func TestPullRejectsOrphanImportedDirectories(t *testing.T) {
+	t.Parallel()
 	proj := newProject(t)
 	dir := filepath.Join(proj.paths.ImportedSkillsDir, "stray")
 	if err := os.MkdirAll(dir, 0o750); err != nil {
@@ -744,6 +760,7 @@ func TestPullRejectsOrphanImportedDirectories(t *testing.T) {
 // TestPullRejectsUnsafeUpstreamNodes proves an imported skill containing a
 // symlink is refused rather than dereferenced.
 func TestPullRejectsUnsafeUpstreamNodes(t *testing.T) {
+	t.Parallel()
 	source := newGitRepo(t, "main")
 	source.WriteSkill("skills/alpha", "alpha", "Alpha body")
 	source.WriteFile("skills/alpha/target.md", "secret\n", 0o644)
@@ -771,6 +788,7 @@ func TestPullRejectsUnsafeUpstreamNodes(t *testing.T) {
 // TestPullDefaultBranchRenameIsARetarget proves an omitted ref re-resolves the
 // default branch on every pull and treats a rename as a retarget.
 func TestPullDefaultBranchRenameIsARetarget(t *testing.T) {
+	t.Parallel()
 	source := newGitRepo(t, "main")
 	source.WriteSkill("skills/alpha", "alpha", "Alpha body")
 	source.Commit("add alpha")
@@ -800,6 +818,7 @@ func TestPullDefaultBranchRenameIsARetarget(t *testing.T) {
 // matched by more than one positive selector becomes exactly one lock entry,
 // recorded against the first matching selector in configuration order.
 func TestPullDeduplicatesOnePathMatchedBySeveralSelectors(t *testing.T) {
+	t.Parallel()
 	source := newGitRepo(t, "main")
 	source.WriteSkill("skills/alpha", "alpha", "Alpha body")
 	source.Commit("add alpha")
@@ -830,6 +849,7 @@ func TestPullDeduplicatesOnePathMatchedBySeveralSelectors(t *testing.T) {
 // desired set and is never validated as an import, so an invalid directory the
 // user excluded does not fail the block.
 func TestPullExclusionsApplyBeforeValidation(t *testing.T) {
+	t.Parallel()
 	source := newGitRepo(t, "main")
 	source.WriteSkill("skills/alpha", "alpha", "Alpha body")
 	source.WriteFile("skills/broken/SKILL.md", "---\nname: wrong-name\ndescription: d\n---\nBody\n", 0o644)
@@ -856,6 +876,7 @@ func TestPullExclusionsApplyBeforeValidation(t *testing.T) {
 // silent skip. The failure is scoped to that skill: a validation failure blocks
 // only its own skill, so the block's unaffected skills still import.
 func TestPullFailsAWildcardMatchWithAnInvalidManifest(t *testing.T) {
+	t.Parallel()
 	source := newGitRepo(t, "main")
 	source.WriteSkill("skills/alpha", "alpha", "Alpha body")
 	source.WriteFile("skills/broken/SKILL.md", "---\nname: wrong-name\ndescription: d\n---\nBody\n", 0o644)
@@ -894,6 +915,7 @@ func TestPullFailsAWildcardMatchWithAnInvalidManifest(t *testing.T) {
 // upstream invalidity is never treated as upstream removal: the local
 // directory and its lock entry survive and only that skill fails.
 func TestPullPreservesAPreviouslyImportedSkillThatBecomesInvalidUpstream(t *testing.T) {
+	t.Parallel()
 	source := newGitRepo(t, "main")
 	source.WriteSkill("skills/alpha", "alpha", "Alpha body")
 	source.WriteSkill("skills/beta", "beta", "Beta body")
@@ -931,6 +953,7 @@ func TestPullPreservesAPreviouslyImportedSkillThatBecomesInvalidUpstream(t *test
 // TestPullImportsNewSelectorMembershipAtCurrentTarget proves a manually added
 // selector creates its own lock directly at the operation's resolved target.
 func TestPullImportsNewSelectorMembershipAtCurrentTarget(t *testing.T) {
+	t.Parallel()
 	source := newGitRepo(t, "main")
 	source.WriteSkill("skills/alpha", "alpha", "Alpha at lock time")
 	source.WriteSkill("skills/beta", "beta", "Beta at lock time")
@@ -978,6 +1001,7 @@ func TestPullImportsNewSelectorMembershipAtCurrentTarget(t *testing.T) {
 // output would not validate fails that skill instead of publishing an
 // unusable tree.
 func TestPullRejectsAMergeResultThatIsNoLongerAValidSkill(t *testing.T) {
+	t.Parallel()
 	source := newGitRepo(t, "main")
 	source.WriteFile("skills/alpha/SKILL.md", skillManifest("alpha", "Alpha body"), 0o644)
 	source.WriteFile("skills/alpha/notes.md", "one\n", 0o644)
@@ -1016,6 +1040,7 @@ func TestPullRejectsAMergeResultThatIsNoLongerAValidSkill(t *testing.T) {
 // or adopt it, unaffected skills still advance, and projection reports the
 // broken tree instead of publishing a lossy copy of it.
 func TestPullPreservesALocallyInvalidImportedSkill(t *testing.T) {
+	t.Parallel()
 	source := newGitRepo(t, "main")
 	source.WriteSkill("skills/alpha", "alpha", "Alpha body")
 	source.WriteSkill("skills/beta", "beta", "Beta body")
@@ -1058,6 +1083,7 @@ func TestPullPreservesALocallyInvalidImportedSkill(t *testing.T) {
 // tracked-source freshness checks, and lets a direct push advance a lock the
 // user has pinned.
 func TestPullRecordsATrackingPolicyChange(t *testing.T) {
+	t.Parallel()
 	source := newGitRepo(t, "main")
 	source.WriteSkill("skills/alpha", "alpha", "Alpha body")
 	source.Commit("add alpha")
@@ -1097,6 +1123,7 @@ func TestPullRecordsATrackingPolicyChange(t *testing.T) {
 // and the second fails on a local-directory conflict, and the later failed
 // result also replaces the earlier successful one in the report.
 func TestPullValidatesAcrossImportBlocks(t *testing.T) {
+	t.Parallel()
 	first := newGitRepo(t, "main")
 	first.WriteSkill("skills/alpha", "alpha", "First alpha")
 	first.Commit("add first alpha")
@@ -1145,6 +1172,7 @@ func TestPullValidatesAcrossImportBlocks(t *testing.T) {
 // cross-block validation fails without retiring the prior independent entry
 // merely because no synthetic block identity can be assigned to it.
 func TestPullPreservesAnEntryWhoseReplacementSelectorOwnershipIsAmbiguous(t *testing.T) {
+	t.Parallel()
 	source := newGitRepo(t, "main")
 	source.WriteSkill("skills/alpha", "alpha", "Alpha body")
 	source.Commit("add alpha")
@@ -1198,6 +1226,7 @@ func TestPullPreservesAnEntryWhoseReplacementSelectorOwnershipIsAmbiguous(t *tes
 // whenever the *name* already appears in the report let one block's failure
 // keep another block's unconfigured entry in the lock indefinitely.
 func TestPullRetiresAnUnconfiguredSkillDespiteASameNamedFailure(t *testing.T) {
+	t.Parallel()
 	retiring := newGitRepo(t, "main")
 	retiring.WriteSkill("skills/alpha", "alpha", "Retiring alpha")
 	retiring.Commit("add retiring alpha")
@@ -1313,6 +1342,7 @@ func TestRetireUnconfiguredIgnoresRepositorySpelling(t *testing.T) {
 // TestPullImportsLiteralUnicodeRef proves an explicit ref with Unicode padding
 // imports its own branch, not the trimmed sibling with different content.
 func TestPullImportsLiteralUnicodeRef(t *testing.T) {
+	t.Parallel()
 	source := newGitRepo(t, "main")
 	source.WriteSkill("skills/alpha", "alpha", "Sibling body")
 	sibling := source.Commit("sibling")
