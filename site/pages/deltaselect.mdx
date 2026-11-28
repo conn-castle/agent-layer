@@ -64,7 +64,7 @@ The selection export format requires Agent Layer v0.18.4 or later. Versions v0.1
 1. Build and export `selection.json` from the interactive tool.
 2. Run `al benchmark init selection.json --directory benchmark-study` to create a self-contained study.
 3. Run `al benchmark run benchmark-study/study.toml --dry-run` to validate inputs, task environments, and provider authentication without inference calls.
-4. Run `al benchmark run benchmark-study/study.toml` to authorize paid calls, execute missing cells, and preserve immutable evidence. If you resume a study from before v1.4.0, the updated runner can treat completed cells as missing and start new paid calls.
+4. Run `al benchmark run benchmark-study/study.toml` to authorize paid calls, execute missing cells, and preserve immutable evidence. The v1.5.0 adapter update changes study and arm identities for every provider. Resuming an earlier study can start new paid calls for completed cells.
 5. Compare score, cost, workflow conformance, and statistical evidence in the generated report.
 
 The runner collects submissions from the task checkout and its linked Git worktrees. If two checkouts propose conflicting changes, it keeps both candidates for inspection and stops that cell before scoring. The existing `--recover-only` flag can finalize evidence-backed terminal test timeouts or regenerate a compatible completed study report without paid calls. Eligible verifier replay requires the original study inputs and runtime, including the matching CLI and companion versions if the study used a companion. A normal run can start paid calls for cells without matching retained evidence. See the [benchmark recovery guide](https://github.com/conn-castle/agent-layer/blob/main/docs/BENCHMARK.md#advanced-controls).

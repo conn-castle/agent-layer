@@ -168,6 +168,7 @@ al dispatch start --agent codex \
   [--role <role>] \
   [--skill <skill>] \
   [--max-depth <N>] \
+  [--mcp-config <path>]... \
   (--prompt <text> | --prompt-file <path>)
 
 al dispatch wait <handle-or-invocation-id>
@@ -199,6 +200,10 @@ al dispatch start --agent codex --prompt "Summarize docs/AGENT-DISPATCH.md"
 al dispatch wait abc123
 # If the state is still running, wait again with the same handle.
 ```
+
+### Session-scoped MCP servers
+
+Use repeatable `--mcp-config <path>` flags on `al dispatch start` to attach stdio MCP servers to a conversation with any dispatch provider. Each path names a JSON file containing an `mcpServers` object. Agent Layer stores the definitions privately and reattaches them on continuation. This flag is available through the CLI. See the [session MCP configuration and permission rules](https://github.com/conn-castle/agent-layer/blob/main/docs/AGENT-DISPATCH.md#session-scoped-mcp-servers).
 
 ### Subscription quota
 

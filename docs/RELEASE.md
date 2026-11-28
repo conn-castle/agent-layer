@@ -266,11 +266,13 @@ retry result. Report any other failure, or a transient failure that recurs, as
 a failure for that provider. Do not change credentials, sign-ins, or
 configuration to make a probe pass.
 
-A changed or
-missing Antigravity structured terminal result must fail without publishing
-plain provider output. The result must carry a conversation ID, final answer,
-and usage evidence; any diagnostic-log UUID that is present must match the
-structured result. This is release evidence, not a new public probe command.
+Antigravity's live evidence must include a structured conversation ID, final
+answer, and usage. With ACP, verify the session ID in the session response and
+answer chunks, then verify a successful terminal `session/prompt` response
+with usage and a retained answer matching the structured chunks. Any
+conversation ID in provider diagnostics must match the structured ID. Missing
+or inconsistent structured terminal evidence fails the probe. Plain provider
+output cannot substitute for it.
 
 ## GitHub release (automatic)
 1. Tag push triggers the release workflow.

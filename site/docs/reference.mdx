@@ -1006,7 +1006,7 @@ Benchmark execution requires the optional `al-benchmark` companion on `PATH`; `a
 DeltaSelect exports a content-addressed `selection.json`. Use the CLI scaffolder to create a self-contained study with a benchmark-safe provider config and snapshots of the current instructions and projected skills. Then validate the complete study before authorizing provider calls.
 
 :::caution[Resuming a study across versions]
-Agent Layer v1.4.0 updated the submission adapter and added the provider client version to benchmark arm identities. Running a study from an earlier release can start paid calls for cells you already completed, including bare arms. For a compatible historical report or an evidence-backed terminal test timeout, use the existing `--recover-only` flag to work without paid calls. Eligible verifier replay requires the original study inputs and runtime, including the matching companion version if the study used one.
+Agent Layer v1.5.0 updated the shared Pier adapter and the pinned Antigravity and Grok clients. This changes benchmark study and arm identities for every provider. Running a study from an earlier release can start paid calls for cells you already completed, including bare arms. For a compatible historical report or an evidence-backed terminal test timeout, use `--recover-only` to work without paid calls. Eligible verifier replay requires the original study inputs and runtime, including the matching companion version if the study used one.
 :::
 
 ```bash
