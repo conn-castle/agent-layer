@@ -24,6 +24,7 @@ func developmentEntry(t *testing.T) templates.CLISkillCatalogEntry {
 }
 
 func TestCatalogForeignOwnershipRequiresUnambiguousConfiguration(t *testing.T) {
+	t.Parallel()
 	block := config.SkillImport{Repository: "https://example.invalid/fork", Selectors: []string{"skills/tools/playwright"}}
 	locked := skilllock.Entry{Name: "playwright", Repository: block.Repository, SelectedPath: block.Selectors[0]}
 	st := &state{cfg: &config.Config{}, lock: skilllock.New(), local: map[string]localSkill{"playwright": {Name: "playwright", Present: true}}}

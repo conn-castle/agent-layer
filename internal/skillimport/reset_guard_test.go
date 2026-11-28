@@ -12,6 +12,7 @@ import (
 // not unambiguously the configured upstream for that skill. Every refusal must
 // leave the local content untouched.
 func TestResetRefusesToDiscardLocalEditsItCannotReplace(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name       string
 		arrange    func(t *testing.T, source *gitRepo, proj *project)

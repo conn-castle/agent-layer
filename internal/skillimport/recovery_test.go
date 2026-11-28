@@ -78,6 +78,7 @@ func seedImportedAlpha(t *testing.T, body string) (*project, *gitRepo) {
 // at different generations. The next operation restores the exact state the
 // interrupted transaction started from before it reads anything.
 func TestInterruptedImportIsRolledBackByTheNextOperation(t *testing.T) {
+	t.Parallel()
 	proj, _ := seedImportedAlpha(t, "Alpha body")
 	originalConfig := proj.ConfigContent()
 	originalLock, _ := proj.Lock().Entry("alpha")
@@ -124,6 +125,7 @@ func TestInterruptedImportIsRolledBackByTheNextOperation(t *testing.T) {
 // reverts both directions of a tree change: a skill the transaction created is
 // removed again, and a skill it deleted comes back.
 func TestInterruptedImportRestoresANewlyCreatedAndADeletedSkill(t *testing.T) {
+	t.Parallel()
 	proj, _ := seedImportedAlpha(t, "Alpha body")
 
 	interruptAfterPublishing(t, proj, false, func(txn *transaction) {
@@ -149,6 +151,7 @@ func TestInterruptedImportRestoresANewlyCreatedAndADeletedSkill(t *testing.T) {
 // shares the recovery, so a projection can never be built from a half-applied
 // import transaction.
 func TestInterruptedImportRecoveryPrecedesOrdinaryProjection(t *testing.T) {
+	t.Parallel()
 	proj, _ := seedImportedAlpha(t, "Alpha body")
 
 	interruptAfterPublishing(t, proj, false, func(txn *transaction) {
@@ -173,6 +176,7 @@ func TestInterruptedImportRecoveryPrecedesOrdinaryProjection(t *testing.T) {
 // trusted to drive recovery stops the operation instead of guessing which
 // content to restore or delete.
 func TestMalformedRecoveryJournalFailsLoudly(t *testing.T) {
+	t.Parallel()
 	proj, _ := seedImportedAlpha(t, "Alpha body")
 
 	staging := skilljournal.StagingRoot(proj.paths.ImportedSkillsDir)

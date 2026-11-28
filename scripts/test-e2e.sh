@@ -82,7 +82,7 @@ export E2E_TMP_ROOT
 trap 'rm -rf "$E2E_TMP_ROOT"' EXIT
 
 dist_dir="$E2E_TMP_ROOT/dist"
-AL_VERSION="$AL_E2E_VERSION" DIST_DIR="$dist_dir" "$ROOT_DIR/scripts/build-release.sh"
+AL_BUILD_HOST_ONLY=1 AL_VERSION="$AL_E2E_VERSION" DIST_DIR="$dist_dir" "$ROOT_DIR/scripts/build-release.sh"
 
 # Detect local platform (exported for harness download_or_cache_binary)
 E2E_PLATFORM_OS="$(uname -s)"

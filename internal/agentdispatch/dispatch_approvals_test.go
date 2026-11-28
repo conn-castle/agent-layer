@@ -60,6 +60,7 @@ func dispatchArgsForMode(t *testing.T, agent string, mode string, dispatchMode s
 // `claude -p` denies Edit/Write), so without an explicit setting an approved
 // command runs and then fails on its first write.
 func TestDispatchGrantsWriteCapabilityOnlyWhenCommandsAreApproved(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		mode           string
 		codexSandbox   string
@@ -123,6 +124,7 @@ func TestDispatchGrantsWriteCapabilityOnlyWhenCommandsAreApproved(t *testing.T) 
 // TestYOLODispatchKeepsFullBypassWithoutSandboxDowngrade guards the one mode
 // that already worked, so filling in the other modes cannot narrow it.
 func TestYOLODispatchKeepsFullBypassWithoutSandboxDowngrade(t *testing.T) {
+	t.Parallel()
 	for _, dispatchMode := range []string{dispatchModeFresh, dispatchModeResume} {
 		codexArgs := dispatchArgsForMode(t, AgentCodex, config.ApprovalModeYOLO, dispatchMode)
 		for _, want := range []string{"approval_policy=never", config.CodexSandboxModeKey + "=" + config.CodexSandboxDangerFullAccess, "web_search=live"} {
@@ -163,6 +165,7 @@ func TestYOLODispatchKeepsFullBypassWithoutSandboxDowngrade(t *testing.T) {
 }
 
 func TestMuseDispatchObservesApprovalsOnlyOutsideYOLO(t *testing.T) {
+	t.Parallel()
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	project := loadApprovalsTestProject(t, root)
 	target, ok := lookupTarget(AgentMuse)
@@ -203,6 +206,7 @@ func TestMuseDispatchObservesApprovalsOnlyOutsideYOLO(t *testing.T) {
 // permissions.allow rules only after the workspace trust dialog is accepted,
 // and that dialog never appears under --print.
 func TestClaudeDispatchDeliversApprovalsOnCommandLine(t *testing.T) {
+	t.Parallel()
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	project := loadApprovalsTestProject(t, root)
 	enabled := true
@@ -250,6 +254,7 @@ func TestClaudeDispatchDeliversApprovalsOnCommandLine(t *testing.T) {
 // TestGrokDispatchKeepsConfiguredMCPServerIDs verifies Grok ACP retains
 // configured project MCP server IDs verbatim for permission matching.
 func TestGrokDispatchKeepsConfiguredMCPServerIDs(t *testing.T) {
+	t.Parallel()
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	project := loadApprovalsTestProject(t, root)
 	enabled := true
@@ -278,6 +283,7 @@ func TestGrokDispatchKeepsConfiguredMCPServerIDs(t *testing.T) {
 // TestDispatchRespectsExplicitProviderPermissionPins keeps provider-native
 // passthrough authoritative so a project can still choose its own policy.
 func TestDispatchRespectsExplicitProviderPermissionPins(t *testing.T) {
+	t.Parallel()
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	project := loadApprovalsTestProject(t, root)
 	project.Config.Approvals.Mode = config.ApprovalModeAll
@@ -337,6 +343,7 @@ func claudeStreamEvents(t *testing.T, record string) []providerEvent {
 // and a fluent final answer, so accepting that answer would report work that
 // never happened as complete.
 func TestClaudeDeniedToolCallsFailDispatch(t *testing.T) {
+	t.Parallel()
 	denied := claudeStreamEvents(t, `{"type":"result","session_id":"`+runtimeSessionID+`","is_error":false,`+
 		`"result":"I attempted to create hello.txt, but the write needs your permission.",`+
 		`"permission_denials":[{"tool_name":"Write","tool_use_id":"toolu_01"}]}`)

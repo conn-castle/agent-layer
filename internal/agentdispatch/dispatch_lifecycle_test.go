@@ -16,6 +16,7 @@ import (
 )
 
 func TestContinueValidatesPromptAndVersionBeforeLaunch(t *testing.T) {
+	t.Parallel()
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	_, session := terminalConversationForAsyncTest(t, root)
 	err := Continue(ContinueOptions{Root: root, Handle: session.Name, Env: []string{}, LookPath: alwaysFound})
@@ -25,6 +26,7 @@ func TestContinueValidatesPromptAndVersionBeforeLaunch(t *testing.T) {
 }
 
 func TestRejectedResumeExposesTerminalPublicationFailure(t *testing.T) {
+	t.Parallel()
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	active, err := newDispatchRun(root, AgentCodex, supportedProviderVersions[AgentCodex], dispatchModeResume)
 	if err != nil {
@@ -81,6 +83,7 @@ func TestRejectedResumeExposesTerminalPublicationFailure(t *testing.T) {
 }
 
 func TestRejectedResumePublishesConfirmedPrelaunchTermination(t *testing.T) {
+	t.Parallel()
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	attempted, err := newDispatchRun(root, AgentCodex, supportedProviderVersions[AgentCodex], dispatchModeResume)
 	if err != nil {
@@ -104,6 +107,7 @@ func TestRejectedResumePublishesConfirmedPrelaunchTermination(t *testing.T) {
 }
 
 func TestExecuteDispatchPreservesFailedFreshRunForRecoveryHistory(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	run, err := newDispatchRun(root, AgentCodex, supportedProviderVersions[AgentCodex], "fresh")
 	if err != nil {
@@ -133,6 +137,7 @@ func TestExecuteDispatchPreservesFailedFreshRunForRecoveryHistory(t *testing.T) 
 }
 
 func TestUnprovenProviderTerminationRetainsRunAndActiveClaim(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	run, err := newDispatchRun(root, AgentCodex, supportedProviderVersions[AgentCodex], dispatchModeFresh)
 	if err != nil {
@@ -189,6 +194,7 @@ func TestUnprovenProviderTerminationRetainsRunAndActiveClaim(t *testing.T) {
 }
 
 func TestFailureFinalizationRetainsClaimWhenTerminalWriteFails(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	run, err := newDispatchRun(root, AgentCodex, supportedProviderVersions[AgentCodex], dispatchModeFresh)
 	if err != nil {
@@ -216,6 +222,7 @@ func TestFailureFinalizationRetainsClaimWhenTerminalWriteFails(t *testing.T) {
 }
 
 func TestFailedRunRecordPublicationPreservesCallerRevisionForFailureFinalization(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	run, err := newDispatchRun(root, AgentCodex, supportedProviderVersions[AgentCodex], dispatchModeFresh)
 	if err != nil {
@@ -269,6 +276,7 @@ func TestFailedRunRecordPublicationPreservesCallerRevisionForFailureFinalization
 }
 
 func TestPreLaunchCancellationAllowsSafeReplacementWithoutProcessIdentity(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	run, err := newDispatchRun(root, AgentCodex, supportedProviderVersions[AgentCodex], dispatchModeFresh)
 	if err != nil {
@@ -331,6 +339,7 @@ func TestPreLaunchCancellationAllowsSafeReplacementWithoutProcessIdentity(t *tes
 }
 
 func TestNeverLaunchedCancelledClaimRecoveryOperations(t *testing.T) {
+	t.Parallel()
 	setup := func(t *testing.T) (string, *dispatchRun, Session) {
 		t.Helper()
 		root := t.TempDir()
@@ -369,6 +378,7 @@ func TestNeverLaunchedCancelledClaimRecoveryOperations(t *testing.T) {
 }
 
 func TestCancellationRevisionRaceIsFinalizedByOwningExecution(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	run, err := newDispatchRun(root, AgentCodex, supportedProviderVersions[AgentCodex], dispatchModeFresh)
 	if err != nil {
@@ -425,6 +435,7 @@ type dispatchTestWriter func([]byte) (int, error)
 func (write dispatchTestWriter) Write(data []byte) (int, error) { return write(data) }
 
 func TestClaimReplacementBlockedByCompatibilityOwnerWithUnprovableOwnership(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	run, err := newDispatchRun(root, AgentCodex, supportedProviderVersions[AgentCodex], dispatchModeFresh)
 	if err != nil {
@@ -471,6 +482,7 @@ func TestClaimReplacementBlockedByCompatibilityOwnerWithUnprovableOwnership(t *t
 }
 
 func TestPreStartFailureDowngradesUnstartedDurableMapping(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	run, err := newDispatchRun(root, AgentClaude, supportedProviderVersions[AgentClaude], dispatchModeFresh)
 	if err != nil {
@@ -510,6 +522,7 @@ func TestPreStartFailureDowngradesUnstartedDurableMapping(t *testing.T) {
 }
 
 func TestResumeFailureWithUnclearedLaunchIntentIsNotRetrySafe(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	run, err := newDispatchRun(root, AgentCodex, supportedProviderVersions[AgentCodex], dispatchModeResume)
 	if err != nil {
@@ -549,6 +562,7 @@ func TestResumeFailureWithUnclearedLaunchIntentIsNotRetrySafe(t *testing.T) {
 }
 
 func TestWorkerPublishesPreStartOwnershipRefusal(t *testing.T) {
+	t.Parallel()
 	for _, attempt := range []string{"initial", "retry"} {
 		t.Run(attempt, func(t *testing.T) {
 			root := t.TempDir()
@@ -592,6 +606,7 @@ func TestWorkerPublishesPreStartOwnershipRefusal(t *testing.T) {
 }
 
 func TestDispatchInputAndEnvironmentContracts(t *testing.T) {
+	t.Parallel()
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	project, stderr, env, depth, err := loadDispatchProject(root, nil, []string{clients.EnvDispatchActive + "=2"})
 	if err != nil || stderr != io.Discard || depth != 2 || len(env) != 1 {

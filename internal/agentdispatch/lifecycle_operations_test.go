@@ -10,6 +10,7 @@ import (
 )
 
 func TestReconcileDoesNotTerminalizeRunWithUnprovableOwnership(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	run, err := newDispatchRun(root, AgentCodex, supportedProviderVersions[AgentCodex], dispatchModeFresh)
 	if err != nil {
@@ -43,6 +44,7 @@ func TestReconcileDoesNotTerminalizeRunWithUnprovableOwnership(t *testing.T) {
 }
 
 func TestRetentionRemovesOnlyExpiredUnreferencedTerminalEvidence(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	now := time.Now().UTC()
 	old := now.Add(-testDispatchSessionRetention - time.Hour)
@@ -102,6 +104,7 @@ func TestRetentionRemovesOnlyExpiredUnreferencedTerminalEvidence(t *testing.T) {
 }
 
 func TestCancelEscalatesButRetainsClaimUntilOwnedProcessIsReaped(t *testing.T) {
+	t.Parallel()
 	for _, agent := range []string{AgentCodex, AgentMuse} {
 		t.Run(agent, func(t *testing.T) {
 			testCancelEscalatesButRetainsClaimUntilOwnedProcessIsReaped(t, agent)
@@ -209,6 +212,7 @@ func testCancelEscalatesButRetainsClaimUntilOwnedProcessIsReaped(t *testing.T, a
 // fanout state root cannot survive as on-disk garbage after the asynchronous
 // cutover: no code can create, read, or finish those manifests again.
 func TestRetentionRemovesRetiredFanoutState(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	legacy := filepath.Join(root, ".agent-layer", "tmp", "fanouts", "old-fanout")
 	if err := os.MkdirAll(legacy, 0o700); err != nil {

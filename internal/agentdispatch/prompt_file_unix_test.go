@@ -22,6 +22,7 @@ import (
 )
 
 func TestPromptFileRegularLimits(t *testing.T) {
+	t.Parallel()
 	path := filepath.Join(t.TempDir(), "prompt")
 	want := bytes.Repeat([]byte("p"), MaxStdinPromptBytes)
 	if err := os.WriteFile(path, want, 0o600); err != nil {
@@ -40,6 +41,7 @@ func TestPromptFileRegularLimits(t *testing.T) {
 }
 
 func TestPromptFileFIFOContents(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name   string
 		size   int
@@ -81,6 +83,7 @@ func TestPromptFileFIFOContents(t *testing.T) {
 }
 
 func TestPromptFileFIFOWriterAlreadyWaiting(t *testing.T) {
+	t.Parallel()
 	fifo := testutil.MakeFIFO(t, filepath.Join(t.TempDir(), "prompt"), false)
 	done := make(chan error, 1)
 	go func() {
@@ -118,6 +121,7 @@ func TestPromptFileFIFOWriterAlreadyWaiting(t *testing.T) {
 }
 
 func TestPromptFileFIFOOverLimitWithoutEOF(t *testing.T) {
+	t.Parallel()
 	fifo := testutil.MakeFIFO(t, filepath.Join(t.TempDir(), "prompt"), false)
 	release := make(chan struct{})
 	writer := promptFileWriter(t, fifo, func(fd int) error {
@@ -141,6 +145,7 @@ func TestPromptFileFIFOOverLimitWithoutEOF(t *testing.T) {
 }
 
 func TestPromptFileFIFOCancellation(t *testing.T) {
+	t.Parallel()
 	for _, mode := range []os.FileMode{0o600, 0o400} {
 		t.Run(fmt.Sprintf("mode-%o", mode), func(t *testing.T) {
 			fifo := testutil.MakeFIFO(t, filepath.Join(t.TempDir(), "prompt"), false)
@@ -177,6 +182,7 @@ func TestPromptFileFIFOCancellation(t *testing.T) {
 }
 
 func TestPromptFileFIFOCancellationBeforeEOF(t *testing.T) {
+	t.Parallel()
 	fifo := testutil.MakeFIFO(t, filepath.Join(t.TempDir(), "prompt"), false)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -221,6 +227,7 @@ func TestPromptFileFIFOCancellationBeforeEOF(t *testing.T) {
 }
 
 func TestPromptFilePreservesDescriptorFlags(t *testing.T) {
+	t.Parallel()
 	for _, nonblock := range []bool{false, true} {
 		t.Run(fmt.Sprintf("nonblock-%t", nonblock), func(t *testing.T) {
 			reader, writer, err := os.Pipe()
@@ -266,6 +273,7 @@ func TestPromptFilePreservesDescriptorFlags(t *testing.T) {
 }
 
 func TestPromptFileCancellationCreatesNoInvocation(t *testing.T) {
+	t.Parallel()
 	for _, continuation := range []bool{false, true} {
 		t.Run(fmt.Sprintf("continue-%t", continuation), func(t *testing.T) {
 			root := writeDispatchRepo(t, dispatchRepoConfig{})

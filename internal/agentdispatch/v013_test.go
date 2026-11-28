@@ -12,6 +12,7 @@ import (
 )
 
 func TestFreshCodexThenResumeUsesOnlyDurableMapping(t *testing.T) {
+	t.Parallel()
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	binDir := t.TempDir()
 	logPath := filepath.Join(t.TempDir(), "codex.log")
@@ -76,6 +77,7 @@ func TestFreshCodexThenResumeUsesOnlyDurableMapping(t *testing.T) {
 }
 
 func TestClaudeResumeKeepsFreshTargetAfterConfigurationChanges(t *testing.T) {
+	t.Parallel()
 	root := writeDispatchRepo(t, dispatchRepoConfig{ClaudeModel: "configured-model", ClaudeReasoningEffort: "medium"})
 	binDir := t.TempDir()
 	logPath := filepath.Join(t.TempDir(), "claude.log")
@@ -138,6 +140,7 @@ func TestClaudeResumeKeepsFreshTargetAfterConfigurationChanges(t *testing.T) {
 }
 
 func TestClaudeResumeKeepsProviderDefaultsAfterConfigurationChanges(t *testing.T) {
+	t.Parallel()
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	binDir := t.TempDir()
 	logPath := filepath.Join(t.TempDir(), "claude.log")
@@ -209,6 +212,7 @@ func identityName(t *testing.T, stderr string) string {
 }
 
 func TestAntigravityPlainOutputIsRejected(t *testing.T) {
+	t.Parallel()
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	binDir := t.TempDir()
 	path := filepath.Join(binDir, "agy")
@@ -239,6 +243,7 @@ printf 'answer without a provider id'
 }
 
 func TestAntigravityResumePlainOutputFailsAndRetainsDurableMapping(t *testing.T) {
+	t.Parallel()
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	run, err := newDispatchRun(root, AgentAntigravity, supportedProviderVersions[AgentAntigravity], dispatchModeFresh)
 	if err != nil {
@@ -301,6 +306,7 @@ printf 'resumed answer without a provider id'
 }
 
 func TestAntigravityStructuredResumeReturnsPlainAnswerAndRetainsDurableMapping(t *testing.T) {
+	t.Parallel()
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	binDir := t.TempDir()
 	logPath := filepath.Join(t.TempDir(), "agy.log")
@@ -375,6 +381,7 @@ func assertFileHasACPSessionResume(t *testing.T, path string, wantSessionID stri
 }
 
 func TestSupportedVersionFixturesReduceOnlyRequiredEvents(t *testing.T) {
+	t.Parallel()
 	claudeData, err := os.ReadFile(filepath.Join("testdata", "claude", "v0.13-2.1.207.jsonl"))
 	if err != nil {
 		t.Fatalf("read Claude fixture: %v", err)

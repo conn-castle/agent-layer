@@ -16,6 +16,7 @@ import (
 )
 
 func TestACPPermissionPolicySelectiveApprovalAcrossModes(t *testing.T) {
+	t.Parallel()
 	baseCfg := func(mode string) acpLaunchConfig {
 		allowCmd := mode == config.ApprovalModeCommands || mode == config.ApprovalModeAll || mode == config.ApprovalModeYOLO
 		allowMCP := mode == config.ApprovalModeMCP || mode == config.ApprovalModeAll || mode == config.ApprovalModeYOLO
@@ -225,6 +226,7 @@ func writeTestHandshakeReady(t *testing.T, runDir string, server string, nonce s
 }
 
 func TestACPDispatchGrokAndAntigravityLifecyclePermissionsAndFailClosed(t *testing.T) {
+	t.Parallel()
 	t.Run("grok ACP auth, model/effort config, MCP ready check, permission callback, unsupported method error, and usage", func(t *testing.T) {
 		root := t.TempDir()
 		run, err := newDispatchRun(root, AgentGrok, supportedProviderVersions[AgentGrok], dispatchModeFresh)
@@ -484,6 +486,7 @@ func TestACPDispatchGrokAndAntigravityLifecyclePermissionsAndFailClosed(t *testi
 }
 
 func TestSessionMCPHandshakeRelayRecordsSuccessAndFailure(t *testing.T) {
+	t.Parallel()
 	runDir := t.TempDir()
 	const nonce = "hs-nonce-abc"
 	writeTestHandshakeReady(t, runDir, "ok", nonce)
@@ -540,6 +543,7 @@ func TestSessionMCPHandshakeRelayRecordsSuccessAndFailure(t *testing.T) {
 }
 
 func TestACPPermissionHardeningAndToolCallMetadataMerge(t *testing.T) {
+	t.Parallel()
 	// fetch and switch_mode follow AllowCommands (denied in none/mcp, allowed in commands/all/yolo).
 	for _, tc := range []struct {
 		mode      string
@@ -873,6 +877,7 @@ type acpRecordingWriter struct {
 func (*acpRecordingWriter) Close() error { return nil }
 
 func TestACPAuthenticateNonInteractiveSelectionAndFailFast(t *testing.T) {
+	t.Parallel()
 	noResponses := make(chan acpIncomingFrame)
 	close(noResponses)
 
@@ -1063,6 +1068,7 @@ func TestACPAuthenticateNonInteractiveSelectionAndFailFast(t *testing.T) {
 }
 
 func TestACPGrokDispatchAuthenticationFailures(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name          string
 		authMethods   string
@@ -1175,6 +1181,7 @@ done
 }
 
 func TestACPDispatchConfigurationAndPersistenceExitCodes(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name          string
 		runMode       string

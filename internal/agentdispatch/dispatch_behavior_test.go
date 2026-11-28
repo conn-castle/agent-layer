@@ -19,6 +19,7 @@ import (
 )
 
 func TestOptionsCancellationStopsVersionProbes(t *testing.T) {
+	t.Parallel()
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	binary := filepath.Join(t.TempDir(), "slow-provider")
 	if err := os.WriteFile(binary, []byte("#!/bin/sh\nexec sleep 30\n"), 0o700); err != nil { // #nosec G306 -- executable provider fixture.
@@ -40,6 +41,7 @@ func TestOptionsCancellationStopsVersionProbes(t *testing.T) {
 }
 
 func TestOptionsExposeSelectionFactsAndQuotaCapability(t *testing.T) {
+	t.Parallel()
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	options, err := BuildOptions(OptionsRequest{
 		Root: root,
@@ -75,6 +77,7 @@ func TestOptionsExposeSelectionFactsAndQuotaCapability(t *testing.T) {
 }
 
 func TestOptionsReportExactUnsupportedInstalledVersion(t *testing.T) {
+	t.Parallel()
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	binary := filepath.Join(t.TempDir(), "claude")
 	if err := os.WriteFile(binary, []byte("#!/bin/sh\necho 1.0.0\n"), 0o700); err != nil { // #nosec G306 -- test provider must be executable.
@@ -107,6 +110,7 @@ func TestOptionsReportExactUnsupportedInstalledVersion(t *testing.T) {
 }
 
 func TestOptionsReportUnavailableProviderReasons(t *testing.T) {
+	t.Parallel()
 	const unverified = "provider version could not be verified"
 	found := func(string) (string, error) { return "/mock/codex", nil }
 	unexpectedLookup := func(string, string) (string, error) {
@@ -141,6 +145,7 @@ func TestOptionsReportUnavailableProviderReasons(t *testing.T) {
 }
 
 func TestNewerProviderVersionsRemainDispatchable(t *testing.T) {
+	t.Parallel()
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	parts := strings.Split(supportedProviderVersions[AgentCodex], ".")
 	patch, err := strconv.Atoi(parts[2])
@@ -191,6 +196,7 @@ func TestNewerProviderVersionsRemainDispatchable(t *testing.T) {
 }
 
 func TestNewerProviderVersionDispatchWarnsOnStderrOnly(t *testing.T) {
+	t.Parallel()
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	binDir := t.TempDir()
 	writeDispatchStub(t, binDir, "codex", `printf '{"type":"item.completed","item":{"type":"agent_message","text":"done"}}\n'`)
@@ -218,6 +224,7 @@ func TestNewerProviderVersionDispatchWarnsOnStderrOnly(t *testing.T) {
 }
 
 func TestBuildOptionsResolvesEachProviderBinaryOnce(t *testing.T) {
+	t.Parallel()
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	replaceDispatchConfigText(t, root, "[agents.grok]\nenabled = false", "[agents.grok]\nenabled = true")
 	replaceDispatchConfigText(t, root, "[agents.muse]\nenabled = false", "[agents.muse]\nenabled = true")
@@ -248,6 +255,7 @@ func TestBuildOptionsResolvesEachProviderBinaryOnce(t *testing.T) {
 }
 
 func TestOptionsVersionQueriesRunConcurrently(t *testing.T) {
+	t.Parallel()
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	replaceDispatchConfigText(t, root, "[agents.grok]\nenabled = false", "[agents.grok]\nenabled = true")
 	started := make(chan string, 4)
@@ -278,6 +286,7 @@ func TestOptionsVersionQueriesRunConcurrently(t *testing.T) {
 }
 
 func TestOptionsSkipsDisabledProviderQueries(t *testing.T) {
+	t.Parallel()
 	options := buildTargetOptions(dispatchTestConfig(AgentCodex), agentoptions.DiscoveryRequest{Live: true,
 		LookPath: func(binary string) (string, error) {
 			if binary != AgentCodex {
@@ -293,12 +302,14 @@ func TestOptionsSkipsDisabledProviderQueries(t *testing.T) {
 }
 
 func TestStartRejectsUnknownTarget(t *testing.T) {
+	t.Parallel()
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	err := Start(StartOptions{Root: root, Agent: "unknown", Prompt: "Review", Env: []string{}, LookPath: alwaysFound})
 	requireDispatchExitCode(t, err, ExitUsage)
 }
 
 func TestStartPreflightStopsBeforeWorkerLaunch(t *testing.T) {
+	t.Parallel()
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	launcher := func(string, string, string) (launchedWorker, error) {
 		t.Fatal("preflight failure launched a worker")
@@ -335,6 +346,7 @@ func TestStartPreflightStopsBeforeWorkerLaunch(t *testing.T) {
 }
 
 func TestFieldOptionsRejectUnknownTarget(t *testing.T) {
+	t.Parallel()
 	option := fieldOptionWithDiscovery(dispatchTestConfig(AgentCodex), targetMeta{Name: "unknown"}, agentoptions.KindModel, agentoptions.DiscoveryRequest{})
 	if option.OverrideSupported || option.AllowCustom || len(option.Suggestions) != 0 {
 		t.Fatalf("unknown target option = %#v", option)

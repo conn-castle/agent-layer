@@ -10,6 +10,7 @@ import (
 // writes exactly one configuration block, imports the selected skills, records
 // lock state, and projects — all in one atomic step.
 func TestAddCreatesBlockPerformsInitialPullAndProjects(t *testing.T) {
+	t.Parallel()
 	source := newGitRepo(t, "main")
 	source.WriteSkill("skills/alpha", "alpha", "Alpha body")
 	source.Commit("add alpha")
@@ -43,6 +44,7 @@ func TestAddCreatesBlockPerformsInitialPullAndProjects(t *testing.T) {
 // same policy extends the existing block rather than creating a second one, and
 // that a repeated selector is refused so `al skills remove` stays unambiguous.
 func TestAddExtendsAMatchingBlockAndRejectsDuplicates(t *testing.T) {
+	t.Parallel()
 	source := newGitRepo(t, "main")
 	source.WriteSkill("skills/alpha", "alpha", "Alpha body")
 	source.WriteSkill("skills/beta", "beta", "Beta body")
@@ -74,6 +76,7 @@ func TestAddExtendsAMatchingBlockAndRejectsDuplicates(t *testing.T) {
 // selector edit paths fail before changing configuration, content, or lock
 // evidence when a wildcard cannot be parsed.
 func TestAddAndRemoveRejectMalformedPatternsBeforeMutation(t *testing.T) {
+	t.Parallel()
 	source := newGitRepo(t, "main")
 	source.WriteSkill("skills/alpha", "alpha", "Alpha body")
 	source.Commit("add alpha")
@@ -101,6 +104,7 @@ func TestAddAndRemoveRejectMalformedPatternsBeforeMutation(t *testing.T) {
 // TestAddWithDifferentPolicyCreatesASeparateBlock proves selectors that need a
 // different policy live in their own block.
 func TestAddWithDifferentPolicyCreatesASeparateBlock(t *testing.T) {
+	t.Parallel()
 	source := newGitRepo(t, "main")
 	source.WriteSkill("skills/alpha", "alpha", "Alpha body")
 	source.WriteSkill("skills/beta", "beta", "Beta body")
@@ -131,6 +135,7 @@ func TestAddWithDifferentPolicyCreatesASeparateBlock(t *testing.T) {
 // TestAddWildcardResolvingToNothingChangesNoState proves an actionable failure
 // leaves configuration, lock state, and the imported tier untouched.
 func TestAddWildcardResolvingToNothingChangesNoState(t *testing.T) {
+	t.Parallel()
 	source := newGitRepo(t, "main")
 	source.WriteFile("docs/README.md", "no skills here\n", 0o644)
 	source.Commit("no skills")
@@ -155,6 +160,7 @@ func TestAddWildcardResolvingToNothingChangesNoState(t *testing.T) {
 // TestAddExactSelectorForAnInvalidSkillFails proves an exact selector that does
 // not resolve to a valid skill is an actionable error rather than a silent skip.
 func TestAddExactSelectorForAnInvalidSkillFails(t *testing.T) {
+	t.Parallel()
 	source := newGitRepo(t, "main")
 	source.WriteFile("skills/broken/README.md", "no manifest\n", 0o644)
 	source.WriteFile("skills/invalid/SKILL.md", "---\nname: other\ndescription: d\n---\nBody\n", 0o644)
@@ -174,6 +180,7 @@ func TestAddExactSelectorForAnInvalidSkillFails(t *testing.T) {
 // TestAddExclusionOnlyRequiresAnExistingBlock proves an exclusion never imports
 // a skill by itself.
 func TestAddExclusionOnlyRequiresAnExistingBlock(t *testing.T) {
+	t.Parallel()
 	source := newGitRepo(t, "main")
 	source.WriteSkill("skills/alpha", "alpha", "Alpha body")
 	source.WriteSkill("skills/beta", "beta", "Beta body")
@@ -208,6 +215,7 @@ func TestAddExclusionOnlyRequiresAnExistingBlock(t *testing.T) {
 // only the skills that leave the desired set and drops the block when no
 // positive selector remains.
 func TestRemoveSelectorRetiresAndKeepsOthers(t *testing.T) {
+	t.Parallel()
 	source := newGitRepo(t, "main")
 	source.WriteSkill("skills/alpha", "alpha", "Alpha body")
 	source.WriteSkill("skills/beta", "beta", "Beta body")
@@ -252,6 +260,7 @@ func TestRemoveSelectorRetiresAndKeepsOthers(t *testing.T) {
 // TestRemoveExclusionRevealsSkillAtCurrentTarget proves newly revealed
 // membership is imported immediately from the operation's resolved target.
 func TestRemoveExclusionRevealsSkillAtCurrentTarget(t *testing.T) {
+	t.Parallel()
 	source := newGitRepo(t, "main")
 	source.WriteSkill("skills/alpha", "alpha", "Alpha body")
 	source.WriteSkill("skills/beta", "beta", "Beta at lock time")
@@ -289,6 +298,7 @@ func TestRemoveExclusionRevealsSkillAtCurrentTarget(t *testing.T) {
 // during remove aborts the whole operation rather than half-applying it, and
 // that the report claims no retirement it did not perform.
 func TestRemoveModifiedSkillLeavesPriorStateUnchanged(t *testing.T) {
+	t.Parallel()
 	source := newGitRepo(t, "main")
 	source.WriteSkill("skills/alpha", "alpha", "Alpha body")
 	source.WriteSkill("skills/beta", "beta", "Beta body")
@@ -324,6 +334,7 @@ func TestRemoveModifiedSkillLeavesPriorStateUnchanged(t *testing.T) {
 // skill aborts the whole add, and that the report claims no import it did not
 // perform.
 func TestAddBlockedSkillImportsNothing(t *testing.T) {
+	t.Parallel()
 	source := newGitRepo(t, "main")
 	source.WriteSkill("skills/alpha", "alpha", "Alpha body")
 	source.WriteSkill("skills/beta", "beta", "Beta body")
@@ -367,6 +378,7 @@ func assertOnlyFailures(t *testing.T, report *Report, err error, operation strin
 // spelling the editor cannot rewrite, instead of reporting success while the
 // selector stays configured for the next pull to re-import.
 func TestRemoveRejectsAnImportWithoutATableHeader(t *testing.T) {
+	t.Parallel()
 	source := newGitRepo(t, "main")
 	source.WriteSkill("skills/alpha", "alpha", "Alpha body")
 	source.Commit("add alpha")
@@ -396,6 +408,7 @@ func TestRemoveRejectsAnImportWithoutATableHeader(t *testing.T) {
 // TestRemoveUnknownSelectorFails proves the command identifies exactly one
 // configured selector or refuses.
 func TestRemoveUnknownSelectorFails(t *testing.T) {
+	t.Parallel()
 	proj := newProject(t)
 	if _, err := proj.Service().Remove(context.Background(), "https://example.test/absent.git", "skills/alpha"); err == nil {
 		t.Fatal("expected an unknown selector to fail")
@@ -406,6 +419,7 @@ func TestRemoveUnknownSelectorFails(t *testing.T) {
 // roots from one repository are refused because they would create overlapping
 // editable owners.
 func TestAddRejectsOverlappingSelectedPaths(t *testing.T) {
+	t.Parallel()
 	source := newGitRepo(t, "main")
 	source.WriteSkill("skills/outer", "outer", "Outer body")
 	source.WriteSkill("skills/outer/inner", "inner", "Inner body")
@@ -427,6 +441,7 @@ func TestAddRejectsOverlappingSelectedPaths(t *testing.T) {
 // TestAddRejectsDistinctPathsResolvingToOneName proves a normalized-name
 // collision is a deterministic configuration error.
 func TestAddRejectsDistinctPathsResolvingToOneName(t *testing.T) {
+	t.Parallel()
 	source := newGitRepo(t, "main")
 	source.WriteSkill("one/alpha", "alpha", "First")
 	source.WriteSkill("two/alpha", "alpha", "Second")
@@ -449,6 +464,7 @@ func TestAddRejectsDistinctPathsResolvingToOneName(t *testing.T) {
 // enforced across the complete managed set, not just within the block being
 // changed.
 func TestAddRejectsANameAlreadyOwnedByAnotherBlock(t *testing.T) {
+	t.Parallel()
 	first := newGitRepo(t, "main")
 	first.WriteSkill("skills/alpha", "alpha", "First alpha")
 	first.Commit("add alpha")
@@ -483,6 +499,7 @@ func TestAddRejectsANameAlreadyOwnedByAnotherBlock(t *testing.T) {
 // neither one's lock advances, since the destination matches no single tracked
 // source ref exactly.
 func TestPushGroupsTwoSourcesIntoOneDestinationCommit(t *testing.T) {
+	t.Parallel()
 	first := newGitRepo(t, "main")
 	first.WriteSkill("skills/alpha", "alpha", "Alpha body")
 	first.WriteFile("skills/alpha/reference.md", "alpha reference\n", 0o644)

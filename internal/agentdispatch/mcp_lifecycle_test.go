@@ -79,6 +79,7 @@ func waitMCPRun(t *testing.T, done <-chan error) error {
 }
 
 func TestMCPLifecycleRealTransport(t *testing.T) {
+	t.Parallel()
 	for _, ending := range []string{"eof", "cancel", "deadline"} {
 		t.Run(ending, func(t *testing.T) {
 			root := writeDispatchRepo(t, dispatchRepoConfig{})
@@ -161,6 +162,7 @@ func TestMCPLifecycleRealTransport(t *testing.T) {
 }
 
 func TestMCPLifecycleFailuresAndConcurrentInstances(t *testing.T) {
+	t.Parallel()
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	done := make(chan error, 2)
 	for _, input := range []string{`{"jsonrpc":"2.0","method":"private-malformed-canary"`, `{"jsonrpc":"2.0","id":{"private-invalid-id-canary":true},"method":"initialize"}` + "\n"} {
@@ -192,6 +194,7 @@ func TestMCPLifecycleFailuresAndConcurrentInstances(t *testing.T) {
 }
 
 func TestMCPLifecycleStartupAndPersistenceFailures(t *testing.T) {
+	t.Parallel()
 	t.Run("configuration", func(t *testing.T) {
 		root := t.TempDir()
 		if err := os.Mkdir(filepath.Join(root, ".agent-layer"), 0o700); err != nil {
@@ -236,6 +239,7 @@ func (r mcpFailingReader) Read([]byte) (int, error) { return 0, r.err }
 func (mcpFailingReader) Close() error               { return nil }
 
 func TestMCPLifecycleReadFailure(t *testing.T) {
+	t.Parallel()
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	sentinel := errors.New("private-read-error-canary")
 	err := runMCPServer(context.Background(), MCPServerOptions{Root: root, Version: "1.2.3"}, mcpFailingReader{sentinel}, io.Discard, io.Discard)
@@ -271,6 +275,7 @@ func (r *mcpDataEOFReader) Read(p []byte) (int, error) {
 func (*mcpDataEOFReader) Close() error { return nil }
 
 func TestMCPLifecycleDataWithPhysicalEOF(t *testing.T) {
+	t.Parallel()
 	for _, input := range []string{"{}\n", `{"private-partial-canary":`} {
 		t.Run(input, func(t *testing.T) {
 			root := writeDispatchRepo(t, dispatchRepoConfig{})
@@ -293,6 +298,7 @@ func TestMCPLifecycleDataWithPhysicalEOF(t *testing.T) {
 // through the undecorated SDK too: a go-sdk upgrade that changes negotiation
 // or batching fails here instead of silently diverging.
 func TestMCPLifecyclePreservesSDKBatches(t *testing.T) {
+	t.Parallel()
 	initialize := func(version string) string {
 		return fmt.Sprintf(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":%q,"capabilities":{},"clientInfo":{"name":"test","version":"test"}}}`, version)
 	}
@@ -426,10 +432,12 @@ func exchangeMCPBatch(t *testing.T, handshake string, serve func(context.Context
 }
 
 func TestMCPLifecycleErrorBeforeInflightWorkFinishes(t *testing.T) {
+	t.Parallel()
 	testMCPLifecycleInflightShutdown(t, false)
 }
 
 func TestMCPLifecycleCompetingEOFAndCancellation(t *testing.T) {
+	t.Parallel()
 	testMCPLifecycleInflightShutdown(t, true)
 }
 
@@ -545,6 +553,7 @@ func testMCPLifecycleInflightShutdown(t *testing.T, compete bool) {
 }
 
 func TestMCPLifecycleSurvivesDispatchRetention(t *testing.T) {
+	t.Parallel()
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	if err := runMCPServer(context.Background(), MCPServerOptions{Root: root, Version: "1.2.3"}, io.NopCloser(strings.NewReader("")), io.Discard, io.Discard); err != nil {
 		t.Fatal(err)
@@ -572,6 +581,7 @@ type mcpCloseFailingReader struct {
 func (r mcpCloseFailingReader) Close() error { return r.err }
 
 func TestMCPLifecycleUnclassifiedRunError(t *testing.T) {
+	t.Parallel()
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	sentinel := errors.New("private-close-error-canary")
 	err := runMCPServer(context.Background(), MCPServerOptions{Root: root, Version: "1.2.3"}, mcpCloseFailingReader{strings.NewReader(""), sentinel}, io.Discard, io.Discard)
@@ -666,6 +676,7 @@ func waitMCPBoundary(t *testing.T, signal <-chan struct{}) {
 }
 
 func TestMCPLifecycleCloseDuringOperation(t *testing.T) {
+	t.Parallel()
 	for _, ending := range []string{"clean-eof", "partial-eof", "masked-partial-eof", "parser-error", "read-error", "write-error", "closed-channel-eof"} {
 		t.Run(ending, func(t *testing.T) {
 			root := writeDispatchRepo(t, dispatchRepoConfig{})
@@ -811,6 +822,7 @@ func TestMCPLifecycleCloseDuringOperation(t *testing.T) {
 // POSIX roots may end in whitespace. The server, options lookup, and lifecycle
 // log must use that exact root, never a trimmed sibling.
 func TestDispatchPreservesLiteralRootWhitespace(t *testing.T) {
+	t.Parallel()
 	sibling := writeDispatchRepo(t, dispatchRepoConfig{})
 	root := sibling + " "
 	if err := os.Rename(sibling, root); err != nil {
@@ -862,6 +874,7 @@ func (r *mcpCloseGatedReader) Close() error {
 }
 
 func TestMCPLifecycleLocalCloseReadError(t *testing.T) {
+	t.Parallel()
 	for _, kind := range []string{"pipe", "file"} {
 		for _, local := range []bool{true, false} {
 			t.Run(fmt.Sprintf("%s/local=%t", kind, local), func(t *testing.T) {

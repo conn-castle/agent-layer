@@ -18,6 +18,7 @@ import (
 // before its worker exists. The repeat start must resolve that invocation
 // through launch recovery and return it rather than launching again.
 func TestReservedStartInterruptedMidLaunchIsNeverRelaunched(t *testing.T) {
+	t.Parallel()
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	binDir := filepath.Join(t.TempDir(), "bin")
 	writeDispatchStub(t, binDir, "codex", `printf '{"type":"item.completed","item":{"type":"agent_message","text":"answer"}}\n'`)
@@ -104,6 +105,7 @@ func reserveInTest(t *testing.T, root string) Result {
 // TestReservedStartLaunchesOnce proves that concurrent starts claim the
 // reservation once and every later start fails without launching.
 func TestReservedStartLaunchesOnce(t *testing.T) {
+	t.Parallel()
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	reservation := reserveInTest(t, root)
 	var launches atomic.Int32
@@ -187,6 +189,7 @@ func TestReservedStartLaunchesOnce(t *testing.T) {
 // reservation but died before recording the conversation: continue must not
 // claim the reservation never started.
 func TestContinueExplainsInterruptedReservedStart(t *testing.T) {
+	t.Parallel()
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	reservation := reserveInTest(t, root)
 	if _, claimed, err := claimReservation(root, reservation.InvocationID, func(current *RunRecord) {
@@ -205,6 +208,7 @@ func TestContinueExplainsInterruptedReservedStart(t *testing.T) {
 // after claimReservation and before claimReservedSession: a later start must
 // fail without launching and tell the caller to inspect before continuing.
 func TestRepeatedStartAfterInterruptedClaimGuidesInspect(t *testing.T) {
+	t.Parallel()
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	reservation := reserveInTest(t, root)
 	if _, claimed, err := claimReservation(root, reservation.InvocationID, func(current *RunRecord) {

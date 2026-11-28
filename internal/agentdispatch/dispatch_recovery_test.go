@@ -29,6 +29,7 @@ func museBackgroundFinal() string {
 }
 
 func TestMuseObservedTextBackgroundContinuation(t *testing.T) {
+	t.Parallel()
 	raw := museCapturedFixture(t, "v1.4.6-text-background.jsonl")
 	for _, test := range []struct{ name, stream, wantFailure string }{
 		{"observed handoff", raw + museBackgroundFinal(), ""},
@@ -76,6 +77,7 @@ func TestMuseObservedTextBackgroundContinuation(t *testing.T) {
 }
 
 func TestMuseRecoveryUsesAuthoritativeBaseline(t *testing.T) {
+	t.Parallel()
 	raw := museCapturedFixture(t, "v1.4.6-recovery-terminal.jsonl")
 	for _, test := range []struct {
 		name, root, session, stream string
@@ -118,6 +120,7 @@ func TestMuseRecoveryUsesAuthoritativeBaseline(t *testing.T) {
 }
 
 func TestMuseRecoverySnapshotContract(t *testing.T) {
+	t.Parallel()
 	for _, test := range []struct {
 		name, session, active, lastTerminal, wantRoot string
 		wantFailure                                   bool
@@ -151,6 +154,7 @@ func TestMuseRecoverySnapshotContract(t *testing.T) {
 }
 
 func TestMuseTextBackgroundRetractsShutdownDeadline(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	raw := museCapturedFixture(t, "v1.4.6-text-background.jsonl") + museBackgroundFinal()
 	fixture := filepath.Join(root, "fixture.jsonl")
@@ -170,6 +174,7 @@ func TestMuseTextBackgroundRetractsShutdownDeadline(t *testing.T) {
 }
 
 func TestMusePostTimeoutRecoveryWithoutReplayedLink(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	raw := museCapturedFixture(t, "v1.4.6-recovery-terminal.jsonl")
 	fixture := filepath.Join(root, "terminal.jsonl")
@@ -250,6 +255,7 @@ cat "$2"
 }
 
 func TestOutputPagesLateFailedEvidence(t *testing.T) {
+	t.Parallel()
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	run, _ := newWaitTestRun(t, root)
 	now := time.Now().UTC()
@@ -307,6 +313,7 @@ func TestOutputPagesLateFailedEvidence(t *testing.T) {
 }
 
 func TestCrossProviderShutdownSnapshots(t *testing.T) {
+	t.Parallel()
 	for _, test := range []struct {
 		agent, stream string
 		terminal      bool
@@ -366,6 +373,7 @@ func TestCrossProviderShutdownSnapshots(t *testing.T) {
 }
 
 func TestMuseRecoveryRetainsOwnedRootAcrossMissingViewFold(t *testing.T) {
+	t.Parallel()
 	raw := museCapturedFixture(t, "v1.4.6-text-background.jsonl")
 	frames := strings.Split(strings.TrimSpace(raw), "\n")
 	const linkedBackground = "01a132d6-69c2-7b51-bf05-e8b24f9711f3"
@@ -452,6 +460,7 @@ func TestMuseRecoveryRetainsOwnedRootAcrossMissingViewFold(t *testing.T) {
 }
 
 func TestMuseNewResumeRootRequiresTaskAndFreshAuthoritativeView(t *testing.T) {
+	t.Parallel()
 	observed := museCapturedFixture(t, "v1.4.6-recovery-terminal.jsonl")
 	for _, test := range []struct {
 		name, afterRoot, afterCursor, afterState, stream string

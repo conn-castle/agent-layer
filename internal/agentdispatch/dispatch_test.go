@@ -42,6 +42,7 @@ const antigravityStructuredOK = `while IFS= read -r line; do
 done`
 
 func TestProviderAssignedSessionPreservesResolvedSettings(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		agent, executable, response, model, effort string
 		repoConfig                                 dispatchRepoConfig
@@ -99,6 +100,7 @@ func TestProviderAssignedSessionPreservesResolvedSettings(t *testing.T) {
 }
 
 func TestRunUsesSuppliedRepositoryRootWithoutCreatingWorktree(t *testing.T) {
+	t.Parallel()
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	git := func(args ...string) string {
 		t.Helper()
@@ -140,6 +142,7 @@ printf '{"type":"item.completed","item":{"type":"agent_message","text":"done"}}\
 }
 
 func TestRunLaunchesProviderWithSkillsInSuppliedWorkingDirectory(t *testing.T) {
+	t.Parallel()
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	workingDir := t.TempDir()
 	binDir := t.TempDir()
@@ -170,6 +173,7 @@ printf '{"type":"item.completed","item":{"type":"agent_message","text":"done"}}\
 }
 
 func TestBuildOptionsJSONShape(t *testing.T) {
+	t.Parallel()
 	root := writeDispatchRepo(t, dispatchRepoConfig{AntigravityModel: "Gemini 3.1 Pro (High)"})
 	options, err := BuildOptions(OptionsRequest{
 		Root: root,
@@ -226,6 +230,7 @@ func TestBuildOptionsJSONShape(t *testing.T) {
 }
 
 func TestBuildOptionsUsesTargetModelSuggestionProvider(t *testing.T) {
+	t.Parallel()
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	binDir := t.TempDir()
 	logPath := filepath.Join(t.TempDir(), "agy.log")
@@ -260,6 +265,7 @@ fi`)
 }
 
 func TestStartBlocksNestedDispatchAtDepthOne(t *testing.T) {
+	t.Parallel()
 	root := writeDispatchRepo(t, dispatchRepoConfig{DispatchMaxDepth: 1})
 	err := Start(StartOptions{
 		Root: root, Agent: AgentCodex, Prompt: "Review",
@@ -275,6 +281,7 @@ func TestStartBlocksNestedDispatchAtDepthOne(t *testing.T) {
 }
 
 func TestDispatchAllowsNestedDispatchWithinDefaultDepth(t *testing.T) {
+	t.Parallel()
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	binDir := t.TempDir()
 	logPath := filepath.Join(t.TempDir(), "codex.log")
@@ -311,6 +318,7 @@ func TestDispatchAllowsNestedDispatchWithinDefaultDepth(t *testing.T) {
 }
 
 func TestDispatchAllowsNestedDispatchWithinConfiguredDepth(t *testing.T) {
+	t.Parallel()
 	root := writeDispatchRepo(t, dispatchRepoConfig{DispatchMaxDepth: 2})
 	binDir := t.TempDir()
 	logPath := filepath.Join(t.TempDir(), "codex.log")
@@ -339,6 +347,7 @@ func TestDispatchAllowsNestedDispatchWithinConfiguredDepth(t *testing.T) {
 }
 
 func TestStartBlocksNestedDispatchAtConfiguredDepth(t *testing.T) {
+	t.Parallel()
 	root := writeDispatchRepo(t, dispatchRepoConfig{DispatchMaxDepth: 2})
 	err := Start(StartOptions{
 		Root: root, Agent: AgentCodex, Prompt: "Review",
@@ -351,6 +360,7 @@ func TestStartBlocksNestedDispatchAtConfiguredDepth(t *testing.T) {
 }
 
 func TestStartRejectsInvalidDispatchDepthEnv(t *testing.T) {
+	t.Parallel()
 	// A present-but-non-parseable AL_DISPATCH_ACTIVE fails loud rather than
 	// silently defaulting to depth 0. Empty/whitespace counts as malformed: the
 	// variable is only ever set by dispatch itself to a positive integer.
@@ -373,6 +383,7 @@ func TestStartRejectsInvalidDispatchDepthEnv(t *testing.T) {
 }
 
 func TestRunAntigravityUsesConfiguredModel(t *testing.T) {
+	t.Parallel()
 	root := writeDispatchRepo(t, dispatchRepoConfig{AntigravityModel: "Gemini 3.1 Pro (High)"})
 	binDir := t.TempDir()
 	logPath := filepath.Join(t.TempDir(), "agy.log")
@@ -404,6 +415,7 @@ func TestRunAntigravityUsesConfiguredModel(t *testing.T) {
 }
 
 func TestRunAntigravityUsesModelOverride(t *testing.T) {
+	t.Parallel()
 	root := writeDispatchRepo(t, dispatchRepoConfig{AntigravityModel: "Gemini 3.1 Pro (High)"})
 	binDir := t.TempDir()
 	logPath := filepath.Join(t.TempDir(), "agy.log")
@@ -435,6 +447,7 @@ func TestRunAntigravityUsesModelOverride(t *testing.T) {
 }
 
 func TestRunAntigravityExactSlugCapturesStructuredEvents(t *testing.T) {
+	t.Parallel()
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	binDir := t.TempDir()
 	logPath := filepath.Join(t.TempDir(), "agy.log")
@@ -464,6 +477,7 @@ func TestRunAntigravityExactSlugCapturesStructuredEvents(t *testing.T) {
 }
 
 func TestRunAntigravityRejectsEmptySessionID(t *testing.T) {
+	t.Parallel()
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	binDir := t.TempDir()
 	logPath := filepath.Join(t.TempDir(), "agy.log")
@@ -501,6 +515,7 @@ done`)
 }
 
 func TestClaudeSkillPromptAndCommandConstruction(t *testing.T) {
+	t.Parallel()
 	root := writeDispatchRepo(t, dispatchRepoConfig{ClaudeModel: "opus", ClaudeReasoningEffort: "high", ClaudeLocalConfigDir: true})
 	binDir := t.TempDir()
 	logPath := filepath.Join(t.TempDir(), "claude.log")
@@ -550,6 +565,7 @@ func TestClaudeSkillPromptAndCommandConstruction(t *testing.T) {
 }
 
 func TestGrokFreshAndResumeDispatchPreserveProviderSession(t *testing.T) {
+	t.Parallel()
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	replaceDispatchConfigText(t, root, "[agents.grok]\nenabled = false", "[agents.grok]\nenabled = true")
 	binDir := t.TempDir()
@@ -637,6 +653,7 @@ done
 }
 
 func TestAntigravityCommandConstruction(t *testing.T) {
+	t.Parallel()
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	binDir := t.TempDir()
 	logPath := filepath.Join(t.TempDir(), "agy.log")
@@ -670,6 +687,7 @@ func TestAntigravityCommandConstruction(t *testing.T) {
 // TestCodexDownstreamRejectsCustomOverrideSuppressesProviderStderr proves
 // that provider diagnostics remain private when a turn fails.
 func TestCodexDownstreamRejectsCustomOverrideSuppressesProviderStderr(t *testing.T) {
+	t.Parallel()
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	binDir := t.TempDir()
 	logPath := filepath.Join(t.TempDir(), "codex.log")
@@ -712,6 +730,7 @@ printf '{"type":"agent_message","message":"ok"}\n'
 }
 
 func TestSyncRunExitErrorAttributesPostWriteCleanupAfterSuccessfulSync(t *testing.T) {
+	t.Parallel()
 	err := fmt.Errorf("%w: failed to unlock sync lock", sync.ErrPostWriteLockCleanup)
 	exitErr := syncRunExitError(err)
 	if exitErr.Code != ExitConfig {

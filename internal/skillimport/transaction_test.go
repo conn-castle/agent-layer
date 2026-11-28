@@ -37,6 +37,7 @@ func lockEntry(name string) skilllock.Entry {
 // publishes imported content, rewrites configuration, and records lock state as
 // a single observable change.
 func TestTransactionAppliesTreesConfigurationAndLockTogether(t *testing.T) {
+	t.Parallel()
 	proj := newProject(t)
 	if err := os.MkdirAll(proj.paths.ImportedSkillsDir, 0o750); err != nil {
 		t.Fatalf("mkdir: %v", err)
@@ -72,6 +73,7 @@ func TestTransactionAppliesTreesConfigurationAndLockTogether(t *testing.T) {
 // TestTransactionRemovesAndRestoresTrees proves a recorded deletion is applied
 // on commit and that the removal is reverted when a later step fails.
 func TestTransactionRemovesAndRestoresTrees(t *testing.T) {
+	t.Parallel()
 	proj := newProject(t)
 	if err := os.MkdirAll(proj.paths.ImportedSkillsDir, 0o750); err != nil {
 		t.Fatalf("mkdir: %v", err)
@@ -105,6 +107,7 @@ func TestTransactionRemovesAndRestoresTrees(t *testing.T) {
 // TestTransactionRestoresConfigurationWhenLockWritingFails proves the last step
 // failing does not leave a configuration change stranded without its lock.
 func TestTransactionRestoresConfigurationWhenLockWritingFails(t *testing.T) {
+	t.Parallel()
 	proj := newProject(t)
 	if err := os.MkdirAll(proj.paths.ImportedSkillsDir, 0o750); err != nil {
 		t.Fatalf("mkdir: %v", err)
@@ -129,6 +132,7 @@ func TestTransactionRestoresConfigurationWhenLockWritingFails(t *testing.T) {
 // is already visible when the write reports failure, so restoring it is the
 // only thing that keeps configuration, trees, and lock at one generation.
 func TestTransactionRollsBackAPostRenameConfigurationDurabilityFailure(t *testing.T) {
+	t.Parallel()
 	proj := newProject(t)
 	if err := os.MkdirAll(proj.paths.ImportedSkillsDir, 0o750); err != nil {
 		t.Fatalf("mkdir: %v", err)
@@ -161,6 +165,7 @@ func TestTransactionRollsBackAPostRenameConfigurationDurabilityFailure(t *testin
 // that is already published when its write reports failure is removed again,
 // so no lock can describe trees the transaction rolled back.
 func TestTransactionRollsBackAPostRenameLockDurabilityFailure(t *testing.T) {
+	t.Parallel()
 	proj := newProject(t)
 	if err := os.MkdirAll(proj.paths.ImportedSkillsDir, 0o750); err != nil {
 		t.Fatalf("mkdir: %v", err)
@@ -187,6 +192,7 @@ func TestTransactionRollsBackAPostRenameLockDurabilityFailure(t *testing.T) {
 // prior state is reported rather than reducing the operation to its original
 // error, which would hide mixed generations on disk.
 func TestTransactionSurfacesARollbackFailure(t *testing.T) {
+	t.Parallel()
 	proj := newProject(t)
 	if err := os.MkdirAll(proj.paths.ImportedSkillsDir, 0o750); err != nil {
 		t.Fatalf("mkdir: %v", err)
@@ -254,6 +260,7 @@ func TestTransactionSurfacesARollbackFailure(t *testing.T) {
 // nothing left to repair, so no staging directory is stranded for the next
 // operation to recover from.
 func TestTransactionClearsStagingAfterACleanRollback(t *testing.T) {
+	t.Parallel()
 	proj := newProject(t)
 	if err := os.MkdirAll(proj.paths.ImportedSkillsDir, 0o750); err != nil {
 		t.Fatalf("mkdir: %v", err)
@@ -354,6 +361,7 @@ func TestNeedsCommitDetectsLockOnlyChanges(t *testing.T) {
 // TestTransactionRefusesToStageAnUnwritableTree proves a tree that cannot be
 // materialized fails the commit before anything is published.
 func TestTransactionRefusesToStageAnUnwritableTree(t *testing.T) {
+	t.Parallel()
 	proj := newProject(t)
 	if err := os.MkdirAll(proj.paths.ImportedSkillsDir, 0o750); err != nil {
 		t.Fatalf("mkdir: %v", err)
@@ -375,6 +383,7 @@ func TestTransactionRefusesToStageAnUnwritableTree(t *testing.T) {
 // TestTransactionReportsAMissingConfigurationFile proves a configuration change
 // whose target vanished fails rather than recreating a file the user deleted.
 func TestTransactionReportsAMissingConfigurationFile(t *testing.T) {
+	t.Parallel()
 	proj := newProject(t)
 	if err := os.MkdirAll(proj.paths.ImportedSkillsDir, 0o750); err != nil {
 		t.Fatalf("mkdir: %v", err)
@@ -411,6 +420,7 @@ func failingWriter(failFor string, afterPublishing bool) atomicWriter {
 // leaves nothing behind. The skill did not exist before, so rolling back means
 // deleting what was published rather than restoring a previous version.
 func TestTransactionRemovesANewSkillWhenTheCommitFails(t *testing.T) {
+	t.Parallel()
 	proj := newProject(t)
 	if err := os.MkdirAll(proj.paths.ImportedSkillsDir, 0o750); err != nil {
 		t.Fatalf("mkdir: %v", err)
@@ -436,6 +446,7 @@ func TestTransactionRemovesANewSkillWhenTheCommitFails(t *testing.T) {
 // failure after two tree swaps restores the previous tree, removes the newly
 // created tree, and leaves no lock describing the abandoned generation.
 func TestTransactionRollsBackAPartiallyPublishedBatch(t *testing.T) {
+	t.Parallel()
 	proj := newProject(t)
 	if err := os.MkdirAll(proj.paths.ImportedSkillsDir, 0o750); err != nil {
 		t.Fatalf("mkdir: %v", err)

@@ -19,6 +19,7 @@ import (
 // TestPushSkipsBlocksWithoutAWritePolicy proves `none` is the default and
 // performs no upstream write.
 func TestPushSkipsBlocksWithoutAWritePolicy(t *testing.T) {
+	t.Parallel()
 	source := newGitRepo(t, "main")
 	source.WriteSkill("skills/alpha", "alpha", "Alpha body")
 	before := source.Commit("add alpha")
@@ -46,6 +47,7 @@ func TestPushSkipsBlocksWithoutAWritePolicy(t *testing.T) {
 // publishes the local result and advances the lock when the destination is the
 // exact tracked source repository and ref.
 func TestPushDirectPolicyCommitsToTheDestinationDefaultBranch(t *testing.T) {
+	t.Parallel()
 	source := newGitRepo(t, "main")
 	source.WriteSkill("skills/alpha", "alpha", "Alpha body")
 	source.Commit("add alpha")
@@ -92,6 +94,7 @@ func TestPushDirectPolicyCommitsToTheDestinationDefaultBranch(t *testing.T) {
 // Using the original source tree again would make these edits to the same line
 // look like competing local and destination changes.
 func TestPushBranchUsesThePriorPublicationForFollowUpEdits(t *testing.T) {
+	t.Parallel()
 	source := newGitRepo(t, "main")
 	source.WriteSkill("skills/alpha", "alpha", "Original body")
 	source.Commit("add alpha")
@@ -130,6 +133,7 @@ func TestPushBranchUsesThePriorPublicationForFollowUpEdits(t *testing.T) {
 }
 
 func TestPushRecreatesADeletedMergedBranchFromItsPublication(t *testing.T) {
+	t.Parallel()
 	source := newGitRepo(t, "main")
 	source.WriteSkill("skills/alpha", "alpha", "Original body")
 	source.Commit("add alpha")
@@ -173,6 +177,7 @@ func TestPushRecreatesADeletedMergedBranchFromItsPublication(t *testing.T) {
 // that deletion instead of republishing the checkpointed skill onto a new
 // branch.
 func TestPushPreservesADestinationDeletionWhenRecreatingACheckpointedBranch(t *testing.T) {
+	t.Parallel()
 	source := newGitRepo(t, "main")
 	source.WriteSkill("skills/alpha", "alpha", "Original body")
 	source.Commit("add alpha")
@@ -215,6 +220,7 @@ func TestPushPreservesADestinationDeletionWhenRecreatingACheckpointedBranch(t *t
 }
 
 func TestPushReportsADeleteModifyConflictWhenRecreatingACheckpointedBranch(t *testing.T) {
+	t.Parallel()
 	source := newGitRepo(t, "main")
 	source.WriteSkill("skills/alpha", "alpha", "Original body")
 	source.WriteFile("skills/alpha/notes.md", "shared\n", 0o644)
@@ -261,6 +267,7 @@ func TestPushReportsADeleteModifyConflictWhenRecreatingACheckpointedBranch(t *te
 // Layer last published. Without publication state, three-way merge treats the
 // local side as unchanged and silently retains the old destination edit.
 func TestPushBranchPublishesAReversionToTheSourceVersion(t *testing.T) {
+	t.Parallel()
 	source := newGitRepo(t, "main")
 	source.WriteSkill("skills/alpha", "alpha", "Original body")
 	source.Commit("add alpha")
@@ -296,6 +303,7 @@ func TestPushBranchPublishesAReversionToTheSourceVersion(t *testing.T) {
 }
 
 func TestPushReportsAReversionWithoutAPublicationCheckpoint(t *testing.T) {
+	t.Parallel()
 	source := newGitRepo(t, "main")
 	source.WriteSkill("skills/alpha", "alpha", "Original body")
 	source.Commit("add alpha")
@@ -341,6 +349,7 @@ func TestPushReportsAReversionWithoutAPublicationCheckpoint(t *testing.T) {
 // checkpoint does not turn repeated push into destination overwrite. Changes
 // made directly on the PR branch remain the remote side of the three-way merge.
 func TestPushBranchStillPreservesExternalChangesAfterAPriorPublication(t *testing.T) {
+	t.Parallel()
 	source := newGitRepo(t, "main")
 	source.WriteSkill("skills/alpha", "alpha", "Alpha body")
 	source.WriteFile("skills/alpha/notes.md", "one\ntwo\nthree\nfour\nfive\n", 0o644)
@@ -389,6 +398,7 @@ func TestPushBranchStillPreservesExternalChangesAfterAPriorPublication(t *testin
 }
 
 func TestPushDoesNotCheckpointAMissingUnchangedBranch(t *testing.T) {
+	t.Parallel()
 	source := newGitRepo(t, "main")
 	source.WriteSkill("skills/alpha", "alpha", "Alpha body")
 	source.Commit("add alpha")
@@ -414,6 +424,7 @@ func TestPushDoesNotCheckpointAMissingUnchangedBranch(t *testing.T) {
 }
 
 func TestGroupedPushAdvancesUnchangedSiblingPublication(t *testing.T) {
+	t.Parallel()
 	source := newGitRepo(t, "main")
 	source.WriteSkill("skills/alpha", "alpha", "Alpha body")
 	source.WriteSkill("skills/beta", "beta", "Beta body")
@@ -441,6 +452,7 @@ func TestGroupedPushAdvancesUnchangedSiblingPublication(t *testing.T) {
 }
 
 func TestPushFallsBackSafelyWhenPublicationWasRebasedAway(t *testing.T) {
+	t.Parallel()
 	source := newGitRepo(t, "main")
 	source.WriteSkill("skills/alpha", "alpha", "Original body")
 	source.Commit("add alpha")
@@ -481,6 +493,7 @@ func TestPushFallsBackSafelyWhenPublicationWasRebasedAway(t *testing.T) {
 // omit platform noise without authorizing a later push to silently preserve or
 // delete that same committed destination state.
 func TestPullIgnoresButPushRejectsDestinationArtifacts(t *testing.T) {
+	t.Parallel()
 	source := newGitRepo(t, "main")
 	source.WriteSkill("skills/alpha", "alpha", "Alpha body")
 	source.WriteFile("skills/alpha/.DS_Store", "noise\n", 0o644)
@@ -517,6 +530,7 @@ func TestPullIgnoresButPushRejectsDestinationArtifacts(t *testing.T) {
 // explicitly configured branch is created from the destination default branch
 // and every skill sharing a destination is committed together.
 func TestPushBranchPolicyCreatesTheConfiguredBranchAndGroupsSkills(t *testing.T) {
+	t.Parallel()
 	source := newGitRepo(t, "main")
 	source.WriteSkill("skills/alpha", "alpha", "Alpha body")
 	source.WriteSkill("skills/beta", "beta", "Beta body")
@@ -557,6 +571,7 @@ func TestPushBranchPolicyCreatesTheConfiguredBranchAndGroupsSkills(t *testing.T)
 // TestPushForkDestinationDoesNotAdvanceTheLock proves a contribution routed to
 // a different repository never advances the source lock.
 func TestPushForkDestinationDoesNotAdvanceTheLock(t *testing.T) {
+	t.Parallel()
 	source := newGitRepo(t, "main")
 	source.WriteSkill("skills/alpha", "alpha", "Alpha body")
 	source.Commit("add alpha")
@@ -595,6 +610,7 @@ func TestPushForkDestinationDoesNotAdvanceTheLock(t *testing.T) {
 // TestPushRefusesWhenTheTrackedSourceAdvanced proves a stale merge base is
 // refused with instructions instead of producing a wrong upstream result.
 func TestPushRefusesWhenTheTrackedSourceAdvanced(t *testing.T) {
+	t.Parallel()
 	source := newGitRepo(t, "main")
 	source.WriteSkill("skills/alpha", "alpha", "Alpha body")
 	source.Commit("add alpha")
@@ -627,6 +643,7 @@ func TestPushRefusesWhenTheTrackedSourceAdvanced(t *testing.T) {
 // can hold entries at different commits; checking one entry would let a stale
 // skill through on the strength of an advanced sibling.
 func TestPushChecksSourceAdvancementForEveryEntry(t *testing.T) {
+	t.Parallel()
 	source := newGitRepo(t, "main")
 	source.WriteSkill("skills/alpha", "alpha", "Alpha body")
 	source.WriteSkill("skills/zulu", "zulu", "Zulu body")
@@ -674,6 +691,7 @@ func TestPushChecksSourceAdvancementForEveryEntry(t *testing.T) {
 // configured positive selector. Its local edits stay local whether or not a
 // pull has already reported the retirement, and selected siblings still push.
 func TestPushNeverPublishesASkillAnExclusionDeselected(t *testing.T) {
+	t.Parallel()
 	for _, pullFirst := range []bool{false, true} {
 		name := "push without pull"
 		if pullFirst {
@@ -731,6 +749,7 @@ func TestPushNeverPublishesASkillAnExclusionDeselected(t *testing.T) {
 // dropped before block-level work. A stale tracked source would otherwise fail
 // the push and direct the user to pull a skill they no longer select.
 func TestPushIgnoresABlockWhoseEveryEntryIsExcluded(t *testing.T) {
+	t.Parallel()
 	source := newGitRepo(t, "main")
 	source.WriteSkill("skills/secret", "secret", "Secret body")
 	source.Commit("add secret")
@@ -762,6 +781,7 @@ func TestPushIgnoresABlockWhoseEveryEntryIsExcluded(t *testing.T) {
 // non-primary requirement is enforced against the destination's actual default
 // branch, not just the conventional names static validation can recognize.
 func TestPushRefusesToWriteToADestinationDefaultBranchUnderBranchPolicy(t *testing.T) {
+	t.Parallel()
 	source := newGitRepo(t, "develop")
 	source.WriteSkill("skills/alpha", "alpha", "Alpha body")
 	source.Commit("add alpha")
@@ -792,6 +812,7 @@ func TestPushRefusesToWriteToADestinationDefaultBranchUnderBranchPolicy(t *testi
 // not invent a base or select one candidate's locked source when the
 // destination has no default branch.
 func TestPushCannotCreateABranchWithoutADestinationDefault(t *testing.T) {
+	t.Parallel()
 	source := newGitRepo(t, "main")
 	source.WriteSkill("skills/alpha", "alpha", "Alpha body")
 	source.Commit("add alpha")
@@ -829,6 +850,7 @@ func TestPushCannotCreateABranchWithoutADestinationDefault(t *testing.T) {
 // route two repositories at nested destination paths, and push never pulls, so
 // nothing else would catch it before one update overwrote the other.
 func TestPushRejectsOverlappingDestinationPathsInOneGroup(t *testing.T) {
+	t.Parallel()
 	outer := newGitRepo(t, "main")
 	outer.WriteSkill("skills", "skills", "Outer body")
 	outer.Commit("add outer")
@@ -891,6 +913,7 @@ func TestDestinationOverlapChecksAllAncestorPrefixes(t *testing.T) {
 // TestPushReconcilesCompatibleDestinationChanges proves a destination change
 // Agent Layer did not make is preserved rather than overwritten.
 func TestPushReconcilesCompatibleDestinationChanges(t *testing.T) {
+	t.Parallel()
 	source := newGitRepo(t, "main")
 	source.WriteSkill("skills/alpha", "alpha", "Alpha body")
 	source.WriteFile("skills/alpha/notes.md", "one\ntwo\nthree\nfour\nfive\n", 0o644)
@@ -925,6 +948,7 @@ func TestPushReconcilesCompatibleDestinationChanges(t *testing.T) {
 // TestPushReportsDestinationConflicts proves an incompatible destination change
 // is reported instead of being force-resolved.
 func TestPushReportsDestinationConflicts(t *testing.T) {
+	t.Parallel()
 	source := newGitRepo(t, "main")
 	source.WriteSkill("skills/alpha", "alpha", "Alpha body")
 	source.WriteFile("skills/alpha/notes.md", "shared\n", 0o644)
@@ -960,6 +984,7 @@ func TestPushReportsDestinationConflicts(t *testing.T) {
 // TestPushNeverPropagatesWholeSkillDeletion proves a missing imported directory
 // fails that skill instead of deleting the skill upstream.
 func TestPushNeverPropagatesWholeSkillDeletion(t *testing.T) {
+	t.Parallel()
 	source := newGitRepo(t, "main")
 	source.WriteSkill("skills/alpha", "alpha", "Alpha body")
 	source.Commit("add alpha")
@@ -990,6 +1015,7 @@ func TestPushNeverPropagatesWholeSkillDeletion(t *testing.T) {
 // TestPushPublishesFileLevelDeletionsWithinAValidSkill proves file-level
 // deletions inside an existing valid skill remain ordinary local changes.
 func TestPushPublishesFileLevelDeletionsWithinAValidSkill(t *testing.T) {
+	t.Parallel()
 	source := newGitRepo(t, "main")
 	source.WriteSkill("skills/alpha", "alpha", "Alpha body")
 	source.WriteFile("skills/alpha/notes.md", "remove me\n", 0o644)
@@ -1020,6 +1046,7 @@ func TestPushPublishesFileLevelDeletionsWithinAValidSkill(t *testing.T) {
 // TestPushRefusesAPinnedLockAdvance proves a pinned import never advances its
 // lock even when the push succeeds.
 func TestPushRefusesAPinnedLockAdvance(t *testing.T) {
+	t.Parallel()
 	source := newGitRepo(t, "main")
 	source.WriteSkill("skills/alpha", "alpha", "Alpha body")
 	source.Commit("add alpha")
@@ -1052,6 +1079,7 @@ func TestPushRefusesAPinnedLockAdvance(t *testing.T) {
 // unreachable `direct` destination blocks that source block without affecting
 // other work.
 func TestPushFailsWhenTheDestinationDefaultBranchCannotBeResolved(t *testing.T) {
+	t.Parallel()
 	source := newGitRepo(t, "main")
 	source.WriteSkill("skills/alpha", "alpha", "Alpha body")
 	source.Commit("add alpha")
@@ -1091,6 +1119,7 @@ func importedTreeHash(t *testing.T, proj *project, name string) string {
 // TestPushFailsASkillWithAnUnreadableMergeBase proves push refuses to derive a
 // delta when the locked source tree cannot be read.
 func TestPushFailsASkillWithAnUnreadableMergeBase(t *testing.T) {
+	t.Parallel()
 	source := newGitRepo(t, "main")
 	source.WriteSkill("skills/alpha", "alpha", "Alpha body")
 	source.Commit("add alpha")
@@ -1124,6 +1153,7 @@ func TestPushFailsASkillWithAnUnreadableMergeBase(t *testing.T) {
 // TestPushSkipsBlocksWithNoRecordedSkills proves a write-enabled block that has
 // never been pulled produces no upstream activity.
 func TestPushSkipsBlocksWithNoRecordedSkills(t *testing.T) {
+	t.Parallel()
 	source := newGitRepo(t, "main")
 	source.WriteSkill("skills/alpha", "alpha", "Alpha body")
 	head := source.Commit("add alpha")
@@ -1148,6 +1178,7 @@ func TestPushSkipsBlocksWithNoRecordedSkills(t *testing.T) {
 // merges cleanly with an unrelated local change, so without the check push
 // would publish a directory that is no longer a skill at all.
 func TestPushRefusesToPublishAnInvalidMergedTree(t *testing.T) {
+	t.Parallel()
 	source := newGitRepo(t, "main")
 	source.WriteSkill("skills/alpha", "alpha", "Alpha body")
 	source.WriteFile("skills/alpha/notes.md", "shared\n", 0o644)
@@ -1186,6 +1217,7 @@ func TestPushRefusesToPublishAnInvalidMergedTree(t *testing.T) {
 // files. A failing skill keeps its local content and checkpoint, while a valid
 // sibling can still publish in the same group.
 func TestPushRefusesAnEmptyMergeFromComplementaryDeletions(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name                   string
 		editSibling            bool
@@ -1290,6 +1322,7 @@ func TestPushRefusesAnEmptyMergeFromComplementaryDeletions(t *testing.T) {
 // still validates the destination content it writes back to the imported tier:
 // an invalid skill there would otherwise break every later sync and launch.
 func TestPushDoesNotSyncAnInvalidDestinationSkillLocally(t *testing.T) {
+	t.Parallel()
 	source := newGitRepo(t, "main")
 	source.WriteSkill("skills/alpha", "alpha", "Alpha body")
 	source.WriteSkill("skills/beta", "beta", "Beta body")
@@ -1345,6 +1378,7 @@ func TestPushDoesNotSyncAnInvalidDestinationSkillLocally(t *testing.T) {
 // existing, valid imported skill: a locally broken manifest fails that skill
 // rather than publishing content the source repository would reject.
 func TestPushRefusesALocallyInvalidImportedSkill(t *testing.T) {
+	t.Parallel()
 	source := newGitRepo(t, "main")
 	source.WriteSkill("skills/alpha", "alpha", "Alpha body")
 	source.Commit("add alpha")
@@ -1374,6 +1408,7 @@ func TestPushRefusesALocallyInvalidImportedSkill(t *testing.T) {
 // scope: one commit and push carries the whole destination group, so a rejected
 // push must fail every skill in it rather than reporting some as pushed.
 func TestPushFailsEverySkillInARejectedGroup(t *testing.T) {
+	t.Parallel()
 	source := newGitRepo(t, "main")
 	source.WriteSkill("skills/alpha", "alpha", "Alpha body")
 	source.WriteSkill("skills/beta", "beta", "Beta body")
@@ -1421,6 +1456,7 @@ func TestPushFailsEverySkillInARejectedGroup(t *testing.T) {
 // no commit is created. Re-adding it here would silently revert the
 // destination's removal.
 func TestPushPreservesADestinationDeletionOnAnExistingBranch(t *testing.T) {
+	t.Parallel()
 	source := newGitRepo(t, "main")
 	source.WriteSkill("skills/alpha", "alpha", "Alpha body")
 	source.WriteSkill("skills/beta", "beta", "Beta body")
@@ -1481,6 +1517,7 @@ func TestPushPreservesADestinationDeletionOnAnExistingBranch(t *testing.T) {
 // reconciled, so the skill fails as a delete/modify conflict instead of being
 // re-added or silently dropped.
 func TestPushReportsADeleteModifyConflictAgainstADestinationDeletion(t *testing.T) {
+	t.Parallel()
 	source := newGitRepo(t, "main")
 	source.WriteSkill("skills/alpha", "alpha", "Alpha body")
 	source.WriteFile("skills/alpha/notes.md", "shared\n", 0o644)
@@ -1527,6 +1564,7 @@ func TestPushReportsADeleteModifyConflictAgainstADestinationDeletion(t *testing.
 // sibling at the previous commit makes the very next push reject it as a stale
 // source and demand a pull that has nothing to do.
 func TestPushAdvancesUnchangedSiblingsOnATrackedSourceRef(t *testing.T) {
+	t.Parallel()
 	source := newGitRepo(t, "main")
 	source.WriteSkill("skills/alpha", "alpha", "Alpha body")
 	source.WriteSkill("skills/zulu", "zulu", "Zulu body")
@@ -1581,6 +1619,7 @@ func TestPushAdvancesUnchangedSiblingsOnATrackedSourceRef(t *testing.T) {
 // above is scoped to the exact tracked source ref. A `branch` policy publishes
 // somewhere the lock does not track, so no lock may move.
 func TestPushDoesNotAdvanceUnchangedSiblingsOnAnotherBranch(t *testing.T) {
+	t.Parallel()
 	source := newGitRepo(t, "main")
 	source.WriteSkill("skills/alpha", "alpha", "Alpha body")
 	source.WriteSkill("skills/zulu", "zulu", "Zulu body")
@@ -1620,6 +1659,7 @@ func TestPushDoesNotAdvanceUnchangedSiblingsOnAnotherBranch(t *testing.T) {
 // TestPushBranchPreservesLiteralUnicodeDestination proves publication cannot
 // silently update the Unicode-trimmed sibling of a configured branch.
 func TestPushBranchPreservesLiteralUnicodeDestination(t *testing.T) {
+	t.Parallel()
 	source := newGitRepo(t, "main")
 	siblingHead := source.Head("main")
 	source.WriteSkill("skills/alpha", "alpha", "Alpha body")
@@ -1658,6 +1698,7 @@ func TestPushBranchPreservesLiteralUnicodeDestination(t *testing.T) {
 }
 
 func TestPushDirectRecordsUnicodeDefaultBranchPublication(t *testing.T) {
+	t.Parallel()
 	for _, branch := range []string{"\u00a0main", "main\u00a0"} {
 		t.Run(branch, func(t *testing.T) {
 			seed := newGitRepo(t, branch)

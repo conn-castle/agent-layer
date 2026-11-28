@@ -106,6 +106,7 @@ func fakeWorkerLauncher(launches *atomic.Int32) workerLauncher {
 }
 
 func TestContinuationReservationIdempotentAndConcurrent(t *testing.T) {
+	t.Parallel()
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	session, firstRun := completedConversationForTest(t, root, AgentCodex, "provider-sess-1", false)
 
@@ -159,6 +160,7 @@ func TestContinuationReservationIdempotentAndConcurrent(t *testing.T) {
 }
 
 func TestContinuationReservationNoDisturbanceAndExclusivity(t *testing.T) {
+	t.Parallel()
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	session, firstRun := completedConversationForTest(t, root, AgentCodex, "provider-sess-2", false)
 	reserved := reserveContinuationInTest(t, root, session.Name)
@@ -250,6 +252,7 @@ func TestContinuationReservationNoDisturbanceAndExclusivity(t *testing.T) {
 }
 
 func TestContinuationReservationLaunchesAtMostOnceAndSurvivesMoveOn(t *testing.T) {
+	t.Parallel()
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	session, _ := completedConversationForTest(t, root, AgentCodex, "provider-sess-3", true)
 	reserved := reserveContinuationInTest(t, root, session.Name)
@@ -390,6 +393,7 @@ func TestContinuationReservationLaunchesAtMostOnceAndSurvivesMoveOn(t *testing.T
 }
 
 func TestPlainStartConversationUnaffectedByContinuationReservation(t *testing.T) {
+	t.Parallel()
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	session, _ := completedConversationForTest(t, root, AgentCodex, "provider-sess-plain", false)
 	reserved := reserveContinuationInTest(t, root, session.Name)
@@ -423,6 +427,7 @@ func TestPlainStartConversationUnaffectedByContinuationReservation(t *testing.T)
 }
 
 func TestContinuationReservationCancelAndExpiryReturnToContinuable(t *testing.T) {
+	t.Parallel()
 	for _, mode := range []string{"cancel", "expire_via_launch", "expire_via_reserve", "expire_via_cancel"} {
 		t.Run(mode, func(t *testing.T) {
 			root := writeDispatchRepo(t, dispatchRepoConfig{})
@@ -522,6 +527,7 @@ func TestContinuationReservationCancelAndExpiryReturnToContinuable(t *testing.T)
 }
 
 func TestContinuationReservationInterruptedMidLaunchResolvesFailedAndStaysContinuable(t *testing.T) {
+	t.Parallel()
 	t.Run("crash_after_session_claim_before_worker", func(t *testing.T) {
 		root := writeDispatchRepo(t, dispatchRepoConfig{})
 		session, _ := completedConversationForTest(t, root, AgentCodex, "provider-sess-crash2", false)
@@ -645,6 +651,7 @@ func TestContinuationReservationInterruptedMidLaunchResolvesFailedAndStaysContin
 }
 
 func TestContinuationReservationEligibilityCheckedAtReserveAndLaunch(t *testing.T) {
+	t.Parallel()
 	t.Run("running_and_unconfirmed_rejected", func(t *testing.T) {
 		root := writeDispatchRepo(t, dispatchRepoConfig{})
 		run, session := newWaitTestRun(t, root)
@@ -805,6 +812,7 @@ func TestContinuationReservationEligibilityCheckedAtReserveAndLaunch(t *testing.
 }
 
 func TestContinuationReservationRetrySafeFreshMode(t *testing.T) {
+	t.Parallel()
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	run, err := newDispatchRun(root, AgentCodex, supportedProviderVersions[AgentCodex], dispatchModeFresh)
 	if err != nil {
@@ -855,6 +863,7 @@ func TestContinuationReservationRetrySafeFreshMode(t *testing.T) {
 }
 
 func TestContinuationReservationRejectsInvalidSelectorsAndMismatchedHandle(t *testing.T) {
+	t.Parallel()
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	session1, firstRun1 := completedConversationForTest(t, root, AgentCodex, "provider-sess-a", false)
 	session2, _ := completedConversationForTest(t, root, AgentCodex, "provider-sess-b", false)
@@ -910,6 +919,7 @@ func TestContinuationReservationRejectsInvalidSelectorsAndMismatchedHandle(t *te
 }
 
 func TestPendingContinuationReservationProtectedFromRetentionPruning(t *testing.T) {
+	t.Parallel()
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	session, _ := completedConversationForTest(t, root, AgentCodex, "provider-sess-retain", false)
 	reserved := reserveContinuationInTest(t, root, session.Name)
@@ -938,6 +948,7 @@ func TestPendingContinuationReservationProtectedFromRetentionPruning(t *testing.
 }
 
 func TestOptionsAdvertiseContinuationReservationsOnCLIOnly(t *testing.T) {
+	t.Parallel()
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	options, err := BuildOptions(OptionsRequest{
 		Root: root, Env: []string{}, LookPath: alwaysFound,
@@ -970,6 +981,7 @@ func TestOptionsAdvertiseContinuationReservationsOnCLIOnly(t *testing.T) {
 }
 
 func TestContinuationReservationAllFiveHarnessesAndMuseCrashRecovery(t *testing.T) {
+	t.Parallel()
 	harnesses := []struct {
 		agent   string
 		version string
@@ -1074,6 +1086,7 @@ func TestContinuationReservationAllFiveHarnessesAndMuseCrashRecovery(t *testing.
 }
 
 func TestCancelledWorkerCannotClobberNewerContinuationReservation(t *testing.T) {
+	t.Parallel()
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	session, firstRun := completedConversationForTest(t, root, AgentCodex, "provider-sess-clobber", false)
 	reserved := reserveContinuationInTest(t, root, session.Name)
@@ -1105,6 +1118,7 @@ func TestCancelledWorkerCannotClobberNewerContinuationReservation(t *testing.T) 
 }
 
 func TestFreshContinuationInterruptedBeforeProviderIntentStaysContinuable(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name, agent, terminalState string
 		skipCancellationCleanup    bool
@@ -1221,6 +1235,7 @@ func TestFreshContinuationInterruptedBeforeProviderIntentStaysContinuable(t *tes
 }
 
 func TestContinuationReservationIdempotentRetrySurvivesIneligibility(t *testing.T) {
+	t.Parallel()
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	session, firstRun := completedConversationForTest(t, root, AgentCodex, "provider-sess-idem", false)
 	reserved := reserveContinuationInTest(t, root, session.Name)
@@ -1238,6 +1253,7 @@ func TestContinuationReservationIdempotentRetrySurvivesIneligibility(t *testing.
 }
 
 func TestContinuationReservationPostSessionClaimCrashContinuableWithoutWait(t *testing.T) {
+	t.Parallel()
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	session, _ := completedConversationForTest(t, root, AgentCodex, "provider-sess-nowait", false)
 	reserved := reserveContinuationInTest(t, root, session.Name)
@@ -1279,6 +1295,7 @@ func TestContinuationReservationPostSessionClaimCrashContinuableWithoutWait(t *t
 }
 
 func TestContinuationReservationMissingRunRecordSelfHeals(t *testing.T) {
+	t.Parallel()
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	session, _ := completedConversationForTest(t, root, AgentCodex, "provider-sess-missing", false)
 	reserved := reserveContinuationInTest(t, root, session.Name)
@@ -1297,6 +1314,7 @@ func TestContinuationReservationMissingRunRecordSelfHeals(t *testing.T) {
 }
 
 func TestContinuationSlotRejectsForeignOrWrongKindInvocation(t *testing.T) {
+	t.Parallel()
 	for _, kind := range []string{"foreign reservation", "start reservation", "ordinary continuation"} {
 		t.Run(kind, func(t *testing.T) {
 			root := writeDispatchRepo(t, dispatchRepoConfig{})
@@ -1335,6 +1353,7 @@ func TestContinuationSlotRejectsForeignOrWrongKindInvocation(t *testing.T) {
 }
 
 func TestContinuationSettlementChecksExpiryAfterRunLock(t *testing.T) {
+	t.Parallel()
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	session, _ := completedConversationForTest(t, root, AgentCodex, "expiry-lock", false)
 	reserved := reserveContinuationInTest(t, root, session.Name)
@@ -1383,6 +1402,7 @@ func TestContinuationSettlementChecksExpiryAfterRunLock(t *testing.T) {
 }
 
 func TestContinuationReservationKeepsSelectedAgedConversation(t *testing.T) {
+	t.Parallel()
 	root := writeDispatchRepo(t, dispatchRepoConfig{DispatchSessionRetentionDays: 1})
 	selected, _ := completedConversationForTest(t, root, AgentCodex, "selected", false)
 	other, _ := completedConversationForTest(t, root, AgentCodex, "other", false)
@@ -1401,6 +1421,7 @@ func TestContinuationReservationKeepsSelectedAgedConversation(t *testing.T) {
 }
 
 func TestMissingContinuationReservationDoesNotPreventPruning(t *testing.T) {
+	t.Parallel()
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	session, _ := completedConversationForTest(t, root, AgentCodex, "dangling", false)
 	now := time.Now().UTC()
@@ -1418,6 +1439,7 @@ func TestMissingContinuationReservationDoesNotPreventPruning(t *testing.T) {
 }
 
 func TestUnreadableContinuationReservationPreventsPruningAndSettlement(t *testing.T) {
+	t.Parallel()
 	for _, corrupt := range []string{"malformed ID", "dangling symlink"} {
 		t.Run(corrupt, func(t *testing.T) {
 			root := writeDispatchRepo(t, dispatchRepoConfig{})
@@ -1467,6 +1489,7 @@ func TestUnreadableContinuationReservationPreventsPruningAndSettlement(t *testin
 }
 
 func TestContinuationReservationRetirementSurvivesPruningBeforeSlotCleanup(t *testing.T) {
+	t.Parallel()
 	for _, outcome := range []string{"cancelled", "expired"} {
 		t.Run(outcome, func(t *testing.T) {
 			root := writeDispatchRepo(t, dispatchRepoConfig{})
@@ -1521,6 +1544,7 @@ func TestContinuationReservationRetirementSurvivesPruningBeforeSlotCleanup(t *te
 }
 
 func TestContinuationRepairsProvisionalSessionAfterTerminalWrite(t *testing.T) {
+	t.Parallel()
 	for _, reserved := range []bool{false, true} {
 		mode := "ordinary"
 		if reserved {
@@ -1592,6 +1616,7 @@ func TestContinuationRepairsProvisionalSessionAfterTerminalWrite(t *testing.T) {
 }
 
 func TestContinuationReservationExpiresDuringClaimPreparation(t *testing.T) {
+	t.Parallel()
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	session, predecessor := completedConversationForTest(t, root, AgentCodex, "expiring", false)
 	reserved := reserveContinuationInTest(t, root, session.Name)
@@ -1619,6 +1644,7 @@ func TestContinuationReservationExpiresDuringClaimPreparation(t *testing.T) {
 }
 
 func TestContinuationReservationMappingWriteFailureIsRetrySafe(t *testing.T) {
+	t.Parallel()
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	session, predecessor := completedConversationForTest(t, root, AgentCodex, "inherited", false)
 	reserved := reserveContinuationInTest(t, root, session.Name)
@@ -1652,6 +1678,7 @@ func TestContinuationReservationMappingWriteFailureIsRetrySafe(t *testing.T) {
 }
 
 func TestContinuationReservationReplayWithDeletedPromptFileReportsStatus(t *testing.T) {
+	t.Parallel()
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	session, _ := completedConversationForTest(t, root, AgentCodex, "provider-sess-pfile", false)
 	reserved := reserveContinuationInTest(t, root, session.Name)
@@ -1689,6 +1716,7 @@ func TestContinuationReservationReplayWithDeletedPromptFileReportsStatus(t *test
 }
 
 func TestCancelContinuationReservationPreservesAgedConversation(t *testing.T) {
+	t.Parallel()
 	root := writeDispatchRepo(t, dispatchRepoConfig{DispatchSessionRetentionDays: 1})
 	session, _ := completedConversationForTest(t, root, AgentCodex, "provider-sess-aged", false)
 	reserved := reserveContinuationInTest(t, root, session.Name)
@@ -1718,6 +1746,7 @@ func TestCancelContinuationReservationPreservesAgedConversation(t *testing.T) {
 }
 
 func TestContinuationReservationFailBeforePublicationRollsBackAndBlocksReplay(t *testing.T) {
+	t.Parallel()
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	session, firstRun := completedConversationForTest(t, root, AgentCodex, "provider-sess-failpub", false)
 	reserved := reserveContinuationInTest(t, root, session.Name)
@@ -1758,6 +1787,7 @@ func TestContinuationReservationFailBeforePublicationRollsBackAndBlocksReplay(t 
 }
 
 func TestOrdinaryContinueRejectsStalePredecessorAndMidPrepReservation(t *testing.T) {
+	t.Parallel()
 	t.Run("mid_prep_reservation", func(t *testing.T) {
 		root := writeDispatchRepo(t, dispatchRepoConfig{})
 		session, firstRun := completedConversationForTest(t, root, AgentCodex, "provider-sess-race1", false)

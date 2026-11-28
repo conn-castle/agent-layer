@@ -92,6 +92,7 @@ func markInvocationTerminalConfirmed(t *testing.T, root string, runID string, ha
 }
 
 func TestStartValidatesMaxDepth(t *testing.T) {
+	t.Parallel()
 	root := writeDispatchRepo(t, dispatchRepoConfig{DispatchMaxDepth: 3})
 	for _, value := range []int{0, -1, -42} {
 		t.Run("invalid_"+strconv.Itoa(value), func(t *testing.T) {
@@ -108,6 +109,7 @@ func TestStartValidatesMaxDepth(t *testing.T) {
 }
 
 func TestStartMaxDepthTightenOnlyAndChildEnv(t *testing.T) {
+	t.Parallel()
 	t.Run("tightens below repo default and forwards env", func(t *testing.T) {
 		root := writeDispatchRepo(t, dispatchRepoConfig{DispatchMaxDepth: 3})
 		launcher, readReq := stubWorkerCapture(t, root)
@@ -331,6 +333,7 @@ func TestStartMaxDepthTightenOnlyAndChildEnv(t *testing.T) {
 }
 
 func TestMaxDepthPropagatesAcrossRepositories(t *testing.T) {
+	t.Parallel()
 	// Repo A has default max_depth = 3; Repo B has higher max_depth = 5.
 	repoA := writeDispatchRepo(t, dispatchRepoConfig{DispatchMaxDepth: 3})
 	repoB := writeDispatchRepo(t, dispatchRepoConfig{DispatchMaxDepth: 5})
@@ -420,6 +423,7 @@ func TestMaxDepthPropagatesAcrossRepositories(t *testing.T) {
 }
 
 func TestMaxDepthRejectsMalformedInheritedEnv(t *testing.T) {
+	t.Parallel()
 	root := writeDispatchRepo(t, dispatchRepoConfig{DispatchMaxDepth: 3})
 	for _, value := range []string{"0", "-1", "bogus", "   ", "1.5"} {
 		t.Run("value="+strconv.Quote(value), func(t *testing.T) {
@@ -462,6 +466,7 @@ func TestMaxDepthRejectsMalformedInheritedEnv(t *testing.T) {
 }
 
 func TestMaxDepthPersistsAcrossContinueAndReservations(t *testing.T) {
+	t.Parallel()
 	t.Run("plain start and continue after completed, failed, and cancelled turns", func(t *testing.T) {
 		root := writeDispatchRepo(t, dispatchRepoConfig{DispatchMaxDepth: 3})
 		launcher, readReq := stubWorkerCapture(t, root)
@@ -1068,6 +1073,7 @@ func TestMaxDepthPersistsAcrossContinueAndReservations(t *testing.T) {
 }
 
 func TestClaimChecksTightenedSessionCapUnderLock(t *testing.T) {
+	t.Parallel()
 	root := writeDispatchRepo(t, dispatchRepoConfig{DispatchMaxDepth: 4})
 	launcher, _ := stubWorkerCapture(t, root)
 	var out bytes.Buffer
@@ -1124,6 +1130,7 @@ func TestClaimChecksTightenedSessionCapUnderLock(t *testing.T) {
 }
 
 func TestContinueRejectsAtSessionCapBeforeHousekeepingWrites(t *testing.T) {
+	t.Parallel()
 	root := writeDispatchRepo(t, dispatchRepoConfig{DispatchMaxDepth: 3})
 	launcher, _ := stubWorkerCapture(t, root)
 	var out bytes.Buffer
@@ -1199,6 +1206,7 @@ func TestContinueRejectsAtSessionCapBeforeHousekeepingWrites(t *testing.T) {
 }
 
 func TestAtCapBlocksStateChangingOpsAndAllowsReadOnlyViaAPIAndMCP(t *testing.T) {
+	t.Parallel()
 	root := writeDispatchRepo(t, dispatchRepoConfig{DispatchMaxDepth: 3})
 	launcher, _ := stubWorkerCapture(t, root)
 
@@ -1300,6 +1308,7 @@ func TestAtCapBlocksStateChangingOpsAndAllowsReadOnlyViaAPIAndMCP(t *testing.T) 
 }
 
 func TestMCPStartInputMaxDepthValidationAndPropagation(t *testing.T) {
+	t.Parallel()
 	root := writeDispatchRepo(t, dispatchRepoConfig{DispatchMaxDepth: 3})
 	mcpSession := newMCPTestSession(t, newMCPTestTools(root))
 

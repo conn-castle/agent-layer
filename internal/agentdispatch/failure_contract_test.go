@@ -13,6 +13,7 @@ import (
 )
 
 func TestContinueRejectsUnclaimableDisabledAndUnavailableConversations(t *testing.T) {
+	t.Parallel()
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	pending := Session{Name: "calm-steady-rectifier", Agent: AgentCodex, State: "pending"}
 	if err := persistSession(root, pending); err != nil {
@@ -33,6 +34,7 @@ func TestContinueRejectsUnclaimableDisabledAndUnavailableConversations(t *testin
 }
 
 func TestWriteOptionsRendersJSONAndPropagatesWriterFailure(t *testing.T) {
+	t.Parallel()
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	var text bytes.Buffer
 	err := WriteOptions(OptionsRequest{
@@ -58,6 +60,7 @@ func TestWriteOptionsRendersJSONAndPropagatesWriterFailure(t *testing.T) {
 }
 
 func TestRunnerFailsLoudlyForProviderAndCaptureFailures(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	newRun := func(t *testing.T) *dispatchRun {
 		t.Helper()
@@ -120,6 +123,7 @@ func TestRunnerFailsLoudlyForProviderAndCaptureFailures(t *testing.T) {
 // which Codex also emits for stream retries it recovers from, does not end the
 // dispatch; the turn outcome or exit decides, and the error explains failures.
 func TestRunnerTreatsCodexErrorEventsAsDiagnostics(t *testing.T) {
+	t.Parallel()
 	const prefix = `printf '{"type":"thread.started","thread_id":"` + runtimeSessionID + `"}\n{"type":"turn.started"}\n{"type":"error","message":"Reconnecting... 2/5 (request timed out)"}\n'; `
 	for _, tc := range []struct {
 		name, script, wantErr string
@@ -156,6 +160,7 @@ func TestRunnerTreatsCodexErrorEventsAsDiagnostics(t *testing.T) {
 }
 
 func TestProviderDiagnosticPreservesWrappedFailure(t *testing.T) {
+	t.Parallel()
 	cause := errors.New("provider wait failed")
 	err := withProviderDiagnostic(providerWaitError(AgentCodex, cause), "retry notice")
 	requireDispatchExitCode(t, err, ExitTargetFailure)
@@ -168,6 +173,7 @@ func TestProviderDiagnosticPreservesWrappedFailure(t *testing.T) {
 }
 
 func TestCaptureWriterPreservesProviderOutput(t *testing.T) {
+	t.Parallel()
 	path := filepath.Join(t.TempDir(), "answer")
 	writer, err := newCaptureWriter(path)
 	if err != nil {

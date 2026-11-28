@@ -407,6 +407,7 @@ func TestDiscoverModelsThroughHarnessProtocols(t *testing.T) {
 		{"muse", "muse", []string{"future-muse", "another-muse"}},
 	} {
 		t.Run(tc.agent, func(t *testing.T) {
+			t.Parallel()
 			got, err := DiscoverModels(tc.agent, harnessRequest(t, tc.mode))
 			if err != nil {
 				t.Fatal(err)
@@ -499,6 +500,7 @@ func TestGrokDiscoveryDistinguishesLoginFileObservations(t *testing.T) {
 		{"api-key-with-auth-path", "unauthenticated-empty", "override", "file", grok.EnvAPIKey + "=dummy-marker", "generic", 0o600},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			req := harnessRequest(t, tc.mode)
 			userHome := grokFixtureDir(t)
 			home := grokFixtureDir(t)
@@ -639,6 +641,7 @@ func TestGrokDiscoveryDistinguishesLoginFileObservations(t *testing.T) {
 func TestGrokDiscoveryUnknownLoginStateKeepsGenericError(t *testing.T) {
 	for _, state := range []string{"no-home", "stat-error"} {
 		t.Run(state, func(t *testing.T) {
+			t.Parallel()
 			req := harnessRequest(t, "unauthenticated-empty")
 			if state == "stat-error" {
 				// Traversing a symlink loop deterministically fails, even as root.
@@ -689,6 +692,7 @@ func TestGrokLoginErrorBoundsAndQuotesPath(t *testing.T) {
 func TestClaudeDiscoveryCompletesRefreshBeforeReturning(t *testing.T) {
 	for _, mode := range []string{claudeRefreshSuccess, "rejected", "malformed", "oversized", "timeout", "shutdown-timeout", "cancel", "exit-error"} {
 		t.Run(mode, func(t *testing.T) {
+			t.Parallel()
 			req, credential := claudeRefreshRequest(t, mode)
 			if mode == "timeout" || mode == "shutdown-timeout" {
 				req.Timeout = 100 * time.Millisecond
@@ -738,6 +742,7 @@ func TestClaudeDiscoveryCompletesRefreshBeforeReturning(t *testing.T) {
 func TestClaudeFailedDiscoveryDoesNotRepeatErrorDuringCleanup(t *testing.T) {
 	for _, mode := range []string{"early-exit", "rejected", "malformed"} {
 		t.Run(mode, func(t *testing.T) {
+			t.Parallel()
 			req, _ := claudeRefreshRequest(t, mode)
 			var cleanup DiscoveryCleanup
 			req.Cleanup = &cleanup
@@ -846,6 +851,7 @@ func TestClaudeCancellationReleasesInheritedStdoutBeforeReply(t *testing.T) {
 func TestClaudeDiscoveryReturnsCatalogWhileOwnedCleanupFinishes(t *testing.T) {
 	for _, mode := range []string{"held", "held-exit-error", "held-timeout", "held-timeout-exit-error"} {
 		t.Run(mode, func(t *testing.T) {
+			t.Parallel()
 			req, credential := claudeRefreshRequest(t, mode)
 			var cleanup DiscoveryCleanup
 			req.Cleanup = &cleanup
@@ -898,6 +904,7 @@ func TestClaudeDiscoveryReturnsCatalogWhileOwnedCleanupFinishes(t *testing.T) {
 func TestDiscoveryUsesProjectLaunchContextWithoutSync(t *testing.T) {
 	for _, agent := range []string{"grok", "antigravity"} {
 		t.Run(agent, func(t *testing.T) {
+			t.Parallel()
 			mode := agent
 			if agent == "grok" {
 				mode = "environment"
@@ -969,6 +976,7 @@ func TestDiscoveryFailuresRemainExplicit(t *testing.T) {
 		{"antigravity", "bad-output", "invalid model row"}, {"antigravity", "exit-error", "exit status 2"},
 	} {
 		t.Run(tc.mode, func(t *testing.T) {
+			t.Parallel()
 			req := harnessRequest(t, tc.mode)
 			req.Env = append(req.Env, "HOME="+t.TempDir())
 			req.Live = true
@@ -1027,6 +1035,7 @@ func TestDiscoveryOwnsDescendants(t *testing.T) {
 		{"antigravity-exit", "antigravity", "descendant-antigravity", []string{"future-id"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			dir := t.TempDir()
 			pidFile, release := filepath.Join(dir, "child"), filepath.Join(dir, "release")
 			t.Cleanup(func() {

@@ -13,6 +13,7 @@ import (
 )
 
 func TestLoadStateRefusesFIFOConfig(t *testing.T) {
+	t.Parallel()
 	for _, linked := range []bool{false, true} {
 		name := "direct"
 		if linked {
@@ -36,6 +37,7 @@ func TestLoadStateRefusesFIFOConfig(t *testing.T) {
 }
 
 func TestLoadStatePreservesLinkedConfigBytes(t *testing.T) {
+	t.Parallel()
 	p := newProject(t)
 	path := p.paths.ConfigPath
 	target := path + ".target"

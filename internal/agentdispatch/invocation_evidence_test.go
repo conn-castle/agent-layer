@@ -14,6 +14,7 @@ import (
 )
 
 func TestStartAndContinueExposeImmutableInvocationIDs(t *testing.T) {
+	t.Parallel()
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	first, session := terminalConversationForAsyncTest(t, root)
 	if first.Record.ID == "" {
@@ -60,6 +61,7 @@ func TestStartAndContinueExposeImmutableInvocationIDs(t *testing.T) {
 }
 
 func TestExactInvocationSelectorDoesNotFollowContinuation(t *testing.T) {
+	t.Parallel()
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	first, session := terminalConversationForAsyncTest(t, root)
 	second, err := newDispatchRun(root, AgentCodex, supportedProviderVersions[AgentCodex], dispatchModeResume)
@@ -108,6 +110,7 @@ func TestExactInvocationSelectorDoesNotFollowContinuation(t *testing.T) {
 }
 
 func TestInvocationSelectorErrorIsSharedAcrossIDHandleAndInvocationID(t *testing.T) {
+	t.Parallel()
 	cases := []InspectRequest{
 		{},
 		{ID: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", Handle: "tiny-round-capacitor"},
@@ -125,6 +128,7 @@ func TestInvocationSelectorErrorIsSharedAcrossIDHandleAndInvocationID(t *testing
 }
 
 func TestCancelledUnconfirmedDoesNotReleaseClaim(t *testing.T) {
+	t.Parallel()
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	run, session := newWaitTestRun(t, root)
 	run.Record.State = dispatchStateStarting
@@ -175,6 +179,7 @@ func TestCancelledUnconfirmedDoesNotReleaseClaim(t *testing.T) {
 }
 
 func TestLegacyRecordWithoutLaunchProtocolStaysUnconfirmed(t *testing.T) {
+	t.Parallel()
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	run, _ := newWaitTestRun(t, root)
 	now := time.Now().UTC()
@@ -197,6 +202,7 @@ func TestLegacyRecordWithoutLaunchProtocolStaysUnconfirmed(t *testing.T) {
 }
 
 func TestInspectOmitsErrorForCancelledInvocation(t *testing.T) {
+	t.Parallel()
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	run, _ := newWaitTestRun(t, root)
 	now := time.Now().UTC()
@@ -221,6 +227,7 @@ func TestInspectOmitsErrorForCancelledInvocation(t *testing.T) {
 }
 
 func TestInspectReportsErrorForFailedInvocation(t *testing.T) {
+	t.Parallel()
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	run, _ := newWaitTestRun(t, root)
 	now := time.Now().UTC()
@@ -245,6 +252,7 @@ func TestInspectReportsErrorForFailedInvocation(t *testing.T) {
 }
 
 func TestInspectReturnsOnlyPublicInvocationState(t *testing.T) {
+	t.Parallel()
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	run, _ := newWaitTestRun(t, root)
 	now := time.Now().UTC()
@@ -276,6 +284,7 @@ func TestInspectReturnsOnlyPublicInvocationState(t *testing.T) {
 }
 
 func TestOutputReturnsPartialEventsOnFailedRun(t *testing.T) {
+	t.Parallel()
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	run, _ := newWaitTestRun(t, root)
 	now := time.Now().UTC()
@@ -310,6 +319,7 @@ func TestOutputReturnsPartialEventsOnFailedRun(t *testing.T) {
 }
 
 func TestOutputReadsLegacyEventsWithoutLaunchIntent(t *testing.T) {
+	t.Parallel()
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	run, _ := newWaitTestRun(t, root)
 	if run.Record.ProviderLaunchIntent {
@@ -332,6 +342,7 @@ func TestOutputReadsLegacyEventsWithoutLaunchIntent(t *testing.T) {
 }
 
 func TestOutputRejectsMissingEventsWithoutLaunchIntent(t *testing.T) {
+	t.Parallel()
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	run, _ := newWaitTestRun(t, root)
 	err := Output(OutputRequest{Root: root, ID: run.Record.ID, Artifact: artifactEvents, Stdout: bytes.NewBuffer(nil)})
@@ -339,6 +350,7 @@ func TestOutputRejectsMissingEventsWithoutLaunchIntent(t *testing.T) {
 }
 
 func TestOutputRejectsInvalidArtifactBeforeSelectorLookup(t *testing.T) {
+	t.Parallel()
 	for _, artifact := range []string{"", "stdout", "FINAL_ANSWER"} {
 		err := Output(OutputRequest{ID: "missing-handle", Artifact: artifact, Stdout: bytes.NewBuffer(nil)})
 		exitErr := requireDispatchExitError(t, err, ExitUsage)
@@ -352,6 +364,7 @@ func TestOutputRejectsInvalidArtifactBeforeSelectorLookup(t *testing.T) {
 }
 
 func TestOutputBoundsTextWithoutPagination(t *testing.T) {
+	t.Parallel()
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	run, _ := newWaitTestRun(t, root)
 	payload := append(bytes.Repeat([]byte("x"), maxOutputReadBytes-1), []byte("é")...)
@@ -380,6 +393,7 @@ func TestOutputBoundsTextWithoutPagination(t *testing.T) {
 }
 
 func TestWaitConditionTimeoutReportsConditionMetFalse(t *testing.T) {
+	t.Parallel()
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	run, _ := newWaitTestRun(t, root)
 	run.Record.State = dispatchStateRunning
@@ -405,6 +419,7 @@ func TestWaitConditionTimeoutReportsConditionMetFalse(t *testing.T) {
 }
 
 func TestDefaultExpiryRemovesOnlyConfirmedEligibleRecords(t *testing.T) {
+	t.Parallel()
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	now := time.Now().UTC()
 	old := now.Add(-testDispatchSessionRetention - time.Hour)
@@ -444,6 +459,7 @@ func TestDefaultExpiryRemovesOnlyConfirmedEligibleRecords(t *testing.T) {
 }
 
 func TestFailedKillPersistsAttemptAndAllowsRetry(t *testing.T) {
+	t.Parallel()
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	run, session := newWaitTestRun(t, root)
 	proc := execSleepingProcessGroup(t)
@@ -474,6 +490,7 @@ func TestFailedKillPersistsAttemptAndAllowsRetry(t *testing.T) {
 }
 
 func TestDeadSupervisorWithLiveProcessGroupStaysUnconfirmed(t *testing.T) {
+	t.Parallel()
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	run, _ := newWaitTestRun(t, root)
 	proc := execSleepingProcessGroup(t)
@@ -500,6 +517,7 @@ func TestDeadSupervisorWithLiveProcessGroupStaysUnconfirmed(t *testing.T) {
 }
 
 func TestOutputPreservesUTF8Text(t *testing.T) {
+	t.Parallel()
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	run, _ := newWaitTestRun(t, root)
 	payload := []byte("éx")
@@ -524,6 +542,7 @@ func TestOutputPreservesUTF8Text(t *testing.T) {
 }
 
 func TestOutputResolvesRelativeArtifactPathInsideRun(t *testing.T) {
+	t.Parallel()
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	run, _ := newWaitTestRun(t, root)
 	const content = "relative output"
@@ -549,6 +568,7 @@ func TestOutputResolvesRelativeArtifactPathInsideRun(t *testing.T) {
 }
 
 func TestOutputRejectsSymlinkArtifacts(t *testing.T) {
+	t.Parallel()
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	run, _ := newWaitTestRun(t, root)
 	outside := filepath.Join(t.TempDir(), "outside")
@@ -573,6 +593,7 @@ func TestOutputRejectsSymlinkArtifacts(t *testing.T) {
 }
 
 func TestCompletedEmptyAnswerPathIsRetrievalFailure(t *testing.T) {
+	t.Parallel()
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	run, _ := newWaitTestRun(t, root)
 	now := time.Now().UTC()
@@ -593,6 +614,7 @@ func TestCompletedEmptyAnswerPathIsRetrievalFailure(t *testing.T) {
 }
 
 func TestWaitRespectsTimeoutWhileRunLockHeld(t *testing.T) {
+	t.Parallel()
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	run, _ := newWaitTestRun(t, root)
 	run.Record.State = dispatchStateRunning
@@ -634,6 +656,7 @@ func TestWaitRespectsTimeoutWhileRunLockHeld(t *testing.T) {
 }
 
 func TestWaitRespectsTimeoutAndConfirmsWithoutSessionLock(t *testing.T) {
+	t.Parallel()
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	run, session := newWaitTestRun(t, root)
 	now := time.Now().UTC()
@@ -678,6 +701,7 @@ func TestWaitRespectsTimeoutAndConfirmsWithoutSessionLock(t *testing.T) {
 }
 
 func TestInspectSurfacesRunLockOpenError(t *testing.T) {
+	t.Parallel()
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	run, _ := newWaitTestRun(t, root)
 	lockPath := filepath.Join(run.Dir, ".record.lock")
@@ -692,6 +716,7 @@ func TestInspectSurfacesRunLockOpenError(t *testing.T) {
 }
 
 func TestInspectReturnsPromptlyWhenRunLockHeld(t *testing.T) {
+	t.Parallel()
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	run, _ := newWaitTestRun(t, root)
 	started := make(chan struct{})
@@ -717,6 +742,7 @@ func TestInspectReturnsPromptlyWhenRunLockHeld(t *testing.T) {
 }
 
 func TestWaitRespectsCancellationWhileRunLockHeld(t *testing.T) {
+	t.Parallel()
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	run, _ := newWaitTestRun(t, root)
 	run.Record.State = dispatchStateRunning
@@ -758,6 +784,7 @@ func TestWaitRespectsCancellationWhileRunLockHeld(t *testing.T) {
 }
 
 func TestLegacyFenceDoesNotConfirmWhileSubmitterLives(t *testing.T) {
+	t.Parallel()
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	run, _ := newWaitTestRun(t, root)
 	reaped := exec.Command("true")
@@ -790,6 +817,7 @@ func TestLegacyFenceDoesNotConfirmWhileSubmitterLives(t *testing.T) {
 }
 
 func TestLaunchCrashWindowWithLiveProcessDoesNotConfirm(t *testing.T) {
+	t.Parallel()
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	run, _ := newWaitTestRun(t, root)
 	proc := execSleepingProcessGroup(t)
@@ -834,6 +862,7 @@ func TestLaunchCrashWindowWithLiveProcessDoesNotConfirm(t *testing.T) {
 }
 
 func TestCancelRetriesFailedUnconfirmedOwnedExecution(t *testing.T) {
+	t.Parallel()
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	run, session := newWaitTestRun(t, root)
 	cmd := exec.Command("/bin/sleep", "60")
@@ -893,6 +922,7 @@ func TestCancelRetriesFailedUnconfirmedOwnedExecution(t *testing.T) {
 }
 
 func TestTerminationProofSurvivesReload(t *testing.T) {
+	t.Parallel()
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	run, _ := newWaitTestRun(t, root)
 	now := time.Now().UTC()
@@ -917,6 +947,7 @@ func TestTerminationProofSurvivesReload(t *testing.T) {
 }
 
 func TestLaunchIntentWithoutIdentityStaysUncertainAcrossWait(t *testing.T) {
+	t.Parallel()
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	run, _ := newWaitTestRun(t, root)
 	run.Record.State = dispatchStateStarting
@@ -949,6 +980,7 @@ func TestLaunchIntentWithoutIdentityStaysUncertainAcrossWait(t *testing.T) {
 }
 
 func TestMCPInspectAndOutputUseInvocationID(t *testing.T) {
+	t.Parallel()
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	run, _ := newWaitTestRun(t, root)
 	if err := os.WriteFile(run.Record.EventsPath, []byte("hello"), 0o600); err != nil {
@@ -1026,6 +1058,7 @@ func TestMCPInspectAndOutputUseInvocationID(t *testing.T) {
 // including an event record larger than a page and UTF-8 characters spanning
 // the byte limit.
 func TestMCPOutputReassemblesMultiplePages(t *testing.T) {
+	t.Parallel()
 	for _, artifact := range []string{artifactFinalAnswer, artifactEvents} {
 		t.Run(artifact, func(t *testing.T) {
 			root := writeDispatchRepo(t, dispatchRepoConfig{})
@@ -1096,6 +1129,7 @@ func TestMCPOutputReassemblesMultiplePages(t *testing.T) {
 }
 
 func TestMCPCancelRetriesFailedUnconfirmedOwnedExecution(t *testing.T) {
+	t.Parallel()
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	run, _ := newWaitTestRun(t, root)
 	cmd := exec.Command("/bin/sleep", "60")

@@ -11,6 +11,7 @@ import (
 // because a second candidate for the same path would either duplicate the skill
 // or make its lock ownership ambiguous.
 func TestOverlappingSelectorsImportEachSkillOnce(t *testing.T) {
+	t.Parallel()
 	source := newGitRepo(t, "main")
 	source.WriteSkill("skills/alpha", "alpha", "Alpha body")
 	source.WriteSkill("skills/beta", "beta", "Beta body")
